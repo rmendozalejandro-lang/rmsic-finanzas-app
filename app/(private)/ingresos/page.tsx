@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import Link from 'next/link'
 import { supabase } from '../../../lib/supabase/client'
 import StatusBadge from '../../../components/StatusBadge'
 
@@ -42,9 +41,12 @@ type Ingreso = {
 
 type CondicionPago = 'contado' | '30' | '45' | '60'
 
+const STORAGE_KEY = 'empresa_activa_id'
+
 export default function IngresosPage() {
   const router = useRouter()
 
+  const [empresaActivaId, setEmpresaActivaId] = useState('')
   const [ingresos, setIngresos] = useState<Ingreso[]>([])
   const [clientes, setClientes] = useState<Cliente[]>([])
   const [cuentas, setCuentas] = useState<CuentaBancaria[]>([])
@@ -71,6 +73,20 @@ export default function IngresosPage() {
     categoria_id: '',
     centro_costo_id: '',
   })
+
+  useEffect(() => {
+    const syncEmpresaActiva = () => {
+      const empresaId = window.localStorage.getItem(STORAGE_KEY) || ''
+      setEmpresaActivaId(empresaId)
+    }
+
+    syncEmpresaActiva()
+    window.addEventListener('empresa-activa-cambiada', syncEmpresaActiva)
+
+    return () => {
+      window.removeEventListener('empresa-activa-cambiada', syncEmpresaActiva)
+    }
+  }, [])
 
   const resetForm = () => {
     setForm({
@@ -139,6 +155,8 @@ export default function IngresosPage() {
   }, [form.monto_neto])
 
   const fetchData = async () => {
+    if (!empresaActivaId) return
+
     try {
       setLoading(true)
       setError('')
@@ -167,23 +185,23 @@ export default function IngresosPage() {
         centrosResp,
       ] = await Promise.all([
         fetch(
-          `${baseUrl}/rest/v1/movimientos?tipo_movimiento=eq.ingreso&select=id,fecha,numero_documento,descripcion,monto_total,estado,cliente_id,clientes(nombre)&order=fecha.desc`,
+          `${baseUrl}/rest/v1/movimientos?empresa_id=eq.${empresaActivaId}&tipo_movimiento=eq.ingreso&select=id,fecha,numero_documento,descripcion,monto_total,estado,cliente_id,clientes(nombre)&order=fecha.desc`,
           { headers }
         ),
         fetch(
-          `${baseUrl}/rest/v1/clientes?select=id,nombre&order=nombre.asc`,
+          `${baseUrl}/rest/v1/clientes?empresa_id=eq.${empresaActivaId}&select=id,nombre&order=nombre.asc`,
           { headers }
         ),
         fetch(
-          `${baseUrl}/rest/v1/cuentas_bancarias?select=id,banco,nombre_cuenta&activa=eq.true&order=banco.asc`,
+          `${baseUrl}/rest/v1/cuentas_bancarias?empresa_id=eq.${empresaActivaId}&select=id,banco,nombre_cuenta&activa=eq.true&order=banco.asc`,
           { headers }
         ),
         fetch(
-          `${baseUrl}/rest/v1/categorias?select=id,nombre&tipo=eq.ingreso&activa=eq.true&order=nombre.asc`,
+          `${baseUrl}/rest/v1/categorias?empresa_id=eq.${empresaActivaId}&select=id,nombre&tipo=eq.ingreso&activa=eq.true&order=nombre.asc`,
           { headers }
         ),
         fetch(
-          `${baseUrl}/rest/v1/centros_costo?select=id,nombre&activo=eq.true&order=nombre.asc`,
+          `${baseUrl}/rest/v1/centros_costo?empresa_id=eq.${empresaActivaId}&select=id,nombre&activo=eq.true&order=nombre.asc`,
           { headers }
         ),
       ])
@@ -237,7 +255,7 @@ export default function IngresosPage() {
 
   useEffect(() => {
     fetchData()
-  }, [router])
+  }, [router, empresaActivaId])
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
@@ -260,6 +278,11 @@ export default function IngresosPage() {
 
     setError('')
     setSuccess('')
+
+    if (!empresaActivaId) {
+      setError('Debes seleccionar una empresa activa.')
+      return
+    }
 
     if (!form.cliente_id) {
       setError('Debes seleccionar un cliente.')
@@ -310,31 +333,15 @@ export default function IngresosPage() {
         }
       )
 
-      const empresaResp = await fetch(
-        `${baseUrl}/rest/v1/empresas?select=id&nombre=eq.RMSIC`,
-        {
-          headers: {
-            apikey: apiKey,
-            Authorization: `Bearer ${accessToken}`,
-          },
-        }
-      )
-
       const profileJson = await profileResp.json()
-      const empresaJson = await empresaResp.json()
 
       if (!profileResp.ok || !profileJson?.[0]?.id) {
         setError('No se pudo obtener el perfil del usuario.')
         return
       }
 
-      if (!empresaResp.ok || !empresaJson?.[0]?.id) {
-        setError('No se pudo obtener la empresa.')
-        return
-      }
-
       const payload = {
-        empresa_id: empresaJson[0].id,
+        empresa_id: empresaActivaId,
         tipo_movimiento: 'ingreso',
         fecha: form.fecha,
         fecha_vencimiento: form.fecha_vencimiento || null,
@@ -393,7 +400,7 @@ export default function IngresosPage() {
       <div>
         <h1 className="text-4xl font-semibold text-slate-900">Ingresos</h1>
         <p className="text-slate-600 mt-2">
-          Ventas e ingresos registrados en el sistema.
+          Ventas e ingresos registrados en la empresa activa.
         </p>
       </div>
 
@@ -410,7 +417,7 @@ export default function IngresosPage() {
 
           {!loading && !error && ingresos.length === 0 && (
             <div className="text-slate-500 text-sm">
-              No hay ingresos registrados.
+              No hay ingresos registrados para la empresa activa.
             </div>
           )}
 
@@ -457,7 +464,7 @@ export default function IngresosPage() {
             Nueva venta
           </h2>
           <p className="text-slate-500 text-sm mt-1 mb-4">
-            Registrar ingreso directamente desde la app.
+            Registrar ingreso para la empresa activa.
           </p>
 
           <form onSubmit={handleSubmit} className="space-y-4">

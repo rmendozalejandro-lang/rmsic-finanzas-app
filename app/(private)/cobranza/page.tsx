@@ -1,73 +1,88 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../../../lib/supabase/client'
-import StatusBadge from '../../../components/StatusBadge'
-
-type CobranzaPendiente = {
-  fecha_emision: string
-  fecha_vencimiento: string | null
-  cliente: string
-  numero_factura: string
-  descripcion: string
-  monto_total: number
-  saldo_pendiente: number
-  estado: string
-}
 
 type CuentaBancaria = {
   id: string
+  empresa_id: string
   banco: string
   nombre_cuenta: string
+  tipo_cuenta: string | null
+  moneda: string | null
+  saldo_inicial: number
+  activa: boolean
 }
 
-const getEstadoVisual = (estado: string, fechaVencimiento: string | null) => {
-  const base = (estado || '').toLowerCase()
+type SaldoBancario = {
+  empresa_id: string
+  id: string
+  banco: string
+  nombre_cuenta: string
+  tipo_cuenta: string | null
+  moneda: string | null
+  saldo_inicial: number
+  ingresos_pagados: number
+  egresos_pagados: number
+  saldo_calculado: number
+}
 
-  if (!fechaVencimiento) return estado
+type MovimientoBanco = {
+  id: string
+  fecha: string
+  tipo_movimiento: string
+  numero_documento: string | null
+  descripcion: string
+  monto_total: number
+  estado: string
+  cuenta_bancaria_id: string | null
+  empresa_id: string
+}
 
-  if (base === 'pagado') return estado
+const STORAGE_KEY = 'empresa_activa_id'
 
-  const hoy = new Date()
-  const vencimiento = new Date(`${fechaVencimiento}T23:59:59`)
+const formatCLP = (value: number) =>
+  `$${Number(value || 0).toLocaleString('es-CL')}`
 
-  if ((base === 'pendiente' || base === 'parcial') && vencimiento < hoy) {
-    return 'vencido'
+const formatTipoMovimiento = (value: string) => {
+  switch ((value || '').toLowerCase()) {
+    case 'ingreso':
+      return 'Ingreso'
+    case 'egreso':
+      return 'Egreso'
+    default:
+      return value || '-'
   }
-
-  return estado
 }
 
-export default function CobranzaPage() {
+export default function BancosPage() {
   const router = useRouter()
 
-  const [cobranza, setCobranza] = useState<CobranzaPendiente[]>([])
+  const [empresaActivaId, setEmpresaActivaId] = useState('')
   const [cuentas, setCuentas] = useState<CuentaBancaria[]>([])
+  const [saldos, setSaldos] = useState<SaldoBancario[]>([])
+  const [movimientos, setMovimientos] = useState<MovimientoBanco[]>([])
   const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
-  const [success, setSuccess] = useState('')
 
-  const [form, setForm] = useState({
-    numero_factura: '',
-    monto_pagado: '',
-    fecha_pago: '',
-    banco: '',
-    nombre_cuenta: '',
-  })
+  useEffect(() => {
+    const syncEmpresaActiva = () => {
+      const empresaId = window.localStorage.getItem(STORAGE_KEY) || ''
+      setEmpresaActivaId(empresaId)
+    }
 
-  const resetForm = () => {
-    setForm({
-      numero_factura: '',
-      monto_pagado: '',
-      fecha_pago: '',
-      banco: '',
-      nombre_cuenta: '',
-    })
-  }
+    syncEmpresaActiva()
+    window.addEventListener('empresa-activa-cambiada', syncEmpresaActiva)
+
+    return () => {
+      window.removeEventListener('empresa-activa-cambiada', syncEmpresaActiva)
+    }
+  }, [])
 
   const fetchData = async () => {
+    if (!empresaActivaId) return
+
     try {
       setLoading(true)
       setError('')
@@ -88,32 +103,46 @@ export default function CobranzaPage() {
         Authorization: `Bearer ${accessToken}`,
       }
 
-      const [cobranzaResp, cuentasResp] = await Promise.all([
+      const [cuentasResp, saldosResp, movimientosResp] = await Promise.all([
         fetch(
-          `${baseUrl}/rest/v1/v_cobranza_pendiente?select=*&order=fecha_vencimiento.asc.nullslast`,
+          `${baseUrl}/rest/v1/cuentas_bancarias?empresa_id=eq.${empresaActivaId}&select=id,empresa_id,banco,nombre_cuenta,tipo_cuenta,moneda,saldo_inicial,activa&order=banco.asc,nombre_cuenta.asc`,
           { headers }
         ),
         fetch(
-          `${baseUrl}/rest/v1/cuentas_bancarias?select=id,banco,nombre_cuenta&activa=eq.true&order=banco.asc`,
+          `${baseUrl}/rest/v1/v_saldos_bancarios?empresa_id=eq.${empresaActivaId}&select=*`,
+          { headers }
+        ),
+        fetch(
+          `${baseUrl}/rest/v1/movimientos?empresa_id=eq.${empresaActivaId}&select=id,fecha,tipo_movimiento,numero_documento,descripcion,monto_total,estado,cuenta_bancaria_id,empresa_id&cuenta_bancaria_id=not.is.null&order=fecha.desc&limit=30`,
           { headers }
         ),
       ])
 
-      const cobranzaJson = await cobranzaResp.json()
       const cuentasJson = await cuentasResp.json()
-
-      if (!cobranzaResp.ok) {
-        setError('No se pudo cargar la cobranza pendiente.')
-        return
-      }
+      const saldosJson = await saldosResp.json()
+      const movimientosJson = await movimientosResp.json()
 
       if (!cuentasResp.ok) {
+        console.error(cuentasJson)
         setError('No se pudieron cargar las cuentas bancarias.')
         return
       }
 
-      setCobranza(cobranzaJson ?? [])
+      if (!saldosResp.ok) {
+        console.error(saldosJson)
+        setError('No se pudieron cargar los saldos bancarios.')
+        return
+      }
+
+      if (!movimientosResp.ok) {
+        console.error(movimientosJson)
+        setError('No se pudieron cargar los movimientos bancarios.')
+        return
+      }
+
       setCuentas(cuentasJson ?? [])
+      setSaldos(saldosJson ?? [])
+      setMovimientos(movimientosJson ?? [])
     } catch (err) {
       if (err instanceof Error) {
         setError(err.message)
@@ -127,289 +156,195 @@ export default function CobranzaPage() {
 
   useEffect(() => {
     fetchData()
-  }, [router])
+  }, [router, empresaActivaId])
 
-  const handleChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
-  ) => {
-    const { name, value } = e.target
-
-    if (name === 'nombre_cuenta') {
-      const cuentaSeleccionada = cuentas.find(
-        (c) => `${c.banco} - ${c.nombre_cuenta}` === value
-      )
-
-      setForm((prev) => ({
-        ...prev,
-        banco: cuentaSeleccionada?.banco ?? '',
-        nombre_cuenta: cuentaSeleccionada?.nombre_cuenta ?? '',
-      }))
-      return
-    }
-
-    setForm((prev) => ({ ...prev, [name]: value }))
-  }
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-
-    setError('')
-    setSuccess('')
-
-    if (!form.numero_factura.trim()) {
-      setError('Debes ingresar el número de factura.')
-      return
-    }
-
-    if (Number(form.monto_pagado) <= 0) {
-      setError('El monto pagado debe ser mayor a 0.')
-      return
-    }
-
-    if (!form.fecha_pago) {
-      setError('Debes ingresar la fecha de pago.')
-      return
-    }
-
-    if (!form.banco || !form.nombre_cuenta) {
-      setError('Debes seleccionar una cuenta de ingreso.')
-      return
-    }
-
-    try {
-      setSaving(true)
-
-      const { data: sessionData } = await supabase.auth.getSession()
-
-      if (!sessionData.session) {
-        router.push('/login')
-        return
-      }
-
-      const accessToken = sessionData.session.access_token
-      const apiKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-      const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
-
-      const response = await fetch(
-        `${baseUrl}/rest/v1/rpc/registrar_pago_cxc_con_banco`,
-        {
-          method: 'POST',
-          headers: {
-            apikey: apiKey,
-            Authorization: `Bearer ${accessToken}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            p_numero_factura: form.numero_factura,
-            p_monto_pagado: Number(form.monto_pagado),
-            p_fecha_pago: form.fecha_pago,
-            p_banco: form.banco,
-            p_nombre_cuenta: form.nombre_cuenta,
-            p_created_by_email: 'rmendozaalejandro@gmail.com',
-          }),
-        }
-      )
-
-      const result = await response.json().catch(() => null)
-
-      if (!response.ok) {
-        setError('No se pudo registrar el pago. Revisa los datos e inténtalo nuevamente.')
-        console.error(result)
-        return
-      }
-
-      setSuccess('Pago registrado correctamente.')
-      resetForm()
-      await fetchData()
-    } catch (err) {
-      if (err instanceof Error) {
-        setError(err.message)
-      } else {
-        setError('Error desconocido al registrar pago.')
-      }
-    } finally {
-      setSaving(false)
-    }
-  }
+  const cuentasMap = useMemo(() => {
+    return new Map(
+      cuentas.map((cuenta) => [
+        cuenta.id,
+        `${cuenta.banco} - ${cuenta.nombre_cuenta}`,
+      ])
+    )
+  }, [cuentas])
 
   return (
     <main className="space-y-6">
       <div>
-        <h1 className="text-4xl font-semibold text-slate-900">Cobranza</h1>
+        <h1 className="text-4xl font-semibold text-slate-900">Bancos</h1>
         <p className="text-slate-600 mt-2">
-          Facturas pendientes y registro de pagos.
+          Cuentas, saldos y movimientos bancarios de la empresa activa.
         </p>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        <div className="xl:col-span-2 rounded-2xl bg-white p-6 shadow-sm border border-slate-200">
-          <h2 className="text-2xl font-semibold text-slate-900">
-            Facturas pendientes
-          </h2>
-          <p className="text-slate-500 text-sm mt-1 mb-4">
-            Información cargada directamente desde Supabase.
-          </p>
+      {loading && (
+        <div className="rounded-2xl bg-white p-6 shadow-sm border border-slate-200">
+          Cargando información bancaria...
+        </div>
+      )}
 
-          {loading && <div className="text-slate-500">Cargando cobranza...</div>}
+      {error && (
+        <div className="rounded-2xl bg-red-50 p-6 shadow-sm border border-red-200 text-red-700">
+          {error}
+        </div>
+      )}
 
-          {!loading && !error && cobranza.length === 0 && (
-            <div className="text-slate-500 text-sm">
-              No hay facturas pendientes por cobrar.
-            </div>
-          )}
+      {!loading && !error && (
+        <>
+          <section className="rounded-2xl bg-white p-6 shadow-sm border border-slate-200">
+            <h2 className="text-2xl font-semibold text-slate-900">
+              Cuentas bancarias
+            </h2>
+            <p className="text-slate-500 text-sm mt-1 mb-4">
+              Cuentas registradas para la empresa activa.
+            </p>
 
-          {!loading && !error && cobranza.length > 0 && (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-slate-200 text-left text-slate-500">
-                    <th className="py-3 pr-4">Cliente</th>
-                    <th className="py-3 pr-4">Factura</th>
-                    <th className="py-3 pr-4">Emisión</th>
-                    <th className="py-3 pr-4">Vencimiento</th>
-                    <th className="py-3 pr-4">Descripción</th>
-                    <th className="py-3 pr-4">Monto total</th>
-                    <th className="py-3 pr-4">Saldo pendiente</th>
-                    <th className="py-3 pr-4">Estado</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {cobranza.map((item, index) => {
-                    const estadoVisual = getEstadoVisual(
-                      item.estado,
-                      item.fecha_vencimiento
-                    )
-
-                    return (
-                      <tr
-                        key={`${item.numero_factura}-${index}`}
-                        className="border-b border-slate-100"
-                      >
-                        <td className="py-3 pr-4">{item.cliente}</td>
-                        <td className="py-3 pr-4">{item.numero_factura}</td>
-                        <td className="py-3 pr-4">{item.fecha_emision}</td>
-                        <td className="py-3 pr-4">
-                          {item.fecha_vencimiento ?? '-'}
-                        </td>
-                        <td className="py-3 pr-4">{item.descripcion}</td>
-                        <td className="py-3 pr-4">
-                          ${Number(item.monto_total).toLocaleString('es-CL')}
-                        </td>
+            {cuentas.length === 0 ? (
+              <div className="text-slate-500 text-sm">
+                No hay cuentas bancarias registradas para esta empresa.
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-200 text-left text-slate-500">
+                      <th className="py-3 pr-4">Banco</th>
+                      <th className="py-3 pr-4">Cuenta</th>
+                      <th className="py-3 pr-4">Tipo</th>
+                      <th className="py-3 pr-4">Moneda</th>
+                      <th className="py-3 pr-4">Saldo inicial</th>
+                      <th className="py-3 pr-4">Estado</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {cuentas.map((cuenta) => (
+                      <tr key={cuenta.id} className="border-b border-slate-100">
+                        <td className="py-3 pr-4">{cuenta.banco}</td>
+                        <td className="py-3 pr-4">{cuenta.nombre_cuenta}</td>
+                        <td className="py-3 pr-4">{cuenta.tipo_cuenta ?? '-'}</td>
+                        <td className="py-3 pr-4">{cuenta.moneda ?? '-'}</td>
                         <td className="py-3 pr-4 font-medium">
-                          ${Number(item.saldo_pendiente).toLocaleString('es-CL')}
+                          {formatCLP(cuenta.saldo_inicial)}
                         </td>
                         <td className="py-3 pr-4">
-                          <StatusBadge status={estadoVisual} />
+                          {cuenta.activa ? 'Activa' : 'Inactiva'}
                         </td>
                       </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
 
-        <div className="rounded-2xl bg-white p-6 shadow-sm border border-slate-200">
-          <h2 className="text-2xl font-semibold text-slate-900">
-            Registrar pago
-          </h2>
-          <p className="text-slate-500 text-sm mt-1 mb-4">
-            Aplicar pago total o parcial a una factura.
-          </p>
+          <section className="rounded-2xl bg-white p-6 shadow-sm border border-slate-200">
+            <h2 className="text-2xl font-semibold text-slate-900">
+              Saldos bancarios
+            </h2>
+            <p className="text-slate-500 text-sm mt-1 mb-4">
+              Resumen financiero por cuenta bancaria.
+            </p>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="block text-sm text-slate-600 mb-2">
-                Número de factura
-              </label>
-              <input
-                type="text"
-                name="numero_factura"
-                value={form.numero_factura}
-                onChange={handleChange}
-                className="w-full rounded-xl border border-slate-300 px-4 py-3"
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm text-slate-600 mb-2">
-                Monto pagado
-              </label>
-              <input
-                type="number"
-                name="monto_pagado"
-                value={form.monto_pagado}
-                onChange={handleChange}
-                className="w-full rounded-xl border border-slate-300 px-4 py-3"
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm text-slate-600 mb-2">
-                Fecha de pago
-              </label>
-              <input
-                type="date"
-                name="fecha_pago"
-                value={form.fecha_pago}
-                onChange={handleChange}
-                className="w-full rounded-xl border border-slate-300 px-4 py-3"
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm text-slate-600 mb-2">
-                Cuenta de ingreso
-              </label>
-              <select
-                name="nombre_cuenta"
-                value={
-                  form.banco && form.nombre_cuenta
-                    ? `${form.banco} - ${form.nombre_cuenta}`
-                    : ''
-                }
-                onChange={handleChange}
-                className="w-full rounded-xl border border-slate-300 px-4 py-3"
-                required
-              >
-                <option value="">Seleccionar cuenta</option>
-                {cuentas.map((cuenta) => (
-                  <option
-                    key={cuenta.id}
-                    value={`${cuenta.banco} - ${cuenta.nombre_cuenta}`}
+            {saldos.length === 0 ? (
+              <div className="text-slate-500 text-sm">
+                No hay saldos bancarios disponibles para esta empresa.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {saldos.map((item) => (
+                  <div
+                    key={item.id}
+                    className="rounded-2xl bg-slate-50 p-5 border border-slate-200"
                   >
-                    {cuenta.banco} - {cuenta.nombre_cuenta}
-                  </option>
+                    <p className="text-sm text-slate-500">{item.banco}</p>
+                    <h3 className="text-xl font-semibold mt-1">
+                      {item.nombre_cuenta}
+                    </h3>
+
+                    <div className="grid grid-cols-2 gap-4 mt-4 text-sm">
+                      <div>
+                        <p className="text-slate-500">Saldo inicial</p>
+                        <p className="font-medium mt-1">
+                          {formatCLP(item.saldo_inicial)}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-slate-500">Saldo calculado</p>
+                        <p className="font-medium mt-1">
+                          {formatCLP(item.saldo_calculado)}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-slate-500">Ingresos pagados</p>
+                        <p className="font-medium mt-1">
+                          {formatCLP(item.ingresos_pagados)}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-slate-500">Egresos pagados</p>
+                        <p className="font-medium mt-1">
+                          {formatCLP(item.egresos_pagados)}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
                 ))}
-              </select>
-            </div>
-
-            {error && (
-              <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
-                {error}
               </div>
             )}
+          </section>
 
-            {success && (
-              <div className="rounded-xl bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-700">
-                {success}
+          <section className="rounded-2xl bg-white p-6 shadow-sm border border-slate-200">
+            <h2 className="text-2xl font-semibold text-slate-900">
+              Últimos movimientos bancarios
+            </h2>
+            <p className="text-slate-500 text-sm mt-1 mb-4">
+              Movimientos asociados a cuentas bancarias de la empresa activa.
+            </p>
+
+            {movimientos.length === 0 ? (
+              <div className="text-slate-500 text-sm">
+                No hay movimientos bancarios registrados para esta empresa.
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-200 text-left text-slate-500">
+                      <th className="py-3 pr-4">Fecha</th>
+                      <th className="py-3 pr-4">Tipo</th>
+                      <th className="py-3 pr-4">Documento</th>
+                      <th className="py-3 pr-4">Descripción</th>
+                      <th className="py-3 pr-4">Cuenta</th>
+                      <th className="py-3 pr-4">Monto</th>
+                      <th className="py-3 pr-4">Estado</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {movimientos.map((item) => (
+                      <tr key={item.id} className="border-b border-slate-100">
+                        <td className="py-3 pr-4">{item.fecha}</td>
+                        <td className="py-3 pr-4">
+                          {formatTipoMovimiento(item.tipo_movimiento)}
+                        </td>
+                        <td className="py-3 pr-4">{item.numero_documento ?? '-'}</td>
+                        <td className="py-3 pr-4">{item.descripcion}</td>
+                        <td className="py-3 pr-4">
+                          {item.cuenta_bancaria_id
+                            ? cuentasMap.get(item.cuenta_bancaria_id) ?? '-'
+                            : '-'}
+                        </td>
+                        <td className="py-3 pr-4 font-medium">
+                          {formatCLP(item.monto_total)}
+                        </td>
+                        <td className="py-3 pr-4">{item.estado}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
-
-            <button
-              type="submit"
-              disabled={saving}
-              className="w-full rounded-xl bg-slate-900 text-white py-3 font-medium disabled:opacity-60"
-            >
-              {saving ? 'Registrando...' : 'Registrar pago'}
-            </button>
-          </form>
-        </div>
-      </div>
+          </section>
+        </>
+      )}
     </main>
   )
 }

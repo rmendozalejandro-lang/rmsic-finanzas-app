@@ -5,23 +5,8 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '../../../lib/supabase/client'
 import StatusBadge from '../../../components/StatusBadge'
 
-type ResultadoMensual = {
-  anio: number
-  mes: number
-  ingresos: number
-  egresos: number
-  resultado: number
-}
-
-type VentaPorCliente = {
-  cliente: string
-  cantidad_documentos: number
-  total_vendido: number
-  total_pagado: number
-  total_pendiente: number
-}
-
 type CobranzaPendiente = {
+  empresa_id: string
   fecha_emision: string
   fecha_vencimiento: string | null
   cliente: string
@@ -33,6 +18,7 @@ type CobranzaPendiente = {
 }
 
 type SaldoBancario = {
+  empresa_id: string
   id: string
   banco: string
   nombre_cuenta: string
@@ -44,6 +30,7 @@ type SaldoBancario = {
 
 type EgresoTributario = {
   id: string
+  empresa_id: string
   fecha: string
   descripcion: string
   tratamiento_tributario: string
@@ -54,23 +41,29 @@ type EgresoTributario = {
   monto_total: number
 }
 
-const nombreMes = (mes: number) => {
-  const meses = [
-    'Enero',
-    'Febrero',
-    'Marzo',
-    'Abril',
-    'Mayo',
-    'Junio',
-    'Julio',
-    'Agosto',
-    'Septiembre',
-    'Octubre',
-    'Noviembre',
-    'Diciembre',
-  ]
-  return meses[mes - 1] ?? String(mes)
+type VentaClienteRow = {
+  cliente_id: string | null
+  monto_total: number
+  estado: string
+  clientes?: {
+    nombre: string
+  } | null
 }
+
+type VentaPorCliente = {
+  cliente: string
+  cantidad_documentos: number
+  total_vendido: number
+  total_pagado: number
+  total_pendiente: number
+}
+
+type Empresa = {
+  id: string
+  nombre: string
+}
+
+const STORAGE_KEY = 'empresa_activa_id'
 
 const formatCLP = (value: number) =>
   `$${Number(value || 0).toLocaleString('es-CL')}`
@@ -95,6 +88,28 @@ const formatFechaLarga = (date: Date) =>
     day: 'numeric',
   }).format(date)
 
+const getEmpresaBranding = (empresaNombre: string) => {
+  const nombre = (empresaNombre || '').toLowerCase()
+
+  if (nombre.includes('rukalaf')) {
+    return {
+      titulo: 'Rukalaf Experience SpA',
+      subtitulo: 'Plataforma financiera y contable por empresa activa.',
+      logoSrc: '/rukalaf-logo.png',
+      mostrarLogo: true, // cambia a true cuando subas rukalaf-logo.png
+      marcaCorta: 'RUKALAF',
+    }
+  }
+
+  return {
+    titulo: 'RMSIC',
+    subtitulo: 'Plataforma financiera y contable por empresa activa.',
+    logoSrc: '/rmsic-logo.png',
+    mostrarLogo: true,
+    marcaCorta: 'RMSIC',
+  }
+}
+
 export default function ReportesPage() {
   const router = useRouter()
 
@@ -104,6 +119,8 @@ export default function ReportesPage() {
     .slice(0, 10)
   const hoyStr = hoy.toISOString().slice(0, 10)
 
+  const [empresaActivaId, setEmpresaActivaId] = useState('')
+  const [empresas, setEmpresas] = useState<Empresa[]>([])
   const [fechaDesde, setFechaDesde] = useState(primerDiaMes)
   const [fechaHasta, setFechaHasta] = useState(hoyStr)
   const [filtrosAplicados, setFiltrosAplicados] = useState({
@@ -111,16 +128,67 @@ export default function ReportesPage() {
     hasta: hoyStr,
   })
 
-  const [resultadoMensual, setResultadoMensual] = useState<ResultadoMensual[]>([])
-  const [ventasPorCliente, setVentasPorCliente] = useState<VentaPorCliente[]>([])
   const [cobranza, setCobranza] = useState<CobranzaPendiente[]>([])
   const [saldos, setSaldos] = useState<SaldoBancario[]>([])
   const [egresosTributarios, setEgresosTributarios] = useState<EgresoTributario[]>([])
+  const [ventasRows, setVentasRows] = useState<VentaClienteRow[]>([])
+  const [ingresosFiltrados, setIngresosFiltrados] = useState<{ monto_total: number }[]>([])
+  const [egresosFiltrados, setEgresosFiltrados] = useState<{ monto_total: number }[]>([])
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
+  useEffect(() => {
+    const syncEmpresaActiva = () => {
+      const empresaId = window.localStorage.getItem(STORAGE_KEY) || ''
+      setEmpresaActivaId(empresaId)
+    }
+
+    syncEmpresaActiva()
+    window.addEventListener('empresa-activa-cambiada', syncEmpresaActiva)
+
+    return () => {
+      window.removeEventListener('empresa-activa-cambiada', syncEmpresaActiva)
+    }
+  }, [])
+
+  useEffect(() => {
+    const fetchEmpresas = async () => {
+      try {
+        const { data: sessionData } = await supabase.auth.getSession()
+
+        if (!sessionData.session) return
+
+        const accessToken = sessionData.session.access_token
+        const apiKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+        const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+
+        const resp = await fetch(
+          `${baseUrl}/rest/v1/empresas?select=id,nombre&order=nombre.asc`,
+          {
+            headers: {
+              apikey: apiKey,
+              Authorization: `Bearer ${accessToken}`,
+            },
+          }
+        )
+
+        const json = await resp.json()
+
+        if (resp.ok) {
+          setEmpresas(json ?? [])
+        }
+      } catch (err) {
+        console.error('Error cargando empresas:', err)
+      }
+    }
+
+    fetchEmpresas()
+  }, [])
+
   const fetchReportes = async (desde: string, hasta: string) => {
+    if (!empresaActivaId) return
+
     try {
       setLoading(true)
       setError('')
@@ -141,65 +209,76 @@ export default function ReportesPage() {
         Authorization: `Bearer ${accessToken}`,
       }
 
-      const movimientosFechaFilter = `fecha=gte.${desde}&fecha=lte.${hasta}`
-      const cobranzaFechaFilter = `fecha_emision=gte.${desde}&fecha_emision=lte.${hasta}`
-
-      const [resultadoResp, ventasResp, cobranzaResp, saldosResp, egresosResp] =
+      const [cobranzaResp, saldosResp, egresosResp, ventasResp, ingresosResp, egresosTotResp] =
         await Promise.all([
           fetch(
-            `${baseUrl}/rest/v1/v_resultado_mensual?select=*&order=anio.desc,mes.desc`,
+            `${baseUrl}/rest/v1/v_cobranza_pendiente?empresa_id=eq.${empresaActivaId}&select=*&fecha_emision=gte.${desde}&fecha_emision=lte.${hasta}&order=fecha_vencimiento.asc.nullslast`,
             { headers }
           ),
-          fetch(`${baseUrl}/rest/v1/v_ventas_por_cliente?select=*`, {
-            headers,
-          }),
           fetch(
-            `${baseUrl}/rest/v1/v_cobranza_pendiente?select=*&${cobranzaFechaFilter}&order=fecha_vencimiento.asc.nullslast`,
+            `${baseUrl}/rest/v1/v_saldos_bancarios?empresa_id=eq.${empresaActivaId}&select=*`,
             { headers }
           ),
-          fetch(`${baseUrl}/rest/v1/v_saldos_bancarios?select=*`, { headers }),
           fetch(
-            `${baseUrl}/rest/v1/movimientos?select=id,fecha,descripcion,tratamiento_tributario,monto_neto,monto_iva,impuesto_especifico,monto_exento,monto_total&tipo_movimiento=eq.egreso&${movimientosFechaFilter}&order=fecha.desc`,
+            `${baseUrl}/rest/v1/movimientos?empresa_id=eq.${empresaActivaId}&tipo_movimiento=eq.egreso&fecha=gte.${desde}&fecha=lte.${hasta}&select=id,empresa_id,fecha,descripcion,tratamiento_tributario,monto_neto,monto_iva,impuesto_especifico,monto_exento,monto_total&order=fecha.desc`,
+            { headers }
+          ),
+          fetch(
+            `${baseUrl}/rest/v1/movimientos?empresa_id=eq.${empresaActivaId}&tipo_movimiento=eq.ingreso&fecha=gte.${desde}&fecha=lte.${hasta}&select=cliente_id,monto_total,estado,clientes(nombre)`,
+            { headers }
+          ),
+          fetch(
+            `${baseUrl}/rest/v1/movimientos?empresa_id=eq.${empresaActivaId}&tipo_movimiento=eq.ingreso&fecha=gte.${desde}&fecha=lte.${hasta}&select=monto_total`,
+            { headers }
+          ),
+          fetch(
+            `${baseUrl}/rest/v1/movimientos?empresa_id=eq.${empresaActivaId}&tipo_movimiento=eq.egreso&fecha=gte.${desde}&fecha=lte.${hasta}&select=monto_total`,
             { headers }
           ),
         ])
 
-      const resultadoJson = await resultadoResp.json()
-      const ventasJson = await ventasResp.json()
       const cobranzaJson = await cobranzaResp.json()
       const saldosJson = await saldosResp.json()
       const egresosJson = await egresosResp.json()
-
-      if (!resultadoResp.ok) {
-        setError('No se pudo cargar el resultado mensual.')
-        return
-      }
-
-      if (!ventasResp.ok) {
-        setError('No se pudo cargar ventas por cliente.')
-        return
-      }
+      const ventasJson = await ventasResp.json()
+      const ingresosJson = await ingresosResp.json()
+      const egresosTotJson = await egresosTotResp.json()
 
       if (!cobranzaResp.ok) {
+        console.error(cobranzaJson)
         setError('No se pudo cargar la cobranza pendiente.')
         return
       }
 
       if (!saldosResp.ok) {
+        console.error(saldosJson)
         setError('No se pudieron cargar los saldos bancarios.')
         return
       }
 
       if (!egresosResp.ok) {
+        console.error(egresosJson)
         setError('No se pudo cargar el resumen tributario.')
         return
       }
 
-      setResultadoMensual(resultadoJson ?? [])
-      setVentasPorCliente(ventasJson ?? [])
+      if (!ventasResp.ok) {
+        console.error(ventasJson)
+        setError('No se pudo cargar ventas por cliente.')
+        return
+      }
+
+      if (!ingresosResp.ok || !egresosTotResp.ok) {
+        setError('No se pudo cargar el resultado del período.')
+        return
+      }
+
       setCobranza(cobranzaJson ?? [])
       setSaldos(saldosJson ?? [])
       setEgresosTributarios(egresosJson ?? [])
+      setVentasRows(ventasJson ?? [])
+      setIngresosFiltrados(ingresosJson ?? [])
+      setEgresosFiltrados(egresosTotJson ?? [])
     } catch (err) {
       if (err instanceof Error) {
         setError(err.message)
@@ -213,7 +292,7 @@ export default function ReportesPage() {
 
   useEffect(() => {
     fetchReportes(filtrosAplicados.desde, filtrosAplicados.hasta)
-  }, [router, filtrosAplicados])
+  }, [router, filtrosAplicados, empresaActivaId])
 
   const handleAplicarFiltros = () => {
     if (fechaDesde && fechaHasta && fechaDesde > fechaHasta) {
@@ -237,6 +316,9 @@ export default function ReportesPage() {
       hasta: hoyStr,
     })
   }
+
+  const empresaActiva = empresas.find((empresa) => empresa.id === empresaActivaId)
+  const branding = getEmpresaBranding(empresaActiva?.nombre ?? '')
 
   const resumenTributario = useMemo(() => {
     const afecto = egresosTributarios.filter(
@@ -262,35 +344,78 @@ export default function ReportesPage() {
     }
   }, [egresosTributarios])
 
-  const ventasFiltradas = useMemo(() => {
-    return ventasPorCliente
-      .filter((item) => Number(item.total_vendido || 0) > 0)
-      .sort((a, b) => Number(b.total_vendido) - Number(a.total_vendido))
-  }, [ventasPorCliente])
+  const ventasPorCliente = useMemo(() => {
+    const mapa = new Map<string, VentaPorCliente>()
+
+    for (const row of ventasRows) {
+      const cliente = row.clientes?.nombre ?? 'Sin cliente'
+      const actual = mapa.get(cliente) ?? {
+        cliente,
+        cantidad_documentos: 0,
+        total_vendido: 0,
+        total_pagado: 0,
+        total_pendiente: 0,
+      }
+
+      actual.cantidad_documentos += 1
+      actual.total_vendido += Number(row.monto_total || 0)
+
+      if ((row.estado || '').toLowerCase() === 'pagado') {
+        actual.total_pagado += Number(row.monto_total || 0)
+      } else {
+        actual.total_pendiente += Number(row.monto_total || 0)
+      }
+
+      mapa.set(cliente, actual)
+    }
+
+    return Array.from(mapa.values()).sort((a, b) => b.total_vendido - a.total_vendido)
+  }, [ventasRows])
+
+  const resultadoPeriodo = useMemo(() => {
+    const ingresos = ingresosFiltrados.reduce(
+      (acc, item) => acc + Number(item.monto_total || 0),
+      0
+    )
+    const egresos = egresosFiltrados.reduce(
+      (acc, item) => acc + Number(item.monto_total || 0),
+      0
+    )
+
+    return {
+      ingresos,
+      egresos,
+      resultado: ingresos - egresos,
+    }
+  }, [ingresosFiltrados, egresosFiltrados])
 
   return (
     <main className="space-y-6 print:space-y-4 print:bg-white">
       <div className="rounded-2xl bg-white p-6 shadow-sm border border-slate-200 print:shadow-none print:border-slate-300">
         <div className="flex items-start justify-between gap-6 print:block">
           <div className="flex items-start gap-4">
-            <div className="h-16 w-16 rounded-2xl border border-slate-200 bg-white p-2 print:h-14 print:w-14">
-              <img
-                src="/rmsic-logo.png"
-                alt="Logo RMSIC"
-                className="h-full w-full object-contain"
-              />
+            <div className="h-16 w-16 rounded-2xl border border-slate-200 bg-white p-2 print:h-14 print:w-14 flex items-center justify-center">
+              {branding.mostrarLogo ? (
+                <img
+                  src={branding.logoSrc}
+                  alt={`Logo ${branding.titulo}`}
+                  className="h-full w-full object-contain"
+                />
+              ) : (
+                <span className="text-xs font-semibold text-slate-500 text-center">
+                  {branding.marcaCorta}
+                </span>
+              )}
             </div>
 
             <div>
               <p className="text-xs uppercase tracking-[0.24em] text-slate-500">
-                RMSIC
+                {branding.marcaCorta}
               </p>
               <h1 className="text-4xl font-semibold text-slate-900 mt-2 print:text-3xl">
                 Informe de Reportes
               </h1>
-              <p className="text-slate-600 mt-2">
-                Plataforma financiera y contable.
-              </p>
+              <p className="text-slate-600 mt-2">{branding.titulo}</p>
               <div className="mt-3 space-y-1 text-sm text-slate-500">
                 <p>
                   Período consultado:{' '}
@@ -324,7 +449,7 @@ export default function ReportesPage() {
       <section className="rounded-2xl bg-white p-6 shadow-sm border border-slate-200 print:hidden">
         <h2 className="text-2xl font-semibold text-slate-900">Filtros</h2>
         <p className="text-slate-500 text-sm mt-1 mb-4">
-          Filtra la información por rango de fechas.
+          Filtra la información por rango de fechas para la empresa activa.
         </p>
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -382,6 +507,38 @@ export default function ReportesPage() {
 
       {!loading && !error && (
         <>
+          <section className="rounded-2xl bg-white p-6 shadow-sm border border-slate-200 print:shadow-none print:border-slate-300">
+            <h2 className="text-2xl font-semibold text-slate-900">
+              Resultado del período
+            </h2>
+            <p className="text-slate-500 text-sm mt-1 mb-4">
+              Resumen general de ingresos, egresos y resultado.
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="rounded-2xl bg-slate-50 p-5 border border-slate-200">
+                <p className="text-sm text-slate-500">Ingresos</p>
+                <p className="text-xl font-semibold mt-2">
+                  {formatCLP(resultadoPeriodo.ingresos)}
+                </p>
+              </div>
+
+              <div className="rounded-2xl bg-slate-50 p-5 border border-slate-200">
+                <p className="text-sm text-slate-500">Egresos</p>
+                <p className="text-xl font-semibold mt-2">
+                  {formatCLP(resultadoPeriodo.egresos)}
+                </p>
+              </div>
+
+              <div className="rounded-2xl bg-slate-50 p-5 border border-slate-200">
+                <p className="text-sm text-slate-500">Resultado</p>
+                <p className="text-xl font-semibold mt-2">
+                  {formatCLP(resultadoPeriodo.resultado)}
+                </p>
+              </div>
+            </div>
+          </section>
+
           <section className="rounded-2xl bg-white p-6 shadow-sm border border-slate-200 print:shadow-none print:border-slate-300">
             <h2 className="text-2xl font-semibold text-slate-900">
               Resumen tributario de egresos
@@ -489,58 +646,13 @@ export default function ReportesPage() {
 
           <section className="rounded-2xl bg-white p-6 shadow-sm border border-slate-200 print:shadow-none print:border-slate-300">
             <h2 className="text-2xl font-semibold text-slate-900">
-              Resultado mensual
-            </h2>
-            <p className="text-slate-500 text-sm mt-1 mb-4">
-              Ingresos, egresos y resultado por mes.
-            </p>
-
-            {resultadoMensual.length === 0 ? (
-              <div className="text-slate-500 text-sm">
-                No hay datos de resultado mensual.
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-slate-200 text-left text-slate-500">
-                      <th className="py-3 pr-4">Período</th>
-                      <th className="py-3 pr-4 text-right">Ingresos</th>
-                      <th className="py-3 pr-4 text-right">Egresos</th>
-                      <th className="py-3 pr-4 text-right">Resultado</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {resultadoMensual.map((item, index) => (
-                      <tr
-                        key={`${item.anio}-${item.mes}-${index}`}
-                        className="border-b border-slate-100"
-                      >
-                        <td className="py-3 pr-4">
-                          {nombreMes(item.mes)} {item.anio}
-                        </td>
-                        <td className="py-3 pr-4 text-right">{formatCLP(item.ingresos)}</td>
-                        <td className="py-3 pr-4 text-right">{formatCLP(item.egresos)}</td>
-                        <td className="py-3 pr-4 text-right font-medium">
-                          {formatCLP(item.resultado)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </section>
-
-          <section className="rounded-2xl bg-white p-6 shadow-sm border border-slate-200 print:shadow-none print:border-slate-300">
-            <h2 className="text-2xl font-semibold text-slate-900">
               Ventas por cliente
             </h2>
             <p className="text-slate-500 text-sm mt-1 mb-4">
               Resumen comercial por cliente.
             </p>
 
-            {ventasFiltradas.length === 0 ? (
+            {ventasPorCliente.length === 0 ? (
               <div className="text-slate-500 text-sm">
                 No hay datos de ventas por cliente.
               </div>
@@ -557,7 +669,7 @@ export default function ReportesPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {ventasFiltradas.map((item, index) => (
+                    {ventasPorCliente.map((item, index) => (
                       <tr
                         key={`${item.cliente}-${index}`}
                         className="border-b border-slate-100"
@@ -685,7 +797,8 @@ export default function ReportesPage() {
           </section>
 
           <footer className="hidden print:block pt-6 border-t border-slate-300 text-sm text-slate-500">
-            <p>Reporte generado desde la Plataforma Financiera RMSIC.</p>
+            <p>Reporte generado desde la Plataforma Financiera.</p>
+            <p>Empresa: {branding.titulo}</p>
             <p>Fecha de emisión: {formatFechaLarga(hoy)}</p>
           </footer>
         </>
