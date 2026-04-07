@@ -30,6 +30,7 @@ type Ingreso = {
   id: string
   fecha: string
   numero_documento: string | null
+  tipo_documento: string | null
   descripcion: string
   monto_total: number
   estado: string
@@ -40,8 +41,34 @@ type Ingreso = {
 }
 
 type CondicionPago = 'contado' | '30' | '45' | '60'
+type TipoDocumento =
+  | 'factura'
+  | 'boleta'
+  | 'nota_credito'
+  | 'nota_debito'
+  | 'comprobante'
+  | 'otro'
 
 const STORAGE_KEY = 'empresa_activa_id'
+
+const formatTipoDocumento = (value: string | null) => {
+  switch (value) {
+    case 'factura':
+      return 'Factura'
+    case 'boleta':
+      return 'Boleta'
+    case 'nota_credito':
+      return 'Nota de crédito'
+    case 'nota_debito':
+      return 'Nota de débito'
+    case 'comprobante':
+      return 'Comprobante'
+    case 'otro':
+      return 'Otro'
+    default:
+      return value || '-'
+  }
+}
 
 export default function IngresosPage() {
   const router = useRouter()
@@ -63,6 +90,7 @@ export default function IngresosPage() {
     condicion_pago: 'contado' as CondicionPago,
     fecha_vencimiento: '',
     cliente_id: '',
+    tipo_documento: 'factura' as TipoDocumento,
     numero_documento: '',
     descripcion: '',
     monto_neto: '',
@@ -72,6 +100,7 @@ export default function IngresosPage() {
     cuenta_bancaria_id: '',
     categoria_id: '',
     centro_costo_id: '',
+    es_exento: 'false',
   })
 
   useEffect(() => {
@@ -94,6 +123,7 @@ export default function IngresosPage() {
       condicion_pago: 'contado',
       fecha_vencimiento: '',
       cliente_id: '',
+      tipo_documento: 'factura',
       numero_documento: '',
       descripcion: '',
       monto_neto: '',
@@ -103,6 +133,7 @@ export default function IngresosPage() {
       cuenta_bancaria_id: '',
       categoria_id: '',
       centro_costo_id: '',
+      es_exento: 'false',
     })
   }
 
@@ -144,15 +175,29 @@ export default function IngresosPage() {
 
   useEffect(() => {
     const neto = Number(form.monto_neto || 0)
-    const iva = Math.round(neto * 0.19)
-    const total = neto + iva
+    const exento = form.es_exento === 'true'
+    const tipo = form.tipo_documento
+
+    let iva = 0
+    let total = 0
+
+    if (tipo === 'nota_credito' || tipo === 'nota_debito') {
+      iva = exento ? 0 : Math.round(neto * 0.19)
+      total = neto + iva
+    } else if (exento || tipo === 'boleta' || tipo === 'comprobante' || tipo === 'otro') {
+      iva = 0
+      total = neto
+    } else {
+      iva = Math.round(neto * 0.19)
+      total = neto + iva
+    }
 
     setForm((prev) => ({
       ...prev,
       monto_iva: neto ? String(iva) : '',
       monto_total: neto ? String(total) : '',
     }))
-  }, [form.monto_neto])
+  }, [form.monto_neto, form.es_exento, form.tipo_documento])
 
   const fetchData = async () => {
     if (!empresaActivaId) return
@@ -185,7 +230,7 @@ export default function IngresosPage() {
         centrosResp,
       ] = await Promise.all([
         fetch(
-          `${baseUrl}/rest/v1/movimientos?empresa_id=eq.${empresaActivaId}&tipo_movimiento=eq.ingreso&select=id,fecha,numero_documento,descripcion,monto_total,estado,cliente_id,clientes(nombre)&order=fecha.desc`,
+          `${baseUrl}/rest/v1/movimientos?empresa_id=eq.${empresaActivaId}&tipo_movimiento=eq.ingreso&select=id,fecha,numero_documento,tipo_documento,descripcion,monto_total,estado,cliente_id,clientes(nombre)&order=fecha.desc`,
           { headers }
         ),
         fetch(
@@ -269,6 +314,12 @@ export default function IngresosPage() {
         updated.estado = value === 'contado' ? 'pagado' : 'pendiente'
       }
 
+      if (name === 'tipo_documento') {
+        if (value === 'boleta' || value === 'comprobante' || value === 'otro') {
+          updated.es_exento = 'true'
+        }
+      }
+
       return updated
     })
   }
@@ -340,6 +391,10 @@ export default function IngresosPage() {
         return
       }
 
+      const esExento = form.es_exento === 'true'
+      const montoNeto = Number(form.monto_neto || 0)
+      const montoIva = Number(form.monto_iva || 0)
+
       const payload = {
         empresa_id: empresaActivaId,
         tipo_movimiento: 'ingreso',
@@ -350,12 +405,12 @@ export default function IngresosPage() {
         categoria_id: form.categoria_id || null,
         centro_costo_id: form.centro_costo_id || null,
         cuenta_bancaria_id: form.cuenta_bancaria_id || null,
-        tipo_documento: 'factura',
+        tipo_documento: form.tipo_documento,
         numero_documento: form.numero_documento || null,
         descripcion: form.descripcion,
-        monto_neto: Number(form.monto_neto || 0),
-        monto_iva: Number(form.monto_iva || 0),
-        monto_exento: 0,
+        monto_neto: montoNeto,
+        monto_iva: esExento ? 0 : montoIva,
+        monto_exento: esExento ? montoNeto : 0,
         monto_total: Number(form.monto_total || 0),
         estado: form.estado,
         medio_pago: 'transferencia',
@@ -381,7 +436,7 @@ export default function IngresosPage() {
         return
       }
 
-      setSuccess('Venta registrada correctamente.')
+      setSuccess('Ingreso registrado correctamente.')
       resetForm()
       await fetchData()
     } catch (err) {
@@ -428,7 +483,8 @@ export default function IngresosPage() {
                   <tr className="border-b border-slate-200 text-left text-slate-500">
                     <th className="py-3 pr-4">Fecha</th>
                     <th className="py-3 pr-4">Cliente</th>
-                    <th className="py-3 pr-4">Factura</th>
+                    <th className="py-3 pr-4">Documento</th>
+                    <th className="py-3 pr-4">N° Doc.</th>
                     <th className="py-3 pr-4">Descripción</th>
                     <th className="py-3 pr-4">Monto total</th>
                     <th className="py-3 pr-4">Estado</th>
@@ -440,6 +496,9 @@ export default function IngresosPage() {
                       <td className="py-3 pr-4">{item.fecha}</td>
                       <td className="py-3 pr-4">
                         {item.clientes?.nombre ?? '-'}
+                      </td>
+                      <td className="py-3 pr-4">
+                        {formatTipoDocumento(item.tipo_documento)}
                       </td>
                       <td className="py-3 pr-4">
                         {item.numero_documento ?? '-'}
@@ -461,7 +520,7 @@ export default function IngresosPage() {
 
         <div className="rounded-2xl bg-white p-6 shadow-sm border border-slate-200">
           <h2 className="text-2xl font-semibold text-slate-900">
-            Nueva venta
+            Nuevo ingreso
           </h2>
           <p className="text-slate-500 text-sm mt-1 mb-4">
             Registrar ingreso para la empresa activa.
@@ -531,7 +590,42 @@ export default function IngresosPage() {
 
             <div>
               <label className="block text-sm text-slate-600 mb-2">
-                Número de factura
+                Tipo de documento
+              </label>
+              <select
+                name="tipo_documento"
+                value={form.tipo_documento}
+                onChange={handleChange}
+                className="w-full rounded-xl border border-slate-300 px-4 py-3"
+                required
+              >
+                <option value="factura">Factura</option>
+                <option value="boleta">Boleta</option>
+                <option value="nota_credito">Nota de crédito</option>
+                <option value="nota_debito">Nota de débito</option>
+                <option value="comprobante">Comprobante</option>
+                <option value="otro">Otro</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm text-slate-600 mb-2">
+                ¿Documento exento?
+              </label>
+              <select
+                name="es_exento"
+                value={form.es_exento}
+                onChange={handleChange}
+                className="w-full rounded-xl border border-slate-300 px-4 py-3"
+              >
+                <option value="false">No</option>
+                <option value="true">Sí</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm text-slate-600 mb-2">
+                Número de documento
               </label>
               <input
                 type="text"
@@ -678,7 +772,7 @@ export default function IngresosPage() {
               disabled={saving}
               className="w-full rounded-xl bg-slate-900 text-white py-3 font-medium disabled:opacity-60"
             >
-              {saving ? 'Guardando...' : 'Guardar venta'}
+              {saving ? 'Guardando...' : 'Guardar ingreso'}
             </button>
           </form>
         </div>

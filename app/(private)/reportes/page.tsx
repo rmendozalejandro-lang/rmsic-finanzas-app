@@ -2,11 +2,17 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { supabase } from '../../../lib/supabase/client'
-import StatusBadge from '../../../components/StatusBadge'
+import { supabase } from '../../lib/supabase/client'
+import StatusBadge from '../../components/StatusBadge'
+
+type ResumenOperativo = {
+  saldo_total_bancos: number
+  total_por_cobrar: number
+  ingresos_mes: number
+  egresos_mes: number
+}
 
 type CobranzaPendiente = {
-  empresa_id: string
   fecha_emision: string
   fecha_vencimiento: string | null
   cliente: string
@@ -15,126 +21,114 @@ type CobranzaPendiente = {
   monto_total: number
   saldo_pendiente: number
   estado: string
+  empresa_id?: string
 }
 
-type SaldoBancario = {
-  empresa_id: string
+type UltimoMovimiento = {
   id: string
-  banco: string
-  nombre_cuenta: string
-  saldo_inicial: number
-  ingresos_pagados: number
-  egresos_pagados: number
-  saldo_calculado: number
-}
-
-type EgresoTributario = {
-  id: string
-  empresa_id: string
   fecha: string
+  tipo_movimiento: string
+  tipo_documento: string | null
+  numero_documento: string | null
   descripcion: string
-  tratamiento_tributario: string
-  monto_neto: number
-  monto_iva: number
-  impuesto_especifico: number
-  monto_exento: number
-  monto_total: number
-}
-
-type VentaClienteRow = {
-  cliente_id: string | null
   monto_total: number
   estado: string
-  clientes?: {
-    nombre: string
-  } | null
+  empresa_id: string
 }
 
-type VentaPorCliente = {
-  cliente: string
-  cantidad_documentos: number
-  total_vendido: number
-  total_pagado: number
-  total_pendiente: number
-}
-
-type Empresa = {
-  id: string
-  nombre: string
-}
+type FiltroMovimiento = 'todos' | 'ingreso' | 'egreso'
 
 const STORAGE_KEY = 'empresa_activa_id'
 
-const formatCLP = (value: number) =>
-  `$${Number(value || 0).toLocaleString('es-CL')}`
+const getEstadoVisual = (estado: string, fechaVencimiento: string | null) => {
+  const base = (estado || '').toLowerCase()
 
-const formatTratamientoTributario = (value: string) => {
-  switch (value) {
-    case 'afecto_iva':
-      return 'Afecto IVA'
-    case 'exento':
-      return 'Exento'
-    case 'combustible':
-      return 'Combustible'
+  if (base === 'vencido') return 'vencido'
+  if (!fechaVencimiento) return estado
+  if (base === 'pagado') return estado
+
+  const hoy = new Date()
+  const vencimiento = new Date(`${fechaVencimiento}T23:59:59`)
+
+  if ((base === 'pendiente' || base === 'parcial') && vencimiento < hoy) {
+    return 'vencido'
+  }
+
+  return estado
+}
+
+const isVencida = (estado: string, fechaVencimiento: string | null) => {
+  const base = (estado || '').toLowerCase()
+
+  if (base === 'vencido') return true
+  if (!fechaVencimiento) return false
+  if (base === 'pagado') return false
+
+  const hoy = new Date()
+  const vencimiento = new Date(`${fechaVencimiento}T23:59:59`)
+
+  return (base === 'pendiente' || base === 'parcial') && vencimiento < hoy
+}
+
+const isPorVencerEstaSemana = (estado: string, fechaVencimiento: string | null) => {
+  if (!fechaVencimiento) return false
+
+  const base = (estado || '').toLowerCase()
+  if (base === 'pagado' || base === 'vencido') return false
+
+  const hoy = new Date()
+  const inicioHoy = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate())
+  const finSemana = new Date(inicioHoy)
+  finSemana.setDate(finSemana.getDate() + 7)
+
+  const vencimiento = new Date(`${fechaVencimiento}T00:00:00`)
+
+  return (
+    (base === 'pendiente' || base === 'parcial') &&
+    vencimiento >= inicioHoy &&
+    vencimiento <= finSemana
+  )
+}
+
+const formatTipoMovimiento = (value: string) => {
+  switch ((value || '').toLowerCase()) {
+    case 'ingreso':
+      return 'Ingreso'
+    case 'egreso':
+      return 'Egreso'
     default:
       return value || '-'
   }
 }
 
-const formatFechaLarga = (date: Date) =>
-  new Intl.DateTimeFormat('es-CL', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  }).format(date)
+const getSignedIngresoAmount = (item: {
+  tipo_movimiento?: string
+  tipo_documento?: string | null
+  monto_total?: number
+}) => {
+  const monto = Number(item.monto_total || 0)
+  const tipoMovimiento = (item.tipo_movimiento || '').toLowerCase()
+  const tipoDocumento = (item.tipo_documento || '').toLowerCase()
 
-const getEmpresaBranding = (empresaNombre: string) => {
-  const nombre = (empresaNombre || '').toLowerCase()
+  if (tipoMovimiento !== 'ingreso') return monto
+  if (tipoDocumento === 'nota_credito') return -monto
 
-  if (nombre.includes('rukalaf')) {
-    return {
-      titulo: 'Rukalaf Experience SpA',
-      subtitulo: 'Plataforma financiera y contable por empresa activa.',
-      logoSrc: '/rukalaf-logo.png',
-      mostrarLogo: true, // cambia a true cuando subas rukalaf-logo.png
-      marcaCorta: 'RUKALAF',
-    }
-  }
-
-  return {
-    titulo: 'RMSIC',
-    subtitulo: 'Plataforma financiera y contable por empresa activa.',
-    logoSrc: '/rmsic-logo.png',
-    mostrarLogo: true,
-    marcaCorta: 'RMSIC',
-  }
+  return monto
 }
 
-export default function ReportesPage() {
+const formatSignedCLP = (value: number) => {
+  const signo = value < 0 ? '-' : ''
+  return `${signo}$${Math.abs(Number(value || 0)).toLocaleString('es-CL')}`
+}
+
+export default function HomePage() {
   const router = useRouter()
 
-  const hoy = new Date()
-  const primerDiaMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1)
-    .toISOString()
-    .slice(0, 10)
-  const hoyStr = hoy.toISOString().slice(0, 10)
-
   const [empresaActivaId, setEmpresaActivaId] = useState('')
-  const [empresas, setEmpresas] = useState<Empresa[]>([])
-  const [fechaDesde, setFechaDesde] = useState(primerDiaMes)
-  const [fechaHasta, setFechaHasta] = useState(hoyStr)
-  const [filtrosAplicados, setFiltrosAplicados] = useState({
-    desde: primerDiaMes,
-    hasta: hoyStr,
-  })
-
+  const [resumen, setResumen] = useState<ResumenOperativo | null>(null)
   const [cobranza, setCobranza] = useState<CobranzaPendiente[]>([])
-  const [saldos, setSaldos] = useState<SaldoBancario[]>([])
-  const [egresosTributarios, setEgresosTributarios] = useState<EgresoTributario[]>([])
-  const [ventasRows, setVentasRows] = useState<VentaClienteRow[]>([])
-  const [ingresosFiltrados, setIngresosFiltrados] = useState<{ monto_total: number }[]>([])
-  const [egresosFiltrados, setEgresosFiltrados] = useState<{ monto_total: number }[]>([])
-
+  const [ultimosMovimientos, setUltimosMovimientos] = useState<UltimoMovimiento[]>([])
+  const [filtroMovimientos, setFiltroMovimientos] = useState<FiltroMovimiento>('todos')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
@@ -153,349 +147,182 @@ export default function ReportesPage() {
   }, [])
 
   useEffect(() => {
-    const fetchEmpresas = async () => {
+    const fetchDashboard = async () => {
+      if (!empresaActivaId) return
+
       try {
+        setLoading(true)
+        setError('')
+
         const { data: sessionData } = await supabase.auth.getSession()
 
-        if (!sessionData.session) return
+        if (!sessionData.session) {
+          router.push('/login')
+          return
+        }
 
         const accessToken = sessionData.session.access_token
         const apiKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
         const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
 
-        const resp = await fetch(
-          `${baseUrl}/rest/v1/empresas?select=id,nombre&order=nombre.asc`,
-          {
-            headers: {
-              apikey: apiKey,
-              Authorization: `Bearer ${accessToken}`,
-            },
-          }
-        )
-
-        const json = await resp.json()
-
-        if (resp.ok) {
-          setEmpresas(json ?? [])
+        const headers = {
+          apikey: apiKey,
+          Authorization: `Bearer ${accessToken}`,
         }
+
+        const inicioMes = new Date(
+          new Date().getFullYear(),
+          new Date().getMonth(),
+          1
+        )
+          .toISOString()
+          .slice(0, 10)
+
+        const [saldosResp, cobranzaResp, movimientosResp, ingresosMesResp, egresosMesResp] =
+          await Promise.all([
+            fetch(
+              `${baseUrl}/rest/v1/v_saldos_bancarios?empresa_id=eq.${empresaActivaId}&select=saldo_calculado`,
+              { headers }
+            ),
+            fetch(
+              `${baseUrl}/rest/v1/v_cobranza_pendiente?empresa_id=eq.${empresaActivaId}&select=*&order=fecha_vencimiento.asc.nullslast`,
+              { headers }
+            ),
+            fetch(
+              `${baseUrl}/rest/v1/movimientos?select=id,fecha,tipo_movimiento,tipo_documento,numero_documento,descripcion,monto_total,estado,empresa_id&empresa_id=eq.${empresaActivaId}&order=fecha.desc&limit=10`,
+              { headers }
+            ),
+            fetch(
+              `${baseUrl}/rest/v1/movimientos?select=monto_total,tipo_documento,tipo_movimiento&empresa_id=eq.${empresaActivaId}&tipo_movimiento=eq.ingreso&fecha=gte.${inicioMes}`,
+              { headers }
+            ),
+            fetch(
+              `${baseUrl}/rest/v1/movimientos?select=monto_total&empresa_id=eq.${empresaActivaId}&tipo_movimiento=eq.egreso&fecha=gte.${inicioMes}`,
+              { headers }
+            ),
+          ])
+
+        const saldosJson = await saldosResp.json()
+        const cobranzaJson = await cobranzaResp.json()
+        const movimientosJson = await movimientosResp.json()
+        const ingresosMesJson = await ingresosMesResp.json()
+        const egresosMesJson = await egresosMesResp.json()
+
+        if (!saldosResp.ok) {
+          setError('No se pudo cargar el resumen bancario.')
+          return
+        }
+
+        if (!cobranzaResp.ok) {
+          setError('No se pudo cargar la cobranza pendiente.')
+          return
+        }
+
+        if (!movimientosResp.ok) {
+          setError('No se pudieron cargar los últimos movimientos.')
+          return
+        }
+
+        if (!ingresosMesResp.ok || !egresosMesResp.ok) {
+          setError('No se pudo cargar el resumen mensual.')
+          return
+        }
+
+        const saldoTotalBancos = Array.isArray(saldosJson)
+          ? saldosJson.reduce(
+              (acc: number, item: { saldo_calculado?: number }) =>
+                acc + Number(item.saldo_calculado || 0),
+              0
+            )
+          : 0
+
+        const totalPorCobrar = Array.isArray(cobranzaJson)
+          ? cobranzaJson.reduce(
+              (acc: number, item: CobranzaPendiente) =>
+                acc + Number(item.saldo_pendiente || 0),
+              0
+            )
+          : 0
+
+        const ingresosMes = Array.isArray(ingresosMesJson)
+          ? ingresosMesJson.reduce(
+              (
+                acc: number,
+                item: { monto_total?: number; tipo_documento?: string | null; tipo_movimiento?: string }
+              ) => acc + getSignedIngresoAmount(item),
+              0
+            )
+          : 0
+
+        const egresosMes = Array.isArray(egresosMesJson)
+          ? egresosMesJson.reduce(
+              (acc: number, item: { monto_total?: number }) =>
+                acc + Number(item.monto_total || 0),
+              0
+            )
+          : 0
+
+        setResumen({
+          saldo_total_bancos: saldoTotalBancos,
+          total_por_cobrar: totalPorCobrar,
+          ingresos_mes: ingresosMes,
+          egresos_mes: egresosMes,
+        })
+
+        setCobranza(cobranzaJson ?? [])
+        setUltimosMovimientos(movimientosJson ?? [])
       } catch (err) {
-        console.error('Error cargando empresas:', err)
+        if (err instanceof Error) {
+          setError(err.message)
+        } else {
+          setError('Error desconocido')
+        }
+      } finally {
+        setLoading(false)
       }
     }
 
-    fetchEmpresas()
-  }, [])
+    fetchDashboard()
+  }, [router, empresaActivaId])
 
-  const fetchReportes = async (desde: string, hasta: string) => {
-    if (!empresaActivaId) return
+  const facturasVencidas = useMemo(
+    () => cobranza.filter((item) => isVencida(item.estado, item.fecha_vencimiento)),
+    [cobranza]
+  )
 
-    try {
-      setLoading(true)
-      setError('')
+  const porVencerSemana = useMemo(
+    () => cobranza.filter((item) => isPorVencerEstaSemana(item.estado, item.fecha_vencimiento)),
+    [cobranza]
+  )
 
-      const { data: sessionData } = await supabase.auth.getSession()
-
-      if (!sessionData.session) {
-        router.push('/login')
-        return
-      }
-
-      const accessToken = sessionData.session.access_token
-      const apiKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-      const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
-
-      const headers = {
-        apikey: apiKey,
-        Authorization: `Bearer ${accessToken}`,
-      }
-
-      const [cobranzaResp, saldosResp, egresosResp, ventasResp, ingresosResp, egresosTotResp] =
-        await Promise.all([
-          fetch(
-            `${baseUrl}/rest/v1/v_cobranza_pendiente?empresa_id=eq.${empresaActivaId}&select=*&fecha_emision=gte.${desde}&fecha_emision=lte.${hasta}&order=fecha_vencimiento.asc.nullslast`,
-            { headers }
-          ),
-          fetch(
-            `${baseUrl}/rest/v1/v_saldos_bancarios?empresa_id=eq.${empresaActivaId}&select=*`,
-            { headers }
-          ),
-          fetch(
-            `${baseUrl}/rest/v1/movimientos?empresa_id=eq.${empresaActivaId}&tipo_movimiento=eq.egreso&fecha=gte.${desde}&fecha=lte.${hasta}&select=id,empresa_id,fecha,descripcion,tratamiento_tributario,monto_neto,monto_iva,impuesto_especifico,monto_exento,monto_total&order=fecha.desc`,
-            { headers }
-          ),
-          fetch(
-            `${baseUrl}/rest/v1/movimientos?empresa_id=eq.${empresaActivaId}&tipo_movimiento=eq.ingreso&fecha=gte.${desde}&fecha=lte.${hasta}&select=cliente_id,monto_total,estado,clientes(nombre)`,
-            { headers }
-          ),
-          fetch(
-            `${baseUrl}/rest/v1/movimientos?empresa_id=eq.${empresaActivaId}&tipo_movimiento=eq.ingreso&fecha=gte.${desde}&fecha=lte.${hasta}&select=monto_total`,
-            { headers }
-          ),
-          fetch(
-            `${baseUrl}/rest/v1/movimientos?empresa_id=eq.${empresaActivaId}&tipo_movimiento=eq.egreso&fecha=gte.${desde}&fecha=lte.${hasta}&select=monto_total`,
-            { headers }
-          ),
-        ])
-
-      const cobranzaJson = await cobranzaResp.json()
-      const saldosJson = await saldosResp.json()
-      const egresosJson = await egresosResp.json()
-      const ventasJson = await ventasResp.json()
-      const ingresosJson = await ingresosResp.json()
-      const egresosTotJson = await egresosTotResp.json()
-
-      if (!cobranzaResp.ok) {
-        console.error(cobranzaJson)
-        setError('No se pudo cargar la cobranza pendiente.')
-        return
-      }
-
-      if (!saldosResp.ok) {
-        console.error(saldosJson)
-        setError('No se pudieron cargar los saldos bancarios.')
-        return
-      }
-
-      if (!egresosResp.ok) {
-        console.error(egresosJson)
-        setError('No se pudo cargar el resumen tributario.')
-        return
-      }
-
-      if (!ventasResp.ok) {
-        console.error(ventasJson)
-        setError('No se pudo cargar ventas por cliente.')
-        return
-      }
-
-      if (!ingresosResp.ok || !egresosTotResp.ok) {
-        setError('No se pudo cargar el resultado del período.')
-        return
-      }
-
-      setCobranza(cobranzaJson ?? [])
-      setSaldos(saldosJson ?? [])
-      setEgresosTributarios(egresosJson ?? [])
-      setVentasRows(ventasJson ?? [])
-      setIngresosFiltrados(ingresosJson ?? [])
-      setEgresosFiltrados(egresosTotJson ?? [])
-    } catch (err) {
-      if (err instanceof Error) {
-        setError(err.message)
-      } else {
-        setError('Error desconocido')
-      }
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  useEffect(() => {
-    fetchReportes(filtrosAplicados.desde, filtrosAplicados.hasta)
-  }, [router, filtrosAplicados, empresaActivaId])
-
-  const handleAplicarFiltros = () => {
-    if (fechaDesde && fechaHasta && fechaDesde > fechaHasta) {
-      setError('La fecha desde no puede ser mayor que la fecha hasta.')
-      return
-    }
-
-    setError('')
-    setFiltrosAplicados({
-      desde: fechaDesde,
-      hasta: fechaHasta,
-    })
-  }
-
-  const handleLimpiarFiltros = () => {
-    setError('')
-    setFechaDesde(primerDiaMes)
-    setFechaHasta(hoyStr)
-    setFiltrosAplicados({
-      desde: primerDiaMes,
-      hasta: hoyStr,
-    })
-  }
-
-  const empresaActiva = empresas.find((empresa) => empresa.id === empresaActivaId)
-  const branding = getEmpresaBranding(empresaActiva?.nombre ?? '')
-
-  const resumenTributario = useMemo(() => {
-    const afecto = egresosTributarios.filter(
-      (item) => item.tratamiento_tributario === 'afecto_iva'
-    )
-    const exento = egresosTributarios.filter(
-      (item) => item.tratamiento_tributario === 'exento'
-    )
-    const combustible = egresosTributarios.filter(
-      (item) => item.tratamiento_tributario === 'combustible'
-    )
-
-    return {
-      totalAfecto: afecto.reduce((acc, item) => acc + Number(item.monto_neto || 0), 0),
-      totalExento: exento.reduce((acc, item) => acc + Number(item.monto_exento || 0), 0),
-      totalCombustible: combustible.reduce((acc, item) => acc + Number(item.monto_neto || 0), 0),
-      ivaTotal: egresosTributarios.reduce((acc, item) => acc + Number(item.monto_iva || 0), 0),
-      impuestoEspecificoTotal: egresosTributarios.reduce(
-        (acc, item) => acc + Number(item.impuesto_especifico || 0),
+  const montoVencidoTotal = useMemo(
+    () =>
+      facturasVencidas.reduce(
+        (acc, item) => acc + Number(item.saldo_pendiente || 0),
         0
       ),
-      totalEgresos: egresosTributarios.reduce((acc, item) => acc + Number(item.monto_total || 0), 0),
-    }
-  }, [egresosTributarios])
+    [facturasVencidas]
+  )
 
-  const ventasPorCliente = useMemo(() => {
-    const mapa = new Map<string, VentaPorCliente>()
-
-    for (const row of ventasRows) {
-      const cliente = row.clientes?.nombre ?? 'Sin cliente'
-      const actual = mapa.get(cliente) ?? {
-        cliente,
-        cantidad_documentos: 0,
-        total_vendido: 0,
-        total_pagado: 0,
-        total_pendiente: 0,
-      }
-
-      actual.cantidad_documentos += 1
-      actual.total_vendido += Number(row.monto_total || 0)
-
-      if ((row.estado || '').toLowerCase() === 'pagado') {
-        actual.total_pagado += Number(row.monto_total || 0)
-      } else {
-        actual.total_pendiente += Number(row.monto_total || 0)
-      }
-
-      mapa.set(cliente, actual)
-    }
-
-    return Array.from(mapa.values()).sort((a, b) => b.total_vendido - a.total_vendido)
-  }, [ventasRows])
-
-  const resultadoPeriodo = useMemo(() => {
-    const ingresos = ingresosFiltrados.reduce(
-      (acc, item) => acc + Number(item.monto_total || 0),
-      0
+  const movimientosFiltrados = useMemo(() => {
+    if (filtroMovimientos === 'todos') return ultimosMovimientos
+    return ultimosMovimientos.filter(
+      (item) => item.tipo_movimiento === filtroMovimientos
     )
-    const egresos = egresosFiltrados.reduce(
-      (acc, item) => acc + Number(item.monto_total || 0),
-      0
-    )
-
-    return {
-      ingresos,
-      egresos,
-      resultado: ingresos - egresos,
-    }
-  }, [ingresosFiltrados, egresosFiltrados])
+  }, [ultimosMovimientos, filtroMovimientos])
 
   return (
-    <main className="space-y-6 print:space-y-4 print:bg-white">
-      <div className="rounded-2xl bg-white p-6 shadow-sm border border-slate-200 print:shadow-none print:border-slate-300">
-        <div className="flex items-start justify-between gap-6 print:block">
-          <div className="flex items-start gap-4">
-            <div className="h-16 w-16 rounded-2xl border border-slate-200 bg-white p-2 print:h-14 print:w-14 flex items-center justify-center">
-              {branding.mostrarLogo ? (
-                <img
-                  src={branding.logoSrc}
-                  alt={`Logo ${branding.titulo}`}
-                  className="h-full w-full object-contain"
-                />
-              ) : (
-                <span className="text-xs font-semibold text-slate-500 text-center">
-                  {branding.marcaCorta}
-                </span>
-              )}
-            </div>
-
-            <div>
-              <p className="text-xs uppercase tracking-[0.24em] text-slate-500">
-                {branding.marcaCorta}
-              </p>
-              <h1 className="text-4xl font-semibold text-slate-900 mt-2 print:text-3xl">
-                Informe de Reportes
-              </h1>
-              <p className="text-slate-600 mt-2">{branding.titulo}</p>
-              <div className="mt-3 space-y-1 text-sm text-slate-500">
-                <p>
-                  Período consultado:{' '}
-                  <span className="font-medium text-slate-700">
-                    {filtrosAplicados.desde}
-                  </span>{' '}
-                  a{' '}
-                  <span className="font-medium text-slate-700">
-                    {filtrosAplicados.hasta}
-                  </span>
-                </p>
-                <p>
-                  Fecha de emisión:{' '}
-                  <span className="font-medium text-slate-700">
-                    {formatFechaLarga(hoy)}
-                  </span>
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <button
-            onClick={() => window.print()}
-            className="rounded-xl bg-slate-900 text-white px-4 py-2 text-sm print:hidden"
-          >
-            Imprimir / Guardar PDF
-          </button>
-        </div>
-      </div>
-
-      <section className="rounded-2xl bg-white p-6 shadow-sm border border-slate-200 print:hidden">
-        <h2 className="text-2xl font-semibold text-slate-900">Filtros</h2>
-        <p className="text-slate-500 text-sm mt-1 mb-4">
-          Filtra la información por rango de fechas para la empresa activa.
+    <main className="space-y-6">
+      <div>
+        <h1 className="text-4xl font-semibold text-slate-900">Dashboard</h1>
+        <p className="text-slate-600 mt-2">
+          Resumen general de la operación financiera de la empresa activa.
         </p>
-
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div>
-            <label className="block text-sm text-slate-600 mb-2">Desde</label>
-            <input
-              type="date"
-              value={fechaDesde}
-              onChange={(e) => setFechaDesde(e.target.value)}
-              className="w-full rounded-xl border border-slate-300 px-4 py-3"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm text-slate-600 mb-2">Hasta</label>
-            <input
-              type="date"
-              value={fechaHasta}
-              onChange={(e) => setFechaHasta(e.target.value)}
-              className="w-full rounded-xl border border-slate-300 px-4 py-3"
-            />
-          </div>
-
-          <div className="flex items-end">
-            <button
-              onClick={handleAplicarFiltros}
-              className="w-full rounded-xl bg-slate-900 text-white px-4 py-3 text-sm font-medium"
-            >
-              Aplicar filtro
-            </button>
-          </div>
-
-          <div className="flex items-end">
-            <button
-              onClick={handleLimpiarFiltros}
-              className="w-full rounded-xl bg-white border border-slate-300 px-4 py-3 text-sm font-medium"
-            >
-              Limpiar
-            </button>
-          </div>
-        </div>
-      </section>
+      </div>
 
       {loading && (
         <div className="rounded-2xl bg-white p-6 shadow-sm border border-slate-200">
-          Cargando reportes...
+          Cargando datos...
         </div>
       )}
 
@@ -505,201 +332,72 @@ export default function ReportesPage() {
         </div>
       )}
 
-      {!loading && !error && (
+      {!loading && !error && resumen && (
         <>
-          <section className="rounded-2xl bg-white p-6 shadow-sm border border-slate-200 print:shadow-none print:border-slate-300">
-            <h2 className="text-2xl font-semibold text-slate-900">
-              Resultado del período
-            </h2>
-            <p className="text-slate-500 text-sm mt-1 mb-4">
-              Resumen general de ingresos, egresos y resultado.
-            </p>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="rounded-2xl bg-slate-50 p-5 border border-slate-200">
-                <p className="text-sm text-slate-500">Ingresos</p>
-                <p className="text-xl font-semibold mt-2">
-                  {formatCLP(resultadoPeriodo.ingresos)}
-                </p>
-              </div>
-
-              <div className="rounded-2xl bg-slate-50 p-5 border border-slate-200">
-                <p className="text-sm text-slate-500">Egresos</p>
-                <p className="text-xl font-semibold mt-2">
-                  {formatCLP(resultadoPeriodo.egresos)}
-                </p>
-              </div>
-
-              <div className="rounded-2xl bg-slate-50 p-5 border border-slate-200">
-                <p className="text-sm text-slate-500">Resultado</p>
-                <p className="text-xl font-semibold mt-2">
-                  {formatCLP(resultadoPeriodo.resultado)}
-                </p>
-              </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+            <div className="rounded-2xl bg-white p-6 shadow-sm border border-slate-200">
+              <p className="text-sm text-slate-500">Saldo total bancos</p>
+              <p className="text-2xl font-semibold mt-2">
+                ${Number(resumen.saldo_total_bancos).toLocaleString('es-CL')}
+              </p>
             </div>
-          </section>
 
-          <section className="rounded-2xl bg-white p-6 shadow-sm border border-slate-200 print:shadow-none print:border-slate-300">
-            <h2 className="text-2xl font-semibold text-slate-900">
-              Resumen tributario de egresos
-            </h2>
-            <p className="text-slate-500 text-sm mt-1 mb-4">
-              Totales del período filtrado para análisis tributario.
-            </p>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-              <div className="rounded-2xl bg-slate-50 p-5 border border-slate-200">
-                <p className="text-sm text-slate-500">Total afecto IVA</p>
-                <p className="text-xl font-semibold mt-2">
-                  {formatCLP(resumenTributario.totalAfecto)}
-                </p>
-              </div>
-
-              <div className="rounded-2xl bg-slate-50 p-5 border border-slate-200">
-                <p className="text-sm text-slate-500">Total exento</p>
-                <p className="text-xl font-semibold mt-2">
-                  {formatCLP(resumenTributario.totalExento)}
-                </p>
-              </div>
-
-              <div className="rounded-2xl bg-slate-50 p-5 border border-slate-200">
-                <p className="text-sm text-slate-500">Base combustible</p>
-                <p className="text-xl font-semibold mt-2">
-                  {formatCLP(resumenTributario.totalCombustible)}
-                </p>
-              </div>
-
-              <div className="rounded-2xl bg-slate-50 p-5 border border-slate-200">
-                <p className="text-sm text-slate-500">IVA total</p>
-                <p className="text-xl font-semibold mt-2">
-                  {formatCLP(resumenTributario.ivaTotal)}
-                </p>
-              </div>
-
-              <div className="rounded-2xl bg-slate-50 p-5 border border-slate-200">
-                <p className="text-sm text-slate-500">Impuesto específico total</p>
-                <p className="text-xl font-semibold mt-2">
-                  {formatCLP(resumenTributario.impuestoEspecificoTotal)}
-                </p>
-              </div>
-
-              <div className="rounded-2xl bg-slate-50 p-5 border border-slate-200">
-                <p className="text-sm text-slate-500">Total egresos filtrados</p>
-                <p className="text-xl font-semibold mt-2">
-                  {formatCLP(resumenTributario.totalEgresos)}
-                </p>
-              </div>
+            <div className="rounded-2xl bg-white p-6 shadow-sm border border-slate-200">
+              <p className="text-sm text-slate-500">Total por cobrar</p>
+              <p className="text-2xl font-semibold mt-2">
+                ${Number(resumen.total_por_cobrar).toLocaleString('es-CL')}
+              </p>
             </div>
-          </section>
 
-          <section className="rounded-2xl bg-white p-6 shadow-sm border border-slate-200 print:shadow-none print:border-slate-300">
-            <h2 className="text-2xl font-semibold text-slate-900">
-              Detalle tributario de egresos
-            </h2>
-            <p className="text-slate-500 text-sm mt-1 mb-4">
-              Desglose de egresos del período según tratamiento tributario.
-            </p>
+            <div className="rounded-2xl bg-white p-6 shadow-sm border border-slate-200">
+              <p className="text-sm text-slate-500">Ingresos del mes</p>
+              <p className="text-2xl font-semibold mt-2">
+                {formatSignedCLP(resumen.ingresos_mes)}
+              </p>
+            </div>
 
-            {egresosTributarios.length === 0 ? (
-              <div className="text-slate-500 text-sm">
-                No hay egresos para el período seleccionado.
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-slate-200 text-left text-slate-500">
-                      <th className="py-3 pr-4">Fecha</th>
-                      <th className="py-3 pr-4">Descripción</th>
-                      <th className="py-3 pr-4">Tratamiento</th>
-                      <th className="py-3 pr-4 text-right">Neto</th>
-                      <th className="py-3 pr-4 text-right">IVA</th>
-                      <th className="py-3 pr-4 text-right">Imp. específico</th>
-                      <th className="py-3 pr-4 text-right">Exento</th>
-                      <th className="py-3 pr-4 text-right">Total</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {egresosTributarios.map((item) => (
-                      <tr key={item.id} className="border-b border-slate-100">
-                        <td className="py-3 pr-4">{item.fecha}</td>
-                        <td className="py-3 pr-4">{item.descripcion}</td>
-                        <td className="py-3 pr-4">
-                          {formatTratamientoTributario(item.tratamiento_tributario)}
-                        </td>
-                        <td className="py-3 pr-4 text-right">{formatCLP(item.monto_neto)}</td>
-                        <td className="py-3 pr-4 text-right">{formatCLP(item.monto_iva)}</td>
-                        <td className="py-3 pr-4 text-right">
-                          {formatCLP(item.impuesto_especifico)}
-                        </td>
-                        <td className="py-3 pr-4 text-right">{formatCLP(item.monto_exento)}</td>
-                        <td className="py-3 pr-4 text-right font-medium">
-                          {formatCLP(item.monto_total)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </section>
+            <div className="rounded-2xl bg-white p-6 shadow-sm border border-slate-200">
+              <p className="text-sm text-slate-500">Egresos del mes</p>
+              <p className="text-2xl font-semibold mt-2">
+                ${Number(resumen.egresos_mes).toLocaleString('es-CL')}
+              </p>
+            </div>
+          </div>
 
-          <section className="rounded-2xl bg-white p-6 shadow-sm border border-slate-200 print:shadow-none print:border-slate-300">
-            <h2 className="text-2xl font-semibold text-slate-900">
-              Ventas por cliente
-            </h2>
-            <p className="text-slate-500 text-sm mt-1 mb-4">
-              Resumen comercial por cliente.
-            </p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="rounded-2xl bg-red-50 p-6 shadow-sm border border-red-200">
+              <p className="text-sm text-red-700">Facturas vencidas</p>
+              <p className="text-2xl font-semibold mt-2 text-red-800">
+                {facturasVencidas.length}
+              </p>
+            </div>
 
-            {ventasPorCliente.length === 0 ? (
-              <div className="text-slate-500 text-sm">
-                No hay datos de ventas por cliente.
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-slate-200 text-left text-slate-500">
-                      <th className="py-3 pr-4">Cliente</th>
-                      <th className="py-3 pr-4 text-right">Documentos</th>
-                      <th className="py-3 pr-4 text-right">Total vendido</th>
-                      <th className="py-3 pr-4 text-right">Total pagado</th>
-                      <th className="py-3 pr-4 text-right">Total pendiente</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {ventasPorCliente.map((item, index) => (
-                      <tr
-                        key={`${item.cliente}-${index}`}
-                        className="border-b border-slate-100"
-                      >
-                        <td className="py-3 pr-4">{item.cliente}</td>
-                        <td className="py-3 pr-4 text-right">{item.cantidad_documentos}</td>
-                        <td className="py-3 pr-4 text-right">{formatCLP(item.total_vendido)}</td>
-                        <td className="py-3 pr-4 text-right">{formatCLP(item.total_pagado)}</td>
-                        <td className="py-3 pr-4 text-right font-medium">
-                          {formatCLP(item.total_pendiente)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </section>
+            <div className="rounded-2xl bg-amber-50 p-6 shadow-sm border border-amber-200">
+              <p className="text-sm text-amber-700">Monto vencido total</p>
+              <p className="text-2xl font-semibold mt-2 text-amber-800">
+                ${montoVencidoTotal.toLocaleString('es-CL')}
+              </p>
+            </div>
 
-          <section className="rounded-2xl bg-white p-6 shadow-sm border border-slate-200 print:shadow-none print:border-slate-300">
+            <div className="rounded-2xl bg-blue-50 p-6 shadow-sm border border-blue-200">
+              <p className="text-sm text-blue-700">Por vencer esta semana</p>
+              <p className="text-2xl font-semibold mt-2 text-blue-800">
+                {porVencerSemana.length}
+              </p>
+            </div>
+          </div>
+
+          <div className="rounded-2xl bg-white p-6 shadow-sm border border-slate-200">
             <h2 className="text-2xl font-semibold text-slate-900">
               Cobranza pendiente
             </h2>
             <p className="text-slate-500 text-sm mt-1 mb-4">
-              Facturas pendientes o vencidas del período filtrado.
+              Facturas activas pendientes de cobro de la empresa activa.
             </p>
 
             {cobranza.length === 0 ? (
               <div className="text-slate-500 text-sm">
-                No hay cobranza pendiente.
+                No hay facturas pendientes por cobrar.
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -710,97 +408,142 @@ export default function ReportesPage() {
                       <th className="py-3 pr-4">Factura</th>
                       <th className="py-3 pr-4">Emisión</th>
                       <th className="py-3 pr-4">Vencimiento</th>
-                      <th className="py-3 pr-4 text-right">Monto total</th>
-                      <th className="py-3 pr-4 text-right">Saldo pendiente</th>
+                      <th className="py-3 pr-4">Descripción</th>
+                      <th className="py-3 pr-4">Monto total</th>
+                      <th className="py-3 pr-4">Saldo pendiente</th>
                       <th className="py-3 pr-4">Estado</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {cobranza.map((item, index) => (
-                      <tr
-                        key={`${item.numero_factura}-${index}`}
-                        className="border-b border-slate-100"
-                      >
-                        <td className="py-3 pr-4">{item.cliente}</td>
-                        <td className="py-3 pr-4">{item.numero_factura}</td>
-                        <td className="py-3 pr-4">{item.fecha_emision}</td>
-                        <td className="py-3 pr-4">{item.fecha_vencimiento ?? '-'}</td>
-                        <td className="py-3 pr-4 text-right">{formatCLP(item.monto_total)}</td>
-                        <td className="py-3 pr-4 text-right font-medium">
-                          {formatCLP(item.saldo_pendiente)}
-                        </td>
-                        <td className="py-3 pr-4">
-                          <StatusBadge status={item.estado} />
-                        </td>
-                      </tr>
-                    ))}
+                    {cobranza.map((item, index) => {
+                      const estadoVisual = getEstadoVisual(
+                        item.estado,
+                        item.fecha_vencimiento
+                      )
+
+                      return (
+                        <tr
+                          key={`${item.numero_factura}-${index}`}
+                          className="border-b border-slate-100"
+                        >
+                          <td className="py-3 pr-4">{item.cliente}</td>
+                          <td className="py-3 pr-4">{item.numero_factura}</td>
+                          <td className="py-3 pr-4">{item.fecha_emision}</td>
+                          <td className="py-3 pr-4">
+                            {item.fecha_vencimiento ?? '-'}
+                          </td>
+                          <td className="py-3 pr-4">{item.descripcion}</td>
+                          <td className="py-3 pr-4">
+                            ${Number(item.monto_total).toLocaleString('es-CL')}
+                          </td>
+                          <td className="py-3 pr-4 font-medium">
+                            ${Number(item.saldo_pendiente).toLocaleString('es-CL')}
+                          </td>
+                          <td className="py-3 pr-4">
+                            <StatusBadge status={estadoVisual} />
+                          </td>
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>
             )}
-          </section>
+          </div>
 
-          <section className="rounded-2xl bg-white p-6 shadow-sm border border-slate-200 print:shadow-none print:border-slate-300">
-            <h2 className="text-2xl font-semibold text-slate-900">
-              Saldos bancarios
-            </h2>
-            <p className="text-slate-500 text-sm mt-1 mb-4">
-              Resumen financiero por cuenta bancaria.
-            </p>
+          <div className="rounded-2xl bg-white p-6 shadow-sm border border-slate-200">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
+              <div>
+                <h2 className="text-2xl font-semibold text-slate-900">
+                  Últimos movimientos
+                </h2>
+                <p className="text-slate-500 text-sm mt-1">
+                  Últimos ingresos y egresos registrados de la empresa activa.
+                </p>
+              </div>
 
-            {saldos.length === 0 ? (
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setFiltroMovimientos('todos')}
+                  className={`rounded-xl px-4 py-2 text-sm font-medium transition ${
+                    filtroMovimientos === 'todos'
+                      ? 'bg-slate-900 text-white'
+                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                  }`}
+                >
+                  Todos
+                </button>
+
+                <button
+                  onClick={() => setFiltroMovimientos('ingreso')}
+                  className={`rounded-xl px-4 py-2 text-sm font-medium transition ${
+                    filtroMovimientos === 'ingreso'
+                      ? 'bg-slate-900 text-white'
+                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                  }`}
+                >
+                  Ingresos
+                </button>
+
+                <button
+                  onClick={() => setFiltroMovimientos('egreso')}
+                  className={`rounded-xl px-4 py-2 text-sm font-medium transition ${
+                    filtroMovimientos === 'egreso'
+                      ? 'bg-slate-900 text-white'
+                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                  }`}
+                >
+                  Egresos
+                </button>
+              </div>
+            </div>
+
+            {movimientosFiltrados.length === 0 ? (
               <div className="text-slate-500 text-sm">
-                No hay saldos bancarios disponibles.
+                No hay movimientos para el filtro seleccionado.
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {saldos.map((item) => (
-                  <div
-                    key={item.id}
-                    className="rounded-2xl bg-slate-50 p-5 border border-slate-200"
-                  >
-                    <p className="text-sm text-slate-500">{item.banco}</p>
-                    <h3 className="text-xl font-semibold mt-1">
-                      {item.nombre_cuenta}
-                    </h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-200 text-left text-slate-500">
+                      <th className="py-3 pr-4">Fecha</th>
+                      <th className="py-3 pr-4">Tipo</th>
+                      <th className="py-3 pr-4">Documento</th>
+                      <th className="py-3 pr-4">Descripción</th>
+                      <th className="py-3 pr-4">Monto total</th>
+                      <th className="py-3 pr-4">Estado</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {movimientosFiltrados.map((item) => {
+                      const montoVisual =
+                        item.tipo_movimiento === 'ingreso'
+                          ? getSignedIngresoAmount(item)
+                          : Number(item.monto_total || 0)
 
-                    <div className="grid grid-cols-2 gap-4 mt-4 text-sm">
-                      <div>
-                        <p className="text-slate-500">Saldo inicial</p>
-                        <p className="font-medium mt-1">
-                          {formatCLP(item.saldo_inicial)}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-slate-500">Saldo calculado</p>
-                        <p className="font-medium mt-1">
-                          {formatCLP(item.saldo_calculado)}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-slate-500">Ingresos pagados</p>
-                        <p className="font-medium mt-1">
-                          {formatCLP(item.ingresos_pagados)}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-slate-500">Egresos pagados</p>
-                        <p className="font-medium mt-1">
-                          {formatCLP(item.egresos_pagados)}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
+                      return (
+                        <tr key={item.id} className="border-b border-slate-100">
+                          <td className="py-3 pr-4">{item.fecha}</td>
+                          <td className="py-3 pr-4">
+                            {formatTipoMovimiento(item.tipo_movimiento)}
+                          </td>
+                          <td className="py-3 pr-4">{item.numero_documento ?? '-'}</td>
+                          <td className="py-3 pr-4">{item.descripcion}</td>
+                          <td className="py-3 pr-4 font-medium">
+                            {formatSignedCLP(montoVisual)}
+                          </td>
+                          <td className="py-3 pr-4">
+                            <StatusBadge status={item.estado} />
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
               </div>
             )}
-          </section>
-
-          <footer className="hidden print:block pt-6 border-t border-slate-300 text-sm text-slate-500">
-            <p>Reporte generado desde la Plataforma Financiera.</p>
-            <p>Empresa: {branding.titulo}</p>
-            <p>Fecha de emisión: {formatFechaLarga(hoy)}</p>
-          </footer>
+          </div>
         </>
       )}
     </main>

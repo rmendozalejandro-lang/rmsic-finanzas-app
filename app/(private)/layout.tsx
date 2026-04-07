@@ -21,6 +21,9 @@ const menuItems = [
   { href: '/cobranza', label: 'Cobranza' },
   { href: '/bancos', label: 'Bancos' },
   { href: '/reportes', label: 'Reportes' },
+  { href: '/clientes', label: 'Clientes' },
+  { href: '/proveedores', label: 'Proveedores' },
+  { href: '/transferencias', label: 'Transferencias' },
   { href: '/remuneraciones', label: 'Remuneraciones' },
 ]
 

@@ -101,6 +101,26 @@ const formatTipoMovimiento = (value: string) => {
   }
 }
 
+const getSignedIngresoAmount = (item: {
+  tipo_movimiento?: string
+  tipo_documento?: string | null
+  monto_total?: number
+}) => {
+  const monto = Number(item.monto_total || 0)
+  const tipoMovimiento = (item.tipo_movimiento || '').toLowerCase()
+  const tipoDocumento = (item.tipo_documento || '').toLowerCase()
+
+  if (tipoMovimiento !== 'ingreso') return monto
+  if (tipoDocumento === 'nota_credito') return -monto
+
+  return monto
+}
+
+const formatSignedCLP = (value: number) => {
+  const signo = value < 0 ? '-' : ''
+  return `${signo}$${Math.abs(Number(value || 0)).toLocaleString('es-CL')}`
+}
+
 export default function HomePage() {
   const router = useRouter()
 
@@ -173,7 +193,7 @@ export default function HomePage() {
               { headers }
             ),
             fetch(
-              `${baseUrl}/rest/v1/movimientos?select=monto_total&empresa_id=eq.${empresaActivaId}&tipo_movimiento=eq.ingreso&fecha=gte.${inicioMes}`,
+              `${baseUrl}/rest/v1/movimientos?select=monto_total,tipo_documento,tipo_movimiento&empresa_id=eq.${empresaActivaId}&tipo_movimiento=eq.ingreso&fecha=gte.${inicioMes}`,
               { headers }
             ),
             fetch(
@@ -226,8 +246,10 @@ export default function HomePage() {
 
         const ingresosMes = Array.isArray(ingresosMesJson)
           ? ingresosMesJson.reduce(
-              (acc: number, item: { monto_total?: number }) =>
-                acc + Number(item.monto_total || 0),
+              (
+                acc: number,
+                item: { monto_total?: number; tipo_documento?: string | null; tipo_movimiento?: string }
+              ) => acc + getSignedIngresoAmount(item),
               0
             )
           : 0
@@ -330,7 +352,7 @@ export default function HomePage() {
             <div className="rounded-2xl bg-white p-6 shadow-sm border border-slate-200">
               <p className="text-sm text-slate-500">Ingresos del mes</p>
               <p className="text-2xl font-semibold mt-2">
-                ${Number(resumen.ingresos_mes).toLocaleString('es-CL')}
+                {formatSignedCLP(resumen.ingresos_mes)}
               </p>
             </div>
 
@@ -494,22 +516,29 @@ export default function HomePage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {movimientosFiltrados.map((item) => (
-                      <tr key={item.id} className="border-b border-slate-100">
-                        <td className="py-3 pr-4">{item.fecha}</td>
-                        <td className="py-3 pr-4">
-                          {formatTipoMovimiento(item.tipo_movimiento)}
-                        </td>
-                        <td className="py-3 pr-4">{item.numero_documento ?? '-'}</td>
-                        <td className="py-3 pr-4">{item.descripcion}</td>
-                        <td className="py-3 pr-4 font-medium">
-                          ${Number(item.monto_total).toLocaleString('es-CL')}
-                        </td>
-                        <td className="py-3 pr-4">
-                          <StatusBadge status={item.estado} />
-                        </td>
-                      </tr>
-                    ))}
+                    {movimientosFiltrados.map((item) => {
+                      const montoVisual =
+                        item.tipo_movimiento === 'ingreso'
+                          ? getSignedIngresoAmount(item)
+                          : Number(item.monto_total || 0)
+
+                      return (
+                        <tr key={item.id} className="border-b border-slate-100">
+                          <td className="py-3 pr-4">{item.fecha}</td>
+                          <td className="py-3 pr-4">
+                            {formatTipoMovimiento(item.tipo_movimiento)}
+                          </td>
+                          <td className="py-3 pr-4">{item.numero_documento ?? '-'}</td>
+                          <td className="py-3 pr-4">{item.descripcion}</td>
+                          <td className="py-3 pr-4 font-medium">
+                            {formatSignedCLP(montoVisual)}
+                          </td>
+                          <td className="py-3 pr-4">
+                            <StatusBadge status={item.estado} />
+                          </td>
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>

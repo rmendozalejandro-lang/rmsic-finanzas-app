@@ -35,6 +35,7 @@ type Egreso = {
   monto_iva: number
   impuesto_especifico: number
   tratamiento_tributario: string
+  tipo_documento: string | null
   estado: string
   proveedor_id: string | null
   proveedores?: {
@@ -47,6 +48,7 @@ type Egreso = {
 }
 
 type TratamientoTributario = 'afecto_iva' | 'exento' | 'combustible'
+type TipoDocumento = 'factura' | 'boleta' | 'comprobante' | 'otro'
 
 const STORAGE_KEY = 'empresa_activa_id'
 
@@ -60,6 +62,25 @@ const formatTratamientoTributario = (value: string) => {
       return 'Combustible'
     default:
       return value || '-'
+  }
+}
+
+const formatTipoDocumento = (value: string | null) => {
+  switch (value) {
+    case 'factura':
+      return 'Factura'
+    case 'boleta':
+      return 'Boleta'
+    case 'comprobante':
+      return 'Comprobante'
+    case 'otro':
+      return 'Otro'
+    case 'nota_credito':
+      return 'Nota de crédito'
+    case 'nota_debito':
+      return 'Nota de débito'
+    default:
+      return value ?? '-'
   }
 }
 
@@ -81,6 +102,7 @@ export default function EgresosPage() {
   const [form, setForm] = useState({
     fecha: '',
     proveedor_id: '',
+    tipo_documento: 'factura' as TipoDocumento,
     numero_documento: '',
     descripcion: '',
     tratamiento_tributario: 'afecto_iva' as TratamientoTributario,
@@ -112,6 +134,7 @@ export default function EgresosPage() {
     setForm({
       fecha: '',
       proveedor_id: '',
+      tipo_documento: 'factura',
       numero_documento: '',
       descripcion: '',
       tratamiento_tributario: 'afecto_iva',
@@ -182,7 +205,7 @@ export default function EgresosPage() {
         centrosResp,
       ] = await Promise.all([
         fetch(
-          `${baseUrl}/rest/v1/movimientos?empresa_id=eq.${empresaActivaId}&tipo_movimiento=eq.egreso&select=id,fecha,numero_documento,descripcion,monto_total,monto_iva,impuesto_especifico,tratamiento_tributario,estado,proveedor_id,proveedores(nombre),cuentas_bancarias(banco,nombre_cuenta)&order=fecha.desc`,
+          `${baseUrl}/rest/v1/movimientos?empresa_id=eq.${empresaActivaId}&tipo_movimiento=eq.egreso&select=id,fecha,numero_documento,descripcion,monto_total,monto_iva,impuesto_especifico,tratamiento_tributario,tipo_documento,estado,proveedor_id,proveedores(nombre),cuentas_bancarias(banco,nombre_cuenta)&order=fecha.desc`,
           { headers }
         ),
         fetch(
@@ -258,7 +281,20 @@ export default function EgresosPage() {
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
   ) => {
     const { name, value } = e.target
-    setForm((prev) => ({ ...prev, [name]: value }))
+
+    setForm((prev) => {
+      const updated = { ...prev, [name]: value }
+
+      if (name === 'tipo_documento') {
+        if (value === 'factura') {
+          updated.tratamiento_tributario = 'afecto_iva'
+        } else if (value === 'boleta' || value === 'comprobante' || value === 'otro') {
+          updated.tratamiento_tributario = 'exento'
+        }
+      }
+
+      return updated
+    })
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -338,7 +374,7 @@ export default function EgresosPage() {
         categoria_id: form.categoria_id || null,
         centro_costo_id: form.centro_costo_id || null,
         cuenta_bancaria_id: form.cuenta_bancaria_id || null,
-        tipo_documento: 'factura',
+        tipo_documento: form.tipo_documento,
         numero_documento: form.numero_documento || null,
         descripcion: form.descripcion,
         tratamiento_tributario: form.tratamiento_tributario,
@@ -425,10 +461,10 @@ export default function EgresosPage() {
                     <th className="py-3 pr-4">Fecha</th>
                     <th className="py-3 pr-4">Proveedor</th>
                     <th className="py-3 pr-4">Documento</th>
+                    <th className="py-3 pr-4">N° Doc.</th>
                     <th className="py-3 pr-4">Descripción</th>
                     <th className="py-3 pr-4">Monto total</th>
                     <th className="py-3 pr-4">Tratamiento</th>
-                    <th className="py-3 pr-4">Imp. específico</th>
                     <th className="py-3 pr-4">Banco</th>
                     <th className="py-3 pr-4">Estado</th>
                   </tr>
@@ -441,6 +477,9 @@ export default function EgresosPage() {
                         {item.proveedores?.nombre ?? '-'}
                       </td>
                       <td className="py-3 pr-4">
+                        {formatTipoDocumento(item.tipo_documento)}
+                      </td>
+                      <td className="py-3 pr-4">
                         {item.numero_documento ?? '-'}
                       </td>
                       <td className="py-3 pr-4">{item.descripcion}</td>
@@ -449,9 +488,6 @@ export default function EgresosPage() {
                       </td>
                       <td className="py-3 pr-4">
                         {formatTratamientoTributario(item.tratamiento_tributario)}
-                      </td>
-                      <td className="py-3 pr-4">
-                        ${Number(item.impuesto_especifico || 0).toLocaleString('es-CL')}
                       </td>
                       <td className="py-3 pr-4">
                         {item.cuentas_bancarias
@@ -507,6 +543,24 @@ export default function EgresosPage() {
                     {proveedor.nombre}
                   </option>
                 ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm text-slate-600 mb-2">
+                Tipo de documento
+              </label>
+              <select
+                name="tipo_documento"
+                value={form.tipo_documento}
+                onChange={handleChange}
+                className="w-full rounded-xl border border-slate-300 px-4 py-3"
+                required
+              >
+                <option value="factura">Factura</option>
+                <option value="boleta">Boleta</option>
+                <option value="comprobante">Comprobante / gasto menor</option>
+                <option value="otro">Otro</option>
               </select>
             </div>
 
