@@ -2,8 +2,8 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { supabase } from '../../lib/supabase/client'
-import StatusBadge from '../../components/StatusBadge'
+import { supabase } from '../../../lib/supabase/client'
+import StatusBadge from '../../../components/StatusBadge'
 
 type ResumenOperativo = {
   saldo_total_bancos: number
