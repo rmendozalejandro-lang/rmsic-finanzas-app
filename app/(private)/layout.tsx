@@ -14,6 +14,12 @@ type Empresa = {
   nombre: string
 }
 
+type Perfil = {
+  id: string
+  nombre?: string | null
+  email?: string | null
+}
+
 const menuItems = [
   { href: '/', label: 'Dashboard' },
   { href: '/ingresos', label: 'Ingresos' },
@@ -38,11 +44,84 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
   const [empresas, setEmpresas] = useState<Empresa[]>([])
   const [empresaActivaId, setEmpresaActivaId] = useState('')
 
-  const persistEmpresaActiva = (empresa: Empresa) => {
+  const [usuarioNombre, setUsuarioNombre] = useState('')
+  const [usuarioEmail, setUsuarioEmail] = useState('')
+  const [usuarioRol, setUsuarioRol] = useState('')
+
+  const fetchUsuarioContexto = async (
+    accessToken: string,
+    empresaId: string,
+    email: string
+  ) => {
+    try {
+      const apiKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+      const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+
+      const headers = {
+        apikey: apiKey,
+        Authorization: `Bearer ${accessToken}`,
+      }
+
+      const perfilResp = await fetch(
+        `${baseUrl}/rest/v1/perfiles?select=id,nombre,email&email=eq.${encodeURIComponent(email)}`,
+        { headers }
+      )
+
+      const perfilJson = await perfilResp.json()
+
+      if (perfilResp.ok && perfilJson?.length) {
+        const perfil = perfilJson[0] as Perfil
+
+        setUsuarioNombre(perfil.nombre || perfil.email || email)
+        setUsuarioEmail(perfil.email || email)
+
+        const rolResp = await fetch(
+          `${baseUrl}/rest/v1/usuario_empresas?select=rol&usuario_id=eq.${perfil.id}&empresa_id=eq.${empresaId}`,
+          { headers }
+        )
+
+        const rolJson = await rolResp.json()
+
+        if (rolResp.ok && rolJson?.length) {
+          setUsuarioRol(rolJson[0].rol || '')
+        } else {
+          setUsuarioRol('')
+        }
+      } else {
+        setUsuarioNombre(email)
+        setUsuarioEmail(email)
+        setUsuarioRol('')
+      }
+    } catch (error) {
+      console.error('Error cargando contexto de usuario:', error)
+      setUsuarioNombre(email)
+      setUsuarioEmail(email)
+      setUsuarioRol('')
+    }
+  }
+
+  const persistEmpresaActiva = async (
+    empresa: Empresa,
+    accessToken?: string,
+    email?: string
+  ) => {
     setEmpresaActivaId(empresa.id)
     window.localStorage.setItem(STORAGE_ID_KEY, empresa.id)
     window.localStorage.setItem(STORAGE_NAME_KEY, empresa.nombre)
     window.dispatchEvent(new Event('empresa-activa-cambiada'))
+
+    let resolvedAccessToken = accessToken || ''
+    let resolvedEmail = email || ''
+
+    if (!resolvedAccessToken || !resolvedEmail) {
+      const { data } = await supabase.auth.getSession()
+      resolvedAccessToken = data.session?.access_token || ''
+      resolvedEmail = data.session?.user.email || ''
+    }
+
+    if (resolvedAccessToken && resolvedEmail) {
+      await fetchUsuarioContexto(resolvedAccessToken, empresa.id, resolvedEmail)
+    }
   }
 
   useEffect(() => {
@@ -56,8 +135,11 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
 
       try {
         const accessToken = data.session.access_token
+        const email = data.session.user.email || ''
         const apiKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
         const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+
+        setUsuarioEmail(email)
 
         const resp = await fetch(
           `${baseUrl}/rest/v1/empresas?select=id,nombre&order=nombre.asc`,
@@ -72,23 +154,23 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
         const json = await resp.json()
 
         if (resp.ok) {
-          const empresasData = json ?? []
+          const empresasData = (json ?? []) as Empresa[]
           setEmpresas(empresasData)
 
           const guardada = window.localStorage.getItem(STORAGE_ID_KEY)
 
           if (guardada) {
             const empresaGuardada = empresasData.find(
-              (empresa: Empresa) => empresa.id === guardada
+              (empresa) => empresa.id === guardada
             )
 
             if (empresaGuardada) {
-              persistEmpresaActiva(empresaGuardada)
+              await persistEmpresaActiva(empresaGuardada, accessToken, email)
             } else if (empresasData.length > 0) {
-              persistEmpresaActiva(empresasData[0])
+              await persistEmpresaActiva(empresasData[0], accessToken, email)
             }
           } else if (empresasData.length > 0) {
-            persistEmpresaActiva(empresasData[0])
+            await persistEmpresaActiva(empresasData[0], accessToken, email)
           }
         }
       } catch (error) {
@@ -107,12 +189,12 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
     router.refresh()
   }
 
-  const handleEmpresaChange = (empresaId: string) => {
+  const handleEmpresaChange = async (empresaId: string) => {
     const empresaSeleccionada = empresas.find((empresa) => empresa.id === empresaId)
 
     if (!empresaSeleccionada) return
 
-    persistEmpresaActiva(empresaSeleccionada)
+    await persistEmpresaActiva(empresaSeleccionada)
     router.refresh()
   }
 
@@ -121,7 +203,7 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
   if (checkingSession) {
     return (
       <main className="min-h-screen bg-slate-100 p-8">
-        <div className="max-w-7xl mx-auto rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="mx-auto max-w-7xl rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
           Verificando sesión...
         </div>
       </main>
@@ -149,7 +231,7 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
                 </label>
                 <select
                   value={empresaActivaId}
-                  onChange={(e) => handleEmpresaChange(e.target.value)}
+                  onChange={(e) => void handleEmpresaChange(e.target.value)}
                   className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm"
                 >
                   {empresas.map((empresa) => (
@@ -162,10 +244,10 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
 
               <div className="text-right">
                 <p className="text-sm font-medium text-slate-900">
-                  Raúl Mendoza
+                  {usuarioNombre || usuarioEmail || 'Usuario'}
                 </p>
                 <p className="text-xs text-slate-500">
-                  {empresaActiva?.nombre ?? 'Administración financiera'}
+                  {usuarioRol || empresaActiva?.nombre || 'Sin rol'}
                 </p>
               </div>
 
