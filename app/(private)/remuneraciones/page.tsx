@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../../../lib/supabase/client'
 import StatusBadge from '../../../components/StatusBadge'
+import ModuleAccessGuard from '../../../components/ModuleAccessGuard'
 
 type Remuneracion = {
   id: string
@@ -330,22 +331,12 @@ export default function RemuneracionesPage() {
       const apiKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
       const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
 
-      const profileResp = await fetch(
-        `${baseUrl}/rest/v1/perfiles?select=id,email&email=eq.rmendozaalejandro@gmail.com`,
-        {
-          headers: {
-            apikey: apiKey,
-            Authorization: `Bearer ${accessToken}`,
-          },
-        }
-      )
+    const perfilId = sessionData.session.user.id
 
-      const profileJson = await profileResp.json()
-
-      if (!profileResp.ok || !profileJson?.[0]?.id) {
-        setError('No se pudo obtener el perfil del usuario.')
-        return
-      }
+if (!perfilId) {
+  setError('No se pudo obtener el perfil del usuario autenticado.')
+  return
+}
 
       let movimientoId: string | null = null
 
@@ -372,7 +363,7 @@ export default function RemuneracionesPage() {
           monto_total: Number(form.liquido_pagar || 0),
           estado: 'pagado',
           medio_pago: 'transferencia',
-          created_by: profileJson[0].id,
+          created_by: perfilId,
         }
 
         const movResp = await fetch(`${baseUrl}/rest/v1/movimientos`, {
@@ -522,7 +513,8 @@ export default function RemuneracionesPage() {
     }
   }
 
-  return (
+ return (
+  <ModuleAccessGuard moduleKey="remuneraciones">
     <main className="space-y-6">
       <div>
         <h1 className="text-4xl font-semibold text-slate-900">Remuneraciones</h1>
@@ -756,6 +748,7 @@ export default function RemuneracionesPage() {
           </form>
         </div>
       </div>
-    </main>
+        </main>
+  </ModuleAccessGuard>
   )
 }

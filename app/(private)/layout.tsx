@@ -27,7 +27,8 @@ const menuItems = [
   { href: '/remuneraciones', label: 'Remuneraciones' },
 ]
 
-const STORAGE_KEY = 'empresa_activa_id'
+const STORAGE_ID_KEY = 'empresa_activa_id'
+const STORAGE_NAME_KEY = 'empresa_activa_nombre'
 
 export default function PrivateLayout({ children }: PrivateLayoutProps) {
   const pathname = usePathname()
@@ -36,6 +37,13 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
   const [checkingSession, setCheckingSession] = useState(true)
   const [empresas, setEmpresas] = useState<Empresa[]>([])
   const [empresaActivaId, setEmpresaActivaId] = useState('')
+
+  const persistEmpresaActiva = (empresa: Empresa) => {
+    setEmpresaActivaId(empresa.id)
+    window.localStorage.setItem(STORAGE_ID_KEY, empresa.id)
+    window.localStorage.setItem(STORAGE_NAME_KEY, empresa.nombre)
+    window.dispatchEvent(new Event('empresa-activa-cambiada'))
+  }
 
   useEffect(() => {
     const checkSessionAndLoadEmpresas = async () => {
@@ -67,16 +75,20 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
           const empresasData = json ?? []
           setEmpresas(empresasData)
 
-          const guardada = window.localStorage.getItem(STORAGE_KEY)
+          const guardada = window.localStorage.getItem(STORAGE_ID_KEY)
 
-          if (
-            guardada &&
-            empresasData.some((empresa: Empresa) => empresa.id === guardada)
-          ) {
-            setEmpresaActivaId(guardada)
+          if (guardada) {
+            const empresaGuardada = empresasData.find(
+              (empresa: Empresa) => empresa.id === guardada
+            )
+
+            if (empresaGuardada) {
+              persistEmpresaActiva(empresaGuardada)
+            } else if (empresasData.length > 0) {
+              persistEmpresaActiva(empresasData[0])
+            }
           } else if (empresasData.length > 0) {
-            setEmpresaActivaId(empresasData[0].id)
-            window.localStorage.setItem(STORAGE_KEY, empresasData[0].id)
+            persistEmpresaActiva(empresasData[0])
           }
         }
       } catch (error) {
@@ -96,9 +108,11 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
   }
 
   const handleEmpresaChange = (empresaId: string) => {
-    setEmpresaActivaId(empresaId)
-    window.localStorage.setItem(STORAGE_KEY, empresaId)
-    window.dispatchEvent(new Event('empresa-activa-cambiada'))
+    const empresaSeleccionada = empresas.find((empresa) => empresa.id === empresaId)
+
+    if (!empresaSeleccionada) return
+
+    persistEmpresaActiva(empresaSeleccionada)
     router.refresh()
   }
 
@@ -107,7 +121,7 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
   if (checkingSession) {
     return (
       <main className="min-h-screen bg-slate-100 p-8">
-        <div className="max-w-7xl mx-auto rounded-2xl bg-white p-6 shadow-sm border border-slate-200">
+        <div className="max-w-7xl mx-auto rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
           Verificando sesión...
         </div>
       </main>
@@ -117,20 +131,20 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900 print:bg-white">
       <header className="border-b border-slate-200 bg-white print:hidden">
-        <div className="max-w-7xl mx-auto px-8 py-5">
-          <div className="flex items-center justify-between gap-6 flex-wrap">
+        <div className="mx-auto max-w-7xl px-8 py-5">
+          <div className="flex flex-wrap items-center justify-between gap-6">
             <div>
               <p className="text-xs uppercase tracking-[0.24em] text-slate-500">
                 RMSIC
               </p>
-              <h1 className="text-2xl font-semibold mt-1">
+              <h1 className="mt-1 text-2xl font-semibold">
                 Plataforma financiera
               </h1>
             </div>
 
-            <div className="flex items-center gap-4 flex-wrap">
+            <div className="flex flex-wrap items-center gap-4">
               <div className="min-w-[260px]">
-                <label className="block text-xs uppercase tracking-wide text-slate-500 mb-1">
+                <label className="mb-1 block text-xs uppercase tracking-wide text-slate-500">
                   Empresa activa
                 </label>
                 <select
@@ -157,7 +171,7 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
 
               <button
                 onClick={handleLogout}
-                className="rounded-xl bg-slate-900 text-white px-4 py-2 text-sm font-medium hover:bg-slate-800 transition"
+                className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800"
               >
                 Cerrar sesión
               </button>
@@ -186,7 +200,7 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-8 py-8 print:max-w-none print:px-0 print:py-0">
+      <main className="mx-auto max-w-7xl px-8 py-8 print:max-w-none print:px-0 print:py-0">
         {children}
       </main>
     </div>

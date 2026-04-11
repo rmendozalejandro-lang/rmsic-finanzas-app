@@ -39,6 +39,7 @@ type UltimoMovimiento = {
 type FiltroMovimiento = 'todos' | 'ingreso' | 'egreso'
 
 const STORAGE_KEY = 'empresa_activa_id'
+const STORAGE_NAME_KEY = 'empresa_activa_nombre'
 
 const getEstadoVisual = (estado: string, fechaVencimiento: string | null) => {
   const base = (estado || '').toLowerCase()
@@ -125,6 +126,7 @@ export default function HomePage() {
   const router = useRouter()
 
   const [empresaActivaId, setEmpresaActivaId] = useState('')
+  const [empresaActivaNombre, setEmpresaActivaNombre] = useState('')
   const [resumen, setResumen] = useState<ResumenOperativo | null>(null)
   const [cobranza, setCobranza] = useState<CobranzaPendiente[]>([])
   const [ultimosMovimientos, setUltimosMovimientos] = useState<UltimoMovimiento[]>([])
@@ -135,7 +137,10 @@ export default function HomePage() {
   useEffect(() => {
     const syncEmpresaActiva = () => {
       const empresaId = window.localStorage.getItem(STORAGE_KEY) || ''
+      const empresaNombre = window.localStorage.getItem(STORAGE_NAME_KEY) || ''
+
       setEmpresaActivaId(empresaId)
+      setEmpresaActivaNombre(empresaNombre)
     }
 
     syncEmpresaActiva()
@@ -318,6 +323,13 @@ export default function HomePage() {
         <p className="text-slate-600 mt-2">
           Resumen general de la operación financiera de la empresa activa.
         </p>
+
+        {empresaActivaNombre ? (
+          <div className="mt-3 inline-flex items-center rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm">
+            Mostrando información de:
+            <span className="ml-2 font-semibold">{empresaActivaNombre}</span>
+          </div>
+        ) : null}
       </div>
 
       {loading && (

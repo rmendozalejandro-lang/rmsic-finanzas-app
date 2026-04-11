@@ -38,9 +38,9 @@ export default function LoginPage() {
         <h1 className="text-3xl font-semibold text-slate-900">
           Iniciar sesión
         </h1>
-        <p className="text-slate-600 mt-2">
-          Acceso a la plataforma financiera RMSIC.
-        </p>
+       <p className="text-slate-600 mt-2">
+  Acceso a la plataforma financiera y contable.
+</p>
 
         <form onSubmit={handleLogin} className="mt-6 space-y-4">
           <div>

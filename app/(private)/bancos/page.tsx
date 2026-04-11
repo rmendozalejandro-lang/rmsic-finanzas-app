@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../../../lib/supabase/client'
+import EmpresaActivaBanner from '../../../components/EmpresaActivaBanner'
 
 type CuentaBancaria = {
   id: string
@@ -81,7 +82,10 @@ export default function BancosPage() {
   }, [])
 
   const fetchData = async () => {
-    if (!empresaActivaId) return
+    if (!empresaActivaId) {
+      setLoading(false)
+      return
+    }
 
     try {
       setLoading(true)
@@ -171,35 +175,40 @@ export default function BancosPage() {
     <main className="space-y-6">
       <div>
         <h1 className="text-4xl font-semibold text-slate-900">Bancos</h1>
-        <p className="text-slate-600 mt-2">
+        <p className="mt-2 text-slate-600">
           Cuentas, saldos y movimientos bancarios de la empresa activa.
         </p>
       </div>
 
+      <EmpresaActivaBanner
+        modulo="Bancos"
+        descripcion="Toda la información mostrada corresponde exclusivamente a la empresa activa seleccionada."
+      />
+
       {loading && (
-        <div className="rounded-2xl bg-white p-6 shadow-sm border border-slate-200">
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
           Cargando información bancaria...
         </div>
       )}
 
       {error && (
-        <div className="rounded-2xl bg-red-50 p-6 shadow-sm border border-red-200 text-red-700">
+        <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-red-700 shadow-sm">
           {error}
         </div>
       )}
 
       {!loading && !error && (
         <>
-          <section className="rounded-2xl bg-white p-6 shadow-sm border border-slate-200">
+          <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
             <h2 className="text-2xl font-semibold text-slate-900">
               Cuentas bancarias
             </h2>
-            <p className="text-slate-500 text-sm mt-1 mb-4">
+            <p className="mb-4 mt-1 text-sm text-slate-500">
               Cuentas registradas para la empresa activa.
             </p>
 
             {cuentas.length === 0 ? (
-              <div className="text-slate-500 text-sm">
+              <div className="text-sm text-slate-500">
                 No hay cuentas bancarias registradas para esta empresa.
               </div>
             ) : (
@@ -236,52 +245,52 @@ export default function BancosPage() {
             )}
           </section>
 
-          <section className="rounded-2xl bg-white p-6 shadow-sm border border-slate-200">
+          <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
             <h2 className="text-2xl font-semibold text-slate-900">
               Saldos bancarios
             </h2>
-            <p className="text-slate-500 text-sm mt-1 mb-4">
+            <p className="mb-4 mt-1 text-sm text-slate-500">
               Resumen financiero por cuenta bancaria.
             </p>
 
             {saldos.length === 0 ? (
-              <div className="text-slate-500 text-sm">
+              <div className="text-sm text-slate-500">
                 No hay saldos bancarios disponibles para esta empresa.
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 {saldos.map((item) => (
                   <div
                     key={item.id}
-                    className="rounded-2xl bg-slate-50 p-5 border border-slate-200"
+                    className="rounded-2xl border border-slate-200 bg-slate-50 p-5"
                   >
                     <p className="text-sm text-slate-500">{item.banco}</p>
-                    <h3 className="text-xl font-semibold mt-1">
+                    <h3 className="mt-1 text-xl font-semibold">
                       {item.nombre_cuenta}
                     </h3>
 
-                    <div className="grid grid-cols-2 gap-4 mt-4 text-sm">
+                    <div className="mt-4 grid grid-cols-2 gap-4 text-sm">
                       <div>
                         <p className="text-slate-500">Saldo inicial</p>
-                        <p className="font-medium mt-1">
+                        <p className="mt-1 font-medium">
                           {formatCLP(item.saldo_inicial)}
                         </p>
                       </div>
                       <div>
                         <p className="text-slate-500">Saldo calculado</p>
-                        <p className="font-medium mt-1">
+                        <p className="mt-1 font-medium">
                           {formatCLP(item.saldo_calculado)}
                         </p>
                       </div>
                       <div>
                         <p className="text-slate-500">Ingresos pagados</p>
-                        <p className="font-medium mt-1">
+                        <p className="mt-1 font-medium">
                           {formatCLP(item.ingresos_pagados)}
                         </p>
                       </div>
                       <div>
                         <p className="text-slate-500">Egresos pagados</p>
-                        <p className="font-medium mt-1">
+                        <p className="mt-1 font-medium">
                           {formatCLP(item.egresos_pagados)}
                         </p>
                       </div>
@@ -292,16 +301,16 @@ export default function BancosPage() {
             )}
           </section>
 
-          <section className="rounded-2xl bg-white p-6 shadow-sm border border-slate-200">
+          <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
             <h2 className="text-2xl font-semibold text-slate-900">
               Últimos movimientos bancarios
             </h2>
-            <p className="text-slate-500 text-sm mt-1 mb-4">
+            <p className="mb-4 mt-1 text-sm text-slate-500">
               Movimientos asociados a cuentas bancarias de la empresa activa.
             </p>
 
             {movimientos.length === 0 ? (
-              <div className="text-slate-500 text-sm">
+              <div className="text-sm text-slate-500">
                 No hay movimientos bancarios registrados para esta empresa.
               </div>
             ) : (

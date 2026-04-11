@@ -1,9 +1,17 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
+import {
+  type ChangeEvent,
+  type FormEvent,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../../../lib/supabase/client'
 import StatusBadge from '../../../components/StatusBadge'
+import EmpresaActivaBanner from '../../../components/EmpresaActivaBanner'
 
 type Cliente = {
   id: string
@@ -68,6 +76,18 @@ const formatTipoDocumento = (value: string | null) => {
     default:
       return value || '-'
   }
+}
+
+const formatCLP = (value: number) =>
+  `$${Number(value || 0).toLocaleString('es-CL')}`
+
+const formatDate = (value: string) => {
+  if (!value) return '-'
+
+  const date = new Date(`${value}T00:00:00`)
+  if (Number.isNaN(date.getTime())) return value
+
+  return date.toLocaleDateString('es-CL')
 }
 
 export default function IngresosPage() {
@@ -200,7 +220,10 @@ export default function IngresosPage() {
   }, [form.monto_neto, form.es_exento, form.tipo_documento])
 
   const fetchData = async () => {
-    if (!empresaActivaId) return
+    if (!empresaActivaId) {
+      setLoading(false)
+      return
+    }
 
     try {
       setLoading(true)
@@ -303,7 +326,7 @@ export default function IngresosPage() {
   }, [router, empresaActivaId])
 
   const handleChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
+    e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
   ) => {
     const { name, value } = e.target
 
@@ -324,7 +347,7 @@ export default function IngresosPage() {
     })
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
 
     setError('')
@@ -371,11 +394,17 @@ export default function IngresosPage() {
       }
 
       const accessToken = sessionData.session.access_token
+      const userEmail = sessionData.session.user.email
       const apiKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
       const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
 
+      if (!userEmail) {
+        setError('No se pudo obtener el correo del usuario autenticado.')
+        return
+      }
+
       const profileResp = await fetch(
-        `${baseUrl}/rest/v1/perfiles?select=id,email&email=eq.rmendozaalejandro@gmail.com`,
+        `${baseUrl}/rest/v1/perfiles?select=id,email&email=eq.${encodeURIComponent(userEmail)}`,
         {
           headers: {
             apikey: apiKey,
@@ -450,28 +479,85 @@ export default function IngresosPage() {
     }
   }
 
+  const totalIngresos = useMemo(
+    () => ingresos.reduce((acc, item) => acc + Number(item.monto_total || 0), 0),
+    [ingresos]
+  )
+
+  const ingresosPagados = useMemo(
+    () =>
+      ingresos.filter((item) => (item.estado || '').toLowerCase() === 'pagado').length,
+    [ingresos]
+  )
+
+  const ingresosPendientes = useMemo(
+    () =>
+      ingresos.filter((item) => (item.estado || '').toLowerCase() === 'pendiente')
+        .length,
+    [ingresos]
+  )
+
   return (
     <main className="space-y-6">
-      <div>
-        <h1 className="text-4xl font-semibold text-slate-900">Ingresos</h1>
-        <p className="text-slate-600 mt-2">
-          Ventas e ingresos registrados en la empresa activa.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-4xl font-semibold text-slate-900">Ingresos</h1>
+          <p className="mt-2 text-slate-600">
+            Ventas e ingresos registrados en la empresa activa.
+          </p>
+        </div>
+
+        <Link
+          href="/reportes/ingresos"
+          className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800"
+        >
+          Ver reporte de ingresos
+        </Link>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        <div className="xl:col-span-2 rounded-2xl bg-white p-6 shadow-sm border border-slate-200">
+      <EmpresaActivaBanner
+        modulo="Ingresos"
+        descripcion="Todos los documentos y registros visibles corresponden únicamente a la empresa activa seleccionada."
+      />
+
+      {!loading && !error && (
+        <section className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <p className="text-sm text-slate-500">Total registrado</p>
+            <h2 className="mt-2 text-3xl font-semibold text-slate-900">
+              {formatCLP(totalIngresos)}
+            </h2>
+          </article>
+
+          <article className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 shadow-sm">
+            <p className="text-sm text-emerald-700">Pagados</p>
+            <h2 className="mt-2 text-3xl font-semibold text-emerald-900">
+              {ingresosPagados}
+            </h2>
+          </article>
+
+          <article className="rounded-2xl border border-amber-200 bg-amber-50 p-5 shadow-sm">
+            <p className="text-sm text-amber-700">Pendientes</p>
+            <h2 className="mt-2 text-3xl font-semibold text-amber-900">
+              {ingresosPendientes}
+            </h2>
+          </article>
+        </section>
+      )}
+
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm xl:col-span-2">
           <h2 className="text-2xl font-semibold text-slate-900">
             Listado de ingresos
           </h2>
-          <p className="text-slate-500 text-sm mt-1 mb-4">
+          <p className="mb-4 mt-1 text-sm text-slate-500">
             Información cargada directamente desde Supabase.
           </p>
 
           {loading && <div className="text-slate-500">Cargando ingresos...</div>}
 
           {!loading && !error && ingresos.length === 0 && (
-            <div className="text-slate-500 text-sm">
+            <div className="text-sm text-slate-500">
               No hay ingresos registrados para la empresa activa.
             </div>
           )}
@@ -493,19 +579,15 @@ export default function IngresosPage() {
                 <tbody>
                   {ingresos.map((item) => (
                     <tr key={item.id} className="border-b border-slate-100">
-                      <td className="py-3 pr-4">{item.fecha}</td>
-                      <td className="py-3 pr-4">
-                        {item.clientes?.nombre ?? '-'}
-                      </td>
+                      <td className="py-3 pr-4">{formatDate(item.fecha)}</td>
+                      <td className="py-3 pr-4">{item.clientes?.nombre ?? '-'}</td>
                       <td className="py-3 pr-4">
                         {formatTipoDocumento(item.tipo_documento)}
                       </td>
-                      <td className="py-3 pr-4">
-                        {item.numero_documento ?? '-'}
-                      </td>
+                      <td className="py-3 pr-4">{item.numero_documento ?? '-'}</td>
                       <td className="py-3 pr-4">{item.descripcion}</td>
                       <td className="py-3 pr-4 font-medium">
-                        ${Number(item.monto_total).toLocaleString('es-CL')}
+                        {formatCLP(item.monto_total)}
                       </td>
                       <td className="py-3 pr-4">
                         <StatusBadge status={item.estado} />
@@ -516,19 +598,25 @@ export default function IngresosPage() {
               </table>
             </div>
           )}
+
+          {!loading && error && (
+            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {error}
+            </div>
+          )}
         </div>
 
-        <div className="rounded-2xl bg-white p-6 shadow-sm border border-slate-200">
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
           <h2 className="text-2xl font-semibold text-slate-900">
             Nuevo ingreso
           </h2>
-          <p className="text-slate-500 text-sm mt-1 mb-4">
+          <p className="mb-4 mt-1 text-sm text-slate-500">
             Registrar ingreso para la empresa activa.
           </p>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-sm text-slate-600 mb-2">Fecha</label>
+              <label className="mb-2 block text-sm text-slate-600">Fecha</label>
               <input
                 type="date"
                 name="fecha"
@@ -540,7 +628,7 @@ export default function IngresosPage() {
             </div>
 
             <div>
-              <label className="block text-sm text-slate-600 mb-2">
+              <label className="mb-2 block text-sm text-slate-600">
                 Condición de pago
               </label>
               <select
@@ -558,7 +646,7 @@ export default function IngresosPage() {
             </div>
 
             <div>
-              <label className="block text-sm text-slate-600 mb-2">
+              <label className="mb-2 block text-sm text-slate-600">
                 Fecha vencimiento
               </label>
               <input
@@ -566,12 +654,12 @@ export default function IngresosPage() {
                 name="fecha_vencimiento"
                 value={form.fecha_vencimiento}
                 readOnly
-                className="w-full rounded-xl border border-slate-300 px-4 py-3 bg-slate-50"
+                className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3"
               />
             </div>
 
             <div>
-              <label className="block text-sm text-slate-600 mb-2">Cliente</label>
+              <label className="mb-2 block text-sm text-slate-600">Cliente</label>
               <select
                 name="cliente_id"
                 value={form.cliente_id}
@@ -589,7 +677,7 @@ export default function IngresosPage() {
             </div>
 
             <div>
-              <label className="block text-sm text-slate-600 mb-2">
+              <label className="mb-2 block text-sm text-slate-600">
                 Tipo de documento
               </label>
               <select
@@ -609,7 +697,7 @@ export default function IngresosPage() {
             </div>
 
             <div>
-              <label className="block text-sm text-slate-600 mb-2">
+              <label className="mb-2 block text-sm text-slate-600">
                 ¿Documento exento?
               </label>
               <select
@@ -624,7 +712,7 @@ export default function IngresosPage() {
             </div>
 
             <div>
-              <label className="block text-sm text-slate-600 mb-2">
+              <label className="mb-2 block text-sm text-slate-600">
                 Número de documento
               </label>
               <input
@@ -637,7 +725,7 @@ export default function IngresosPage() {
             </div>
 
             <div>
-              <label className="block text-sm text-slate-600 mb-2">
+              <label className="mb-2 block text-sm text-slate-600">
                 Descripción
               </label>
               <textarea
@@ -651,7 +739,7 @@ export default function IngresosPage() {
             </div>
 
             <div>
-              <label className="block text-sm text-slate-600 mb-2">Neto</label>
+              <label className="mb-2 block text-sm text-slate-600">Neto</label>
               <input
                 type="number"
                 name="monto_neto"
@@ -664,30 +752,30 @@ export default function IngresosPage() {
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-sm text-slate-600 mb-2">IVA</label>
+                <label className="mb-2 block text-sm text-slate-600">IVA</label>
                 <input
                   type="number"
                   name="monto_iva"
                   value={form.monto_iva}
                   readOnly
-                  className="w-full rounded-xl border border-slate-300 px-4 py-3 bg-slate-50"
+                  className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3"
                 />
               </div>
 
               <div>
-                <label className="block text-sm text-slate-600 mb-2">Total</label>
+                <label className="mb-2 block text-sm text-slate-600">Total</label>
                 <input
                   type="number"
                   name="monto_total"
                   value={form.monto_total}
                   readOnly
-                  className="w-full rounded-xl border border-slate-300 px-4 py-3 bg-slate-50"
+                  className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3"
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-sm text-slate-600 mb-2">Estado</label>
+              <label className="mb-2 block text-sm text-slate-600">Estado</label>
               <select
                 name="estado"
                 value={form.estado}
@@ -701,7 +789,7 @@ export default function IngresosPage() {
             </div>
 
             <div>
-              <label className="block text-sm text-slate-600 mb-2">
+              <label className="mb-2 block text-sm text-slate-600">
                 Cuenta bancaria
               </label>
               <select
@@ -720,7 +808,7 @@ export default function IngresosPage() {
             </div>
 
             <div>
-              <label className="block text-sm text-slate-600 mb-2">Categoría</label>
+              <label className="mb-2 block text-sm text-slate-600">Categoría</label>
               <select
                 name="categoria_id"
                 value={form.categoria_id}
@@ -737,7 +825,7 @@ export default function IngresosPage() {
             </div>
 
             <div>
-              <label className="block text-sm text-slate-600 mb-2">
+              <label className="mb-2 block text-sm text-slate-600">
                 Centro de costo
               </label>
               <select
@@ -756,13 +844,13 @@ export default function IngresosPage() {
             </div>
 
             {error && (
-              <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+              <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
                 {error}
               </div>
             )}
 
             {success && (
-              <div className="rounded-xl bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-700">
+              <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
                 {success}
               </div>
             )}
@@ -770,7 +858,7 @@ export default function IngresosPage() {
             <button
               type="submit"
               disabled={saving}
-              className="w-full rounded-xl bg-slate-900 text-white py-3 font-medium disabled:opacity-60"
+              className="w-full rounded-xl bg-slate-900 py-3 font-medium text-white disabled:opacity-60"
             >
               {saving ? 'Guardando...' : 'Guardar ingreso'}
             </button>

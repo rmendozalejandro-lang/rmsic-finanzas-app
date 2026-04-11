@@ -52,25 +52,33 @@ const formatFechaLarga = (value: string | null) => {
 }
 
 const getEmpresaBranding = (empresaNombre: string) => {
-  const nombre = (empresaNombre || '').toLowerCase()
+  const nombre = (empresaNombre || '').trim()
+  const nombreLower = nombre.toLowerCase()
 
-  if (nombre.includes('rukalaf')) {
-    return {
-      titulo: 'Rukalaf Experience SpA',
-      marcaCorta: 'RUKALAF',
-      logoSrc: '/rukalaf-logo.png',
-      mostrarLogo: true,
-    }
+  let logoSrc: string | null = null
+
+  if (nombreLower.includes('rukalaf')) {
+    logoSrc = '/rukalaf-logo.png'
+  } else if (nombreLower.includes('rmsic')) {
+    logoSrc = '/rmsic-logo.png'
   }
+
+  const marcaCorta =
+    nombre
+      .split(' ')
+      .filter(Boolean)
+      .map((word) => word[0])
+      .join('')
+      .toUpperCase()
+      .slice(0, 8) || 'EMPRESA'
 
   return {
-    titulo: 'RMSIC',
-    marcaCorta: 'RMSIC',
-    logoSrc: '/rmsic-logo.png',
-    mostrarLogo: true,
+    titulo: nombre || 'Empresa',
+    marcaCorta,
+    logoSrc,
+    mostrarLogo: Boolean(logoSrc),
   }
 }
-
 export default function RemuneracionDetallePage() {
   const params = useParams()
   const router = useRouter()

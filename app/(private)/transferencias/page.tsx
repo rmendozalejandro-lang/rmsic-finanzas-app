@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../../../lib/supabase/client'
 import StatusBadge from '../../../components/StatusBadge'
+import ModuleAccessGuard from '../../../components/ModuleAccessGuard'
 
 type CuentaBancaria = {
   id: string
@@ -307,6 +308,7 @@ export default function TransferenciasPage() {
   }
 
   return (
+  <ModuleAccessGuard moduleKey="transferencias">
     <main className="space-y-6">
       <div>
         <h1 className="text-4xl font-semibold text-slate-900">Transferencias</h1>
@@ -482,6 +484,7 @@ export default function TransferenciasPage() {
           </form>
         </div>
       </div>
-    </main>
+       </main>
+  </ModuleAccessGuard>
   )
 }

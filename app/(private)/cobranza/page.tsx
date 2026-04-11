@@ -4,68 +4,104 @@ import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../../../lib/supabase/client'
 import StatusBadge from '../../../components/StatusBadge'
+import EmpresaActivaBanner from '../../../components/EmpresaActivaBanner'
 
-type CuentaBancaria = {
-  id: string
-  empresa_id: string
-  banco: string
-  nombre_cuenta: string
-  tipo_cuenta: string | null
-  moneda: string | null
-  saldo_inicial: number
-  activa: boolean
-}
-
-type SaldoBancario = {
-  empresa_id: string
-  id: string
-  banco: string
-  nombre_cuenta: string
-  tipo_cuenta: string | null
-  moneda: string | null
-  saldo_inicial: number
-  ingresos_pagados: number
-  egresos_pagados: number
-  saldo_calculado: number
-}
-
-type MovimientoBanco = {
-  id: string
-  fecha: string
-  tipo_movimiento: string
-  numero_documento: string | null
+type CobranzaPendiente = {
+  fecha_emision: string
+  fecha_vencimiento: string | null
+  cliente: string
+  numero_factura: string
   descripcion: string
   monto_total: number
+  saldo_pendiente: number
   estado: string
-  cuenta_bancaria_id: string | null
-  empresa_id: string
+  empresa_id?: string
 }
+
+type FiltroEstado =
+  | 'todos'
+  | 'pendiente'
+  | 'parcial'
+  | 'vencido'
+  | 'por_vencer'
 
 const STORAGE_KEY = 'empresa_activa_id'
 
 const formatCLP = (value: number) =>
   `$${Number(value || 0).toLocaleString('es-CL')}`
 
-const formatTipoMovimiento = (value: string) => {
-  switch ((value || '').toLowerCase()) {
-    case 'ingreso':
-      return 'Ingreso'
-    case 'egreso':
-      return 'Egreso'
-    default:
-      return value || '-'
-  }
+const formatDate = (value: string | null) => {
+  if (!value) return '-'
+
+  const date = new Date(`${value}T00:00:00`)
+
+  if (Number.isNaN(date.getTime())) return value
+
+  return date.toLocaleDateString('es-CL')
 }
 
-export default function BancosPage() {
+const getEstadoVisual = (estado: string, fechaVencimiento: string | null) => {
+  const base = (estado || '').toLowerCase()
+
+  if (base === 'vencido') return 'vencido'
+  if (!fechaVencimiento) return estado
+  if (base === 'pagado') return estado
+
+  const hoy = new Date()
+  const vencimiento = new Date(`${fechaVencimiento}T23:59:59`)
+
+  if ((base === 'pendiente' || base === 'parcial') && vencimiento < hoy) {
+    return 'vencido'
+  }
+
+  return estado
+}
+
+const isVencida = (estado: string, fechaVencimiento: string | null) => {
+  const base = (estado || '').toLowerCase()
+
+  if (base === 'vencido') return true
+  if (!fechaVencimiento) return false
+  if (base === 'pagado') return false
+
+  const hoy = new Date()
+  const vencimiento = new Date(`${fechaVencimiento}T23:59:59`)
+
+  return (base === 'pendiente' || base === 'parcial') && vencimiento < hoy
+}
+
+const isPorVencerEstaSemana = (
+  estado: string,
+  fechaVencimiento: string | null
+) => {
+  if (!fechaVencimiento) return false
+
+  const base = (estado || '').toLowerCase()
+  if (base === 'pagado' || base === 'vencido') return false
+
+  const hoy = new Date()
+  const inicioHoy = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate())
+  const finSemana = new Date(inicioHoy)
+  finSemana.setDate(finSemana.getDate() + 7)
+
+  const vencimiento = new Date(`${fechaVencimiento}T00:00:00`)
+
+  return (
+    (base === 'pendiente' || base === 'parcial') &&
+    vencimiento >= inicioHoy &&
+    vencimiento <= finSemana
+  )
+}
+
+export default function CobranzaPage() {
   const router = useRouter()
 
   const [empresaActivaId, setEmpresaActivaId] = useState('')
-  const [cuentas, setCuentas] = useState<CuentaBancaria[]>([])
-  const [saldos, setSaldos] = useState<SaldoBancario[]>([])
-  const [movimientos, setMovimientos] = useState<MovimientoBanco[]>([])
+  const [documentos, setDocumentos] = useState<CobranzaPendiente[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [busqueda, setBusqueda] = useState('')
+  const [filtroEstado, setFiltroEstado] = useState<FiltroEstado>('todos')
 
   useEffect(() => {
     const syncEmpresaActiva = () => {
@@ -81,268 +117,310 @@ export default function BancosPage() {
     }
   }, [])
 
-  const fetchData = async () => {
-    if (!empresaActivaId) return
-
-    try {
-      setLoading(true)
-      setError('')
-
-      const { data: sessionData } = await supabase.auth.getSession()
-
-      if (!sessionData.session) {
-        router.push('/login')
-        return
-      }
-
-      const accessToken = sessionData.session.access_token
-      const apiKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-      const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
-
-      const headers = {
-        apikey: apiKey,
-        Authorization: `Bearer ${accessToken}`,
-      }
-
-      const [cuentasResp, saldosResp, movimientosResp] = await Promise.all([
-        fetch(
-          `${baseUrl}/rest/v1/cuentas_bancarias?empresa_id=eq.${empresaActivaId}&select=id,empresa_id,banco,nombre_cuenta,tipo_cuenta,moneda,saldo_inicial,activa&order=banco.asc,nombre_cuenta.asc`,
-          { headers }
-        ),
-        fetch(
-          `${baseUrl}/rest/v1/v_saldos_bancarios?empresa_id=eq.${empresaActivaId}&select=*`,
-          { headers }
-        ),
-        fetch(
-          `${baseUrl}/rest/v1/movimientos?empresa_id=eq.${empresaActivaId}&select=id,fecha,tipo_movimiento,numero_documento,descripcion,monto_total,estado,cuenta_bancaria_id,empresa_id&cuenta_bancaria_id=not.is.null&order=fecha.desc&limit=30`,
-          { headers }
-        ),
-      ])
-
-      const cuentasJson = await cuentasResp.json()
-      const saldosJson = await saldosResp.json()
-      const movimientosJson = await movimientosResp.json()
-
-      if (!cuentasResp.ok) {
-        console.error(cuentasJson)
-        setError('No se pudieron cargar las cuentas bancarias.')
-        return
-      }
-
-      if (!saldosResp.ok) {
-        console.error(saldosJson)
-        setError('No se pudieron cargar los saldos bancarios.')
-        return
-      }
-
-      if (!movimientosResp.ok) {
-        console.error(movimientosJson)
-        setError('No se pudieron cargar los movimientos bancarios.')
-        return
-      }
-
-      setCuentas(cuentasJson ?? [])
-      setSaldos(saldosJson ?? [])
-      setMovimientos(movimientosJson ?? [])
-    } catch (err) {
-      if (err instanceof Error) {
-        setError(err.message)
-      } else {
-        setError('Error desconocido')
-      }
-    } finally {
-      setLoading(false)
-    }
-  }
-
   useEffect(() => {
-    fetchData()
+    const fetchCobranza = async () => {
+      if (!empresaActivaId) {
+        setLoading(false)
+        return
+      }
+
+      try {
+        setLoading(true)
+        setError('')
+
+        const { data: sessionData } = await supabase.auth.getSession()
+
+        if (!sessionData.session) {
+          router.push('/login')
+          return
+        }
+
+        const accessToken = sessionData.session.access_token
+        const apiKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+        const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+
+        const resp = await fetch(
+          `${baseUrl}/rest/v1/v_cobranza_pendiente?empresa_id=eq.${empresaActivaId}&select=*&order=fecha_vencimiento.asc.nullslast`,
+          {
+            headers: {
+              apikey: apiKey,
+              Authorization: `Bearer ${accessToken}`,
+            },
+          }
+        )
+
+        const json = await resp.json()
+
+        if (!resp.ok) {
+          console.error(json)
+          setError('No se pudo cargar la cobranza pendiente.')
+          return
+        }
+
+        setDocumentos(json ?? [])
+      } catch (err) {
+        if (err instanceof Error) {
+          setError(err.message)
+        } else {
+          setError('Error desconocido')
+        }
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchCobranza()
   }, [router, empresaActivaId])
 
-  const cuentasMap = useMemo(() => {
-    return new Map(
-      cuentas.map((cuenta) => [
-        cuenta.id,
-        `${cuenta.banco} - ${cuenta.nombre_cuenta}`,
-      ])
-    )
-  }, [cuentas])
+  const vencidas = useMemo(
+    () =>
+      documentos.filter((item) =>
+        isVencida(item.estado, item.fecha_vencimiento)
+      ),
+    [documentos]
+  )
+
+  const porVencerSemana = useMemo(
+    () =>
+      documentos.filter((item) =>
+        isPorVencerEstaSemana(item.estado, item.fecha_vencimiento)
+      ),
+    [documentos]
+  )
+
+  const saldoPendienteTotal = useMemo(
+    () =>
+      documentos.reduce(
+        (acc, item) => acc + Number(item.saldo_pendiente || 0),
+        0
+      ),
+    [documentos]
+  )
+
+  const saldoVencidoTotal = useMemo(
+    () =>
+      vencidas.reduce(
+        (acc, item) => acc + Number(item.saldo_pendiente || 0),
+        0
+      ),
+    [vencidas]
+  )
+
+  const saldoPorVencerSemana = useMemo(
+    () =>
+      porVencerSemana.reduce(
+        (acc, item) => acc + Number(item.saldo_pendiente || 0),
+        0
+      ),
+    [porVencerSemana]
+  )
+
+  const documentosFiltrados = useMemo(() => {
+    const term = busqueda.trim().toLowerCase()
+
+    return documentos.filter((item) => {
+      const estadoVisual = getEstadoVisual(item.estado, item.fecha_vencimiento)
+        .toLowerCase()
+      const texto = [
+        item.cliente,
+        item.numero_factura,
+        item.descripcion,
+        item.estado,
+      ]
+        .join(' ')
+        .toLowerCase()
+
+      const cumpleBusqueda = !term || texto.includes(term)
+
+      const cumpleEstado =
+        filtroEstado === 'todos'
+          ? true
+          : filtroEstado === 'por_vencer'
+            ? isPorVencerEstaSemana(item.estado, item.fecha_vencimiento)
+            : estadoVisual === filtroEstado
+
+      return cumpleBusqueda && cumpleEstado
+    })
+  }, [documentos, busqueda, filtroEstado])
 
   return (
     <main className="space-y-6">
       <div>
-        <h1 className="text-4xl font-semibold text-slate-900">Bancos</h1>
-        <p className="text-slate-600 mt-2">
-          Cuentas, saldos y movimientos bancarios de la empresa activa.
+        <h1 className="text-4xl font-semibold text-slate-900">Cobranza</h1>
+        <p className="mt-2 text-slate-600">
+          Control de facturas pendientes, vencidas y documentos próximos a
+          vencer de la empresa activa.
         </p>
       </div>
 
+      <EmpresaActivaBanner
+        modulo="Cobranza"
+        descripcion="Los documentos, estados y saldos visibles pertenecen únicamente a la empresa activa seleccionada."
+      />
+
       {loading && (
-        <div className="rounded-2xl bg-white p-6 shadow-sm border border-slate-200">
-          Cargando información bancaria...
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          Cargando información de cobranza...
         </div>
       )}
 
       {error && (
-        <div className="rounded-2xl bg-red-50 p-6 shadow-sm border border-red-200 text-red-700">
+        <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-red-700 shadow-sm">
           {error}
         </div>
       )}
 
       {!loading && !error && (
         <>
-          <section className="rounded-2xl bg-white p-6 shadow-sm border border-slate-200">
-            <h2 className="text-2xl font-semibold text-slate-900">
-              Cuentas bancarias
-            </h2>
-            <p className="text-slate-500 text-sm mt-1 mb-4">
-              Cuentas registradas para la empresa activa.
-            </p>
+          <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <p className="text-sm text-slate-500">Saldo pendiente total</p>
+              <h2 className="mt-2 text-3xl font-semibold text-slate-900">
+                {formatCLP(saldoPendienteTotal)}
+              </h2>
+              <p className="mt-2 text-sm text-slate-500">
+                {documentos.length} documento(s) pendientes o parciales
+              </p>
+            </article>
 
-            {cuentas.length === 0 ? (
-              <div className="text-slate-500 text-sm">
-                No hay cuentas bancarias registradas para esta empresa.
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-slate-200 text-left text-slate-500">
-                      <th className="py-3 pr-4">Banco</th>
-                      <th className="py-3 pr-4">Cuenta</th>
-                      <th className="py-3 pr-4">Tipo</th>
-                      <th className="py-3 pr-4">Moneda</th>
-                      <th className="py-3 pr-4">Saldo inicial</th>
-                      <th className="py-3 pr-4">Estado</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {cuentas.map((cuenta) => (
-                      <tr key={cuenta.id} className="border-b border-slate-100">
-                        <td className="py-3 pr-4">{cuenta.banco}</td>
-                        <td className="py-3 pr-4">{cuenta.nombre_cuenta}</td>
-                        <td className="py-3 pr-4">{cuenta.tipo_cuenta ?? '-'}</td>
-                        <td className="py-3 pr-4">{cuenta.moneda ?? '-'}</td>
-                        <td className="py-3 pr-4 font-medium">
-                          {formatCLP(cuenta.saldo_inicial)}
-                        </td>
-                        <td className="py-3 pr-4">
-                          {cuenta.activa ? 'Activa' : 'Inactiva'}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+            <article className="rounded-2xl border border-red-200 bg-red-50 p-5 shadow-sm">
+              <p className="text-sm text-red-700">Saldo vencido</p>
+              <h2 className="mt-2 text-3xl font-semibold text-red-900">
+                {formatCLP(saldoVencidoTotal)}
+              </h2>
+              <p className="mt-2 text-sm text-red-700">
+                {vencidas.length} documento(s) vencidos
+              </p>
+            </article>
+
+            <article className="rounded-2xl border border-amber-200 bg-amber-50 p-5 shadow-sm">
+              <p className="text-sm text-amber-700">Por vencer en 7 días</p>
+              <h2 className="mt-2 text-3xl font-semibold text-amber-900">
+                {formatCLP(saldoPorVencerSemana)}
+              </h2>
+              <p className="mt-2 text-sm text-amber-700">
+                {porVencerSemana.length} documento(s) próximos a vencer
+              </p>
+            </article>
+
+            <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <p className="text-sm text-slate-500">Documentos visibles</p>
+              <h2 className="mt-2 text-3xl font-semibold text-slate-900">
+                {documentosFiltrados.length}
+              </h2>
+              <p className="mt-2 text-sm text-slate-500">
+                Según filtros aplicados
+              </p>
+            </article>
           </section>
 
-          <section className="rounded-2xl bg-white p-6 shadow-sm border border-slate-200">
-            <h2 className="text-2xl font-semibold text-slate-900">
-              Saldos bancarios
-            </h2>
-            <p className="text-slate-500 text-sm mt-1 mb-4">
-              Resumen financiero por cuenta bancaria.
-            </p>
-
-            {saldos.length === 0 ? (
-              <div className="text-slate-500 text-sm">
-                No hay saldos bancarios disponibles para esta empresa.
+          <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+              <div>
+                <h2 className="text-2xl font-semibold text-slate-900">
+                  Documentos por cobrar
+                </h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  Revisa el detalle de la cobranza pendiente de la empresa
+                  activa.
+                </p>
               </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {saldos.map((item) => (
-                  <div
-                    key={item.id}
-                    className="rounded-2xl bg-slate-50 p-5 border border-slate-200"
+
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-xs uppercase tracking-wide text-slate-500">
+                    Buscar
+                  </label>
+                  <input
+                    type="text"
+                    value={busqueda}
+                    onChange={(e) => setBusqueda(e.target.value)}
+                    placeholder="Cliente, factura o descripción"
+                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs uppercase tracking-wide text-slate-500">
+                    Estado
+                  </label>
+                  <select
+                    value={filtroEstado}
+                    onChange={(e) =>
+                      setFiltroEstado(e.target.value as FiltroEstado)
+                    }
+                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm"
                   >
-                    <p className="text-sm text-slate-500">{item.banco}</p>
-                    <h3 className="text-xl font-semibold mt-1">
-                      {item.nombre_cuenta}
-                    </h3>
-
-                    <div className="grid grid-cols-2 gap-4 mt-4 text-sm">
-                      <div>
-                        <p className="text-slate-500">Saldo inicial</p>
-                        <p className="font-medium mt-1">
-                          {formatCLP(item.saldo_inicial)}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-slate-500">Saldo calculado</p>
-                        <p className="font-medium mt-1">
-                          {formatCLP(item.saldo_calculado)}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-slate-500">Ingresos pagados</p>
-                        <p className="font-medium mt-1">
-                          {formatCLP(item.ingresos_pagados)}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-slate-500">Egresos pagados</p>
-                        <p className="font-medium mt-1">
-                          {formatCLP(item.egresos_pagados)}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
+                    <option value="todos">Todos</option>
+                    <option value="pendiente">Pendiente</option>
+                    <option value="parcial">Parcial</option>
+                    <option value="vencido">Vencido</option>
+                    <option value="por_vencer">Por vencer en 7 días</option>
+                  </select>
+                </div>
               </div>
-            )}
-          </section>
+            </div>
 
-          <section className="rounded-2xl bg-white p-6 shadow-sm border border-slate-200">
-            <h2 className="text-2xl font-semibold text-slate-900">
-              Últimos movimientos bancarios
-            </h2>
-            <p className="text-slate-500 text-sm mt-1 mb-4">
-              Movimientos asociados a cuentas bancarias de la empresa activa.
-            </p>
-
-            {movimientos.length === 0 ? (
-              <div className="text-slate-500 text-sm">
-                No hay movimientos bancarios registrados para esta empresa.
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-slate-200 text-left text-slate-500">
-                      <th className="py-3 pr-4">Fecha</th>
-                      <th className="py-3 pr-4">Tipo</th>
-                      <th className="py-3 pr-4">Documento</th>
-                      <th className="py-3 pr-4">Descripción</th>
-                      <th className="py-3 pr-4">Cuenta</th>
-                      <th className="py-3 pr-4">Monto</th>
-                      <th className="py-3 pr-4">Estado</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {movimientos.map((item) => (
-                      <tr key={item.id} className="border-b border-slate-100">
-                        <td className="py-3 pr-4">{item.fecha}</td>
-                        <td className="py-3 pr-4">
-                          {formatTipoMovimiento(item.tipo_movimiento)}
-                        </td>
-                        <td className="py-3 pr-4">{item.numero_documento ?? '-'}</td>
-                        <td className="py-3 pr-4">{item.descripcion}</td>
-                        <td className="py-3 pr-4">
-                          {item.cuenta_bancaria_id
-                            ? cuentasMap.get(item.cuenta_bancaria_id) ?? '-'
-                            : '-'}
-                        </td>
-                        <td className="py-3 pr-4 font-medium">
-                          {formatCLP(item.monto_total)}
-                        </td>
-                        <td className="py-3 pr-4">{item.estado}</td>
+            <div className="mt-6">
+              {documentosFiltrados.length === 0 ? (
+                <div className="text-sm text-slate-500">
+                  No hay documentos para mostrar con los filtros actuales.
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-200 text-left text-slate-500">
+                        <th className="py-3 pr-4">Emisión</th>
+                        <th className="py-3 pr-4">Vencimiento</th>
+                        <th className="py-3 pr-4">Cliente</th>
+                        <th className="py-3 pr-4">Factura</th>
+                        <th className="py-3 pr-4">Descripción</th>
+                        <th className="py-3 pr-4">Monto</th>
+                        <th className="py-3 pr-4">Saldo pendiente</th>
+                        <th className="py-3 pr-4">Estado</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+                    </thead>
+                    <tbody>
+                      {documentosFiltrados.map((item, index) => {
+                        const estadoVisual = getEstadoVisual(
+                          item.estado,
+                          item.fecha_vencimiento
+                        )
+
+                        return (
+                          <tr
+                            key={`${item.numero_factura}-${item.cliente}-${item.fecha_emision}-${index}`}
+                            className="border-b border-slate-100"
+                          >
+                            <td className="py-3 pr-4">
+                              {formatDate(item.fecha_emision)}
+                            </td>
+                            <td className="py-3 pr-4">
+                              {formatDate(item.fecha_vencimiento)}
+                            </td>
+                            <td className="py-3 pr-4">{item.cliente}</td>
+                            <td className="py-3 pr-4">
+                              {item.numero_factura}
+                            </td>
+                            <td className="py-3 pr-4">{item.descripcion}</td>
+                            <td className="py-3 pr-4 font-medium">
+                              {formatCLP(item.monto_total)}
+                            </td>
+                            <td className="py-3 pr-4 font-semibold text-slate-900">
+                              {formatCLP(item.saldo_pendiente)}
+                            </td>
+                            <td className="py-3 pr-4">
+                              <StatusBadge status={estadoVisual} />
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
           </section>
         </>
       )}
