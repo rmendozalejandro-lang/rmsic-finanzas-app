@@ -55,7 +55,7 @@ const getEmpresaBranding = (empresaNombre: string) => {
   const nombre = (empresaNombre || '').trim()
   const nombreLower = nombre.toLowerCase()
 
-  let logoSrc: string | undefined = undefined
+  let logoSrc: string | null = null
 
   if (nombreLower.includes('rukalaf')) {
     logoSrc = '/rukalaf-logo.png'
@@ -79,7 +79,6 @@ const getEmpresaBranding = (empresaNombre: string) => {
     mostrarLogo: Boolean(logoSrc),
   }
 }
-
 export default function RemuneracionDetallePage() {
   const params = useParams()
   const router = useRouter()
@@ -200,9 +199,17 @@ export default function RemuneracionDetallePage() {
       <section className="rounded-2xl bg-white p-6 shadow-sm border border-slate-200 print:shadow-none print:border-slate-300">
         <div className="flex items-start gap-4">
           <div className="h-16 w-16 rounded-2xl border border-slate-200 bg-white p-2 flex items-center justify-center">
-            <span className="text-xs font-semibold text-slate-500 text-center">
-              {branding.marcaCorta}
-            </span>
+            {branding.mostrarLogo ? (
+              <img
+                src={branding.logoSrc}
+                alt={`Logo ${branding.titulo}`}
+                className="h-full w-full object-contain"
+              />
+            ) : (
+              <span className="text-xs font-semibold text-slate-500 text-center">
+                {branding.marcaCorta}
+              </span>
+            )}
           </div>
 
           <div>

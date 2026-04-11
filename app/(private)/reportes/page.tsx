@@ -771,7 +771,7 @@ export default function ReportesPage() {
                         <XAxis dataKey="mes" />
                         <YAxis tickFormatter={formatCompactCLP} width={70} />
                         <Tooltip
-                          formatter={(value: number) => formatCLP(Number(value || 0))}
+                          formatter={(value) => formatCLP(Number(value ?? 0))}
                         />
                         <Legend />
                         <Bar
@@ -817,7 +817,9 @@ export default function ReportesPage() {
                         <XAxis dataKey="mes" />
                         <YAxis tickFormatter={formatCompactCLP} width={70} />
                         <Tooltip
-                          formatter={(value: number) => formatSignedCLP(Number(value || 0))}
+                          formatter={(value) =>
+                            formatSignedCLP(Number(value ?? 0))
+                          }
                         />
                         <Legend />
                         <Line
@@ -867,7 +869,7 @@ export default function ReportesPage() {
                           width={140}
                         />
                         <Tooltip
-                          formatter={(value: number) => formatCLP(Number(value || 0))}
+                          formatter={(value) => formatCLP(Number(value ?? 0))}
                         />
                         <Bar
                           dataKey="monto"
@@ -907,8 +909,8 @@ export default function ReportesPage() {
                         <XAxis type="number" tickFormatter={formatCompactCLP} />
                         <YAxis type="category" dataKey="estado" width={110} />
                         <Tooltip
-                          formatter={(value: number, _name, props) => [
-                            formatCLP(Number(value || 0)),
+                          formatter={(value, _name, props) => [
+                            formatCLP(Number(value ?? 0)),
                             `${props?.payload?.cantidad ?? 0} documento(s)`,
                           ]}
                         />
