@@ -376,22 +376,12 @@ export default function EgresosPage() {
         return
       }
 
-      const profileResp = await fetch(
-        `${baseUrl}/rest/v1/perfiles?select=id,email&email=eq.${encodeURIComponent(userEmail)}`,
-        {
-          headers: {
-            apikey: apiKey,
-            Authorization: `Bearer ${accessToken}`,
-          },
-        }
-      )
+      const perfilId = sessionData.session.user.id
 
-      const profileJson = await profileResp.json()
-
-      if (!profileResp.ok || !profileJson?.[0]?.id) {
-        setError('No se pudo obtener el perfil del usuario.')
-        return
-      }
+if (!perfilId) {
+  setError('No se pudo obtener el perfil del usuario autenticado.')
+  return
+}
 
       const payload = {
         empresa_id: empresaActivaId,
@@ -420,7 +410,7 @@ export default function EgresosPage() {
         monto_total: Number(form.monto_total || 0),
         estado: form.estado,
         medio_pago: 'transferencia',
-        created_by: profileJson[0].id,
+        created_by: perfilId,
       }
 
       const insertResp = await fetch(`${baseUrl}/rest/v1/movimientos`, {
