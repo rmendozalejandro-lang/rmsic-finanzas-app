@@ -27,6 +27,15 @@ type GestionCobranza = {
   updated_at: string
 }
 
+type GestionCobranzaRow = {
+  numero_factura: string
+  estado_gestion: string
+  fecha_contacto: string | null
+  proximo_contacto: string | null
+  observacion: string | null
+  updated_at: string
+}
+
 type GestionesMap = Record<string, GestionCobranza>
 
 const STORAGE_ID_KEY = 'empresa_activa_id'
@@ -56,9 +65,6 @@ const normalize = (value: string) =>
     .replace(/[\u0300-\u036f]/g, '')
 
 const getEstadoBase = (estado: string) => normalize(estado || '')
-
-const getGestionStorageKey = (empresaId: string) =>
-  `cobranza_gestiones_${empresaId}`
 
 const getEstadoVisual = (estado: string, fechaVencimiento: string | null) => {
   const base = getEstadoBase(estado)
@@ -139,6 +145,25 @@ const getGestionLabel = (estadoGestion: string) => {
   }
 }
 
+const isSinGestion = (gestion?: GestionCobranza) =>
+  !gestion || gestion.estado_gestion === 'sin_gestion'
+
+const isConGestion = (gestion?: GestionCobranza) =>
+  !!gestion && gestion.estado_gestion !== 'sin_gestion'
+
+const isCompromisoPago = (gestion?: GestionCobranza) =>
+  gestion?.estado_gestion === 'compromiso_pago'
+
+const isProximoContactoVencidoOHoy = (gestion?: GestionCobranza) => {
+  if (!gestion?.proximo_contacto) return false
+
+  const hoy = new Date()
+  const inicioHoy = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate())
+  const proximo = new Date(`${gestion.proximo_contacto}T00:00:00`)
+
+  return proximo <= inicioHoy
+}
+
 const buildClipboardText = (
   item: CobranzaPendiente,
   gestion?: GestionCobranza
@@ -193,6 +218,7 @@ export default function CobranzaPage() {
   const [vistaRapida, setVistaRapida] = useState<
     'todas' | 'vencidas' | 'por_vencer' | 'criticas'
   >('todas')
+  const [gestionFiltro, setGestionFiltro] = useState('todos')
 
   const [detalleSeleccionado, setDetalleSeleccionado] =
     useState<CobranzaPendiente | null>(null)
@@ -222,19 +248,44 @@ export default function CobranzaPage() {
   }, [])
 
   useEffect(() => {
-    if (!empresaActivaId) {
-      setGestiones({})
-      return
+    const fetchGestiones = async () => {
+      if (!empresaActivaId) {
+        setGestiones({})
+        return
+      }
+
+      try {
+        const { data, error } = await supabase
+          .from('cobranza_gestiones')
+          .select(
+            'numero_factura, estado_gestion, fecha_contacto, proximo_contacto, observacion, updated_at'
+          )
+          .eq('empresa_id', empresaActivaId)
+
+        if (error) {
+          console.error('Error cargando gestiones:', error)
+          return
+        }
+
+        const mapped: GestionesMap = {}
+
+        ;(data || []).forEach((item: GestionCobranzaRow) => {
+          mapped[item.numero_factura] = {
+            estado_gestion: item.estado_gestion || 'sin_gestion',
+            fecha_contacto: item.fecha_contacto || '',
+            proximo_contacto: item.proximo_contacto || '',
+            observacion: item.observacion || '',
+            updated_at: item.updated_at || '',
+          }
+        })
+
+        setGestiones(mapped)
+      } catch (err) {
+        console.error('Error cargando gestiones:', err)
+      }
     }
 
-    try {
-      const raw = window.localStorage.getItem(getGestionStorageKey(empresaActivaId))
-      const parsed = raw ? (JSON.parse(raw) as GestionesMap) : {}
-      setGestiones(parsed)
-    } catch (error) {
-      console.error('Error leyendo gestiones de cobranza:', error)
-      setGestiones({})
-    }
+    fetchGestiones()
   }, [empresaActivaId])
 
   useEffect(() => {
@@ -371,6 +422,22 @@ export default function CobranzaPage() {
     )
   }, [porVencer])
 
+  const sinGestionItems = useMemo(() => {
+    return cobranza.filter((item) => isSinGestion(gestiones[item.numero_factura]))
+  }, [cobranza, gestiones])
+
+  const compromisoPagoItems = useMemo(() => {
+    return cobranza.filter((item) =>
+      isCompromisoPago(gestiones[item.numero_factura])
+    )
+  }, [cobranza, gestiones])
+
+  const proximoContactoVencidoItems = useMemo(() => {
+    return cobranza.filter((item) =>
+      isProximoContactoVencidoOHoy(gestiones[item.numero_factura])
+    )
+  }, [cobranza, gestiones])
+
   const cobranzaFiltrada = useMemo(() => {
     const texto = normalize(busqueda.trim())
 
@@ -379,6 +446,7 @@ export default function CobranzaPage() {
         getEstadoVisual(item.estado, item.fecha_vencimiento)
       )
       const estadoBase = getEstadoBase(item.estado)
+      const gestion = gestiones[item.numero_factura]
 
       const cumpleBusqueda =
         !texto ||
@@ -407,9 +475,21 @@ export default function CobranzaPage() {
           isPorVencerEn7Dias(item.estado, item.fecha_vencimiento)
       }
 
-      return cumpleBusqueda && cumpleEstado && cumpleVista
+      let cumpleGestion = true
+
+      if (gestionFiltro === 'con_gestion') {
+        cumpleGestion = isConGestion(gestion)
+      } else if (gestionFiltro === 'sin_gestion') {
+        cumpleGestion = isSinGestion(gestion)
+      } else if (gestionFiltro === 'proximo_contacto_vencido') {
+        cumpleGestion = isProximoContactoVencidoOHoy(gestion)
+      } else if (gestionFiltro !== 'todos') {
+        cumpleGestion = (gestion?.estado_gestion || 'sin_gestion') === gestionFiltro
+      }
+
+      return cumpleBusqueda && cumpleEstado && cumpleVista && cumpleGestion
     })
-  }, [cobranza, busqueda, estadoFiltro, vistaRapida])
+  }, [cobranza, busqueda, estadoFiltro, vistaRapida, gestionFiltro, gestiones])
 
   const totalFiltrado = useMemo(() => {
     return cobranzaFiltrada.reduce(
@@ -454,25 +534,39 @@ export default function CobranzaPage() {
     }
   }
 
-  const handleSaveGestion = () => {
+  const handleSaveGestion = async () => {
     if (!detalleSeleccionado || !empresaActivaId) return
 
-    const nextGestiones: GestionesMap = {
-      ...gestiones,
+    const payload = {
+      empresa_id: empresaActivaId,
+      numero_factura: detalleSeleccionado.numero_factura,
+      estado_gestion: estadoGestionInput,
+      fecha_contacto: fechaContactoInput || null,
+      proximo_contacto: proximoContactoInput || null,
+      observacion: observacionInput || null,
+      updated_at: new Date().toISOString(),
+    }
+
+    const { error } = await supabase
+      .from('cobranza_gestiones')
+      .upsert(payload, { onConflict: 'empresa_id,numero_factura' })
+
+    if (error) {
+      console.error('Error guardando gestión:', error)
+      alert('No se pudo guardar el seguimiento.')
+      return
+    }
+
+    setGestiones((prev) => ({
+      ...prev,
       [detalleSeleccionado.numero_factura]: {
         estado_gestion: estadoGestionInput,
         fecha_contacto: fechaContactoInput,
         proximo_contacto: proximoContactoInput,
         observacion: observacionInput,
-        updated_at: new Date().toISOString(),
+        updated_at: payload.updated_at,
       },
-    }
-
-    setGestiones(nextGestiones)
-    window.localStorage.setItem(
-      getGestionStorageKey(empresaActivaId),
-      JSON.stringify(nextGestiones)
-    )
+    }))
 
     alert('Seguimiento guardado.')
   }
@@ -560,8 +654,55 @@ export default function CobranzaPage() {
             </div>
           </section>
 
+          <section className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+              <p className="text-sm text-slate-500">Sin gestión</p>
+              <p className="mt-2 text-2xl font-semibold text-slate-900">
+                {sinGestionItems.length}
+              </p>
+              <p className="mt-1 text-sm text-slate-500">
+                {formatCLP(
+                  sinGestionItems.reduce(
+                    (acc, item) => acc + Number(item.saldo_pendiente || 0),
+                    0
+                  )
+                )}
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-6 shadow-sm">
+              <p className="text-sm text-emerald-700">Compromiso de pago</p>
+              <p className="mt-2 text-2xl font-semibold text-emerald-800">
+                {compromisoPagoItems.length}
+              </p>
+              <p className="mt-1 text-sm text-emerald-700">
+                {formatCLP(
+                  compromisoPagoItems.reduce(
+                    (acc, item) => acc + Number(item.saldo_pendiente || 0),
+                    0
+                  )
+                )}
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-orange-200 bg-orange-50 p-6 shadow-sm">
+              <p className="text-sm text-orange-700">Próximo contacto vencido/hoy</p>
+              <p className="mt-2 text-2xl font-semibold text-orange-800">
+                {proximoContactoVencidoItems.length}
+              </p>
+              <p className="mt-1 text-sm text-orange-700">
+                {formatCLP(
+                  proximoContactoVencidoItems.reduce(
+                    (acc, item) => acc + Number(item.saldo_pendiente || 0),
+                    0
+                  )
+                )}
+              </p>
+            </div>
+          </section>
+
           <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-700">
                   Buscar
@@ -577,7 +718,7 @@ export default function CobranzaPage() {
 
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-700">
-                  Estado
+                  Estado documento
                 </label>
                 <select
                   value={estadoFiltro}
@@ -588,6 +729,28 @@ export default function CobranzaPage() {
                   <option value="pendiente">Pendiente</option>
                   <option value="parcial">Parcial</option>
                   <option value="vencido">Vencido</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  Gestión
+                </label>
+                <select
+                  value={gestionFiltro}
+                  onChange={(e) => setGestionFiltro(e.target.value)}
+                  className="h-10 w-full rounded-lg border border-slate-300 px-3 text-sm"
+                >
+                  <option value="todos">Todas</option>
+                  <option value="con_gestion">Solo con gestión</option>
+                  <option value="sin_gestion">Solo sin gestión</option>
+                  <option value="contactado">Contactado</option>
+                  <option value="compromiso_pago">Compromiso de pago</option>
+                  <option value="en_revision">En revisión</option>
+                  <option value="sin_respuesta">Sin respuesta</option>
+                  <option value="proximo_contacto_vencido">
+                    Próximo contacto vencido/hoy
+                  </option>
                 </select>
               </div>
 
@@ -652,10 +815,35 @@ export default function CobranzaPage() {
 
               <button
                 type="button"
+                onClick={() => setGestionFiltro('sin_gestion')}
+                className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700"
+              >
+                Sin gestión
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setGestionFiltro('compromiso_pago')}
+                className="rounded-lg bg-emerald-50 px-4 py-2 text-sm font-medium text-emerald-700"
+              >
+                Compromiso de pago
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setGestionFiltro('proximo_contacto_vencido')}
+                className="rounded-lg bg-orange-50 px-4 py-2 text-sm font-medium text-orange-700"
+              >
+                Próx. contacto vencido/hoy
+              </button>
+
+              <button
+                type="button"
                 onClick={() => {
                   setBusqueda('')
                   setEstadoFiltro('todos')
                   setVistaRapida('todas')
+                  setGestionFiltro('todos')
                 }}
                 className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700"
               >
@@ -861,7 +1049,7 @@ export default function CobranzaPage() {
                     Seguimiento manual
                   </h3>
                   <p className="mt-1 text-sm text-slate-500">
-                    Este seguimiento queda guardado localmente por empresa.
+                    Este seguimiento queda guardado en Supabase por empresa.
                   </p>
 
                   <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
@@ -930,7 +1118,7 @@ export default function CobranzaPage() {
                   <div className="mt-5 flex flex-wrap gap-3">
                     <button
                       type="button"
-                      onClick={handleSaveGestion}
+                      onClick={() => void handleSaveGestion()}
                       className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white"
                     >
                       Guardar seguimiento
