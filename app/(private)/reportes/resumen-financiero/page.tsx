@@ -131,7 +131,7 @@ function KpiCard({
   label: string
   value: number
   previous?: number
-  variation?: number | null
+  variation: number | null
 }) {
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -158,7 +158,7 @@ function KpiCard({
             }
           >
             Variación:{' '}
-            <span className="font-medium">{formatPercent(variation ?? null)}</span>
+            <span className="font-medium">{formatPercent(variation)}</span>
           </p>
         </div>
       ) : null}
