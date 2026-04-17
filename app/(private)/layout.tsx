@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { ReactNode, useEffect, useState } from 'react'
+import { ReactNode, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../lib/supabase/client'
 
 type PrivateLayoutProps = {
@@ -43,6 +43,7 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
   const [checkingSession, setCheckingSession] = useState(true)
   const [empresas, setEmpresas] = useState<Empresa[]>([])
   const [empresaActivaId, setEmpresaActivaId] = useState('')
+  const [empresaActivaNombreLocal, setEmpresaActivaNombreLocal] = useState('')
 
   const [usuarioNombre, setUsuarioNombre] = useState('')
   const [usuarioEmail, setUsuarioEmail] = useState('')
@@ -106,6 +107,8 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
     email?: string
   ) => {
     setEmpresaActivaId(empresa.id)
+    setEmpresaActivaNombreLocal(empresa.nombre)
+
     window.localStorage.setItem(STORAGE_ID_KEY, empresa.id)
     window.localStorage.setItem(STORAGE_NAME_KEY, empresa.nombre)
     window.dispatchEvent(new Event('empresa-activa-cambiada'))
@@ -125,15 +128,24 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
   }
 
   useEffect(() => {
+    const storedId = window.localStorage.getItem(STORAGE_ID_KEY) || ''
+    const storedName = window.localStorage.getItem(STORAGE_NAME_KEY) || ''
+
+    if (storedId) setEmpresaActivaId(storedId)
+    if (storedName) setEmpresaActivaNombreLocal(storedName)
+  }, [])
+
+  useEffect(() => {
     const checkSessionAndLoadEmpresas = async () => {
-      const { data } = await supabase.auth.getSession()
-
-      if (!data.session) {
-        router.push('/login')
-        return
-      }
-
       try {
+        const { data } = await supabase.auth.getSession()
+
+        if (!data.session) {
+          setCheckingSession(false)
+          router.push('/login')
+          return
+        }
+
         const accessToken = data.session.access_token
         const email = data.session.user.email || ''
         const apiKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
@@ -172,6 +184,8 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
           } else if (empresasData.length > 0) {
             await persistEmpresaActiva(empresasData[0], accessToken, email)
           }
+        } else {
+          console.error('No se pudieron cargar empresas:', json)
         }
       } catch (error) {
         console.error('Error cargando empresas:', error)
@@ -199,6 +213,16 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
   }
 
   const empresaActiva = empresas.find((empresa) => empresa.id === empresaActivaId)
+
+  const empresasParaSelector = useMemo(() => {
+    if (empresas.length > 0) return empresas
+
+    if (empresaActivaId && empresaActivaNombreLocal) {
+      return [{ id: empresaActivaId, nombre: empresaActivaNombreLocal }]
+    }
+
+    return []
+  }, [empresas, empresaActivaId, empresaActivaNombreLocal])
 
   if (checkingSession) {
     return (
@@ -233,12 +257,17 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
                   value={empresaActivaId}
                   onChange={(e) => void handleEmpresaChange(e.target.value)}
                   className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm"
+                  disabled={empresasParaSelector.length === 0}
                 >
-                  {empresas.map((empresa) => (
-                    <option key={empresa.id} value={empresa.id}>
-                      {empresa.nombre}
-                    </option>
-                  ))}
+                  {empresasParaSelector.length === 0 ? (
+                    <option value="">Sin empresas disponibles</option>
+                  ) : (
+                    empresasParaSelector.map((empresa) => (
+                      <option key={empresa.id} value={empresa.id}>
+                        {empresa.nombre}
+                      </option>
+                    ))
+                  )}
                 </select>
               </div>
 
@@ -247,7 +276,7 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
                   {usuarioNombre || usuarioEmail || 'Usuario'}
                 </p>
                 <p className="text-xs text-slate-500">
-                  {usuarioRol || empresaActiva?.nombre || 'Sin rol'}
+                  {usuarioRol || empresaActiva?.nombre || empresaActivaNombreLocal || 'Sin rol'}
                 </p>
               </div>
 
@@ -261,24 +290,24 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
           </div>
 
           <nav className="mt-5 flex flex-wrap gap-2">
-            {menuItems.map((item) => {
-              const active = pathname === item.href
+  {menuItems.map((item) => {
+    const active = pathname === item.href
 
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={`rounded-xl px-4 py-2 text-sm font-medium transition ${
-                    active
-                      ? 'bg-slate-900 text-white'
-                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                  }`}
-                >
-                  {item.label}
-                </Link>
-              )
-            })}
-          </nav>
+    return (
+      <Link
+        key={item.href}
+        href={item.href}
+        className={`rounded-xl px-4 py-2 text-sm font-medium no-underline transition ${
+          active
+            ? 'bg-slate-900 !text-white hover:!text-white visited:!text-white'
+            : 'bg-slate-100 text-slate-700 hover:bg-slate-200 hover:text-slate-900 visited:text-slate-700'
+        }`}
+      >
+        {item.label}
+      </Link>
+    )
+  })}
+</nav>
         </div>
       </header>
 
