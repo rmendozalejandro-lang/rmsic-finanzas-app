@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '../../../lib/supabase/client'
 import StatusBadge from '../../../components/StatusBadge'
 import ModuleAccessGuard from '../../../components/ModuleAccessGuard'
+import ProtectedModuleRoute from '@/components/ProtectedModuleRoute'
+
 
 type CuentaBancaria = {
   id: string
@@ -308,6 +310,7 @@ export default function TransferenciasPage() {
   }
 
   return (
+<ProtectedModuleRoute moduleKey="transferencias">
   <ModuleAccessGuard moduleKey="transferencias">
     <main className="space-y-6">
       <div>
@@ -486,5 +489,6 @@ export default function TransferenciasPage() {
       </div>
        </main>
   </ModuleAccessGuard>
+</ProtectedModuleRoute>
   )
 }

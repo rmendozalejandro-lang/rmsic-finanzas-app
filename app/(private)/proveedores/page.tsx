@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../../../lib/supabase/client'
 import StatusBadge from '../../../components/StatusBadge'
+import ProtectedModuleRoute from '@/components/ProtectedModuleRoute'
 
 type Proveedor = {
   id: string
@@ -304,6 +305,7 @@ export default function ProveedoresPage() {
   }
 
   return (
+  <ProtectedModuleRoute moduleKey="proveedores">
     <main className="space-y-6">
       <div>
         <h1 className="text-4xl font-semibold text-slate-900">Proveedores</h1>
@@ -516,5 +518,6 @@ export default function ProveedoresPage() {
         </div>
       </div>
     </main>
+</ProtectedModuleRoute>
   )
 }

@@ -12,6 +12,7 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '../../../lib/supabase/client'
 import StatusBadge from '../../../components/StatusBadge'
 import EmpresaActivaBanner from '../../../components/EmpresaActivaBanner'
+import ProtectedModuleRoute from '@/components/ProtectedModuleRoute'
 
 type Proveedor = {
   id: string
@@ -464,19 +465,20 @@ if (!perfilId) {
     [egresos]
   )
 
-  return (
+ return (
+  <ProtectedModuleRoute moduleKey="egresos">
     <main className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-4xl font-semibold text-slate-900">Egresos</h1>
           <p className="mt-2 text-slate-600">
-            Compras y gastos registrados en la empresa activa.
+            ...
           </p>
         </div>
 
         <Link
           href="/reportes/egresos"
-          className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800"
+          className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
         >
           Ver reporte de egresos
         </Link>
@@ -821,7 +823,7 @@ if (!perfilId) {
             <button
               type="submit"
               disabled={saving}
-              className="w-full rounded-xl bg-slate-900 py-3 font-medium text-white disabled:opacity-60"
+              className="w-full rounded-xl border border-slate-300 py-3 font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
             >
               {saving ? 'Guardando...' : 'Guardar egreso'}
             </button>
@@ -829,5 +831,6 @@ if (!perfilId) {
         </div>
       </div>
     </main>
+</ProtectedModuleRoute>
   )
 }

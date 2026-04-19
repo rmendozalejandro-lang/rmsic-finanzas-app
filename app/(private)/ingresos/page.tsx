@@ -12,6 +12,7 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '../../../lib/supabase/client'
 import StatusBadge from '../../../components/StatusBadge'
 import EmpresaActivaBanner from '../../../components/EmpresaActivaBanner'
+import ProtectedModuleRoute from '@/components/ProtectedModuleRoute'
 
 type Cliente = {
   id: string
@@ -498,6 +499,7 @@ export default function IngresosPage() {
   )
 
   return (
+  <ProtectedModuleRoute moduleKey="ingresos">
     <main className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
@@ -509,7 +511,7 @@ export default function IngresosPage() {
 
         <Link
           href="/reportes/ingresos"
-          className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800"
+         className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
         >
           Ver reporte de ingresos
         </Link>
@@ -858,7 +860,7 @@ export default function IngresosPage() {
             <button
               type="submit"
               disabled={saving}
-              className="w-full rounded-xl bg-slate-900 py-3 font-medium text-white disabled:opacity-60"
+              className="w-full rounded-xl border border-slate-300 py-3 font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
             >
               {saving ? 'Guardando...' : 'Guardar ingreso'}
             </button>
@@ -866,5 +868,6 @@ export default function IngresosPage() {
         </div>
       </div>
     </main>
+</ProtectedModuleRoute>
   )
 }

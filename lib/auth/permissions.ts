@@ -1,39 +1,80 @@
 export type RolEmpresa =
-  | 'admin'
-  | 'gerencia'
-  | 'finanzas'
-  | 'cobranza'
-  | 'remuneraciones'
-  | 'comercial'
-  | 'visualizador'
-  | 'administracion_financiera'
+  | "admin"
+  | "administracion_financiera"
+  | "cobranzas"
+  | "comercial";
 
 export type ModuleKey =
-  | 'dashboard'
-  | 'ingresos'
-  | 'egresos'
-  | 'cobranza'
-  | 'bancos'
-  | 'reportes'
-  | 'clientes'
-  | 'proveedores'
-  | 'transferencias'
-  | 'remuneraciones'
+  | "dashboard"
+  | "clientes"
+  | "proveedores"
+  | "cotizaciones"
+  | "ingresos"
+  | "egresos"
+  | "cobranza"
+  | "bancos"
+  | "transferencias"
+  | "remuneraciones"
+  | "reportes";
 
-const MODULE_ACCESS: Record<ModuleKey, RolEmpresa[]> = {
-  dashboard: ['admin', 'gerencia', 'finanzas', 'cobranza', 'visualizador', 'administracion_financiera'],
-  ingresos: ['admin', 'gerencia', 'finanzas', 'administracion_financiera'],
-  egresos: ['admin', 'gerencia', 'finanzas', 'administracion_financiera'],
-  cobranza: ['admin', 'gerencia', 'cobranza', 'administracion_financiera'],
-  bancos: ['admin', 'gerencia', 'finanzas', 'administracion_financiera'],
-  reportes: ['admin', 'gerencia', 'finanzas', 'administracion_financiera'],
-  clientes: ['admin', 'gerencia', 'comercial', 'cobranza', 'administracion_financiera'],
-  proveedores: ['admin', 'gerencia', 'finanzas', 'comercial', 'administracion_financiera'],
-  transferencias: ['admin', 'gerencia', 'finanzas'],
-  remuneraciones: ['admin', 'gerencia', 'remuneraciones'],
+const ROLE_MODULES: Record<RolEmpresa, ModuleKey[]> = {
+  admin: [
+    "dashboard",
+    "clientes",
+    "proveedores",
+    "cotizaciones",
+    "ingresos",
+    "egresos",
+    "cobranza",
+    "bancos",
+    "transferencias",
+    "remuneraciones",
+    "reportes",
+  ],
+  administracion_financiera: [
+    "dashboard",
+    "clientes",
+    "proveedores",
+    "cotizaciones",
+    "ingresos",
+    "egresos",
+    "cobranza",
+    "bancos",
+    "reportes",
+  ],
+  cobranzas: [
+    "dashboard",
+    "clientes",
+    "cobranza",
+    "bancos",
+    "reportes",
+  ],
+  comercial: [
+    "dashboard",
+    "clientes",
+    "cotizaciones",
+  ],
+};
+
+export function canAccessModule(
+  rol: RolEmpresa | string | null | undefined,
+  moduleKey: ModuleKey
+) {
+  if (!rol) return false;
+
+  const normalizedRol = rol as RolEmpresa;
+  const allowedModules = ROLE_MODULES[normalizedRol];
+
+  if (!allowedModules) return false;
+
+  return allowedModules.includes(moduleKey);
 }
 
-export function canAccessModule(role: RolEmpresa | '', moduleKey: ModuleKey) {
-  if (!role) return false
-  return MODULE_ACCESS[moduleKey].includes(role)
+export function getModulesForRole(
+  rol: RolEmpresa | string | null | undefined
+): ModuleKey[] {
+  if (!rol) return [];
+
+  const normalizedRol = rol as RolEmpresa;
+  return ROLE_MODULES[normalizedRol] ?? [];
 }

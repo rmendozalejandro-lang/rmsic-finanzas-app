@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '../../../lib/supabase/client'
 import StatusBadge from '../../../components/StatusBadge'
 import ModuleAccessGuard from '../../../components/ModuleAccessGuard'
+import ProtectedModuleRoute from '@/components/ProtectedModuleRoute'
 
 type Remuneracion = {
   id: string
@@ -514,6 +515,7 @@ if (!perfilId) {
   }
 
  return (
+<ProtectedModuleRoute moduleKey="remuneraciones">
   <ModuleAccessGuard moduleKey="remuneraciones">
     <main className="space-y-6">
       <div>
@@ -750,5 +752,6 @@ if (!perfilId) {
       </div>
         </main>
   </ModuleAccessGuard>
+</ProtectedModuleRoute>
   )
 }

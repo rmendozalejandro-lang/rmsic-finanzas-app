@@ -36,6 +36,36 @@ type GestionCobranzaRow = {
   updated_at: string
 }
 
+type CuentaBancariaOption = {
+  id: string
+  banco: string
+  nombre_cuenta: string
+}
+
+type CuentaPorCobrarRow = {
+  id: string
+  empresa_id: string
+  movimiento_id: string | null
+  cliente_id: string | null
+  fecha_emision: string | null
+  fecha_vencimiento: string | null
+  monto_total: number | null
+  monto_pagado: number | null
+  saldo_pendiente: number | null
+  estado: string | null
+}
+
+type MovimientoRow = {
+  id: string
+  cliente_id: string | null
+  descripcion: string | null
+  monto_total: number | null
+  monto_neto: number | null
+  monto_iva: number | null
+  monto_exento: number | null
+  observaciones: string | null
+}
+
 type GestionesMap = Record<string, GestionCobranza>
 
 const STORAGE_ID_KEY = 'empresa_activa_id'
@@ -230,6 +260,15 @@ export default function CobranzaPage() {
   const [proximoContactoInput, setProximoContactoInput] = useState('')
   const [observacionInput, setObservacionInput] = useState('')
 
+  const [cuentasBancarias, setCuentasBancarias] = useState<
+    CuentaBancariaOption[]
+  >([])
+  const [fechaPagoInput, setFechaPagoInput] = useState(getToday())
+  const [cuentaBancariaPagoId, setCuentaBancariaPagoId] = useState('')
+  const [medioPagoInput, setMedioPagoInput] = useState('transferencia')
+  const [observacionPagoInput, setObservacionPagoInput] = useState('')
+  const [savingPago, setSavingPago] = useState(false)
+
   useEffect(() => {
     const syncEmpresaActiva = () => {
       const empresaId = window.localStorage.getItem(STORAGE_ID_KEY) || ''
@@ -289,6 +328,34 @@ export default function CobranzaPage() {
   }, [empresaActivaId])
 
   useEffect(() => {
+    const fetchCuentasBancarias = async () => {
+      if (!empresaActivaId) {
+        setCuentasBancarias([])
+        return
+      }
+
+      try {
+        const { data, error } = await supabase
+          .from('cuentas_bancarias')
+          .select('id,banco,nombre_cuenta')
+          .eq('empresa_id', empresaActivaId)
+          .order('banco', { ascending: true })
+
+        if (error) {
+          console.error('Error cargando cuentas bancarias:', error)
+          return
+        }
+
+        setCuentasBancarias((data || []) as CuentaBancariaOption[])
+      } catch (err) {
+        console.error('Error cargando cuentas bancarias:', err)
+      }
+    }
+
+    fetchCuentasBancarias()
+  }, [empresaActivaId])
+
+  useEffect(() => {
     if (!detalleSeleccionado) return
 
     const gestion = gestiones[detalleSeleccionado.numero_factura]
@@ -297,6 +364,11 @@ export default function CobranzaPage() {
     setFechaContactoInput(gestion?.fecha_contacto || '')
     setProximoContactoInput(gestion?.proximo_contacto || '')
     setObservacionInput(gestion?.observacion || '')
+
+    setFechaPagoInput(getToday())
+    setCuentaBancariaPagoId('')
+    setMedioPagoInput('transferencia')
+    setObservacionPagoInput('')
   }, [detalleSeleccionado, gestiones])
 
   const handlePresetChange = (preset: string) => {
@@ -423,7 +495,9 @@ export default function CobranzaPage() {
   }, [porVencer])
 
   const sinGestionItems = useMemo(() => {
-    return cobranza.filter((item) => isSinGestion(gestiones[item.numero_factura]))
+    return cobranza.filter((item) =>
+      isSinGestion(gestiones[item.numero_factura])
+    )
   }, [cobranza, gestiones])
 
   const compromisoPagoItems = useMemo(() => {
@@ -484,7 +558,8 @@ export default function CobranzaPage() {
       } else if (gestionFiltro === 'proximo_contacto_vencido') {
         cumpleGestion = isProximoContactoVencidoOHoy(gestion)
       } else if (gestionFiltro !== 'todos') {
-        cumpleGestion = (gestion?.estado_gestion || 'sin_gestion') === gestionFiltro
+        cumpleGestion =
+          (gestion?.estado_gestion || 'sin_gestion') === gestionFiltro
       }
 
       return cumpleBusqueda && cumpleEstado && cumpleVista && cumpleGestion
@@ -569,6 +644,223 @@ export default function CobranzaPage() {
     }))
 
     alert('Seguimiento guardado.')
+  }
+
+  const handleRegistrarPago = async () => {
+    if (!detalleSeleccionado || !empresaActivaId) return
+
+    if (!cuentaBancariaPagoId) {
+      alert('Debes seleccionar la cuenta bancaria donde ingresó el pago.')
+      return
+    }
+
+    try {
+      setSavingPago(true)
+
+      const numeroFactura = String(detalleSeleccionado.numero_factura || '').trim()
+      const montoDocumento = Number(detalleSeleccionado.monto_total || 0)
+      const observacionPago = observacionPagoInput.trim() || null
+
+      const {
+        data: sessionData,
+        error: sessionError,
+      } = await supabase.auth.getSession()
+
+      if (sessionError || !sessionData.session) {
+        router.push('/login')
+        return
+      }
+
+      const currentUserId = sessionData.session.user.id
+
+      let movimientoExistente: MovimientoRow | null = null
+      let cxcRow: CuentaPorCobrarRow | null = null
+
+      const { data: movimientoData, error: movimientoError } = await supabase
+        .from('movimientos')
+        .select(
+          'id,cliente_id,descripcion,monto_total,monto_neto,monto_iva,monto_exento,observaciones'
+        )
+        .eq('empresa_id', empresaActivaId)
+        .eq('tipo_movimiento', 'ingreso')
+        .ilike('tipo_documento', 'factura')
+        .eq('numero_documento', numeroFactura)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (movimientoError) {
+        console.error('Error buscando movimiento existente:', movimientoError)
+        alert('No se pudo validar el movimiento asociado.')
+        return
+      }
+
+      movimientoExistente = (movimientoData as MovimientoRow | null) || null
+
+      if (movimientoExistente?.id) {
+        const { data: cxcByMovimiento, error: cxcByMovimientoError } =
+          await supabase
+            .from('cuentas_por_cobrar')
+            .select(
+              'id,empresa_id,movimiento_id,cliente_id,fecha_emision,fecha_vencimiento,monto_total,monto_pagado,saldo_pendiente,estado'
+            )
+            .eq('empresa_id', empresaActivaId)
+            .eq('movimiento_id', movimientoExistente.id)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+
+        if (cxcByMovimientoError) {
+          console.error(
+            'Error buscando cuenta por cobrar por movimiento:',
+            cxcByMovimientoError
+          )
+          alert('No se pudo identificar la cuenta por cobrar.')
+          return
+        }
+
+        cxcRow = (cxcByMovimiento as CuentaPorCobrarRow | null) || null
+      }
+
+      if (!cxcRow) {
+        const { data: cxcFallback, error: cxcFallbackError } = await supabase
+          .from('cuentas_por_cobrar')
+          .select(
+            'id,empresa_id,movimiento_id,cliente_id,fecha_emision,fecha_vencimiento,monto_total,monto_pagado,saldo_pendiente,estado'
+          )
+          .eq('empresa_id', empresaActivaId)
+          .eq('fecha_emision', detalleSeleccionado.fecha_emision)
+          .eq(
+            'fecha_vencimiento',
+            detalleSeleccionado.fecha_vencimiento || detalleSeleccionado.fecha_emision
+          )
+          .eq('monto_total', montoDocumento)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+
+        if (cxcFallbackError) {
+          console.error(
+            'Error buscando cuenta por cobrar por fallback:',
+            cxcFallbackError
+          )
+          alert('No se pudo identificar la cuenta por cobrar.')
+          return
+        }
+
+        cxcRow = (cxcFallback as CuentaPorCobrarRow | null) || null
+      }
+
+      if (!cxcRow) {
+        alert(
+          'No se encontró el registro de cuenta por cobrar asociado a esta factura.'
+        )
+        return
+      }
+
+      const montoPago = Number(cxcRow.monto_total || detalleSeleccionado.monto_total || 0)
+
+      let movimientoId = cxcRow.movimiento_id || movimientoExistente?.id || null
+
+      if (movimientoId) {
+        const { error: movimientoUpdateError } = await supabase
+          .from('movimientos')
+          .update({
+            fecha: fechaPagoInput,
+            cuenta_bancaria_id: cuentaBancariaPagoId,
+            estado: 'pagado',
+            medio_pago: medioPagoInput || null,
+            observaciones: observacionPago,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', movimientoId)
+
+        if (movimientoUpdateError) {
+          console.error(
+            'Error actualizando movimiento de ingreso:',
+            movimientoUpdateError
+          )
+          alert('No se pudo actualizar el ingreso asociado.')
+          return
+        }
+      } else {
+        const { data: nuevoMovimiento, error: nuevoMovimientoError } =
+          await supabase
+            .from('movimientos')
+            .insert({
+              empresa_id: empresaActivaId,
+              tipo_movimiento: 'ingreso',
+              fecha: fechaPagoInput,
+              fecha_vencimiento: detalleSeleccionado.fecha_vencimiento || null,
+              tercero_tipo: 'cliente',
+              cliente_id: cxcRow.cliente_id || null,
+              cuenta_bancaria_id: cuentaBancariaPagoId,
+              tipo_documento: 'factura',
+              numero_documento: numeroFactura,
+              descripcion:
+                detalleSeleccionado.descripcion ||
+                movimientoExistente?.descripcion ||
+                `Pago factura ${numeroFactura}`,
+              monto_neto:
+                Number(movimientoExistente?.monto_neto || 0) || montoPago,
+              monto_iva: Number(movimientoExistente?.monto_iva || 0),
+              monto_exento: Number(movimientoExistente?.monto_exento || 0),
+              monto_total: montoPago,
+              estado: 'pagado',
+              medio_pago: medioPagoInput || null,
+              observaciones:
+                observacionPago ||
+                movimientoExistente?.observaciones ||
+                null,
+              created_by: currentUserId,
+              updated_at: new Date().toISOString(),
+            })
+            .select('id')
+            .single()
+
+        if (nuevoMovimientoError || !nuevoMovimiento?.id) {
+          console.error('Error creando movimiento de ingreso:', nuevoMovimientoError)
+          alert('No se pudo crear el ingreso asociado al pago.')
+          return
+        }
+
+        movimientoId = nuevoMovimiento.id
+      }
+
+      const { error: cxcUpdateError } = await supabase
+        .from('cuentas_por_cobrar')
+        .update({
+          movimiento_id: movimientoId,
+          monto_pagado: montoPago,
+          saldo_pendiente: 0,
+          estado: 'pagado',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', cxcRow.id)
+
+      if (cxcUpdateError) {
+        console.error('Error actualizando cuenta por cobrar:', cxcUpdateError)
+        alert('No se pudo actualizar la cuenta por cobrar.')
+        return
+      }
+
+      alert('Pago registrado correctamente.')
+
+      const facturaPagada = detalleSeleccionado.numero_factura
+
+      setCobranza((prev) =>
+        prev.filter((item) => item.numero_factura !== facturaPagada)
+      )
+
+      setDetalleSeleccionado(null)
+      setCuentaBancariaPagoId('')
+      setObservacionPagoInput('')
+    } catch (err) {
+      console.error('Error registrando pago:', err)
+      alert('Ocurrió un error al registrar el pago.')
+    } finally {
+      setSavingPago(false)
+    }
   }
 
   const detalleGestion = detalleSeleccionado
@@ -1138,6 +1430,89 @@ export default function CobranzaPage() {
                       className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700"
                     >
                       Cerrar panel
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50 p-5">
+                  <h3 className="text-lg font-semibold text-emerald-900">
+                    Registrar pago confirmado
+                  </h3>
+                  <p className="mt-1 text-sm text-emerald-800">
+                    Esto dejará la factura como pagada en cobranza y actualizará o
+                    creará el ingreso en movimientos para que impacte bancos.
+                  </p>
+
+                  <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
+                    <div>
+                      <label className="mb-2 block text-sm font-medium text-slate-700">
+                        Fecha de pago
+                      </label>
+                      <input
+                        type="date"
+                        value={fechaPagoInput}
+                        onChange={(e) => setFechaPagoInput(e.target.value)}
+                        className="h-10 w-full rounded-lg border border-slate-300 px-3 text-sm"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="mb-2 block text-sm font-medium text-slate-700">
+                        Cuenta bancaria
+                      </label>
+                      <select
+                        value={cuentaBancariaPagoId}
+                        onChange={(e) => setCuentaBancariaPagoId(e.target.value)}
+                        className="h-10 w-full rounded-lg border border-slate-300 px-3 text-sm"
+                      >
+                        <option value="">Seleccionar cuenta</option>
+                        {cuentasBancarias.map((cuenta) => (
+                          <option key={cuenta.id} value={cuenta.id}>
+                            {cuenta.banco} - {cuenta.nombre_cuenta}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="mb-2 block text-sm font-medium text-slate-700">
+                        Medio de pago
+                      </label>
+                      <select
+                        value={medioPagoInput}
+                        onChange={(e) => setMedioPagoInput(e.target.value)}
+                        className="h-10 w-full rounded-lg border border-slate-300 px-3 text-sm"
+                      >
+                        <option value="transferencia">Transferencia</option>
+                        <option value="deposito">Depósito</option>
+                        <option value="cheque">Cheque</option>
+                        <option value="efectivo">Efectivo</option>
+                        <option value="otro">Otro</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="mt-4">
+                    <label className="mb-2 block text-sm font-medium text-slate-700">
+                      Observación del pago
+                    </label>
+                    <textarea
+                      value={observacionPagoInput}
+                      onChange={(e) => setObservacionPagoInput(e.target.value)}
+                      rows={3}
+                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                      placeholder="Ejemplo: transferencia recibida, abono confirmado, número de referencia, etc."
+                    />
+                  </div>
+
+                  <div className="mt-5 flex flex-wrap gap-3">
+                    <button
+                      type="button"
+                      onClick={() => void handleRegistrarPago()}
+                      disabled={savingPago}
+                      className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+                    >
+                      {savingPago ? 'Registrando pago...' : 'Registrar pago'}
                     </button>
                   </div>
                 </div>

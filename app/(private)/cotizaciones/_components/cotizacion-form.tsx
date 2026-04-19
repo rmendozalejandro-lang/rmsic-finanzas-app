@@ -4,12 +4,13 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
+
 type ClienteOption = {
   id: string;
   label: string;
 };
 
-type FormValues = {
+export type CotizacionFormValues = {
   cliente_id: string;
   estado: "borrador" | "enviada" | "aprobada" | "rechazada" | "vencida";
   titulo: string;
@@ -32,7 +33,7 @@ type FormValues = {
   ejecutivo_telefono: string;
 };
 
-type ItemForm = {
+export type CotizacionFormItem = {
   uid: string;
   descripcion: string;
   detalle: string;
@@ -47,10 +48,14 @@ type ItemForm = {
 type Props = {
   empresaId: string;
   clientes: ClienteOption[];
-  initialValues: FormValues;
+  initialValues: CotizacionFormValues;
+  initialItems?: CotizacionFormItem[];
+  mode?: "create" | "edit";
+  cotizacionId?: string;
+  backHref?: string;
 };
 
-function createEmptyItem(): ItemForm {
+function createEmptyItem(): CotizacionFormItem {
   return {
     uid:
       typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
@@ -94,7 +99,7 @@ function formatCurrency(value: number, currency = "CLP") {
   }).format(value);
 }
 
-function calculateItem(item: ItemForm) {
+function calculateItem(item: CotizacionFormItem) {
   const cantidad = Math.max(0, toNumber(item.cantidad));
   const precioUnitario = Math.max(0, toNumber(item.precio_unitario));
   const bruto = round2(cantidad * precioUnitario);
@@ -122,8 +127,8 @@ function calculateItem(item: ItemForm) {
 }
 
 function calculateSummary(
-  items: ItemForm[],
-  descuentoGlobalTipo: FormValues["descuento_global_tipo"],
+  items: CotizacionFormItem[],
+  descuentoGlobalTipo: CotizacionFormValues["descuento_global_tipo"],
   descuentoGlobalValor: string,
   porcentajeIva: string
 ) {
@@ -202,10 +207,16 @@ export default function CotizacionForm({
   empresaId,
   clientes,
   initialValues,
+  initialItems,
+  mode = "create",
+  cotizacionId,
+  backHref,
 }: Props) {
   const router = useRouter();
-  const [form, setForm] = useState<FormValues>(initialValues);
-  const [items, setItems] = useState<ItemForm[]>([createEmptyItem()]);
+  const [form, setForm] = useState<CotizacionFormValues>(initialValues);
+  const [items, setItems] = useState<CotizacionFormItem[]>(
+    initialItems && initialItems.length > 0 ? initialItems : [createEmptyItem()]
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -223,9 +234,11 @@ export default function CotizacionForm({
     form.porcentaje_iva,
   ]);
 
-  function updateFormField<K extends keyof FormValues>(
+  const isEdit = mode === "edit";
+
+  function updateFormField<K extends keyof CotizacionFormValues>(
     key: K,
-    value: FormValues[K]
+    value: CotizacionFormValues[K]
   ) {
     setForm((prev) => ({
       ...prev,
@@ -233,10 +246,10 @@ export default function CotizacionForm({
     }));
   }
 
-  function updateItem<K extends keyof ItemForm>(
+  function updateItem<K extends keyof CotizacionFormItem>(
     uid: string,
     key: K,
-    value: ItemForm[K]
+    value: CotizacionFormItem[K]
   ) {
     setItems((prev) =>
       prev.map((item) => (item.uid === uid ? { ...item, [key]: value } : item))
@@ -258,205 +271,28 @@ export default function CotizacionForm({
     e.preventDefault();
     setError(null);
     setSaving(true);
-async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
-  e.preventDefault();
-  setError(null);
-  setSaving(true);
 
-  try {
-    const { data, error: sessionError } = await supabase.auth.getSession();
-    const session = data.session;
-
-    if (sessionError || !session) {
-      setError("No se pudo recuperar la sesión activa del navegador.");
-      setSaving(false);
-      return;
-    }
-
-    const accessToken = session.access_token;
-    const user = session.user;
-
-    const apiKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
-    const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-
-    if (!apiKey || !baseUrl) {
-      setError("Faltan variables públicas de Supabase.");
-      setSaving(false);
-      return;
-    }
-
-    const validItems = items
-      .map((item, index) => ({
-        orden: index + 1,
-        descripcion: item.descripcion.trim(),
-        detalle: item.detalle.trim() || null,
-        unidad: item.unidad.trim() || null,
-        cantidad: Math.max(0, toNumber(item.cantidad)) || 1,
-        precio_unitario: Math.max(0, toNumber(item.precio_unitario)),
-        descuento_tipo: normalizeDiscountType(item.descuento_tipo),
-        descuento_valor: Math.max(0, toNumber(item.descuento_valor)),
-        afecto_iva: item.afecto_iva,
-      }))
-      .filter((item) => item.descripcion.length > 0);
-
-    if (!form.titulo.trim()) {
-      setError("Debes ingresar un título para la cotización.");
-      setSaving(false);
-      return;
-    }
-
-    if (!form.fecha_emision) {
-      setError("Debes ingresar la fecha de emisión.");
-      setSaving(false);
-      return;
-    }
-
-    if (validItems.length === 0) {
-      setError("Debes agregar al menos un ítem con descripción.");
-      setSaving(false);
-      return;
-    }
-
-    const porcentajeIva = Math.min(
-      100,
-      Math.max(0, toNumber(form.porcentaje_iva))
-    );
-
-    let descuentoGlobalValor = Math.max(
-      0,
-      toNumber(form.descuento_global_valor)
-    );
-
-    if (form.descuento_global_tipo === "porcentaje") {
-      descuentoGlobalValor = Math.min(100, descuentoGlobalValor);
-    }
-
-    const cotizacionPayload = {
-      empresa_id: empresaId,
-      cliente_id: form.cliente_id || null,
-      estado: form.estado,
-      titulo: form.titulo.trim(),
-      descripcion: form.descripcion.trim() || null,
-      observaciones: form.observaciones.trim() || null,
-      condiciones_comerciales: form.condiciones_comerciales.trim() || null,
-      fecha_emision: form.fecha_emision,
-      fecha_vencimiento: form.fecha_vencimiento || null,
-      moneda: form.moneda.trim() || "CLP",
-      porcentaje_iva: round2(porcentajeIva),
-      descuento_global_tipo:
-        normalizeDiscountType(form.descuento_global_tipo) ?? null,
-      descuento_global_valor: round2(descuentoGlobalValor),
-      empresa_nombre: form.empresa_nombre.trim() || null,
-      empresa_logo_url: form.empresa_logo_url.trim() || null,
-      empresa_email: form.empresa_email.trim() || null,
-      empresa_telefono: form.empresa_telefono.trim() || null,
-      empresa_web: form.empresa_web.trim() || null,
-      ejecutivo_user_id: user.id,
-      ejecutivo_nombre: form.ejecutivo_nombre.trim() || null,
-      ejecutivo_email: form.ejecutivo_email.trim() || user.email || null,
-      ejecutivo_telefono: form.ejecutivo_telefono.trim() || null,
-    };
-
-    const cotizacionResp = await fetch(`${baseUrl}/rest/v1/cotizaciones`, {
-      method: "POST",
-      headers: {
-        apikey: apiKey,
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-        Prefer: "return=representation",
-      },
-      body: JSON.stringify(cotizacionPayload),
-    });
-
-    const cotizacionJson = await cotizacionResp.json();
-
-    if (!cotizacionResp.ok || !Array.isArray(cotizacionJson) || !cotizacionJson[0]?.id) {
-      setError(
-        cotizacionJson?.message ||
-          cotizacionJson?.error_description ||
-          cotizacionJson?.error ||
-          "No se pudo crear la cotización."
-      );
-      setSaving(false);
-      return;
-    }
-
-    const cotizacion = cotizacionJson[0];
-
-    const itemsPayload = validItems.map((item) => ({
-      cotizacion_id: cotizacion.id,
-      orden: item.orden,
-      descripcion: item.descripcion,
-      detalle: item.detalle,
-      unidad: item.unidad,
-      cantidad: round2(item.cantidad),
-      precio_unitario: round2(item.precio_unitario),
-      descuento_tipo: item.descuento_tipo,
-      descuento_valor:
-        item.descuento_tipo === "porcentaje"
-          ? round2(Math.min(100, item.descuento_valor))
-          : round2(item.descuento_valor),
-      afecto_iva: item.afecto_iva,
-    }));
-
-    const itemsResp = await fetch(`${baseUrl}/rest/v1/cotizacion_items`, {
-      method: "POST",
-      headers: {
-        apikey: apiKey,
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-        Prefer: "return=representation",
-      },
-      body: JSON.stringify(itemsPayload),
-    });
-
-    const itemsJson = await itemsResp.json();
-
-    if (!itemsResp.ok) {
-      await fetch(`${baseUrl}/rest/v1/cotizaciones?id=eq.${cotizacion.id}`, {
-        method: "DELETE",
-        headers: {
-          apikey: apiKey,
-          Authorization: `Bearer ${accessToken}`,
-        },
-      });
-
-      setError(
-        itemsJson?.message ||
-          itemsJson?.error_description ||
-          itemsJson?.error ||
-          "No se pudieron guardar los ítems."
-      );
-      setSaving(false);
-      return;
-    }
-
-    router.push("/cotizaciones");
-    router.refresh();
-  } catch (err) {
-    setError(
-      err instanceof Error
-        ? err.message
-        : "Ocurrió un error inesperado al guardar."
-    );
-    setSaving(false);
-  }
-}
     try {
-      
+      const { data, error: sessionError } = await supabase.auth.getSession();
+      const session = data.session;
 
-      const {
-  data: { session },
-  error: sessionError,
-} = await supabase.auth.getSession();
+      if (sessionError || !session) {
+        setError("No se pudo recuperar la sesión activa del navegador.");
+        setSaving(false);
+        return;
+      }
 
-const user = session?.user ?? null;
+      const accessToken = session.access_token;
+      const user = session.user;
 
-if (sessionError || !session?.access_token || !user) {
-  setError("No se pudo recuperar la sesión activa del navegador.");
-  setSaving(false);
-  return;
-}
+      const apiKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
+      const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+
+      if (!apiKey || !baseUrl) {
+        setError("Faltan variables públicas de Supabase.");
+        setSaving(false);
+        return;
+      }
 
       const validItems = items
         .map((item, index) => ({
@@ -504,46 +340,126 @@ if (sessionError || !session?.access_token || !user) {
         descuentoGlobalValor = Math.min(100, descuentoGlobalValor);
       }
 
-      const { data: cotizacion, error: cotizacionError } = await supabase
-        .from("cotizaciones")
-        .insert({
-          empresa_id: empresaId,
-          cliente_id: form.cliente_id || null,
-          estado: form.estado,
-          titulo: form.titulo.trim(),
-          descripcion: form.descripcion.trim() || null,
-          observaciones: form.observaciones.trim() || null,
-          condiciones_comerciales:
-            form.condiciones_comerciales.trim() || null,
-          fecha_emision: form.fecha_emision,
-          fecha_vencimiento: form.fecha_vencimiento || null,
-          moneda: form.moneda.trim() || "CLP",
-          porcentaje_iva: round2(porcentajeIva),
-          descuento_global_tipo:
-            normalizeDiscountType(form.descuento_global_tipo) ?? null,
-          descuento_global_valor: round2(descuentoGlobalValor),
-          empresa_nombre: form.empresa_nombre.trim() || null,
-          empresa_logo_url: form.empresa_logo_url.trim() || null,
-          empresa_email: form.empresa_email.trim() || null,
-          empresa_telefono: form.empresa_telefono.trim() || null,
-          empresa_web: form.empresa_web.trim() || null,
-          ejecutivo_user_id: user.id,
-          ejecutivo_nombre: form.ejecutivo_nombre.trim() || null,
-          ejecutivo_email:
-            form.ejecutivo_email.trim() || user.email || null,
-          ejecutivo_telefono: form.ejecutivo_telefono.trim() || null,
-        })
-        .select("id, folio, codigo")
-        .single();
+      const cotizacionPayload = {
+        empresa_id: empresaId,
+        cliente_id: form.cliente_id || null,
+        estado: form.estado,
+        titulo: form.titulo.trim(),
+        descripcion: form.descripcion.trim() || null,
+        observaciones: form.observaciones.trim() || null,
+        condiciones_comerciales: form.condiciones_comerciales.trim() || null,
+        fecha_emision: form.fecha_emision,
+        fecha_vencimiento: form.fecha_vencimiento || null,
+        moneda: form.moneda.trim() || "CLP",
+        porcentaje_iva: round2(porcentajeIva),
+        descuento_global_tipo:
+          normalizeDiscountType(form.descuento_global_tipo) ?? null,
+        descuento_global_valor: round2(descuentoGlobalValor),
+        empresa_nombre: form.empresa_nombre.trim() || null,
+        empresa_logo_url: form.empresa_logo_url.trim() || null,
+        empresa_email: form.empresa_email.trim() || null,
+        empresa_telefono: form.empresa_telefono.trim() || null,
+        empresa_web: form.empresa_web.trim() || null,
+        ejecutivo_user_id: user.id,
+        ejecutivo_nombre: form.ejecutivo_nombre.trim() || null,
+        ejecutivo_email: form.ejecutivo_email.trim() || user.email || null,
+        ejecutivo_telefono: form.ejecutivo_telefono.trim() || null,
+      };
 
-      if (cotizacionError || !cotizacion) {
-        setError(cotizacionError?.message || "No se pudo crear la cotización.");
-        setSaving(false);
-        return;
+      let savedId = cotizacionId || "";
+
+      if (!isEdit) {
+        const cotizacionResp = await fetch(`${baseUrl}/rest/v1/cotizaciones`, {
+          method: "POST",
+          headers: {
+            apikey: apiKey,
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+            Prefer: "return=representation",
+          },
+          body: JSON.stringify(cotizacionPayload),
+        });
+
+        const cotizacionJson = await cotizacionResp.json();
+
+        if (
+          !cotizacionResp.ok ||
+          !Array.isArray(cotizacionJson) ||
+          !cotizacionJson[0]?.id
+        ) {
+          setError(
+            cotizacionJson?.message ||
+              cotizacionJson?.error_description ||
+              cotizacionJson?.error ||
+              "No se pudo crear la cotización."
+          );
+          setSaving(false);
+          return;
+        }
+
+        savedId = cotizacionJson[0].id as string;
+      } else {
+        if (!cotizacionId) {
+          setError("No se encontró el identificador de la cotización.");
+          setSaving(false);
+          return;
+        }
+
+        const cotizacionResp = await fetch(
+          `${baseUrl}/rest/v1/cotizaciones?id=eq.${cotizacionId}&empresa_id=eq.${empresaId}`,
+          {
+            method: "PATCH",
+            headers: {
+              apikey: apiKey,
+              Authorization: `Bearer ${accessToken}`,
+              "Content-Type": "application/json",
+              Prefer: "return=representation",
+            },
+            body: JSON.stringify(cotizacionPayload),
+          }
+        );
+
+        const cotizacionJson = await cotizacionResp.json();
+
+        if (!cotizacionResp.ok) {
+          setError(
+            cotizacionJson?.message ||
+              cotizacionJson?.error_description ||
+              cotizacionJson?.error ||
+              "No se pudo actualizar la cotización."
+          );
+          setSaving(false);
+          return;
+        }
+
+        savedId = cotizacionId;
+
+        const deleteItemsResp = await fetch(
+          `${baseUrl}/rest/v1/cotizacion_items?cotizacion_id=eq.${cotizacionId}`,
+          {
+            method: "DELETE",
+            headers: {
+              apikey: apiKey,
+              Authorization: `Bearer ${accessToken}`,
+            },
+          }
+        );
+
+        if (!deleteItemsResp.ok) {
+          const deleteJson = await deleteItemsResp.json().catch(() => null);
+          setError(
+            deleteJson?.message ||
+              deleteJson?.error_description ||
+              deleteJson?.error ||
+              "No se pudieron reemplazar los ítems."
+          );
+          setSaving(false);
+          return;
+        }
       }
 
-      const itemsInsert = validItems.map((item) => ({
-        cotizacion_id: cotizacion.id,
+      const itemsPayload = validItems.map((item) => ({
+        cotizacion_id: savedId,
         orden: item.orden,
         descripcion: item.descripcion,
         detalle: item.detalle,
@@ -558,20 +474,41 @@ if (sessionError || !session?.access_token || !user) {
         afecto_iva: item.afecto_iva,
       }));
 
-      const { error: itemsError } = await supabase
-        .from("cotizacion_items")
-        .insert(itemsInsert);
+      const itemsResp = await fetch(`${baseUrl}/rest/v1/cotizacion_items`, {
+        method: "POST",
+        headers: {
+          apikey: apiKey,
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+          Prefer: "return=representation",
+        },
+        body: JSON.stringify(itemsPayload),
+      });
 
-      if (itemsError) {
-        await supabase.from("cotizaciones").delete().eq("id", cotizacion.id);
+      const itemsJson = await itemsResp.json();
+
+      if (!itemsResp.ok) {
+        if (!isEdit) {
+          await fetch(`${baseUrl}/rest/v1/cotizaciones?id=eq.${savedId}`, {
+            method: "DELETE",
+            headers: {
+              apikey: apiKey,
+              Authorization: `Bearer ${accessToken}`,
+            },
+          });
+        }
+
         setError(
-          itemsError.message || "No se pudieron guardar los ítems."
+          itemsJson?.message ||
+            itemsJson?.error_description ||
+            itemsJson?.error ||
+            "No se pudieron guardar los ítems."
         );
         setSaving(false);
         return;
       }
 
-      router.push("/cotizaciones");
+      router.push(isEdit ? `/cotizaciones/${savedId}` : "/cotizaciones");
       router.refresh();
     } catch (err) {
       setError(
@@ -589,20 +526,22 @@ if (sessionError || !session?.access_token || !user) {
         <div>
           <div className="text-sm text-slate-500">Empresa activa</div>
           <h1 className="text-2xl font-semibold text-slate-900">
-            Nueva cotización
+            {isEdit ? "Editar cotización" : "Nueva cotización"}
           </h1>
           <p className="mt-1 text-sm text-slate-600">
             La empresa activa es{" "}
             <span className="font-medium text-slate-900">{empresaId}</span>
           </p>
           <p className="mt-1 text-sm text-slate-500">
-            El folio y el código se asignan automáticamente al guardar.
+            {isEdit
+              ? "Los cambios se guardarán sobre la cotización existente."
+              : "El folio y el código se asignan automáticamente al guardar."}
           </p>
         </div>
 
         <div className="flex items-center gap-3">
           <Link
-            href="/cotizaciones"
+            href={backHref || "/cotizaciones"}
             className="inline-flex items-center rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
           >
             Volver
@@ -612,7 +551,13 @@ if (sessionError || !session?.access_token || !user) {
             disabled={saving}
             className="inline-flex items-center justify-center rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {saving ? "Guardando..." : "Guardar cotización"}
+            {saving
+              ? isEdit
+                ? "Guardando cambios..."
+                : "Guardando..."
+              : isEdit
+              ? "Guardar cambios"
+              : "Guardar cotización"}
           </button>
         </div>
       </header>
@@ -658,7 +603,7 @@ if (sessionError || !session?.access_token || !user) {
                   onChange={(e) =>
                     updateFormField(
                       "estado",
-                      e.target.value as FormValues["estado"]
+                      e.target.value as CotizacionFormValues["estado"]
                     )
                   }
                   className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
@@ -678,7 +623,6 @@ if (sessionError || !session?.access_token || !user) {
                 <input
                   value={form.titulo}
                   onChange={(e) => updateFormField("titulo", e.target.value)}
-                  placeholder="Ej: Servicio de mantenimiento correctivo tablero general"
                   className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
                 />
               </div>
@@ -689,9 +633,10 @@ if (sessionError || !session?.access_token || !user) {
                 </label>
                 <textarea
                   value={form.descripcion}
-                  onChange={(e) => updateFormField("descripcion", e.target.value)}
+                  onChange={(e) =>
+                    updateFormField("descripcion", e.target.value)
+                  }
                   rows={4}
-                  placeholder="Descripción general del alcance de la cotización"
                   className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
                 />
               </div>
@@ -703,7 +648,9 @@ if (sessionError || !session?.access_token || !user) {
                 <input
                   type="date"
                   value={form.fecha_emision}
-                  onChange={(e) => updateFormField("fecha_emision", e.target.value)}
+                  onChange={(e) =>
+                    updateFormField("fecha_emision", e.target.value)
+                  }
                   className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
                 />
               </div>
@@ -757,7 +704,9 @@ if (sessionError || !session?.access_token || !user) {
                 </label>
                 <textarea
                   value={form.observaciones}
-                  onChange={(e) => updateFormField("observaciones", e.target.value)}
+                  onChange={(e) =>
+                    updateFormField("observaciones", e.target.value)
+                  }
                   rows={3}
                   className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
                 />
@@ -767,14 +716,21 @@ if (sessionError || !session?.access_token || !user) {
                 <label className="mb-2 block text-sm font-medium text-slate-700">
                   Condiciones comerciales
                 </label>
-                <textarea
+                <select
                   value={form.condiciones_comerciales}
                   onChange={(e) =>
                     updateFormField("condiciones_comerciales", e.target.value)
                   }
-                  rows={3}
                   className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
-                />
+                >
+                  <option value="">Seleccionar condición</option>
+                  <option value="Validez de la cotización: 15 días">
+                    Validez de la cotización: 15 días
+                  </option>
+                  <option value="Validez de la cotización: 30 días">
+                    Validez de la cotización: 30 días
+                  </option>
+                </select>
               </div>
             </div>
           </div>
@@ -920,7 +876,7 @@ if (sessionError || !session?.access_token || !user) {
                             updateItem(
                               item.uid,
                               "descuento_tipo",
-                              e.target.value as ItemForm["descuento_tipo"]
+                              e.target.value as CotizacionFormItem["descuento_tipo"]
                             )
                           }
                           className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
@@ -1013,6 +969,7 @@ if (sessionError || !session?.access_token || !user) {
 
               {form.empresa_logo_url ? (
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={form.empresa_logo_url}
                     alt="Logo empresa"
@@ -1122,7 +1079,7 @@ if (sessionError || !session?.access_token || !user) {
                   onChange={(e) =>
                     updateFormField(
                       "descuento_global_tipo",
-                      e.target.value as FormValues["descuento_global_tipo"]
+                      e.target.value as CotizacionFormValues["descuento_global_tipo"]
                     )
                   }
                   className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
@@ -1231,7 +1188,13 @@ if (sessionError || !session?.access_token || !user) {
                 disabled={saving}
                 className="inline-flex items-center justify-center rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {saving ? "Guardando..." : "Guardar cotización"}
+                {saving
+                  ? isEdit
+                    ? "Guardando cambios..."
+                    : "Guardando..."
+                  : isEdit
+                  ? "Guardar cambios"
+                  : "Guardar cotización"}
               </button>
             </div>
           </div>

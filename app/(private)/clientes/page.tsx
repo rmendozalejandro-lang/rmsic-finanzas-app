@@ -100,8 +100,7 @@ export default function ClientesPage() {
       const json = await resp.json()
 
       if (!resp.ok) {
-        console.error(json)
-        setError('No se pudieron cargar los clientes.')
+        setError(`No se pudieron cargar los clientes. ${JSON.stringify(json)}`)
         return
       }
 

@@ -27,8 +27,9 @@ type SaldoBancario = {
   ingresos_pagados: number
   egresos_pagados: number
   saldo_calculado: number
+  transferencias_entrantes: number
+  transferencias_salientes: number
 }
-
 type MovimientoBanco = {
   id: string
   fecha: string
@@ -52,11 +53,14 @@ const formatTipoMovimiento = (value: string) => {
       return 'Ingreso'
     case 'egreso':
       return 'Egreso'
+    case 'transferencia_entrada':
+      return 'Transferencia entrada'
+    case 'transferencia_salida':
+      return 'Transferencia salida'
     default:
       return value || '-'
   }
 }
-
 export default function BancosPage() {
   const router = useRouter()
 
@@ -117,7 +121,7 @@ export default function BancosPage() {
           { headers }
         ),
         fetch(
-          `${baseUrl}/rest/v1/movimientos?empresa_id=eq.${empresaActivaId}&select=id,fecha,tipo_movimiento,numero_documento,descripcion,monto_total,estado,cuenta_bancaria_id,empresa_id&cuenta_bancaria_id=not.is.null&order=fecha.desc&limit=30`,
+         `${baseUrl}/rest/v1/v_movimientos_bancarios?empresa_id=eq.${empresaActivaId}&select=id,fecha,tipo_movimiento,tipo_documento,numero_documento,descripcion,monto_total,estado,cuenta_bancaria_id,empresa_id,origen&cuenta_bancaria_id=not.is.null&order=fecha.desc&limit=30`,
           { headers }
         ),
       ])
@@ -270,31 +274,43 @@ export default function BancosPage() {
                     </h3>
 
                     <div className="mt-4 grid grid-cols-2 gap-4 text-sm">
-                      <div>
-                        <p className="text-slate-500">Saldo inicial</p>
-                        <p className="mt-1 font-medium">
-                          {formatCLP(item.saldo_inicial)}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-slate-500">Saldo calculado</p>
-                        <p className="mt-1 font-medium">
-                          {formatCLP(item.saldo_calculado)}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-slate-500">Ingresos pagados</p>
-                        <p className="mt-1 font-medium">
-                          {formatCLP(item.ingresos_pagados)}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-slate-500">Egresos pagados</p>
-                        <p className="mt-1 font-medium">
-                          {formatCLP(item.egresos_pagados)}
-                        </p>
-                      </div>
-                    </div>
+  <div>
+    <p className="text-slate-500">Saldo inicial</p>
+    <p className="mt-1 font-medium">
+      {formatCLP(item.saldo_inicial)}
+    </p>
+  </div>
+  <div>
+    <p className="text-slate-500">Saldo calculado</p>
+    <p className="mt-1 font-medium">
+      {formatCLP(item.saldo_calculado)}
+    </p>
+  </div>
+  <div>
+    <p className="text-slate-500">Ingresos pagados</p>
+    <p className="mt-1 font-medium">
+      {formatCLP(item.ingresos_pagados)}
+    </p>
+  </div>
+  <div>
+    <p className="text-slate-500">Egresos pagados</p>
+    <p className="mt-1 font-medium">
+      {formatCLP(item.egresos_pagados)}
+    </p>
+  </div>
+  <div>
+    <p className="text-slate-500">Transferencias entrantes</p>
+    <p className="mt-1 font-medium">
+      {formatCLP(item.transferencias_entrantes)}
+    </p>
+  </div>
+  <div>
+    <p className="text-slate-500">Transferencias salientes</p>
+    <p className="mt-1 font-medium">
+      {formatCLP(item.transferencias_salientes)}
+    </p>
+  </div>
+</div>
                   </div>
                 ))}
               </div>
