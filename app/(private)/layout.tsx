@@ -4,10 +4,6 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { ReactNode, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../lib/supabase/client'
-import {
-  canAccessModule,
-  type ModuleKey,
-} from '../../lib/auth/permissions'
 
 type PrivateLayoutProps = {
   children: ReactNode
@@ -20,27 +16,22 @@ type Empresa = {
 
 type Perfil = {
   id: string
+  nombre?: string | null
   email?: string | null
 }
 
-type MenuItem = {
-  href: string
-  label: string
-  moduleKey: ModuleKey
-}
-
-const menuItems: MenuItem[] = [
-  { href: '/', label: 'Dashboard', moduleKey: 'dashboard' },
-  { href: '/ingresos', label: 'Ingresos', moduleKey: 'ingresos' },
-  { href: '/egresos', label: 'Egresos', moduleKey: 'egresos' },
-  { href: '/cobranza', label: 'Cobranza', moduleKey: 'cobranza' },
-  { href: '/bancos', label: 'Bancos', moduleKey: 'bancos' },
-  { href: '/reportes', label: 'Reportes', moduleKey: 'reportes' },
-  { href: '/clientes', label: 'Clientes', moduleKey: 'clientes' },
-  { href: '/cotizaciones', label: 'Cotizaciones', moduleKey: 'cotizaciones' },
-  { href: '/proveedores', label: 'Proveedores', moduleKey: 'proveedores' },
-  { href: '/transferencias', label: 'Transferencias', moduleKey: 'transferencias' },
-  { href: '/remuneraciones', label: 'Remuneraciones', moduleKey: 'remuneraciones' },
+const menuItems = [
+  { href: '/', label: 'Dashboard' },
+  { href: '/ingresos', label: 'Ingresos' },
+  { href: '/egresos', label: 'Egresos' },
+  { href: '/cobranza', label: 'Cobranza' },
+  { href: '/bancos', label: 'Bancos' },
+  { href: '/reportes', label: 'Reportes' },
+  { href: '/reportes/antiguedad-saldos', label: 'Antigüedad de saldos' },
+  { href: '/clientes', label: 'Clientes' },
+  { href: '/proveedores', label: 'Proveedores' },
+  { href: '/transferencias', label: 'Transferencias' },
+  { href: '/remuneraciones', label: 'Remuneraciones' },
 ]
 
 const STORAGE_ID_KEY = 'empresa_activa_id'
@@ -58,13 +49,11 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
   const [usuarioNombre, setUsuarioNombre] = useState('')
   const [usuarioEmail, setUsuarioEmail] = useState('')
   const [usuarioRol, setUsuarioRol] = useState('')
-  const [rolResuelto, setRolResuelto] = useState(false)
 
   const fetchUsuarioContexto = async (
     accessToken: string,
     empresaId: string,
-    email: string,
-    userId: string
+    email: string
   ) => {
     try {
       const apiKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
@@ -76,7 +65,7 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
       }
 
       const perfilResp = await fetch(
-        `${baseUrl}/rest/v1/perfiles?select=id,email&email=eq.${encodeURIComponent(email)}`,
+        `${baseUrl}/rest/v1/perfiles?select=id,nombre,email&email=eq.${encodeURIComponent(email)}`,
         { headers }
       )
 
@@ -84,23 +73,25 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
 
       if (perfilResp.ok && perfilJson?.length) {
         const perfil = perfilJson[0] as Perfil
-        setUsuarioNombre(perfil.email || email)
+
+        setUsuarioNombre(perfil.nombre || perfil.email || email)
         setUsuarioEmail(perfil.email || email)
+
+        const rolResp = await fetch(
+          `${baseUrl}/rest/v1/usuario_empresas?select=rol&usuario_id=eq.${perfil.id}&empresa_id=eq.${empresaId}`,
+          { headers }
+        )
+
+        const rolJson = await rolResp.json()
+
+        if (rolResp.ok && rolJson?.length) {
+          setUsuarioRol(rolJson[0].rol || '')
+        } else {
+          setUsuarioRol('')
+        }
       } else {
         setUsuarioNombre(email)
         setUsuarioEmail(email)
-      }
-
-      const rolResp = await fetch(
-        `${baseUrl}/rest/v1/usuario_empresas?select=rol&usuario_id=eq.${userId}&empresa_id=eq.${empresaId}&activo=eq.true`,
-        { headers }
-      )
-
-      const rolJson = await rolResp.json()
-
-      if (rolResp.ok && rolJson?.length) {
-        setUsuarioRol(rolJson[0].rol || '')
-      } else {
         setUsuarioRol('')
       }
     } catch (error) {
@@ -108,20 +99,16 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
       setUsuarioNombre(email)
       setUsuarioEmail(email)
       setUsuarioRol('')
-    } finally {
-      setRolResuelto(true)
     }
   }
 
   const persistEmpresaActiva = async (
     empresa: Empresa,
     accessToken?: string,
-    email?: string,
-    userId?: string
+    email?: string
   ) => {
     setEmpresaActivaId(empresa.id)
     setEmpresaActivaNombreLocal(empresa.nombre)
-    setRolResuelto(false)
 
     window.localStorage.setItem(STORAGE_ID_KEY, empresa.id)
     window.localStorage.setItem(STORAGE_NAME_KEY, empresa.nombre)
@@ -129,24 +116,15 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
 
     let resolvedAccessToken = accessToken || ''
     let resolvedEmail = email || ''
-    let resolvedUserId = userId || ''
 
-    if (!resolvedAccessToken || !resolvedEmail || !resolvedUserId) {
+    if (!resolvedAccessToken || !resolvedEmail) {
       const { data } = await supabase.auth.getSession()
       resolvedAccessToken = data.session?.access_token || ''
       resolvedEmail = data.session?.user.email || ''
-      resolvedUserId = data.session?.user.id || ''
     }
 
-    if (resolvedAccessToken && resolvedEmail && resolvedUserId) {
-      await fetchUsuarioContexto(
-        resolvedAccessToken,
-        empresa.id,
-        resolvedEmail,
-        resolvedUserId
-      )
-    } else {
-      setRolResuelto(true)
+    if (resolvedAccessToken && resolvedEmail) {
+      await fetchUsuarioContexto(resolvedAccessToken, empresa.id, resolvedEmail)
     }
   }
 
@@ -171,7 +149,6 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
 
         const accessToken = data.session.access_token
         const email = data.session.user.email || ''
-        const userId = data.session.user.id || ''
         const apiKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
         const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
 
@@ -201,39 +178,18 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
             )
 
             if (empresaGuardada) {
-              await persistEmpresaActiva(
-                empresaGuardada,
-                accessToken,
-                email,
-                userId
-              )
+              await persistEmpresaActiva(empresaGuardada, accessToken, email)
             } else if (empresasData.length > 0) {
-              await persistEmpresaActiva(
-                empresasData[0],
-                accessToken,
-                email,
-                userId
-              )
-            } else {
-              setRolResuelto(true)
+              await persistEmpresaActiva(empresasData[0], accessToken, email)
             }
           } else if (empresasData.length > 0) {
-            await persistEmpresaActiva(
-              empresasData[0],
-              accessToken,
-              email,
-              userId
-            )
-          } else {
-            setRolResuelto(true)
+            await persistEmpresaActiva(empresasData[0], accessToken, email)
           }
         } else {
           console.error('No se pudieron cargar empresas:', json)
-          setRolResuelto(true)
         }
       } catch (error) {
         console.error('Error cargando empresas:', error)
-        setRolResuelto(true)
       } finally {
         setCheckingSession(false)
       }
@@ -268,16 +224,6 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
 
     return []
   }, [empresas, empresaActivaId, empresaActivaNombreLocal])
-
-  const visibleMenuItems = useMemo(() => {
-    if (!rolResuelto) return []
-    return menuItems.filter((item) => canAccessModule(usuarioRol, item.moduleKey))
-  }, [usuarioRol, rolResuelto])
-
-  const isActiveRoute = (href: string) => {
-    if (href === '/') return pathname === '/'
-    return pathname === href || pathname.startsWith(`${href}/`)
-  }
 
   if (checkingSession) {
     return (
@@ -331,7 +277,10 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
                   {usuarioNombre || usuarioEmail || 'Usuario'}
                 </p>
                 <p className="text-xs text-slate-500">
-                  {usuarioRol || 'Sin rol asignado'}
+                  {usuarioRol ||
+                    empresaActiva?.nombre ||
+                    empresaActivaNombreLocal ||
+                    'Sin rol'}
                 </p>
               </div>
 
@@ -345,8 +294,12 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
           </div>
 
           <nav className="mt-5 flex flex-wrap gap-2">
-            {visibleMenuItems.map((item) => {
-              const active = isActiveRoute(item.href)
+            {menuItems.map((item) => {
+              const active =
+                pathname === item.href ||
+                (item.href !== '/' &&
+                  item.href !== '/reportes' &&
+                  pathname.startsWith(item.href))
 
               return (
                 <Link
@@ -363,28 +316,6 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
               )
             })}
           </nav>
-
-          {rolResuelto && visibleMenuItems.length === 0 ? (
-            <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-              Este usuario no tiene módulos habilitados para la empresa activa.
-            </div>
-          ) : null}
-
-          {empresaActiva ? (
-            <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-              Empresa activa:{' '}
-              <span className="font-medium text-slate-900">
-                {empresaActiva.nombre}
-              </span>
-            </div>
-          ) : empresaActivaNombreLocal ? (
-            <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-              Empresa activa:{' '}
-              <span className="font-medium text-slate-900">
-                {empresaActivaNombreLocal}
-              </span>
-            </div>
-          ) : null}
         </div>
       </header>
 

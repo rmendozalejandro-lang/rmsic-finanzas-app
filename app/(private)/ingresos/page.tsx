@@ -395,31 +395,16 @@ export default function IngresosPage() {
       }
 
       const accessToken = sessionData.session.access_token
-      const userEmail = sessionData.session.user.email
+      const userId = sessionData.session.user.id
       const apiKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
       const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
 
-      if (!userEmail) {
-        setError('No se pudo obtener el correo del usuario autenticado.')
+      if (!userId) {
+        setError('No se pudo identificar el usuario autenticado.')
         return
       }
 
-      const profileResp = await fetch(
-        `${baseUrl}/rest/v1/perfiles?select=id,email&email=eq.${encodeURIComponent(userEmail)}`,
-        {
-          headers: {
-            apikey: apiKey,
-            Authorization: `Bearer ${accessToken}`,
-          },
-        }
-      )
-
-      const profileJson = await profileResp.json()
-
-      if (!profileResp.ok || !profileJson?.[0]?.id) {
-        setError('No se pudo obtener el perfil del usuario.')
-        return
-      }
+     alert(`USER ID SESSION: ${userId}\nEMPRESA ACTIVA: ${empresaActivaId}`)
 
       const esExento = form.es_exento === 'true'
       const montoNeto = Number(form.monto_neto || 0)
@@ -444,28 +429,36 @@ export default function IngresosPage() {
         monto_total: Number(form.monto_total || 0),
         estado: form.estado,
         medio_pago: 'transferencia',
-        created_by: profileJson[0].id,
+        created_by: userId,
       }
 
-      const insertResp = await fetch(`${baseUrl}/rest/v1/movimientos`, {
-        method: 'POST',
-        headers: {
-          apikey: apiKey,
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-          Prefer: 'return=representation',
-        },
-        body: JSON.stringify(payload),
-      })
+     const { data: insertData, error: insertError } = await supabase
+  .from('movimientos')
+  .insert({
+    ...payload,
+    created_by: null, // prueba temporal
+  })
+  .select('id')
+  .single()
 
-      const insertJson = await insertResp.json().catch(() => null)
+if (insertError) {
+  alert(
+    `INSERT ERROR\nCODE: ${insertError.code || '-'}\nMESSAGE: ${
+      insertError.message || '-'
+    }\nDETAILS: ${insertError.details || '-'}\nHINT: ${
+      insertError.hint || '-'
+    }`
+  )
 
-      if (!insertResp.ok) {
-        setError('No se pudo guardar la venta. Revisa los datos e inténtalo nuevamente.')
-        console.error(insertJson)
-        return
-      }
+  setError(
+    insertError.message ||
+      insertError.details ||
+      insertError.hint ||
+      'No se pudo guardar la venta.'
+  )
 
+  return
+}
       setSuccess('Ingreso registrado correctamente.')
       resetForm()
       await fetchData()
@@ -499,375 +492,375 @@ export default function IngresosPage() {
   )
 
   return (
-  <ProtectedModuleRoute moduleKey="ingresos">
-    <main className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="text-4xl font-semibold text-slate-900">Ingresos</h1>
-          <p className="mt-2 text-slate-600">
-            Ventas e ingresos registrados en la empresa activa.
-          </p>
+    <ProtectedModuleRoute moduleKey="ingresos">
+      <main className="space-y-6">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h1 className="text-4xl font-semibold text-slate-900">Ingresos</h1>
+            <p className="mt-2 text-slate-600">
+              Ventas e ingresos registrados en la empresa activa.
+            </p>
+          </div>
+
+          <Link
+            href="/reportes/ingresos"
+            className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+          >
+            Ver reporte de ingresos
+          </Link>
         </div>
 
-        <Link
-          href="/reportes/ingresos"
-         className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-        >
-          Ver reporte de ingresos
-        </Link>
-      </div>
+        <EmpresaActivaBanner
+          modulo="Ingresos"
+          descripcion="Todos los documentos y registros visibles corresponden únicamente a la empresa activa seleccionada."
+        />
 
-      <EmpresaActivaBanner
-        modulo="Ingresos"
-        descripcion="Todos los documentos y registros visibles corresponden únicamente a la empresa activa seleccionada."
-      />
+        {!loading && !error && (
+          <section className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <p className="text-sm text-slate-500">Total registrado</p>
+              <h2 className="mt-2 text-3xl font-semibold text-slate-900">
+                {formatCLP(totalIngresos)}
+              </h2>
+            </article>
 
-      {!loading && !error && (
-        <section className="grid grid-cols-1 gap-4 md:grid-cols-3">
-          <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <p className="text-sm text-slate-500">Total registrado</p>
-            <h2 className="mt-2 text-3xl font-semibold text-slate-900">
-              {formatCLP(totalIngresos)}
+            <article className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 shadow-sm">
+              <p className="text-sm text-emerald-700">Pagados</p>
+              <h2 className="mt-2 text-3xl font-semibold text-emerald-900">
+                {ingresosPagados}
+              </h2>
+            </article>
+
+            <article className="rounded-2xl border border-amber-200 bg-amber-50 p-5 shadow-sm">
+              <p className="text-sm text-amber-700">Pendientes</p>
+              <h2 className="mt-2 text-3xl font-semibold text-amber-900">
+                {ingresosPendientes}
+              </h2>
+            </article>
+          </section>
+        )}
+
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm xl:col-span-2">
+            <h2 className="text-2xl font-semibold text-slate-900">
+              Listado de ingresos
             </h2>
-          </article>
+            <p className="mb-4 mt-1 text-sm text-slate-500">
+              Información cargada directamente desde Supabase.
+            </p>
 
-          <article className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 shadow-sm">
-            <p className="text-sm text-emerald-700">Pagados</p>
-            <h2 className="mt-2 text-3xl font-semibold text-emerald-900">
-              {ingresosPagados}
-            </h2>
-          </article>
+            {loading && <div className="text-slate-500">Cargando ingresos...</div>}
 
-          <article className="rounded-2xl border border-amber-200 bg-amber-50 p-5 shadow-sm">
-            <p className="text-sm text-amber-700">Pendientes</p>
-            <h2 className="mt-2 text-3xl font-semibold text-amber-900">
-              {ingresosPendientes}
-            </h2>
-          </article>
-        </section>
-      )}
+            {!loading && !error && ingresos.length === 0 && (
+              <div className="text-sm text-slate-500">
+                No hay ingresos registrados para la empresa activa.
+              </div>
+            )}
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm xl:col-span-2">
-          <h2 className="text-2xl font-semibold text-slate-900">
-            Listado de ingresos
-          </h2>
-          <p className="mb-4 mt-1 text-sm text-slate-500">
-            Información cargada directamente desde Supabase.
-          </p>
-
-          {loading && <div className="text-slate-500">Cargando ingresos...</div>}
-
-          {!loading && !error && ingresos.length === 0 && (
-            <div className="text-sm text-slate-500">
-              No hay ingresos registrados para la empresa activa.
-            </div>
-          )}
-
-          {!loading && !error && ingresos.length > 0 && (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-slate-200 text-left text-slate-500">
-                    <th className="py-3 pr-4">Fecha</th>
-                    <th className="py-3 pr-4">Cliente</th>
-                    <th className="py-3 pr-4">Documento</th>
-                    <th className="py-3 pr-4">N° Doc.</th>
-                    <th className="py-3 pr-4">Descripción</th>
-                    <th className="py-3 pr-4">Monto total</th>
-                    <th className="py-3 pr-4">Estado</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {ingresos.map((item) => (
-                    <tr key={item.id} className="border-b border-slate-100">
-                      <td className="py-3 pr-4">{formatDate(item.fecha)}</td>
-                      <td className="py-3 pr-4">{item.clientes?.nombre ?? '-'}</td>
-                      <td className="py-3 pr-4">
-                        {formatTipoDocumento(item.tipo_documento)}
-                      </td>
-                      <td className="py-3 pr-4">{item.numero_documento ?? '-'}</td>
-                      <td className="py-3 pr-4">{item.descripcion}</td>
-                      <td className="py-3 pr-4 font-medium">
-                        {formatCLP(item.monto_total)}
-                      </td>
-                      <td className="py-3 pr-4">
-                        <StatusBadge status={item.estado} />
-                      </td>
+            {!loading && !error && ingresos.length > 0 && (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-200 text-left text-slate-500">
+                      <th className="py-3 pr-4">Fecha</th>
+                      <th className="py-3 pr-4">Cliente</th>
+                      <th className="py-3 pr-4">Documento</th>
+                      <th className="py-3 pr-4">N° Doc.</th>
+                      <th className="py-3 pr-4">Descripción</th>
+                      <th className="py-3 pr-4">Monto total</th>
+                      <th className="py-3 pr-4">Estado</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {!loading && error && (
-            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-              {error}
-            </div>
-          )}
-        </div>
-
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          <h2 className="text-2xl font-semibold text-slate-900">
-            Nuevo ingreso
-          </h2>
-          <p className="mb-4 mt-1 text-sm text-slate-500">
-            Registrar ingreso para la empresa activa.
-          </p>
-
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="mb-2 block text-sm text-slate-600">Fecha</label>
-              <input
-                type="date"
-                name="fecha"
-                value={form.fecha}
-                onChange={handleChange}
-                className="w-full rounded-xl border border-slate-300 px-4 py-3"
-                required
-              />
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm text-slate-600">
-                Condición de pago
-              </label>
-              <select
-                name="condicion_pago"
-                value={form.condicion_pago}
-                onChange={handleChange}
-                className="w-full rounded-xl border border-slate-300 px-4 py-3"
-                required
-              >
-                <option value="contado">Contado</option>
-                <option value="30">30 días</option>
-                <option value="45">45 días</option>
-                <option value="60">60 días</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm text-slate-600">
-                Fecha vencimiento
-              </label>
-              <input
-                type="date"
-                name="fecha_vencimiento"
-                value={form.fecha_vencimiento}
-                readOnly
-                className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3"
-              />
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm text-slate-600">Cliente</label>
-              <select
-                name="cliente_id"
-                value={form.cliente_id}
-                onChange={handleChange}
-                className="w-full rounded-xl border border-slate-300 px-4 py-3"
-                required
-              >
-                <option value="">Seleccionar cliente</option>
-                {clientes.map((cliente) => (
-                  <option key={cliente.id} value={cliente.id}>
-                    {cliente.nombre}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm text-slate-600">
-                Tipo de documento
-              </label>
-              <select
-                name="tipo_documento"
-                value={form.tipo_documento}
-                onChange={handleChange}
-                className="w-full rounded-xl border border-slate-300 px-4 py-3"
-                required
-              >
-                <option value="factura">Factura</option>
-                <option value="boleta">Boleta</option>
-                <option value="nota_credito">Nota de crédito</option>
-                <option value="nota_debito">Nota de débito</option>
-                <option value="comprobante">Comprobante</option>
-                <option value="otro">Otro</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm text-slate-600">
-                ¿Documento exento?
-              </label>
-              <select
-                name="es_exento"
-                value={form.es_exento}
-                onChange={handleChange}
-                className="w-full rounded-xl border border-slate-300 px-4 py-3"
-              >
-                <option value="false">No</option>
-                <option value="true">Sí</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm text-slate-600">
-                Número de documento
-              </label>
-              <input
-                type="text"
-                name="numero_documento"
-                value={form.numero_documento}
-                onChange={handleChange}
-                className="w-full rounded-xl border border-slate-300 px-4 py-3"
-              />
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm text-slate-600">
-                Descripción
-              </label>
-              <textarea
-                name="descripcion"
-                value={form.descripcion}
-                onChange={handleChange}
-                className="w-full rounded-xl border border-slate-300 px-4 py-3"
-                rows={3}
-                required
-              />
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm text-slate-600">Neto</label>
-              <input
-                type="number"
-                name="monto_neto"
-                value={form.monto_neto}
-                onChange={handleChange}
-                className="w-full rounded-xl border border-slate-300 px-4 py-3"
-                required
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="mb-2 block text-sm text-slate-600">IVA</label>
-                <input
-                  type="number"
-                  name="monto_iva"
-                  value={form.monto_iva}
-                  readOnly
-                  className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3"
-                />
+                  </thead>
+                  <tbody>
+                    {ingresos.map((item) => (
+                      <tr key={item.id} className="border-b border-slate-100">
+                        <td className="py-3 pr-4">{formatDate(item.fecha)}</td>
+                        <td className="py-3 pr-4">{item.clientes?.nombre ?? '-'}</td>
+                        <td className="py-3 pr-4">
+                          {formatTipoDocumento(item.tipo_documento)}
+                        </td>
+                        <td className="py-3 pr-4">{item.numero_documento ?? '-'}</td>
+                        <td className="py-3 pr-4">{item.descripcion}</td>
+                        <td className="py-3 pr-4 font-medium">
+                          {formatCLP(item.monto_total)}
+                        </td>
+                        <td className="py-3 pr-4">
+                          <StatusBadge status={item.estado} />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
+            )}
 
-              <div>
-                <label className="mb-2 block text-sm text-slate-600">Total</label>
-                <input
-                  type="number"
-                  name="monto_total"
-                  value={form.monto_total}
-                  readOnly
-                  className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm text-slate-600">Estado</label>
-              <select
-                name="estado"
-                value={form.estado}
-                onChange={handleChange}
-                className="w-full rounded-xl border border-slate-300 px-4 py-3"
-                required
-              >
-                <option value="pagado">Pagado</option>
-                <option value="pendiente">Pendiente</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm text-slate-600">
-                Cuenta bancaria
-              </label>
-              <select
-                name="cuenta_bancaria_id"
-                value={form.cuenta_bancaria_id}
-                onChange={handleChange}
-                className="w-full rounded-xl border border-slate-300 px-4 py-3"
-              >
-                <option value="">Seleccionar cuenta</option>
-                {cuentas.map((cuenta) => (
-                  <option key={cuenta.id} value={cuenta.id}>
-                    {cuenta.banco} - {cuenta.nombre_cuenta}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm text-slate-600">Categoría</label>
-              <select
-                name="categoria_id"
-                value={form.categoria_id}
-                onChange={handleChange}
-                className="w-full rounded-xl border border-slate-300 px-4 py-3"
-              >
-                <option value="">Seleccionar categoría</option>
-                {categorias.map((categoria) => (
-                  <option key={categoria.id} value={categoria.id}>
-                    {categoria.nombre}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm text-slate-600">
-                Centro de costo
-              </label>
-              <select
-                name="centro_costo_id"
-                value={form.centro_costo_id}
-                onChange={handleChange}
-                className="w-full rounded-xl border border-slate-300 px-4 py-3"
-              >
-                <option value="">Seleccionar centro de costo</option>
-                {centrosCosto.map((centro) => (
-                  <option key={centro.id} value={centro.id}>
-                    {centro.nombre}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {error && (
+            {!loading && error && (
               <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
                 {error}
               </div>
             )}
+          </div>
 
-            {success && (
-              <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
-                {success}
+          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <h2 className="text-2xl font-semibold text-slate-900">
+              Nuevo ingreso
+            </h2>
+            <p className="mb-4 mt-1 text-sm text-slate-500">
+              Registrar ingreso para la empresa activa.
+            </p>
+
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label className="mb-2 block text-sm text-slate-600">Fecha</label>
+                <input
+                  type="date"
+                  name="fecha"
+                  value={form.fecha}
+                  onChange={handleChange}
+                  className="w-full rounded-xl border border-slate-300 px-4 py-3"
+                  required
+                />
               </div>
-            )}
 
-            <button
-              type="submit"
-              disabled={saving}
-              className="w-full rounded-xl border border-slate-300 py-3 font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
-            >
-              {saving ? 'Guardando...' : 'Guardar ingreso'}
-            </button>
-          </form>
+              <div>
+                <label className="mb-2 block text-sm text-slate-600">
+                  Condición de pago
+                </label>
+                <select
+                  name="condicion_pago"
+                  value={form.condicion_pago}
+                  onChange={handleChange}
+                  className="w-full rounded-xl border border-slate-300 px-4 py-3"
+                  required
+                >
+                  <option value="contado">Contado</option>
+                  <option value="30">30 días</option>
+                  <option value="45">45 días</option>
+                  <option value="60">60 días</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm text-slate-600">
+                  Fecha vencimiento
+                </label>
+                <input
+                  type="date"
+                  name="fecha_vencimiento"
+                  value={form.fecha_vencimiento}
+                  readOnly
+                  className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm text-slate-600">Cliente</label>
+                <select
+                  name="cliente_id"
+                  value={form.cliente_id}
+                  onChange={handleChange}
+                  className="w-full rounded-xl border border-slate-300 px-4 py-3"
+                  required
+                >
+                  <option value="">Seleccionar cliente</option>
+                  {clientes.map((cliente) => (
+                    <option key={cliente.id} value={cliente.id}>
+                      {cliente.nombre}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm text-slate-600">
+                  Tipo de documento
+                </label>
+                <select
+                  name="tipo_documento"
+                  value={form.tipo_documento}
+                  onChange={handleChange}
+                  className="w-full rounded-xl border border-slate-300 px-4 py-3"
+                  required
+                >
+                  <option value="factura">Factura</option>
+                  <option value="boleta">Boleta</option>
+                  <option value="nota_credito">Nota de crédito</option>
+                  <option value="nota_debito">Nota de débito</option>
+                  <option value="comprobante">Comprobante</option>
+                  <option value="otro">Otro</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm text-slate-600">
+                  ¿Documento exento?
+                </label>
+                <select
+                  name="es_exento"
+                  value={form.es_exento}
+                  onChange={handleChange}
+                  className="w-full rounded-xl border border-slate-300 px-4 py-3"
+                >
+                  <option value="false">No</option>
+                  <option value="true">Sí</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm text-slate-600">
+                  Número de documento
+                </label>
+                <input
+                  type="text"
+                  name="numero_documento"
+                  value={form.numero_documento}
+                  onChange={handleChange}
+                  className="w-full rounded-xl border border-slate-300 px-4 py-3"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm text-slate-600">
+                  Descripción
+                </label>
+                <textarea
+                  name="descripcion"
+                  value={form.descripcion}
+                  onChange={handleChange}
+                  className="w-full rounded-xl border border-slate-300 px-4 py-3"
+                  rows={3}
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm text-slate-600">Neto</label>
+                <input
+                  type="number"
+                  name="monto_neto"
+                  value={form.monto_neto}
+                  onChange={handleChange}
+                  className="w-full rounded-xl border border-slate-300 px-4 py-3"
+                  required
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-2 block text-sm text-slate-600">IVA</label>
+                  <input
+                    type="number"
+                    name="monto_iva"
+                    value={form.monto_iva}
+                    readOnly
+                    className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm text-slate-600">Total</label>
+                  <input
+                    type="number"
+                    name="monto_total"
+                    value={form.monto_total}
+                    readOnly
+                    className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm text-slate-600">Estado</label>
+                <select
+                  name="estado"
+                  value={form.estado}
+                  onChange={handleChange}
+                  className="w-full rounded-xl border border-slate-300 px-4 py-3"
+                  required
+                >
+                  <option value="pagado">Pagado</option>
+                  <option value="pendiente">Pendiente</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm text-slate-600">
+                  Cuenta bancaria
+                </label>
+                <select
+                  name="cuenta_bancaria_id"
+                  value={form.cuenta_bancaria_id}
+                  onChange={handleChange}
+                  className="w-full rounded-xl border border-slate-300 px-4 py-3"
+                >
+                  <option value="">Seleccionar cuenta</option>
+                  {cuentas.map((cuenta) => (
+                    <option key={cuenta.id} value={cuenta.id}>
+                      {cuenta.banco} - {cuenta.nombre_cuenta}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm text-slate-600">Categoría</label>
+                <select
+                  name="categoria_id"
+                  value={form.categoria_id}
+                  onChange={handleChange}
+                  className="w-full rounded-xl border border-slate-300 px-4 py-3"
+                >
+                  <option value="">Seleccionar categoría</option>
+                  {categorias.map((categoria) => (
+                    <option key={categoria.id} value={categoria.id}>
+                      {categoria.nombre}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm text-slate-600">
+                  Centro de costo
+                </label>
+                <select
+                  name="centro_costo_id"
+                  value={form.centro_costo_id}
+                  onChange={handleChange}
+                  className="w-full rounded-xl border border-slate-300 px-4 py-3"
+                >
+                  <option value="">Seleccionar centro de costo</option>
+                  {centrosCosto.map((centro) => (
+                    <option key={centro.id} value={centro.id}>
+                      {centro.nombre}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {error && (
+                <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  {error}
+                </div>
+              )}
+
+              {success && (
+                <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+                  {success}
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={saving}
+                className="w-full rounded-xl border border-slate-300 py-3 font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
+              >
+                {saving ? 'Guardando...' : 'Guardar ingreso'}
+              </button>
+            </form>
+          </div>
         </div>
-      </div>
-    </main>
-</ProtectedModuleRoute>
+      </main>
+    </ProtectedModuleRoute>
   )
 }
