@@ -38,21 +38,6 @@ type UltimoMovimiento = {
 
 type FiltroMovimiento = 'todos' | 'ingreso' | 'egreso'
 
-type TramoAntiguedadKey =
-  | 'al_dia'
-  | 'de_1_a_30'
-  | 'de_31_a_60'
-  | 'de_61_a_90'
-  | 'mas_de_90'
-
-type ResumenAntiguedad = Record<
-  TramoAntiguedadKey,
-  {
-    cantidad: number
-    monto: number
-  }
->
-
 const STORAGE_KEY = 'empresa_activa_id'
 const STORAGE_NAME_KEY = 'empresa_activa_nombre'
 
@@ -106,46 +91,6 @@ const isPorVencerEstaSemana = (estado: string, fechaVencimiento: string | null) 
   )
 }
 
-const getDiasVencidos = (fechaVencimiento: string | null) => {
-  if (!fechaVencimiento) return 0
-
-  const hoy = new Date()
-  const inicioHoy = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate())
-  const vencimiento = new Date(`${fechaVencimiento}T00:00:00`)
-
-  const diffMs = inicioHoy.getTime() - vencimiento.getTime()
-  const dias = Math.floor(diffMs / 86400000)
-
-  return dias > 0 ? dias : 0
-}
-
-const getTramoAntiguedad = (item: CobranzaPendiente): TramoAntiguedadKey => {
-  const diasVencidos = getDiasVencidos(item.fecha_vencimiento)
-
-  if (diasVencidos <= 0) return 'al_dia'
-  if (diasVencidos <= 30) return 'de_1_a_30'
-  if (diasVencidos <= 60) return 'de_31_a_60'
-  if (diasVencidos <= 90) return 'de_61_a_90'
-  return 'mas_de_90'
-}
-
-const getTramoAntiguedadLabel = (tramo: TramoAntiguedadKey) => {
-  switch (tramo) {
-    case 'al_dia':
-      return 'Al día'
-    case 'de_1_a_30':
-      return '1 a 30 días'
-    case 'de_31_a_60':
-      return '31 a 60 días'
-    case 'de_61_a_90':
-      return '61 a 90 días'
-    case 'mas_de_90':
-      return 'Más de 90 días'
-    default:
-      return tramo
-  }
-}
-
 const formatTipoMovimiento = (value: string) => {
   switch ((value || '').toLowerCase()) {
     case 'ingreso':
@@ -176,9 +121,6 @@ const formatSignedCLP = (value: number) => {
   const signo = value < 0 ? '-' : ''
   return `${signo}$${Math.abs(Number(value || 0)).toLocaleString('es-CL')}`
 }
-
-const formatCLP = (value: number) =>
-  `$${Number(value || 0).toLocaleString('es-CL')}`
 
 export default function HomePage() {
   const router = useRouter()
@@ -311,11 +253,7 @@ export default function HomePage() {
           ? ingresosMesJson.reduce(
               (
                 acc: number,
-                item: {
-                  monto_total?: number
-                  tipo_documento?: string | null
-                  tipo_movimiento?: string
-                }
+                item: { monto_total?: number; tipo_documento?: string | null; tipo_movimiento?: string }
               ) => acc + getSignedIngresoAmount(item),
               0
             )
@@ -371,24 +309,6 @@ export default function HomePage() {
     [facturasVencidas]
   )
 
-  const resumenAntiguedad = useMemo<ResumenAntiguedad>(() => {
-    const base: ResumenAntiguedad = {
-      al_dia: { cantidad: 0, monto: 0 },
-      de_1_a_30: { cantidad: 0, monto: 0 },
-      de_31_a_60: { cantidad: 0, monto: 0 },
-      de_61_a_90: { cantidad: 0, monto: 0 },
-      mas_de_90: { cantidad: 0, monto: 0 },
-    }
-
-    for (const item of cobranza) {
-      const tramo = getTramoAntiguedad(item)
-      base[tramo].cantidad += 1
-      base[tramo].monto += Number(item.saldo_pendiente || 0)
-    }
-
-    return base
-  }, [cobranza])
-
   const movimientosFiltrados = useMemo(() => {
     if (filtroMovimientos === 'todos') return ultimosMovimientos
     return ultimosMovimientos.filter(
@@ -400,7 +320,7 @@ export default function HomePage() {
     <main className="space-y-6">
       <div>
         <h1 className="text-4xl font-semibold text-slate-900">Dashboard</h1>
-        <p className="mt-2 text-slate-600">
+        <p className="text-slate-600 mt-2">
           Resumen general de la operación financiera de la empresa activa.
         </p>
 
@@ -413,145 +333,82 @@ export default function HomePage() {
       </div>
 
       {loading && (
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="rounded-2xl bg-white p-6 shadow-sm border border-slate-200">
           Cargando datos...
         </div>
       )}
 
       {error && (
-        <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-red-700 shadow-sm">
+        <div className="rounded-2xl bg-red-50 p-6 shadow-sm border border-red-200 text-red-700">
           {error}
         </div>
       )}
 
       {!loading && !error && resumen && (
         <>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+            <div className="rounded-2xl bg-white p-6 shadow-sm border border-slate-200">
               <p className="text-sm text-slate-500">Saldo total bancos</p>
-              <p className="mt-2 text-2xl font-semibold">
-                {formatCLP(resumen.saldo_total_bancos)}
+              <p className="text-2xl font-semibold mt-2">
+                ${Number(resumen.saldo_total_bancos).toLocaleString('es-CL')}
               </p>
             </div>
 
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="rounded-2xl bg-white p-6 shadow-sm border border-slate-200">
               <p className="text-sm text-slate-500">Total por cobrar</p>
-              <p className="mt-2 text-2xl font-semibold">
-                {formatCLP(resumen.total_por_cobrar)}
+              <p className="text-2xl font-semibold mt-2">
+                ${Number(resumen.total_por_cobrar).toLocaleString('es-CL')}
               </p>
             </div>
 
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="rounded-2xl bg-white p-6 shadow-sm border border-slate-200">
               <p className="text-sm text-slate-500">Ingresos del mes</p>
-              <p className="mt-2 text-2xl font-semibold">
+              <p className="text-2xl font-semibold mt-2">
                 {formatSignedCLP(resumen.ingresos_mes)}
               </p>
             </div>
 
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="rounded-2xl bg-white p-6 shadow-sm border border-slate-200">
               <p className="text-sm text-slate-500">Egresos del mes</p>
-              <p className="mt-2 text-2xl font-semibold">
-                {formatCLP(resumen.egresos_mes)}
+              <p className="text-2xl font-semibold mt-2">
+                ${Number(resumen.egresos_mes).toLocaleString('es-CL')}
               </p>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-            <div className="rounded-2xl border border-red-200 bg-red-50 p-6 shadow-sm">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="rounded-2xl bg-red-50 p-6 shadow-sm border border-red-200">
               <p className="text-sm text-red-700">Facturas vencidas</p>
-              <p className="mt-2 text-2xl font-semibold text-red-800">
+              <p className="text-2xl font-semibold mt-2 text-red-800">
                 {facturasVencidas.length}
               </p>
             </div>
 
-            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6 shadow-sm">
+            <div className="rounded-2xl bg-amber-50 p-6 shadow-sm border border-amber-200">
               <p className="text-sm text-amber-700">Monto vencido total</p>
-              <p className="mt-2 text-2xl font-semibold text-amber-800">
-                {formatCLP(montoVencidoTotal)}
+              <p className="text-2xl font-semibold mt-2 text-amber-800">
+                ${montoVencidoTotal.toLocaleString('es-CL')}
               </p>
             </div>
 
-            <div className="rounded-2xl border border-blue-200 bg-blue-50 p-6 shadow-sm">
+            <div className="rounded-2xl bg-blue-50 p-6 shadow-sm border border-blue-200">
               <p className="text-sm text-blue-700">Por vencer esta semana</p>
-              <p className="mt-2 text-2xl font-semibold text-blue-800">
+              <p className="text-2xl font-semibold mt-2 text-blue-800">
                 {porVencerSemana.length}
               </p>
             </div>
           </div>
 
-          <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-            <div className="mb-4">
-              <h2 className="text-2xl font-semibold text-slate-900">
-                Antigüedad de saldos
-              </h2>
-              <p className="mt-1 text-sm text-slate-500">
-                Resumen rápido de cuentas por cobrar por tramo de vencimiento.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
-              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 shadow-sm">
-                <p className="text-sm text-emerald-700">Al día</p>
-                <p className="mt-2 text-xl font-semibold text-emerald-900">
-                  {formatCLP(resumenAntiguedad.al_dia.monto)}
-                </p>
-                <p className="mt-1 text-sm text-emerald-700">
-                  {resumenAntiguedad.al_dia.cantidad} documento(s)
-                </p>
-              </div>
-
-              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 shadow-sm">
-                <p className="text-sm text-amber-700">1 a 30 días</p>
-                <p className="mt-2 text-xl font-semibold text-amber-900">
-                  {formatCLP(resumenAntiguedad.de_1_a_30.monto)}
-                </p>
-                <p className="mt-1 text-sm text-amber-700">
-                  {resumenAntiguedad.de_1_a_30.cantidad} documento(s)
-                </p>
-              </div>
-
-              <div className="rounded-2xl border border-orange-200 bg-orange-50 p-5 shadow-sm">
-                <p className="text-sm text-orange-700">31 a 60 días</p>
-                <p className="mt-2 text-xl font-semibold text-orange-900">
-                  {formatCLP(resumenAntiguedad.de_31_a_60.monto)}
-                </p>
-                <p className="mt-1 text-sm text-orange-700">
-                  {resumenAntiguedad.de_31_a_60.cantidad} documento(s)
-                </p>
-              </div>
-
-              <div className="rounded-2xl border border-rose-200 bg-rose-50 p-5 shadow-sm">
-                <p className="text-sm text-rose-700">61 a 90 días</p>
-                <p className="mt-2 text-xl font-semibold text-rose-900">
-                  {formatCLP(resumenAntiguedad.de_61_a_90.monto)}
-                </p>
-                <p className="mt-1 text-sm text-rose-700">
-                  {resumenAntiguedad.de_61_a_90.cantidad} documento(s)
-                </p>
-              </div>
-
-              <div className="rounded-2xl border border-red-200 bg-red-50 p-5 shadow-sm">
-                <p className="text-sm text-red-700">Más de 90 días</p>
-                <p className="mt-2 text-xl font-semibold text-red-900">
-                  {formatCLP(resumenAntiguedad.mas_de_90.monto)}
-                </p>
-                <p className="mt-1 text-sm text-red-700">
-                  {resumenAntiguedad.mas_de_90.cantidad} documento(s)
-                </p>
-              </div>
-            </div>
-          </section>
-
-          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="rounded-2xl bg-white p-6 shadow-sm border border-slate-200">
             <h2 className="text-2xl font-semibold text-slate-900">
               Cobranza pendiente
             </h2>
-            <p className="mb-4 mt-1 text-sm text-slate-500">
+            <p className="text-slate-500 text-sm mt-1 mb-4">
               Facturas activas pendientes de cobro de la empresa activa.
             </p>
 
             {cobranza.length === 0 ? (
-              <div className="text-sm text-slate-500">
+              <div className="text-slate-500 text-sm">
                 No hay facturas pendientes por cobrar.
               </div>
             ) : (
@@ -566,7 +423,6 @@ export default function HomePage() {
                       <th className="py-3 pr-4">Descripción</th>
                       <th className="py-3 pr-4">Monto total</th>
                       <th className="py-3 pr-4">Saldo pendiente</th>
-                      <th className="py-3 pr-4">Tramo</th>
                       <th className="py-3 pr-4">Estado</th>
                     </tr>
                   </thead>
@@ -576,7 +432,6 @@ export default function HomePage() {
                         item.estado,
                         item.fecha_vencimiento
                       )
-                      const tramo = getTramoAntiguedad(item)
 
                       return (
                         <tr
@@ -591,13 +446,10 @@ export default function HomePage() {
                           </td>
                           <td className="py-3 pr-4">{item.descripcion}</td>
                           <td className="py-3 pr-4">
-                            {formatCLP(item.monto_total)}
+                            ${Number(item.monto_total).toLocaleString('es-CL')}
                           </td>
                           <td className="py-3 pr-4 font-medium">
-                            {formatCLP(item.saldo_pendiente)}
-                          </td>
-                          <td className="py-3 pr-4">
-                            {getTramoAntiguedadLabel(tramo)}
+                            ${Number(item.saldo_pendiente).toLocaleString('es-CL')}
                           </td>
                           <td className="py-3 pr-4">
                             <StatusBadge status={estadoVisual} />
@@ -611,13 +463,13 @@ export default function HomePage() {
             )}
           </div>
 
-          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-            <div className="mb-4 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div className="rounded-2xl bg-white p-6 shadow-sm border border-slate-200">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
               <div>
                 <h2 className="text-2xl font-semibold text-slate-900">
                   Últimos movimientos
                 </h2>
-                <p className="mt-1 text-sm text-slate-500">
+                <p className="text-slate-500 text-sm mt-1">
                   Últimos ingresos y egresos registrados de la empresa activa.
                 </p>
               </div>
@@ -659,7 +511,7 @@ export default function HomePage() {
             </div>
 
             {movimientosFiltrados.length === 0 ? (
-              <div className="text-sm text-slate-500">
+              <div className="text-slate-500 text-sm">
                 No hay movimientos para el filtro seleccionado.
               </div>
             ) : (

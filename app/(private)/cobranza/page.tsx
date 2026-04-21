@@ -36,17 +36,6 @@ type GestionCobranzaRow = {
   updated_at: string
 }
 
-type ClienteEmailRow = {
-  id: string
-  nombre?: string | null
-  razon_social?: string | null
-  nombre_fantasia?: string | null
-  empresa?: string | null
-  cliente?: string | null
-  email?: string | null
-  [key: string]: unknown
-}
-
 type CuentaBancariaOption = {
   id: string
   banco: string
@@ -64,7 +53,6 @@ type CuentaPorCobrarRow = {
   monto_pagado: number | null
   saldo_pendiente: number | null
   estado: string | null
-  updated_at?: string | null
 }
 
 type MovimientoRow = {
@@ -78,43 +66,6 @@ type MovimientoRow = {
   observaciones: string | null
 }
 
-type MovimientoPagoListado = {
-  id: string
-  numero_documento: string | null
-  descripcion: string | null
-  fecha: string
-  cuenta_bancaria_id: string | null
-  medio_pago: string | null
-  clientes?: Array<{
-    nombre: string
-  }> | null
-}
-
-type PagoRegistrado = {
-  movimiento_id: string
-  numero_factura: string
-  cliente: string
-  descripcion: string
-  fecha_pago: string
-  fecha_emision: string | null
-  fecha_vencimiento: string | null
-  monto_total: number
-  medio_pago: string | null
-  cuenta_bancaria_id: string | null
-  updated_at: string
-}
-
-type BitacoraCobranzaRow = {
-  id: string
-  empresa_id: string
-  numero_factura: string
-  cliente: string | null
-  accion: string
-  detalle: string | null
-  usuario_id: string | null
-  created_at: string
-}
-
 type GestionesMap = Record<string, GestionCobranza>
 
 const STORAGE_ID_KEY = 'empresa_activa_id'
@@ -126,11 +77,6 @@ const formatCLP = (value: number) =>
 const formatFecha = (value: string | null) => {
   if (!value) return '-'
   return new Date(`${value}T00:00:00`).toLocaleDateString('es-CL')
-}
-
-const formatFechaHora = (value: string | null) => {
-  if (!value) return '-'
-  return new Date(value).toLocaleString('es-CL')
 }
 
 const getToday = () => new Date().toISOString().slice(0, 10)
@@ -229,40 +175,6 @@ const getGestionLabel = (estadoGestion: string) => {
   }
 }
 
-const formatMedioPago = (medioPago: string | null) => {
-  switch (medioPago) {
-    case 'transferencia':
-      return 'Transferencia'
-    case 'deposito':
-      return 'Depósito'
-    case 'cheque':
-      return 'Cheque'
-    case 'efectivo':
-      return 'Efectivo'
-    case 'tarjeta':
-      return 'Tarjeta'
-    case 'otro':
-      return 'Otro'
-    default:
-      return medioPago || '-'
-  }
-}
-
-const formatAccionBitacora = (accion: string) => {
-  switch (accion) {
-    case 'email_preparado':
-      return 'Email preparado'
-    case 'seguimiento_guardado':
-      return 'Seguimiento guardado'
-    case 'pago_registrado':
-      return 'Pago registrado'
-    case 'pago_revertido':
-      return 'Pago revertido'
-    default:
-      return accion
-  }
-}
-
 const isSinGestion = (gestion?: GestionCobranza) =>
   !gestion || gestion.estado_gestion === 'sin_gestion'
 
@@ -304,22 +216,6 @@ const buildClipboardText = (
   ].join('\n')
 }
 
-const getClienteDisplayName = (cliente: ClienteEmailRow) => {
-  const candidatos = [
-    cliente.razon_social,
-    cliente.nombre,
-    cliente.nombre_fantasia,
-    cliente.empresa,
-    cliente.cliente,
-  ]
-
-  for (const valor of candidatos) {
-    if (typeof valor === 'string' && valor.trim()) return valor.trim()
-  }
-
-  return ''
-}
-
 function DetailRow({
   label,
   value,
@@ -358,9 +254,6 @@ export default function CobranzaPage() {
     useState<CobranzaPendiente | null>(null)
 
   const [gestiones, setGestiones] = useState<GestionesMap>({})
-  const [clienteEmailMap, setClienteEmailMap] = useState<Record<string, string>>(
-    {}
-  )
 
   const [estadoGestionInput, setEstadoGestionInput] = useState('sin_gestion')
   const [fechaContactoInput, setFechaContactoInput] = useState('')
@@ -375,228 +268,6 @@ export default function CobranzaPage() {
   const [medioPagoInput, setMedioPagoInput] = useState('transferencia')
   const [observacionPagoInput, setObservacionPagoInput] = useState('')
   const [savingPago, setSavingPago] = useState(false)
-
-  const [pagosRegistrados, setPagosRegistrados] = useState<PagoRegistrado[]>([])
-  const [loadingPagosRegistrados, setLoadingPagosRegistrados] = useState(false)
-  const [revertingPagoId, setRevertingPagoId] = useState('')
-
-  const [bitacora, setBitacora] = useState<BitacoraCobranzaRow[]>([])
-  const [loadingBitacora, setLoadingBitacora] = useState(false)
-
-  const getCuentaLabel = (cuentaId: string | null) => {
-    if (!cuentaId) return '-'
-
-    const cuenta = cuentasBancarias.find((item) => item.id === cuentaId)
-    if (!cuenta) return '-'
-
-    return `${cuenta.banco} - ${cuenta.nombre_cuenta}`
-  }
-
-  const registrarBitacora = async ({
-    numeroFactura,
-    cliente,
-    accion,
-    detalle,
-  }: {
-    numeroFactura: string
-    cliente?: string | null
-    accion: string
-    detalle?: string | null
-  }) => {
-    if (!empresaActivaId || !numeroFactura) return
-
-    try {
-      const { data: sessionData } = await supabase.auth.getSession()
-      const usuarioId = sessionData.session?.user.id || null
-
-      const { error } = await supabase.from('cobranza_bitacora').insert({
-        empresa_id: empresaActivaId,
-        numero_factura: numeroFactura,
-        cliente: cliente || null,
-        accion,
-        detalle: detalle || null,
-        usuario_id: usuarioId,
-      })
-
-      if (!error) {
-        await loadBitacora()
-      }
-    } catch {
-      // no bloquear flujo principal
-    }
-  }
-
-  const loadCobranza = async () => {
-    if (!empresaActivaId || !desde || !hasta) {
-      setLoading(false)
-      return
-    }
-
-    try {
-      setLoading(true)
-      setError('')
-
-      const { data: sessionData } = await supabase.auth.getSession()
-
-      if (!sessionData.session) {
-        router.push('/login')
-        return
-      }
-
-      const accessToken = sessionData.session.access_token
-      const apiKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-      const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
-
-      const headers = {
-        apikey: apiKey,
-        Authorization: `Bearer ${accessToken}`,
-      }
-
-      const response = await fetch(
-        `${baseUrl}/rest/v1/v_cobranza_pendiente?empresa_id=eq.${empresaActivaId}&fecha_emision=gte.${desde}&fecha_emision=lte.${hasta}&select=*&order=fecha_vencimiento.asc.nullslast`,
-        { headers }
-      )
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        setError('No se pudo cargar la cobranza.')
-        return
-      }
-
-      setCobranza(Array.isArray(data) ? data : [])
-    } catch (err) {
-      if (err instanceof Error) {
-        setError(err.message)
-      } else {
-        setError('Error desconocido')
-      }
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const loadPagosRegistrados = async () => {
-    if (!empresaActivaId) {
-      setPagosRegistrados([])
-      return
-    }
-
-    try {
-      setLoadingPagosRegistrados(true)
-
-      const { data: cxcPagadas, error: cxcError } = await supabase
-        .from('cuentas_por_cobrar')
-        .select(
-          'id,empresa_id,movimiento_id,cliente_id,fecha_emision,fecha_vencimiento,monto_total,monto_pagado,saldo_pendiente,estado,updated_at'
-        )
-        .eq('empresa_id', empresaActivaId)
-        .eq('estado', 'pagado')
-        .not('movimiento_id', 'is', null)
-        .order('updated_at', { ascending: false })
-        .limit(20)
-
-      if (cxcError || !cxcPagadas || cxcPagadas.length === 0) {
-        setPagosRegistrados([])
-        return
-      }
-
-      const movementIds = Array.from(
-        new Set(
-          (cxcPagadas as CuentaPorCobrarRow[])
-            .map((item) => item.movimiento_id)
-            .filter((value): value is string => Boolean(value))
-        )
-      )
-
-      if (movementIds.length === 0) {
-        setPagosRegistrados([])
-        return
-      }
-
-      const { data: movimientosPagados, error: movimientosError } = await supabase
-        .from('movimientos')
-        .select(
-          'id,numero_documento,descripcion,fecha,cuenta_bancaria_id,medio_pago,clientes(nombre)'
-        )
-        .in('id', movementIds)
-        .eq('empresa_id', empresaActivaId)
-        .eq('tipo_movimiento', 'ingreso')
-        .ilike('tipo_documento', 'factura')
-        .eq('estado', 'pagado')
-
-      if (movimientosError || !movimientosPagados) {
-        setPagosRegistrados([])
-        return
-      }
-
-      const movimientoMap = new Map<string, MovimientoPagoListado>()
-      const movimientosRows =
-        (movimientosPagados ?? []) as unknown as MovimientoPagoListado[]
-
-      movimientosRows.forEach((row) => {
-        movimientoMap.set(row.id, row)
-      })
-
-      const pagos = (cxcPagadas as CuentaPorCobrarRow[])
-        .map((cxc) => {
-          const movimientoId = cxc.movimiento_id || ''
-          const movimiento = movimientoMap.get(movimientoId)
-
-          if (!movimiento) return null
-
-          return {
-            movimiento_id: movimientoId,
-            numero_factura: movimiento.numero_documento || '',
-            cliente: movimiento.clientes?.[0]?.nombre || '-',
-            descripcion: movimiento.descripcion || '-',
-            fecha_pago: movimiento.fecha,
-            fecha_emision: cxc.fecha_emision || null,
-            fecha_vencimiento: cxc.fecha_vencimiento || null,
-            monto_total: Number(cxc.monto_total || 0),
-            medio_pago: movimiento.medio_pago || null,
-            cuenta_bancaria_id: movimiento.cuenta_bancaria_id || null,
-            updated_at: cxc.updated_at || '',
-          } satisfies PagoRegistrado
-        })
-        .filter((item): item is PagoRegistrado => Boolean(item))
-
-      setPagosRegistrados(pagos)
-    } catch {
-      setPagosRegistrados([])
-    } finally {
-      setLoadingPagosRegistrados(false)
-    }
-  }
-
-  const loadBitacora = async () => {
-    if (!empresaActivaId) {
-      setBitacora([])
-      return
-    }
-
-    try {
-      setLoadingBitacora(true)
-
-      const { data, error } = await supabase
-        .from('cobranza_bitacora')
-        .select('id,empresa_id,numero_factura,cliente,accion,detalle,usuario_id,created_at')
-        .eq('empresa_id', empresaActivaId)
-        .order('created_at', { ascending: false })
-        .limit(20)
-
-      if (error || !data) {
-        setBitacora([])
-        return
-      }
-
-      setBitacora(data as BitacoraCobranzaRow[])
-    } catch {
-      setBitacora([])
-    } finally {
-      setLoadingBitacora(false)
-    }
-  }
 
   useEffect(() => {
     const syncEmpresaActiva = () => {
@@ -631,6 +302,7 @@ export default function CobranzaPage() {
           .eq('empresa_id', empresaActivaId)
 
         if (error) {
+          console.error('Error cargando gestiones:', error)
           return
         }
 
@@ -647,50 +319,12 @@ export default function CobranzaPage() {
         })
 
         setGestiones(mapped)
-      } catch {
-        setGestiones({})
+      } catch (err) {
+        console.error('Error cargando gestiones:', err)
       }
     }
 
     fetchGestiones()
-  }, [empresaActivaId])
-
-  useEffect(() => {
-    const fetchClientesEmail = async () => {
-      if (!empresaActivaId) {
-        setClienteEmailMap({})
-        return
-      }
-
-      try {
-        const { data, error } = await supabase
-          .from('clientes')
-          .select('*')
-          .eq('empresa_id', empresaActivaId)
-
-        if (error || !data) {
-          setClienteEmailMap({})
-          return
-        }
-
-        const map: Record<string, string> = {}
-
-        ;(data as ClienteEmailRow[]).forEach((row) => {
-          const nombre = normalize(getClienteDisplayName(row))
-          const email = typeof row.email === 'string' ? row.email.trim() : ''
-
-          if (nombre && email) {
-            map[nombre] = email
-          }
-        })
-
-        setClienteEmailMap(map)
-      } catch {
-        setClienteEmailMap({})
-      }
-    }
-
-    fetchClientesEmail()
   }, [empresaActivaId])
 
   useEffect(() => {
@@ -707,11 +341,14 @@ export default function CobranzaPage() {
           .eq('empresa_id', empresaActivaId)
           .order('banco', { ascending: true })
 
-        if (error) return
+        if (error) {
+          console.error('Error cargando cuentas bancarias:', error)
+          return
+        }
 
         setCuentasBancarias((data || []) as CuentaBancariaOption[])
-      } catch {
-        setCuentasBancarias([])
+      } catch (err) {
+        console.error('Error cargando cuentas bancarias:', err)
       }
     }
 
@@ -733,15 +370,6 @@ export default function CobranzaPage() {
     setMedioPagoInput('transferencia')
     setObservacionPagoInput('')
   }, [detalleSeleccionado, gestiones])
-
-  useEffect(() => {
-    void loadCobranza()
-  }, [empresaActivaId, desde, hasta])
-
-  useEffect(() => {
-    void loadPagosRegistrados()
-    void loadBitacora()
-  }, [empresaActivaId])
 
   const handlePresetChange = (preset: string) => {
     const now = new Date()
@@ -778,6 +406,60 @@ export default function CobranzaPage() {
       setHasta(getToday())
     }
   }
+
+  useEffect(() => {
+    const fetchCobranza = async () => {
+      if (!empresaActivaId || !desde || !hasta) {
+        setLoading(false)
+        return
+      }
+
+      try {
+        setLoading(true)
+        setError('')
+
+        const { data: sessionData } = await supabase.auth.getSession()
+
+        if (!sessionData.session) {
+          router.push('/login')
+          return
+        }
+
+        const accessToken = sessionData.session.access_token
+        const apiKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+        const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+
+        const headers = {
+          apikey: apiKey,
+          Authorization: `Bearer ${accessToken}`,
+        }
+
+        const response = await fetch(
+          `${baseUrl}/rest/v1/v_cobranza_pendiente?empresa_id=eq.${empresaActivaId}&fecha_emision=gte.${desde}&fecha_emision=lte.${hasta}&select=*&order=fecha_vencimiento.asc.nullslast`,
+          { headers }
+        )
+
+        const data = await response.json()
+
+        if (!response.ok) {
+          setError('No se pudo cargar la cobranza.')
+          return
+        }
+
+        setCobranza(Array.isArray(data) ? data : [])
+      } catch (err) {
+        if (err instanceof Error) {
+          setError(err.message)
+        } else {
+          setError('Error desconocido')
+        }
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchCobranza()
+  }, [router, empresaActivaId, desde, hasta])
 
   const totalPorCobrar = useMemo(() => {
     return cobranza.reduce(
@@ -921,110 +603,10 @@ export default function CobranzaPage() {
       const gestion = gestiones[item.numero_factura]
       await navigator.clipboard.writeText(buildClipboardText(item, gestion))
       alert('Detalle copiado al portapapeles.')
-    } catch {
+    } catch (error) {
+      console.error('Error copiando detalle:', error)
       alert('No se pudo copiar el detalle.')
     }
-  }
-
-  const getClienteEmail = (clienteNombre: string) => {
-    return clienteEmailMap[normalize(clienteNombre || '')] || ''
-  }
-
-  const buildReminderMailto = (item: CobranzaPendiente) => {
-    const email = getClienteEmail(item.cliente || '')
-
-    if (!email) return ''
-
-    const subject = `Recordatorio de pago factura N° ${item.numero_factura}`
-    const body = [
-      `Estimado/a ${item.cliente || ''},`,
-      '',
-      `Junto con saludar, le recordamos que la factura N° ${item.numero_factura} se encuentra pendiente de pago.`,
-      '',
-      `Monto: ${formatCLP(item.saldo_pendiente || item.monto_total)}`,
-      `Fecha de vencimiento: ${formatFecha(item.fecha_vencimiento)}`,
-      '',
-      'Agradeceremos su confirmación o información de pago.',
-      '',
-      'Saludos cordiales,',
-      empresaActivaNombre || 'RMSIC',
-    ].join('\n')
-
-    return `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(
-      subject
-    )}&body=${encodeURIComponent(body)}`
-  }
-
-  const handleEmailReminder = async (item: CobranzaPendiente) => {
-    const mailto = buildReminderMailto(item)
-
-    if (!mailto) {
-      alert('Este cliente no tiene correo registrado.')
-      return
-    }
-
-    try {
-      const ahoraIso = new Date().toISOString()
-      const hoy = getToday()
-      const gestionActual = gestiones[item.numero_factura]
-
-      const notaAutomatica = [
-        'Recordatorio de pago preparado por correo.',
-        `Factura: ${item.numero_factura}.`,
-        `Monto: ${formatCLP(item.saldo_pendiente || item.monto_total)}.`,
-        `Vencimiento: ${formatFecha(item.fecha_vencimiento)}.`,
-        `Fecha registro: ${new Date(ahoraIso).toLocaleString('es-CL')}.`,
-      ].join(' ')
-
-      const observacionAnterior = gestionActual?.observacion?.trim()
-      const observacionNueva = observacionAnterior
-        ? `${observacionAnterior}\n\n${notaAutomatica}`
-        : notaAutomatica
-
-      const payload = {
-        empresa_id: empresaActivaId,
-        numero_factura: item.numero_factura,
-        estado_gestion:
-          gestionActual?.estado_gestion &&
-          gestionActual.estado_gestion !== 'sin_gestion'
-            ? gestionActual.estado_gestion
-            : 'contactado',
-        fecha_contacto: hoy,
-        proximo_contacto: gestionActual?.proximo_contacto || null,
-        observacion: observacionNueva,
-        updated_at: ahoraIso,
-      }
-
-      const { error } = await supabase
-        .from('cobranza_gestiones')
-        .upsert(payload, { onConflict: 'empresa_id,numero_factura' })
-
-      if (!error) {
-        setGestiones((prev) => ({
-          ...prev,
-          [item.numero_factura]: {
-            estado_gestion: payload.estado_gestion,
-            fecha_contacto: payload.fecha_contacto || '',
-            proximo_contacto: payload.proximo_contacto || '',
-            observacion: payload.observacion || '',
-            updated_at: payload.updated_at,
-          },
-        }))
-      }
-
-      await registrarBitacora({
-        numeroFactura: item.numero_factura,
-        cliente: item.cliente,
-        accion: 'email_preparado',
-        detalle: `Email preparado para ${item.cliente}. Monto ${formatCLP(
-          item.saldo_pendiente || item.monto_total
-        )}. Vencimiento ${formatFecha(item.fecha_vencimiento)}.`,
-      })
-    } catch {
-      // sin bloqueo visual
-    }
-
-    window.location.href = mailto
   }
 
   const handleSaveGestion = async () => {
@@ -1045,6 +627,7 @@ export default function CobranzaPage() {
       .upsert(payload, { onConflict: 'empresa_id,numero_factura' })
 
     if (error) {
+      console.error('Error guardando gestión:', error)
       alert('No se pudo guardar el seguimiento.')
       return
     }
@@ -1060,17 +643,6 @@ export default function CobranzaPage() {
       },
     }))
 
-    await registrarBitacora({
-      numeroFactura: detalleSeleccionado.numero_factura,
-      cliente: detalleSeleccionado.cliente,
-      accion: 'seguimiento_guardado',
-      detalle: `Estado gestión: ${getGestionLabel(
-        estadoGestionInput
-      )}. Próximo contacto: ${
-        proximoContactoInput ? formatFecha(proximoContactoInput) : '-'
-      }. Observación: ${observacionInput || '-'}`,
-    })
-
     alert('Seguimiento guardado.')
   }
 
@@ -1085,9 +657,7 @@ export default function CobranzaPage() {
     try {
       setSavingPago(true)
 
-      const numeroFactura = String(
-        detalleSeleccionado.numero_factura || ''
-      ).trim()
+      const numeroFactura = String(detalleSeleccionado.numero_factura || '').trim()
       const montoDocumento = Number(detalleSeleccionado.monto_total || 0)
       const observacionPago = observacionPagoInput.trim() || null
 
@@ -1120,6 +690,7 @@ export default function CobranzaPage() {
         .maybeSingle()
 
       if (movimientoError) {
+        console.error('Error buscando movimiento existente:', movimientoError)
         alert('No se pudo validar el movimiento asociado.')
         return
       }
@@ -1131,7 +702,7 @@ export default function CobranzaPage() {
           await supabase
             .from('cuentas_por_cobrar')
             .select(
-              'id,empresa_id,movimiento_id,cliente_id,fecha_emision,fecha_vencimiento,monto_total,monto_pagado,saldo_pendiente,estado,updated_at'
+              'id,empresa_id,movimiento_id,cliente_id,fecha_emision,fecha_vencimiento,monto_total,monto_pagado,saldo_pendiente,estado'
             )
             .eq('empresa_id', empresaActivaId)
             .eq('movimiento_id', movimientoExistente.id)
@@ -1140,6 +711,10 @@ export default function CobranzaPage() {
             .maybeSingle()
 
         if (cxcByMovimientoError) {
+          console.error(
+            'Error buscando cuenta por cobrar por movimiento:',
+            cxcByMovimientoError
+          )
           alert('No se pudo identificar la cuenta por cobrar.')
           return
         }
@@ -1151,14 +726,13 @@ export default function CobranzaPage() {
         const { data: cxcFallback, error: cxcFallbackError } = await supabase
           .from('cuentas_por_cobrar')
           .select(
-            'id,empresa_id,movimiento_id,cliente_id,fecha_emision,fecha_vencimiento,monto_total,monto_pagado,saldo_pendiente,estado,updated_at'
+            'id,empresa_id,movimiento_id,cliente_id,fecha_emision,fecha_vencimiento,monto_total,monto_pagado,saldo_pendiente,estado'
           )
           .eq('empresa_id', empresaActivaId)
           .eq('fecha_emision', detalleSeleccionado.fecha_emision)
           .eq(
             'fecha_vencimiento',
-            detalleSeleccionado.fecha_vencimiento ||
-              detalleSeleccionado.fecha_emision
+            detalleSeleccionado.fecha_vencimiento || detalleSeleccionado.fecha_emision
           )
           .eq('monto_total', montoDocumento)
           .order('created_at', { ascending: false })
@@ -1166,6 +740,10 @@ export default function CobranzaPage() {
           .maybeSingle()
 
         if (cxcFallbackError) {
+          console.error(
+            'Error buscando cuenta por cobrar por fallback:',
+            cxcFallbackError
+          )
           alert('No se pudo identificar la cuenta por cobrar.')
           return
         }
@@ -1180,9 +758,7 @@ export default function CobranzaPage() {
         return
       }
 
-      const montoPago = Number(
-        cxcRow.monto_total || detalleSeleccionado.monto_total || 0
-      )
+      const montoPago = Number(cxcRow.monto_total || detalleSeleccionado.monto_total || 0)
 
       let movimientoId = cxcRow.movimiento_id || movimientoExistente?.id || null
 
@@ -1200,10 +776,11 @@ export default function CobranzaPage() {
           .eq('id', movimientoId)
 
         if (movimientoUpdateError) {
-          alert(
-            movimientoUpdateError.message ||
-              'No se pudo actualizar el ingreso asociado.'
+          console.error(
+            'Error actualizando movimiento de ingreso:',
+            movimientoUpdateError
           )
+          alert('No se pudo actualizar el ingreso asociado.')
           return
         }
       } else {
@@ -1232,7 +809,9 @@ export default function CobranzaPage() {
               estado: 'pagado',
               medio_pago: medioPagoInput || null,
               observaciones:
-                observacionPago || movimientoExistente?.observaciones || null,
+                observacionPago ||
+                movimientoExistente?.observaciones ||
+                null,
               created_by: currentUserId,
               updated_at: new Date().toISOString(),
             })
@@ -1240,10 +819,8 @@ export default function CobranzaPage() {
             .single()
 
         if (nuevoMovimientoError || !nuevoMovimiento?.id) {
-          alert(
-            nuevoMovimientoError?.message ||
-              'No se pudo crear el ingreso asociado al pago.'
-          )
+          console.error('Error creando movimiento de ingreso:', nuevoMovimientoError)
+          alert('No se pudo crear el ingreso asociado al pago.')
           return
         }
 
@@ -1262,176 +839,27 @@ export default function CobranzaPage() {
         .eq('id', cxcRow.id)
 
       if (cxcUpdateError) {
-        alert(
-          cxcUpdateError.message || 'No se pudo actualizar la cuenta por cobrar.'
-        )
+        console.error('Error actualizando cuenta por cobrar:', cxcUpdateError)
+        alert('No se pudo actualizar la cuenta por cobrar.')
         return
       }
 
-      await registrarBitacora({
-        numeroFactura,
-        cliente: detalleSeleccionado.cliente,
-        accion: 'pago_registrado',
-        detalle: `Pago registrado por ${formatCLP(
-          montoPago
-        )}. Medio de pago: ${formatMedioPago(
-          medioPagoInput
-        )}. Cuenta: ${getCuentaLabel(cuentaBancariaPagoId)}. Observación: ${
-          observacionPago || '-'
-        }`,
-      })
-
       alert('Pago registrado correctamente.')
+
+      const facturaPagada = detalleSeleccionado.numero_factura
+
+      setCobranza((prev) =>
+        prev.filter((item) => item.numero_factura !== facturaPagada)
+      )
 
       setDetalleSeleccionado(null)
       setCuentaBancariaPagoId('')
       setObservacionPagoInput('')
-
-      await Promise.all([loadCobranza(), loadPagosRegistrados()])
-    } catch {
+    } catch (err) {
+      console.error('Error registrando pago:', err)
       alert('Ocurrió un error al registrar el pago.')
     } finally {
       setSavingPago(false)
-    }
-  }
-
-  const handleRevertirPago = async (pago: PagoRegistrado) => {
-    if (!empresaActivaId) return
-
-    const motivo = window.prompt(
-      `Ingresa el motivo de reversa para la factura ${pago.numero_factura}:`
-    )
-    const motivoLimpio = (motivo || '').trim()
-
-    if (!motivoLimpio) {
-      alert('Debes ingresar un motivo para revertir el pago.')
-      return
-    }
-
-    const confirmar = window.confirm(
-      `¿Deseas revertir el pago de la factura ${pago.numero_factura}?\n\nMotivo: ${motivoLimpio}\n\nLa factura volverá a estado pendiente y reaparecerá en cobranza.`
-    )
-
-    if (!confirmar) return
-
-    try {
-      setRevertingPagoId(pago.movimiento_id)
-
-      const { data: cxcRow, error: cxcError } = await supabase
-        .from('cuentas_por_cobrar')
-        .select(
-          'id,empresa_id,movimiento_id,cliente_id,fecha_emision,fecha_vencimiento,monto_total,monto_pagado,saldo_pendiente,estado,updated_at'
-        )
-        .eq('empresa_id', empresaActivaId)
-        .eq('movimiento_id', pago.movimiento_id)
-        .order('updated_at', { ascending: false })
-        .limit(1)
-        .maybeSingle()
-
-      if (cxcError || !cxcRow) {
-        alert('No se encontró la cuenta por cobrar asociada a ese pago.')
-        return
-      }
-
-      const saldoRestaurado = Number(cxcRow.monto_total || pago.monto_total || 0)
-
-      const { error: movimientoUpdateError } = await supabase
-        .from('movimientos')
-        .update({
-          fecha: cxcRow.fecha_emision || pago.fecha_emision || pago.fecha_pago,
-          fecha_vencimiento:
-            cxcRow.fecha_vencimiento || pago.fecha_vencimiento || null,
-          cuenta_bancaria_id: null,
-          estado: 'pendiente',
-          medio_pago: null,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', pago.movimiento_id)
-
-      if (movimientoUpdateError) {
-        alert(
-          movimientoUpdateError.message ||
-            'No se pudo revertir el movimiento de ingreso.'
-        )
-        return
-      }
-
-      const { error: cxcUpdateError } = await supabase
-        .from('cuentas_por_cobrar')
-        .update({
-          monto_pagado: 0,
-          saldo_pendiente: saldoRestaurado,
-          estado: 'pendiente',
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', cxcRow.id)
-
-      if (cxcUpdateError) {
-        alert(
-          cxcUpdateError.message ||
-            'No se pudo devolver la cuenta por cobrar a pendiente.'
-        )
-        return
-      }
-
-      const gestionActual = gestiones[pago.numero_factura]
-      const ahoraIso = new Date().toISOString()
-      const notaAutomatica = [
-        'Pago revertido manualmente desde cobranza.',
-        `Factura: ${pago.numero_factura}.`,
-        `Monto restaurado: ${formatCLP(saldoRestaurado)}.`,
-        `Motivo de reversa: ${motivoLimpio}.`,
-        `Fecha registro: ${new Date(ahoraIso).toLocaleString('es-CL')}.`,
-      ].join(' ')
-
-      const observacionAnterior = gestionActual?.observacion?.trim()
-      const observacionNueva = observacionAnterior
-        ? `${observacionAnterior}\n\n${notaAutomatica}`
-        : notaAutomatica
-
-      const payloadGestion = {
-        empresa_id: empresaActivaId,
-        numero_factura: pago.numero_factura,
-        estado_gestion: gestionActual?.estado_gestion || 'sin_gestion',
-        fecha_contacto: gestionActual?.fecha_contacto || null,
-        proximo_contacto: gestionActual?.proximo_contacto || null,
-        observacion: observacionNueva,
-        updated_at: ahoraIso,
-      }
-
-      const { error: gestionError } = await supabase
-        .from('cobranza_gestiones')
-        .upsert(payloadGestion, { onConflict: 'empresa_id,numero_factura' })
-
-      if (!gestionError) {
-        setGestiones((prev) => ({
-          ...prev,
-          [pago.numero_factura]: {
-            estado_gestion: payloadGestion.estado_gestion,
-            fecha_contacto: payloadGestion.fecha_contacto || '',
-            proximo_contacto: payloadGestion.proximo_contacto || '',
-            observacion: payloadGestion.observacion || '',
-            updated_at: payloadGestion.updated_at,
-          },
-        }))
-      }
-
-      await registrarBitacora({
-        numeroFactura: pago.numero_factura,
-        cliente: pago.cliente,
-        accion: 'pago_revertido',
-        detalle: `Pago revertido por ${formatCLP(
-          saldoRestaurado
-        )}. Motivo: ${motivoLimpio}.`,
-      })
-
-      alert('Pago revertido correctamente.')
-
-      await Promise.all([loadCobranza(), loadPagosRegistrados()])
-    } catch {
-      alert('Ocurrió un error al revertir el pago.')
-    } finally {
-      setRevertingPagoId('')
     }
   }
 
@@ -1716,158 +1144,6 @@ export default function CobranzaPage() {
             </div>
           </section>
 
-          <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-            <div className="border-b border-slate-200 px-4 py-4">
-              <h2 className="text-lg font-semibold text-slate-900">
-                Bitácora reciente
-              </h2>
-              <p className="mt-1 text-sm text-slate-500">
-                Historial de acciones realizadas en cobranza.
-              </p>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-sm">
-                <thead className="bg-slate-50">
-                  <tr className="text-left text-slate-600">
-                    <th className="px-4 py-3 font-medium">Fecha</th>
-                    <th className="px-4 py-3 font-medium">Factura</th>
-                    <th className="px-4 py-3 font-medium">Cliente</th>
-                    <th className="px-4 py-3 font-medium">Acción</th>
-                    <th className="px-4 py-3 font-medium">Detalle</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {loadingBitacora ? (
-                    <tr>
-                      <td
-                        colSpan={5}
-                        className="px-4 py-8 text-center text-slate-500"
-                      >
-                        Cargando bitácora...
-                      </td>
-                    </tr>
-                  ) : bitacora.length === 0 ? (
-                    <tr>
-                      <td
-                        colSpan={5}
-                        className="px-4 py-8 text-center text-slate-500"
-                      >
-                        No hay acciones registradas todavía.
-                      </td>
-                    </tr>
-                  ) : (
-                    bitacora.map((item) => (
-                      <tr key={item.id} className="border-t border-slate-100">
-                        <td className="px-4 py-3 text-slate-700">
-                          {formatFechaHora(item.created_at)}
-                        </td>
-                        <td className="px-4 py-3 text-slate-700">
-                          {item.numero_factura}
-                        </td>
-                        <td className="px-4 py-3 text-slate-700">
-                          {item.cliente || '-'}
-                        </td>
-                        <td className="px-4 py-3 text-slate-700">
-                          {formatAccionBitacora(item.accion)}
-                        </td>
-                        <td className="px-4 py-3 text-slate-700">
-                          {item.detalle || '-'}
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </section>
-
-          <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-            <div className="border-b border-slate-200 px-4 py-4">
-              <h2 className="text-lg font-semibold text-slate-900">
-                Pagos registrados desde cobranza
-              </h2>
-              <p className="mt-1 text-sm text-slate-500">
-                Desde aquí puedes revertir un pago y devolver la factura a pendiente.
-              </p>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-sm">
-                <thead className="bg-slate-50">
-                  <tr className="text-left text-slate-600">
-                    <th className="px-4 py-3 font-medium">Factura</th>
-                    <th className="px-4 py-3 font-medium">Cliente</th>
-                    <th className="px-4 py-3 font-medium">Fecha pago</th>
-                    <th className="px-4 py-3 font-medium">Medio pago</th>
-                    <th className="px-4 py-3 font-medium">Cuenta bancaria</th>
-                    <th className="px-4 py-3 font-medium text-right">Monto</th>
-                    <th className="px-4 py-3 font-medium">Acción</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {loadingPagosRegistrados ? (
-                    <tr>
-                      <td
-                        colSpan={7}
-                        className="px-4 py-8 text-center text-slate-500"
-                      >
-                        Cargando pagos registrados...
-                      </td>
-                    </tr>
-                  ) : pagosRegistrados.length === 0 ? (
-                    <tr>
-                      <td
-                        colSpan={7}
-                        className="px-4 py-8 text-center text-slate-500"
-                      >
-                        No hay pagos recientes registrados desde cobranza.
-                      </td>
-                    </tr>
-                  ) : (
-                    pagosRegistrados.map((pago) => (
-                      <tr
-                        key={pago.movimiento_id}
-                        className="border-t border-slate-100"
-                      >
-                        <td className="px-4 py-3 text-slate-700">
-                          {pago.numero_factura || '-'}
-                        </td>
-                        <td className="px-4 py-3 text-slate-700">
-                          {pago.cliente || '-'}
-                        </td>
-                        <td className="px-4 py-3 text-slate-700">
-                          {formatFecha(pago.fecha_pago)}
-                        </td>
-                        <td className="px-4 py-3 text-slate-700">
-                          {formatMedioPago(pago.medio_pago)}
-                        </td>
-                        <td className="px-4 py-3 text-slate-700">
-                          {getCuentaLabel(pago.cuenta_bancaria_id)}
-                        </td>
-                        <td className="px-4 py-3 text-right font-medium text-slate-900">
-                          {formatCLP(pago.monto_total)}
-                        </td>
-                        <td className="px-4 py-3">
-                          <button
-                            type="button"
-                            onClick={() => void handleRevertirPago(pago)}
-                            disabled={revertingPagoId === pago.movimiento_id}
-                            className="rounded-lg bg-rose-50 px-3 py-1.5 text-xs font-medium text-rose-700 disabled:opacity-60"
-                          >
-                            {revertingPagoId === pago.movimiento_id
-                              ? 'Revirtiendo...'
-                              : 'Revertir pago'}
-                          </button>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </section>
-
           {vencidas.length > 0 && (
             <section className="rounded-2xl border border-red-200 bg-red-50 p-6 shadow-sm">
               <h2 className="text-lg font-semibold text-red-800">
@@ -1962,13 +1238,6 @@ export default function CobranzaPage() {
                               >
                                 Copiar
                               </button>
-                              <button
-                                type="button"
-                                onClick={() => void handleEmailReminder(item)}
-                                className="rounded-lg bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700"
-                              >
-                                Email
-                              </button>
                             </div>
                           </td>
                         </tr>
@@ -2031,10 +1300,6 @@ export default function CobranzaPage() {
                   <DetailRow
                     label="Cliente"
                     value={detalleSeleccionado.cliente || '-'}
-                  />
-                  <DetailRow
-                    label="Correo cliente"
-                    value={getClienteEmail(detalleSeleccionado.cliente || '') || '-'}
                   />
                   <DetailRow
                     label="Factura"
@@ -2161,14 +1426,6 @@ export default function CobranzaPage() {
 
                     <button
                       type="button"
-                      onClick={() => void handleEmailReminder(detalleSeleccionado)}
-                      className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white"
-                    >
-                      Enviar recordatorio
-                    </button>
-
-                    <button
-                      type="button"
                       onClick={() => setDetalleSeleccionado(null)}
                       className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700"
                     >
@@ -2230,7 +1487,6 @@ export default function CobranzaPage() {
                         <option value="deposito">Depósito</option>
                         <option value="cheque">Cheque</option>
                         <option value="efectivo">Efectivo</option>
-                        <option value="tarjeta">Tarjeta</option>
                         <option value="otro">Otro</option>
                       </select>
                     </div>
