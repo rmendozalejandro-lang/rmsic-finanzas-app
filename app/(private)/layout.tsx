@@ -279,72 +279,54 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
     return pathname === href || pathname.startsWith(`${href}/`)
   }
 
+  const empresaActivaNombreVisual =
+    empresaActiva?.nombre || empresaActivaNombreLocal || 'Sin empresa activa'
+
   if (checkingSession) {
     return (
-      <main className="min-h-screen bg-slate-100 p-8">
-        <div className="mx-auto max-w-7xl rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          Verificando sesión...
+      <main className="min-h-screen bg-[#F6F8FB] p-6">
+        <div className="mx-auto max-w-7xl rounded-[28px] border border-slate-200 bg-white p-8 shadow-sm">
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-slate-500">Auren</p>
+            <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
+              Verificando sesión
+            </h1>
+            <p className="text-sm text-slate-500">
+              Estamos preparando su entorno empresarial.
+            </p>
+          </div>
         </div>
       </main>
     )
   }
 
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-900 print:bg-white">
-      <header className="border-b border-slate-200 bg-white print:hidden">
-        <div className="mx-auto max-w-7xl px-8 py-5">
-          <div className="flex flex-wrap items-center justify-between gap-6">
-            <div>
-              <p className="text-xs uppercase tracking-[0.24em] text-slate-500">
-                RMSIC
-              </p>
-              <h1 className="mt-1 text-2xl font-semibold">
-                Plataforma financiera
-              </h1>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-4">
-              <div className="min-w-[260px]">
-                <label className="mb-1 block text-xs uppercase tracking-wide text-slate-500">
-                  Empresa activa
-                </label>
-                <select
-                  value={empresaActivaId}
-                  onChange={(e) => void handleEmpresaChange(e.target.value)}
-                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm"
-                  disabled={empresasParaSelector.length === 0}
-                >
-                  {empresasParaSelector.length === 0 ? (
-                    <option value="">Sin empresas disponibles</option>
-                  ) : (
-                    empresasParaSelector.map((empresa) => (
-                      <option key={empresa.id} value={empresa.id}>
-                        {empresa.nombre}
-                      </option>
-                    ))
-                  )}
-                </select>
+    <div className="min-h-screen bg-[#F6F8FB] text-slate-900 print:bg-white">
+      <div className="grid min-h-screen lg:grid-cols-[280px_minmax(0,1fr)]">
+        <aside className="hidden border-r border-slate-200 bg-white print:hidden lg:flex lg:flex-col">
+          <div className="px-5 py-5">
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#163A5F] text-white shadow-sm">
+                <span className="text-lg font-semibold tracking-tight">A</span>
               </div>
-
-              <div className="text-right">
-                <p className="text-sm font-medium text-slate-900">
-                  {usuarioNombre || usuarioEmail || 'Usuario'}
-                </p>
-                <p className="text-xs text-slate-500">
-                  {usuarioRol || 'Sin rol asignado'}
-                </p>
+              <div>
+                <div className="text-xl font-semibold tracking-tight text-slate-900">
+                  Auren
+                </div>
+                <div className="text-xs text-slate-500">
+                  Plataforma financiera y administrativa
+                </div>
               </div>
-
-              <button
-                onClick={handleLogout}
-                className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800"
-              >
-                Cerrar sesión
-              </button>
             </div>
           </div>
 
-          <nav className="mt-5 flex flex-wrap gap-2">
+          <div className="px-3 pb-3">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-600">
+              Gestión multiempresa con una visual clara, sobria y corporativa.
+            </div>
+          </div>
+
+          <nav className="flex-1 space-y-1 px-3 pb-4">
             {visibleMenuItems.map((item) => {
               const active = isActiveRoute(item.href)
 
@@ -352,10 +334,10 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
                 <Link
                   key={item.href}
                   href={item.href}
-                  className={`rounded-xl px-4 py-2 text-sm font-medium no-underline transition ${
+                  className={`flex items-center rounded-2xl px-3 py-3 text-sm font-medium no-underline transition ${
                     active
-                      ? 'bg-slate-900 !text-white hover:!text-white visited:!text-white'
-                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200 hover:text-slate-900 visited:text-slate-700'
+                      ? 'bg-[#163A5F] text-white shadow-sm'
+                      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
                   }`}
                 >
                   {item.label}
@@ -364,33 +346,110 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
             })}
           </nav>
 
-          {rolResuelto && visibleMenuItems.length === 0 ? (
-            <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-              Este usuario no tiene módulos habilitados para la empresa activa.
+          <div className="border-t border-slate-200 px-4 py-4">
+            <div className="rounded-2xl bg-slate-50 p-3">
+              <div className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                Respaldo
+              </div>
+              <div className="mt-1 text-sm font-medium text-slate-800">
+                Desarrollado e implementado por RMSIC
+              </div>
             </div>
-          ) : null}
+          </div>
+        </aside>
 
-          {empresaActiva ? (
-            <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-              Empresa activa:{' '}
-              <span className="font-medium text-slate-900">
-                {empresaActiva.nombre}
-              </span>
+        <div className="flex min-h-screen flex-col">
+          <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/90 backdrop-blur print:hidden">
+            <div className="px-4 py-4 sm:px-6 lg:px-8">
+              <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+                <div>
+                  <p className="text-sm font-medium text-slate-500">Auren</p>
+                  <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
+                    Plataforma financiera y administrativa
+                  </h1>
+                </div>
+
+                <div className="flex flex-col gap-4 md:flex-row md:items-end xl:items-center">
+                  <div className="min-w-[260px]">
+                    <label className="mb-1 block text-xs uppercase tracking-wide text-slate-500">
+                      Empresa activa
+                    </label>
+                    <select
+                      value={empresaActivaId}
+                      onChange={(e) => void handleEmpresaChange(e.target.value)}
+                      className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm shadow-sm outline-none transition focus:border-[#245C90]"
+                      disabled={empresasParaSelector.length === 0}
+                    >
+                      {empresasParaSelector.length === 0 ? (
+                        <option value="">Sin empresas disponibles</option>
+                      ) : (
+                        empresasParaSelector.map((empresa) => (
+                          <option key={empresa.id} value={empresa.id}>
+                            {empresa.nombre}
+                          </option>
+                        ))
+                      )}
+                    </select>
+                  </div>
+
+                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left shadow-sm md:min-w-[220px] md:text-right">
+                    <p className="text-sm font-medium text-slate-900">
+                      {usuarioNombre || usuarioEmail || 'Usuario'}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      {usuarioRol || 'Sin rol asignado'}
+                    </p>
+                  </div>
+
+                  <button
+                    onClick={() => void handleLogout()}
+                    className="rounded-2xl bg-[#163A5F] px-4 py-3 text-sm font-medium text-white transition hover:bg-[#245C90]"
+                  >
+                    Cerrar sesión
+                  </button>
+                </div>
+              </div>
+
+              <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                Empresa activa:{' '}
+                <span className="font-semibold text-slate-900">
+                  {empresaActivaNombreVisual}
+                </span>
+              </div>
+
+              <nav className="mt-4 flex flex-wrap gap-2 lg:hidden">
+                {visibleMenuItems.map((item) => {
+                  const active = isActiveRoute(item.href)
+
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      className={`rounded-2xl px-4 py-2 text-sm font-medium no-underline transition ${
+                        active
+                          ? 'bg-[#163A5F] text-white'
+                          : 'bg-slate-100 text-slate-700 hover:bg-slate-200 hover:text-slate-900'
+                      }`}
+                    >
+                      {item.label}
+                    </Link>
+                  )
+                })}
+              </nav>
+
+              {rolResuelto && visibleMenuItems.length === 0 ? (
+                <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                  Este usuario no tiene módulos habilitados para la empresa activa.
+                </div>
+              ) : null}
             </div>
-          ) : empresaActivaNombreLocal ? (
-            <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-              Empresa activa:{' '}
-              <span className="font-medium text-slate-900">
-                {empresaActivaNombreLocal}
-              </span>
-            </div>
-          ) : null}
+          </header>
+
+          <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8 print:max-w-none print:px-0 print:py-0">
+            {children}
+          </main>
         </div>
-      </header>
-
-      <main className="mx-auto max-w-7xl px-8 py-8 print:max-w-none print:px-0 print:py-0">
-        {children}
-      </main>
+      </div>
     </div>
   )
 }

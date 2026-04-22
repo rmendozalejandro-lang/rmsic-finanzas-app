@@ -70,6 +70,8 @@ export default function EditarCotizacionPage() {
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [usuarioRol, setUsuarioRol] = useState('')
+  const [isAdmin, setIsAdmin] = useState(false)
 
   useEffect(() => {
     const syncEmpresaActiva = () => {
@@ -109,6 +111,7 @@ export default function EditarCotizacionPage() {
         }
 
         const accessToken = session.access_token
+        const userId = session.user.id
         const apiKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
         const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
 
@@ -118,7 +121,7 @@ export default function EditarCotizacionPage() {
           return
         }
 
-        const [cotizacionResp, itemsResp, clientesResp] = await Promise.all([
+        const [cotizacionResp, itemsResp, clientesResp, rolResp] = await Promise.all([
           fetch(
             `${baseUrl}/rest/v1/cotizaciones?id=eq.${cotizacionId}&empresa_id=eq.${empresaActivaId}&select=*`,
             {
@@ -146,11 +149,21 @@ export default function EditarCotizacionPage() {
               },
             }
           ),
+          fetch(
+            `${baseUrl}/rest/v1/usuario_empresas?select=rol&usuario_id=eq.${userId}&empresa_id=eq.${empresaActivaId}&activo=eq.true`,
+            {
+              headers: {
+                apikey: apiKey,
+                Authorization: `Bearer ${accessToken}`,
+              },
+            }
+          ),
         ])
 
         const cotizacionJson = await cotizacionResp.json()
         const itemsJson = await itemsResp.json()
         const clientesJson = await clientesResp.json()
+        const rolJson = await rolResp.json()
 
         if (!cotizacionResp.ok) {
           setError(
@@ -184,6 +197,23 @@ export default function EditarCotizacionPage() {
           setLoading(false)
           return
         }
+
+        if (!rolResp.ok) {
+          setError(
+            rolJson?.message ||
+              rolJson?.error_description ||
+              rolJson?.error ||
+              'No se pudo cargar el rol del usuario.'
+          )
+          setLoading(false)
+          return
+        }
+
+        const rol =
+          Array.isArray(rolJson) && rolJson.length > 0 ? rolJson[0].rol || '' : ''
+
+        setUsuarioRol(rol)
+        setIsAdmin(rol === 'admin')
 
         const cotizacionRow = Array.isArray(cotizacionJson)
           ? (cotizacionJson[0] as GenericRow | undefined)
@@ -363,6 +393,39 @@ export default function EditarCotizacionPage() {
               Editar cotización
             </h1>
             <p className="mt-2 text-sm text-rose-700">{error}</p>
+
+            <div className="mt-4">
+              <Link
+                href={`/cotizaciones/${cotizacionId}`}
+                className="inline-flex rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-white"
+              >
+                Volver al detalle
+              </Link>
+            </div>
+          </div>
+        </div>
+      </ProtectedCotizacionesRoute>
+    )
+  }
+
+  if (!isAdmin) {
+    return (
+      <ProtectedCotizacionesRoute>
+        <div className="space-y-4">
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5">
+            <h1 className="text-xl font-semibold text-slate-900">
+              Editar cotización
+            </h1>
+            <p className="mt-2 text-sm text-slate-700">
+              El usuario actual tiene rol{' '}
+              <span className="font-semibold">
+                {usuarioRol || 'sin rol asignado'}
+              </span>
+              .
+            </p>
+            <p className="mt-1 text-sm text-slate-600">
+              Solo el administrador puede editar cotizaciones.
+            </p>
 
             <div className="mt-4">
               <Link

@@ -86,6 +86,8 @@ export default function NuevaCotizacionPage() {
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [usuarioRol, setUsuarioRol] = useState('')
+  const [isAdmin, setIsAdmin] = useState(false)
 
   useEffect(() => {
     const syncEmpresaActiva = () => {
@@ -135,7 +137,7 @@ export default function NuevaCotizacionPage() {
           return
         }
 
-        const [empresaResp, clientesResp] = await Promise.all([
+        const [empresaResp, clientesResp, rolResp] = await Promise.all([
           fetch(
             `${baseUrl}/rest/v1/empresas?id=eq.${empresaActivaId}&select=*`,
             {
@@ -154,10 +156,20 @@ export default function NuevaCotizacionPage() {
               },
             }
           ),
+          fetch(
+            `${baseUrl}/rest/v1/usuario_empresas?select=rol&usuario_id=eq.${user.id}&empresa_id=eq.${empresaActivaId}&activo=eq.true`,
+            {
+              headers: {
+                apikey: apiKey,
+                Authorization: `Bearer ${accessToken}`,
+              },
+            }
+          ),
         ])
 
         const empresaJson = await empresaResp.json()
         const clientesJson = await clientesResp.json()
+        const rolJson = await rolResp.json()
 
         if (!empresaResp.ok) {
           setError(
@@ -180,6 +192,23 @@ export default function NuevaCotizacionPage() {
           setLoading(false)
           return
         }
+
+        if (!rolResp.ok) {
+          setError(
+            rolJson?.message ||
+              rolJson?.error_description ||
+              rolJson?.error ||
+              'No se pudo cargar el rol del usuario.'
+          )
+          setLoading(false)
+          return
+        }
+
+        const rol =
+          Array.isArray(rolJson) && rolJson.length > 0 ? rolJson[0].rol || '' : ''
+
+        setUsuarioRol(rol)
+        setIsAdmin(rol === 'admin')
 
         const empresaRow = Array.isArray(empresaJson)
           ? (empresaJson[0] as GenericRow | undefined)
@@ -339,6 +368,39 @@ export default function NuevaCotizacionPage() {
               Nueva cotización
             </h1>
             <p className="mt-2 text-sm text-rose-700">{error}</p>
+
+            <div className="mt-4">
+              <Link
+                href="/cotizaciones"
+                className="inline-flex rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-white"
+              >
+                Volver a cotizaciones
+              </Link>
+            </div>
+          </div>
+        </div>
+      </ProtectedCotizacionesRoute>
+    )
+  }
+
+  if (!isAdmin) {
+    return (
+      <ProtectedCotizacionesRoute>
+        <div className="space-y-4">
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5">
+            <h1 className="text-xl font-semibold text-slate-900">
+              Nueva cotización
+            </h1>
+            <p className="mt-2 text-sm text-slate-700">
+              El usuario actual tiene rol{' '}
+              <span className="font-semibold">
+                {usuarioRol || 'sin rol asignado'}
+              </span>
+              .
+            </p>
+            <p className="mt-1 text-sm text-slate-600">
+              Solo el administrador puede crear cotizaciones.
+            </p>
 
             <div className="mt-4">
               <Link

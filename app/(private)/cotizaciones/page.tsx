@@ -126,6 +126,8 @@ export default function CotizacionesPage() {
 
   const [q, setQ] = useState('')
   const [estado, setEstado] = useState('')
+  const [usuarioRol, setUsuarioRol] = useState('')
+  const [isAdmin, setIsAdmin] = useState(false)
 
   useEffect(() => {
     const syncEmpresaActiva = () => {
@@ -167,6 +169,7 @@ export default function CotizacionesPage() {
         }
 
         const accessToken = session.access_token
+        const userId = session.user.id
         const apiKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
         const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
 
@@ -176,7 +179,7 @@ export default function CotizacionesPage() {
           return
         }
 
-        const [cotizacionesResp, clientesResp] = await Promise.all([
+        const [cotizacionesResp, clientesResp, rolResp] = await Promise.all([
           fetch(
             `${baseUrl}/rest/v1/cotizaciones?empresa_id=eq.${empresaActivaId}&select=id,empresa_id,cliente_id,folio,codigo,estado,titulo,fecha_emision,fecha_vencimiento,moneda,subtotal_neto,subtotal_exento,monto_iva,total,created_at&order=created_at.desc`,
             {
@@ -195,10 +198,20 @@ export default function CotizacionesPage() {
               },
             }
           ),
+          fetch(
+            `${baseUrl}/rest/v1/usuario_empresas?select=rol&usuario_id=eq.${userId}&empresa_id=eq.${empresaActivaId}&activo=eq.true`,
+            {
+              headers: {
+                apikey: apiKey,
+                Authorization: `Bearer ${accessToken}`,
+              },
+            }
+          ),
         ])
 
         const cotizacionesJson = await cotizacionesResp.json()
         const clientesJson = await clientesResp.json()
+        const rolJson = await rolResp.json()
 
         if (!cotizacionesResp.ok) {
           setError(
@@ -221,6 +234,23 @@ export default function CotizacionesPage() {
           setLoading(false)
           return
         }
+
+        if (!rolResp.ok) {
+          setError(
+            rolJson?.message ||
+              rolJson?.error_description ||
+              rolJson?.error ||
+              'No se pudo cargar el rol del usuario.'
+          )
+          setLoading(false)
+          return
+        }
+
+        const rol =
+          Array.isArray(rolJson) && rolJson.length > 0 ? rolJson[0].rol || '' : ''
+
+        setUsuarioRol(rol)
+        setIsAdmin(rol === 'admin')
 
         const clientesIndex: Record<string, ClienteRow> = {}
         for (const cliente of (clientesJson ?? []) as ClienteRow[]) {
@@ -332,14 +362,26 @@ export default function CotizacionesPage() {
           </div>
 
           <div className="flex items-center gap-3">
-            <Link
-              href="/cotizaciones/nueva"
-              className="inline-flex items-center rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-            >
-              Nueva cotización
-            </Link>
+            {isAdmin ? (
+              <Link
+                href="/cotizaciones/nueva"
+                className="inline-flex items-center rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+              >
+                Nueva cotización
+              </Link>
+            ) : null}
           </div>
         </header>
+
+        {!isAdmin && !loading ? (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            El usuario actual tiene rol{' '}
+            <span className="font-semibold">
+              {usuarioRol || 'sin rol asignado'}
+            </span>
+            . Puede visualizar cotizaciones, pero solo el administrador puede crear o editar.
+          </div>
+        ) : null}
 
         <section className="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
           <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -459,14 +501,16 @@ export default function CotizacionesPage() {
               <p className="text-sm text-slate-600">
                 No hay cotizaciones para mostrar.
               </p>
-              <div className="mt-4">
-                <Link
-                  href="/cotizaciones/nueva"
-                  className="inline-flex items-center rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800"
-                >
-                  Crear primera cotización
-                </Link>
-              </div>
+              {isAdmin ? (
+                <div className="mt-4">
+                  <Link
+                    href="/cotizaciones/nueva"
+                    className="inline-flex items-center rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800"
+                  >
+                    Crear primera cotización
+                  </Link>
+                </div>
+              ) : null}
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -549,12 +593,15 @@ export default function CotizacionesPage() {
                             >
                               Ver
                             </Link>
-                            <Link
-                              href={`/cotizaciones/${row.id}/editar`}
-                              className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-100"
-                            >
-                              Editar
-                            </Link>
+
+                            {isAdmin ? (
+                              <Link
+                                href={`/cotizaciones/${row.id}/editar`}
+                                className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-100"
+                              >
+                                Editar
+                              </Link>
+                            ) : null}
                           </div>
                         </td>
                       </tr>

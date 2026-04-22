@@ -4,6 +4,7 @@ import Link from 'next/link'
 import {
   type ChangeEvent,
   type FormEvent,
+  useCallback,
   useEffect,
   useMemo,
   useState,
@@ -27,62 +28,72 @@ type CuentaBancaria = {
 
 type Categoria = {
   id: string
+  empresa_id: string
   nombre: string
+  tipo: 'ingreso' | 'egreso'
+  clasificacion_financiera: string | null
+  activa: boolean
 }
 
 type CentroCosto = {
   id: string
+  empresa_id: string
   nombre: string
 }
 
 type Ingreso = {
   id: string
   fecha: string
-  numero_documento: string | null
   tipo_documento: string | null
+  numero_documento: string | null
   descripcion: string
   monto_total: number
   estado: string
   cliente_id: string | null
-  clientes?: {
-    nombre: string
-  } | null
+  cliente_nombre?: string | null
+  categoria_id: string | null
+  categoria_nombre?: string | null
+  centro_costo_id: string | null
+  centro_costo_nombre?: string | null
+  cuenta_bancaria_id: string | null
+  cuenta_bancaria_nombre?: string | null
+  empresa_id: string
 }
 
-type CondicionPago = 'contado' | '30' | '45' | '60'
-type TipoDocumento =
-  | 'factura'
-  | 'boleta'
-  | 'nota_credito'
-  | 'nota_debito'
-  | 'comprobante'
-  | 'otro'
+type FormData = {
+  fecha: string
+  tipo_documento: string
+  numero_documento: string
+  descripcion: string
+  monto_total: string
+  estado: string
+  cliente_id: string
+  categoria_id: string
+  centro_costo_id: string
+  cuenta_bancaria_id: string
+}
+
+type FiltroEstado = 'todos' | 'pendiente' | 'pagado' | 'anulado'
 
 const STORAGE_KEY = 'empresa_activa_id'
 
-const formatTipoDocumento = (value: string | null) => {
-  switch (value) {
-    case 'factura':
-      return 'Factura'
-    case 'boleta':
-      return 'Boleta'
-    case 'nota_credito':
-      return 'Nota de crédito'
-    case 'nota_debito':
-      return 'Nota de débito'
-    case 'comprobante':
-      return 'Comprobante'
-    case 'otro':
-      return 'Otro'
-    default:
-      return value || '-'
-  }
-}
+const buildInitialForm = (): FormData => ({
+  fecha: new Date().toISOString().slice(0, 10),
+  tipo_documento: 'factura',
+  numero_documento: '',
+  descripcion: '',
+  monto_total: '',
+  estado: 'pendiente',
+  cliente_id: '',
+  categoria_id: '',
+  centro_costo_id: '',
+  cuenta_bancaria_id: '',
+})
 
 const formatCLP = (value: number) =>
   `$${Number(value || 0).toLocaleString('es-CL')}`
 
-const formatDate = (value: string) => {
+const formatDate = (value: string | null) => {
   if (!value) return '-'
 
   const date = new Date(`${value}T00:00:00`)
@@ -95,34 +106,22 @@ export default function IngresosPage() {
   const router = useRouter()
 
   const [empresaActivaId, setEmpresaActivaId] = useState('')
-  const [ingresos, setIngresos] = useState<Ingreso[]>([])
   const [clientes, setClientes] = useState<Cliente[]>([])
   const [cuentas, setCuentas] = useState<CuentaBancaria[]>([])
   const [categorias, setCategorias] = useState<Categoria[]>([])
   const [centrosCosto, setCentrosCosto] = useState<CentroCosto[]>([])
+  const [ingresos, setIngresos] = useState<Ingreso[]>([])
+
+  const [formData, setFormData] = useState<FormData>(buildInitialForm())
+  const [filtroEstado, setFiltroEstado] = useState<FiltroEstado>('todos')
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [usuarioRol, setUsuarioRol] = useState('')
+  const [isAdmin, setIsAdmin] = useState(false)
 
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
-
-  const [form, setForm] = useState({
-    fecha: '',
-    condicion_pago: 'contado' as CondicionPago,
-    fecha_vencimiento: '',
-    cliente_id: '',
-    tipo_documento: 'factura' as TipoDocumento,
-    numero_documento: '',
-    descripcion: '',
-    monto_neto: '',
-    monto_iva: '',
-    monto_total: '',
-    estado: 'pagado',
-    cuenta_bancaria_id: '',
-    categoria_id: '',
-    centro_costo_id: '',
-    es_exento: 'false',
-  })
 
   useEffect(() => {
     const syncEmpresaActiva = () => {
@@ -138,93 +137,8 @@ export default function IngresosPage() {
     }
   }, [])
 
-  const resetForm = () => {
-    setForm({
-      fecha: '',
-      condicion_pago: 'contado',
-      fecha_vencimiento: '',
-      cliente_id: '',
-      tipo_documento: 'factura',
-      numero_documento: '',
-      descripcion: '',
-      monto_neto: '',
-      monto_iva: '',
-      monto_total: '',
-      estado: 'pagado',
-      cuenta_bancaria_id: '',
-      categoria_id: '',
-      centro_costo_id: '',
-      es_exento: 'false',
-    })
-  }
-
-  const sumarDias = (fecha: string, dias: number) => {
-    if (!fecha) return ''
-    const base = new Date(`${fecha}T00:00:00`)
-    base.setDate(base.getDate() + dias)
-    return base.toISOString().slice(0, 10)
-  }
-
-  const diasCondicionPago = useMemo(() => {
-    switch (form.condicion_pago) {
-      case '30':
-        return 30
-      case '45':
-        return 45
-      case '60':
-        return 60
-      default:
-        return 0
-    }
-  }, [form.condicion_pago])
-
-  useEffect(() => {
-    if (!form.fecha) {
-      setForm((prev) => ({ ...prev, fecha_vencimiento: '' }))
-      return
-    }
-
-    const nuevaFechaVencimiento =
-      diasCondicionPago === 0 ? form.fecha : sumarDias(form.fecha, diasCondicionPago)
-
-    setForm((prev) => ({
-      ...prev,
-      fecha_vencimiento: nuevaFechaVencimiento,
-      estado: prev.condicion_pago === 'contado' ? 'pagado' : prev.estado,
-    }))
-  }, [form.fecha, diasCondicionPago])
-
-  useEffect(() => {
-    const neto = Number(form.monto_neto || 0)
-    const exento = form.es_exento === 'true'
-    const tipo = form.tipo_documento
-
-    let iva = 0
-    let total = 0
-
-    if (tipo === 'nota_credito' || tipo === 'nota_debito') {
-      iva = exento ? 0 : Math.round(neto * 0.19)
-      total = neto + iva
-    } else if (exento || tipo === 'boleta' || tipo === 'comprobante' || tipo === 'otro') {
-      iva = 0
-      total = neto
-    } else {
-      iva = Math.round(neto * 0.19)
-      total = neto + iva
-    }
-
-    setForm((prev) => ({
-      ...prev,
-      monto_iva: neto ? String(iva) : '',
-      monto_total: neto ? String(total) : '',
-    }))
-  }, [form.monto_neto, form.es_exento, form.tipo_documento])
-
-  const fetchData = async () => {
-    if (!empresaActivaId) {
-      setLoading(false)
-      return
-    }
+  const loadData = useCallback(async () => {
+    if (!empresaActivaId) return
 
     try {
       setLoading(true)
@@ -238,53 +152,56 @@ export default function IngresosPage() {
       }
 
       const accessToken = sessionData.session.access_token
+      const userId = sessionData.session.user.id
       const apiKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
       const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
 
       const headers = {
         apikey: apiKey,
         Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
       }
 
       const [
-        ingresosResp,
         clientesResp,
         cuentasResp,
         categoriasResp,
         centrosResp,
+        ingresosResp,
+        rolResp,
       ] = await Promise.all([
         fetch(
-          `${baseUrl}/rest/v1/movimientos?empresa_id=eq.${empresaActivaId}&tipo_movimiento=eq.ingreso&select=id,fecha,numero_documento,tipo_documento,descripcion,monto_total,estado,cliente_id,clientes(nombre)&order=fecha.desc`,
+          `${baseUrl}/rest/v1/clientes?select=id,nombre&empresa_id=eq.${empresaActivaId}&order=nombre.asc`,
           { headers }
         ),
         fetch(
-          `${baseUrl}/rest/v1/clientes?empresa_id=eq.${empresaActivaId}&select=id,nombre&order=nombre.asc`,
+          `${baseUrl}/rest/v1/cuentas_bancarias?select=id,banco,nombre_cuenta&empresa_id=eq.${empresaActivaId}&order=banco.asc`,
           { headers }
         ),
         fetch(
-          `${baseUrl}/rest/v1/cuentas_bancarias?empresa_id=eq.${empresaActivaId}&select=id,banco,nombre_cuenta&activa=eq.true&order=banco.asc`,
+          `${baseUrl}/rest/v1/categorias?select=id,empresa_id,nombre,tipo,clasificacion_financiera,activa&empresa_id=eq.${empresaActivaId}&tipo=eq.ingreso&activa=eq.true&order=nombre.asc`,
           { headers }
         ),
         fetch(
-          `${baseUrl}/rest/v1/categorias?empresa_id=eq.${empresaActivaId}&select=id,nombre&tipo=eq.ingreso&activa=eq.true&order=nombre.asc`,
+          `${baseUrl}/rest/v1/centros_costo?select=id,empresa_id,nombre&empresa_id=eq.${empresaActivaId}&order=nombre.asc`,
           { headers }
         ),
         fetch(
-          `${baseUrl}/rest/v1/centros_costo?empresa_id=eq.${empresaActivaId}&select=id,nombre&activo=eq.true&order=nombre.asc`,
+          `${baseUrl}/rest/v1/movimientos?select=id,fecha,tipo_documento,numero_documento,descripcion,monto_total,estado,cliente_id,categoria_id,centro_costo_id,cuenta_bancaria_id,empresa_id&empresa_id=eq.${empresaActivaId}&tipo_movimiento=eq.ingreso&order=fecha.desc`,
+          { headers }
+        ),
+        fetch(
+          `${baseUrl}/rest/v1/usuario_empresas?select=rol&usuario_id=eq.${userId}&empresa_id=eq.${empresaActivaId}&activo=eq.true`,
           { headers }
         ),
       ])
 
-      const ingresosJson = await ingresosResp.json()
       const clientesJson = await clientesResp.json()
       const cuentasJson = await cuentasResp.json()
       const categoriasJson = await categoriasResp.json()
       const centrosJson = await centrosResp.json()
-
-      if (!ingresosResp.ok) {
-        setError('No se pudo cargar el listado de ingresos.')
-        return
-      }
+      const ingresosJson = await ingresosResp.json()
+      const rolJson = await rolResp.json()
 
       if (!clientesResp.ok) {
         setError('No se pudieron cargar los clientes.')
@@ -306,86 +223,140 @@ export default function IngresosPage() {
         return
       }
 
-      setIngresos(ingresosJson ?? [])
-      setClientes(clientesJson ?? [])
-      setCuentas(cuentasJson ?? [])
-      setCategorias(categoriasJson ?? [])
-      setCentrosCosto(centrosJson ?? [])
+      if (!ingresosResp.ok) {
+        setError('No se pudieron cargar los ingresos.')
+        return
+      }
+
+      if (!rolResp.ok) {
+        setError('No se pudo cargar el rol del usuario.')
+        return
+      }
+
+      const clientesData = (clientesJson ?? []) as Cliente[]
+      const cuentasData = (cuentasJson ?? []) as CuentaBancaria[]
+      const categoriasData = (categoriasJson ?? []) as Categoria[]
+      const centrosData = (centrosJson ?? []) as CentroCosto[]
+      const ingresosBase = (ingresosJson ?? []) as Ingreso[]
+
+      const rol = Array.isArray(rolJson) && rolJson.length > 0 ? rolJson[0].rol || '' : ''
+      setUsuarioRol(rol)
+      setIsAdmin(rol === 'admin')
+
+      const clientesMap = new Map(
+        clientesData.map((item) => [item.id, item.nombre])
+      )
+      const cuentasMap = new Map(
+        cuentasData.map((item) => [item.id, `${item.banco} · ${item.nombre_cuenta}`])
+      )
+      const categoriasMap = new Map(
+        categoriasData.map((item) => [item.id, item.nombre])
+      )
+      const centrosMap = new Map(
+        centrosData.map((item) => [item.id, item.nombre])
+      )
+
+      const ingresosEnriquecidos = ingresosBase.map((item) => ({
+        ...item,
+        cliente_nombre: item.cliente_id
+          ? clientesMap.get(item.cliente_id) || '-'
+          : '-',
+        categoria_nombre: item.categoria_id
+          ? categoriasMap.get(item.categoria_id) || '-'
+          : '-',
+        centro_costo_nombre: item.centro_costo_id
+          ? centrosMap.get(item.centro_costo_id) || '-'
+          : '-',
+        cuenta_bancaria_nombre: item.cuenta_bancaria_id
+          ? cuentasMap.get(item.cuenta_bancaria_id) || '-'
+          : '-',
+      }))
+
+      setClientes(clientesData)
+      setCuentas(cuentasData)
+      setCategorias(categoriasData)
+      setCentrosCosto(centrosData)
+      setIngresos(ingresosEnriquecidos)
     } catch (err) {
       if (err instanceof Error) {
         setError(err.message)
       } else {
-        setError('Error desconocido')
+        setError('Error desconocido al cargar ingresos.')
       }
     } finally {
       setLoading(false)
     }
-  }
+  }, [empresaActivaId, router])
 
   useEffect(() => {
-    fetchData()
-  }, [router, empresaActivaId])
+    void loadData()
+  }, [loadData])
 
   const handleChange = (
     e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
   ) => {
     const { name, value } = e.target
-
-    setForm((prev) => {
-      const updated = { ...prev, [name]: value }
-
-      if (name === 'condicion_pago') {
-        updated.estado = value === 'contado' ? 'pagado' : 'pendiente'
-      }
-
-      if (name === 'tipo_documento') {
-        if (value === 'boleta' || value === 'comprobante' || value === 'otro') {
-          updated.es_exento = 'true'
-        }
-      }
-
-      return updated
-    })
+    setFormData((prev) => ({
+      ...prev,
+      [name]: value,
+    }))
   }
 
-  const handleSubmit = async (e: FormEvent) => {
-    e.preventDefault()
+  const resetForm = () => {
+    setFormData(buildInitialForm())
+    setEditingId(null)
+  }
+
+  const handleEdit = (item: Ingreso) => {
+    if (!isAdmin) return
 
     setError('')
     setSuccess('')
+    setEditingId(item.id)
+    setFormData({
+      fecha: item.fecha || new Date().toISOString().slice(0, 10),
+      tipo_documento: item.tipo_documento || 'factura',
+      numero_documento: item.numero_documento || '',
+      descripcion: item.descripcion || '',
+      monto_total: String(item.monto_total || ''),
+      estado: item.estado || 'pendiente',
+      cliente_id: item.cliente_id || '',
+      categoria_id: item.categoria_id || '',
+      centro_costo_id: item.centro_costo_id || '',
+      cuenta_bancaria_id: item.cuenta_bancaria_id || '',
+    })
+
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  const handleCancelEdit = () => {
+    resetForm()
+    setError('')
+    setSuccess('')
+  }
+
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+
+    if (!isAdmin) {
+      setError('Solo el administrador puede registrar o modificar ingresos.')
+      return
+    }
 
     if (!empresaActivaId) {
-      setError('Debes seleccionar una empresa activa.')
+      setError('No hay empresa activa seleccionada.')
       return
     }
 
-    if (!form.cliente_id) {
-      setError('Debes seleccionar un cliente.')
-      return
-    }
-
-    if (!form.descripcion.trim()) {
-      setError('Debes ingresar una descripción.')
-      return
-    }
-
-    if (Number(form.monto_neto) <= 0) {
-      setError('El monto neto debe ser mayor a 0.')
-      return
-    }
-
-    if (Number(form.monto_total) <= 0) {
-      setError('El monto total debe ser mayor a 0.')
-      return
-    }
-
-    if (form.estado === 'pagado' && !form.cuenta_bancaria_id) {
-      setError('Debes seleccionar una cuenta bancaria para una venta pagada.')
+    if (!formData.fecha || !formData.descripcion || !formData.monto_total) {
+      setError('Complete los campos obligatorios del ingreso.')
       return
     }
 
     try {
       setSaving(true)
+      setError('')
+      setSuccess('')
 
       const { data: sessionData } = await supabase.auth.getSession()
 
@@ -395,60 +366,34 @@ export default function IngresosPage() {
       }
 
       const accessToken = sessionData.session.access_token
-      const userEmail = sessionData.session.user.email
       const apiKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
       const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
-
-      if (!userEmail) {
-        setError('No se pudo obtener el correo del usuario autenticado.')
-        return
-      }
-
-      const profileResp = await fetch(
-        `${baseUrl}/rest/v1/perfiles?select=id,email&email=eq.${encodeURIComponent(userEmail)}`,
-        {
-          headers: {
-            apikey: apiKey,
-            Authorization: `Bearer ${accessToken}`,
-          },
-        }
-      )
-
-      const profileJson = await profileResp.json()
-
-      if (!profileResp.ok || !profileJson?.[0]?.id) {
-        setError('No se pudo obtener el perfil del usuario.')
-        return
-      }
-
-      const esExento = form.es_exento === 'true'
-      const montoNeto = Number(form.monto_neto || 0)
-      const montoIva = Number(form.monto_iva || 0)
 
       const payload = {
         empresa_id: empresaActivaId,
         tipo_movimiento: 'ingreso',
-        fecha: form.fecha,
-        fecha_vencimiento: form.fecha_vencimiento || null,
-        tercero_tipo: 'cliente',
-        cliente_id: form.cliente_id || null,
-        categoria_id: form.categoria_id || null,
-        centro_costo_id: form.centro_costo_id || null,
-        cuenta_bancaria_id: form.cuenta_bancaria_id || null,
-        tipo_documento: form.tipo_documento,
-        numero_documento: form.numero_documento || null,
-        descripcion: form.descripcion,
-        monto_neto: montoNeto,
-        monto_iva: esExento ? 0 : montoIva,
-        monto_exento: esExento ? montoNeto : 0,
-        monto_total: Number(form.monto_total || 0),
-        estado: form.estado,
-        medio_pago: 'transferencia',
-        created_by: profileJson[0].id,
+        fecha: formData.fecha,
+        tipo_documento: formData.tipo_documento || null,
+        numero_documento: formData.numero_documento || null,
+        descripcion: formData.descripcion,
+        monto_total: Number(formData.monto_total || 0),
+        estado: formData.estado,
+        cliente_id: formData.cliente_id || null,
+        categoria_id: formData.categoria_id || null,
+        centro_costo_id: formData.centro_costo_id || null,
+        cuenta_bancaria_id: formData.cuenta_bancaria_id || null,
       }
 
-      const insertResp = await fetch(`${baseUrl}/rest/v1/movimientos`, {
-        method: 'POST',
+      const isEditing = Boolean(editingId)
+
+      const url = isEditing
+        ? `${baseUrl}/rest/v1/movimientos?id=eq.${editingId}`
+        : `${baseUrl}/rest/v1/movimientos`
+
+      const method = isEditing ? 'PATCH' : 'POST'
+
+      const resp = await fetch(url, {
+        method,
         headers: {
           apikey: apiKey,
           Authorization: `Bearer ${accessToken}`,
@@ -458,36 +403,103 @@ export default function IngresosPage() {
         body: JSON.stringify(payload),
       })
 
-      const insertJson = await insertResp.json().catch(() => null)
+      const json = await resp.json()
 
-      if (!insertResp.ok) {
-        setError('No se pudo guardar la venta. Revisa los datos e inténtalo nuevamente.')
-        console.error(insertJson)
+      if (!resp.ok) {
+        console.error(json)
+        setError(isEditing ? 'No se pudo actualizar el ingreso.' : 'No se pudo registrar el ingreso.')
         return
       }
 
-      setSuccess('Ingreso registrado correctamente.')
+      setSuccess(isEditing ? 'Ingreso actualizado correctamente.' : 'Ingreso registrado correctamente.')
       resetForm()
-      await fetchData()
+      await loadData()
     } catch (err) {
       if (err instanceof Error) {
         setError(err.message)
       } else {
-        setError('Error desconocido al guardar.')
+        setError('Error desconocido al guardar el ingreso.')
       }
     } finally {
       setSaving(false)
     }
   }
 
+  const handleAnular = async (item: Ingreso) => {
+    if (!isAdmin) {
+      setError('Solo el administrador puede anular ingresos.')
+      return
+    }
+
+    if (item.estado?.toLowerCase() === 'anulado') return
+
+    const confirmacion = window.confirm(
+      `¿Desea anular el ingreso "${item.descripcion}"?`
+    )
+
+    if (!confirmacion) return
+
+    try {
+      setError('')
+      setSuccess('')
+
+      const { data: sessionData } = await supabase.auth.getSession()
+
+      if (!sessionData.session) {
+        router.push('/login')
+        return
+      }
+
+      const accessToken = sessionData.session.access_token
+      const apiKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+      const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+
+      const resp = await fetch(
+        `${baseUrl}/rest/v1/movimientos?id=eq.${item.id}`,
+        {
+          method: 'PATCH',
+          headers: {
+            apikey: apiKey,
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+            Prefer: 'return=representation',
+          },
+          body: JSON.stringify({ estado: 'anulado' }),
+        }
+      )
+
+      const json = await resp.json()
+
+      if (!resp.ok) {
+        console.error(json)
+        setError('No se pudo anular el ingreso.')
+        return
+      }
+
+      if (editingId === item.id) {
+        resetForm()
+      }
+
+      setSuccess('Ingreso anulado correctamente.')
+      await loadData()
+    } catch (err) {
+      if (err instanceof Error) {
+        setError(err.message)
+      } else {
+        setError('Error desconocido al anular el ingreso.')
+      }
+    }
+  }
+
+  const ingresosFiltrados = useMemo(() => {
+    if (filtroEstado === 'todos') return ingresos
+    return ingresos.filter(
+      (item) => (item.estado || '').toLowerCase() === filtroEstado
+    )
+  }, [ingresos, filtroEstado])
+
   const totalIngresos = useMemo(
     () => ingresos.reduce((acc, item) => acc + Number(item.monto_total || 0), 0),
-    [ingresos]
-  )
-
-  const ingresosPagados = useMemo(
-    () =>
-      ingresos.filter((item) => (item.estado || '').toLowerCase() === 'pagado').length,
     [ingresos]
   )
 
@@ -498,376 +510,471 @@ export default function IngresosPage() {
     [ingresos]
   )
 
+  const ingresosPagados = useMemo(
+    () =>
+      ingresos.filter((item) => (item.estado || '').toLowerCase() === 'pagado')
+        .length,
+    [ingresos]
+  )
+
+  const ingresosAnulados = useMemo(
+    () =>
+      ingresos.filter((item) => (item.estado || '').toLowerCase() === 'anulado')
+        .length,
+    [ingresos]
+  )
+
   return (
-  <ProtectedModuleRoute moduleKey="ingresos">
-    <main className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="text-4xl font-semibold text-slate-900">Ingresos</h1>
-          <p className="mt-2 text-slate-600">
-            Ventas e ingresos registrados en la empresa activa.
-          </p>
+    <ProtectedModuleRoute moduleKey="ingresos">
+      <main className="space-y-6">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h1 className="text-4xl font-semibold text-slate-900">Ingresos</h1>
+            <p className="mt-2 text-slate-600">
+              Registro, control y seguimiento de ingresos de la empresa activa.
+            </p>
+          </div>
+
+          <Link
+            href="/reportes"
+            className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+          >
+            Ver reporte de ingresos
+          </Link>
         </div>
 
-        <Link
-          href="/reportes/ingresos"
-         className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-        >
-          Ver reporte de ingresos
-        </Link>
-      </div>
+        <EmpresaActivaBanner
+          modulo="Ingresos"
+          descripcion="Todos los registros visibles corresponden únicamente a la empresa activa seleccionada."
+        />
 
-      <EmpresaActivaBanner
-        modulo="Ingresos"
-        descripcion="Todos los documentos y registros visibles corresponden únicamente a la empresa activa seleccionada."
-      />
+        {!isAdmin && !loading ? (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            El usuario actual tiene rol <span className="font-semibold">{usuarioRol || 'sin rol asignado'}</span>. Solo el administrador puede registrar, editar o anular ingresos.
+          </div>
+        ) : null}
 
-      {!loading && !error && (
-        <section className="grid grid-cols-1 gap-4 md:grid-cols-3">
-          <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <p className="text-sm text-slate-500">Total registrado</p>
-            <h2 className="mt-2 text-3xl font-semibold text-slate-900">
-              {formatCLP(totalIngresos)}
+        <section className="rounded-2xl border-2 border-[#163A5F] bg-white p-4 shadow-sm">
+          <div className="mb-3">
+            <h2 className="text-lg font-semibold text-slate-900">
+              Filtros de ingresos
             </h2>
-          </article>
+            <p className="text-sm text-slate-500">
+              Filtre el listado por estado del ingreso.
+            </p>
+          </div>
 
-          <article className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 shadow-sm">
-            <p className="text-sm text-emerald-700">Pagados</p>
-            <h2 className="mt-2 text-3xl font-semibold text-emerald-900">
-              {ingresosPagados}
-            </h2>
-          </article>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => setFiltroEstado('todos')}
+              className={`rounded-xl px-4 py-2 text-sm font-medium transition ${
+                filtroEstado === 'todos'
+                  ? 'bg-[#163A5F] text-white'
+                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+              }`}
+            >
+              Todos
+            </button>
 
-          <article className="rounded-2xl border border-amber-200 bg-amber-50 p-5 shadow-sm">
-            <p className="text-sm text-amber-700">Pendientes</p>
-            <h2 className="mt-2 text-3xl font-semibold text-amber-900">
-              {ingresosPendientes}
-            </h2>
-          </article>
+            <button
+              onClick={() => setFiltroEstado('pendiente')}
+              className={`rounded-xl px-4 py-2 text-sm font-medium transition ${
+                filtroEstado === 'pendiente'
+                  ? 'bg-[#163A5F] text-white'
+                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+              }`}
+            >
+              Pendientes
+            </button>
+
+            <button
+              onClick={() => setFiltroEstado('pagado')}
+              className={`rounded-xl px-4 py-2 text-sm font-medium transition ${
+                filtroEstado === 'pagado'
+                  ? 'bg-[#163A5F] text-white'
+                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+              }`}
+            >
+              Pagados
+            </button>
+
+            <button
+              onClick={() => setFiltroEstado('anulado')}
+              className={`rounded-xl px-4 py-2 text-sm font-medium transition ${
+                filtroEstado === 'anulado'
+                  ? 'bg-[#163A5F] text-white'
+                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+              }`}
+            >
+              Anulados
+            </button>
+          </div>
         </section>
-      )}
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm xl:col-span-2">
-          <h2 className="text-2xl font-semibold text-slate-900">
-            Listado de ingresos
-          </h2>
-          <p className="mb-4 mt-1 text-sm text-slate-500">
-            Información cargada directamente desde Supabase.
-          </p>
+        {!loading && !error && (
+          <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <p className="text-sm text-slate-500">Total ingresos</p>
+              <h2 className="mt-2 text-3xl font-semibold text-slate-900">
+                {formatCLP(totalIngresos)}
+              </h2>
+            </article>
 
-          {loading && <div className="text-slate-500">Cargando ingresos...</div>}
+            <article className="rounded-2xl border border-amber-200 bg-amber-50 p-5 shadow-sm">
+              <p className="text-sm text-amber-700">Pendientes</p>
+              <h2 className="mt-2 text-3xl font-semibold text-amber-900">
+                {ingresosPendientes}
+              </h2>
+            </article>
 
-          {!loading && !error && ingresos.length === 0 && (
-            <div className="text-sm text-slate-500">
-              No hay ingresos registrados para la empresa activa.
-            </div>
-          )}
+            <article className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 shadow-sm">
+              <p className="text-sm text-emerald-700">Pagados</p>
+              <h2 className="mt-2 text-3xl font-semibold text-emerald-900">
+                {ingresosPagados}
+              </h2>
+            </article>
 
-          {!loading && !error && ingresos.length > 0 && (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-slate-200 text-left text-slate-500">
-                    <th className="py-3 pr-4">Fecha</th>
-                    <th className="py-3 pr-4">Cliente</th>
-                    <th className="py-3 pr-4">Documento</th>
-                    <th className="py-3 pr-4">N° Doc.</th>
-                    <th className="py-3 pr-4">Descripción</th>
-                    <th className="py-3 pr-4">Monto total</th>
-                    <th className="py-3 pr-4">Estado</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {ingresos.map((item) => (
-                    <tr key={item.id} className="border-b border-slate-100">
-                      <td className="py-3 pr-4">{formatDate(item.fecha)}</td>
-                      <td className="py-3 pr-4">{item.clientes?.nombre ?? '-'}</td>
-                      <td className="py-3 pr-4">
-                        {formatTipoDocumento(item.tipo_documento)}
-                      </td>
-                      <td className="py-3 pr-4">{item.numero_documento ?? '-'}</td>
-                      <td className="py-3 pr-4">{item.descripcion}</td>
-                      <td className="py-3 pr-4 font-medium">
-                        {formatCLP(item.monto_total)}
-                      </td>
-                      <td className="py-3 pr-4">
-                        <StatusBadge status={item.estado} />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+            <article className="rounded-2xl border border-slate-300 bg-slate-50 p-5 shadow-sm">
+              <p className="text-sm text-slate-600">Anulados</p>
+              <h2 className="mt-2 text-3xl font-semibold text-slate-900">
+                {ingresosAnulados}
+              </h2>
+            </article>
+          </section>
+        )}
 
-          {!loading && error && (
-            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-              {error}
-            </div>
-          )}
-        </div>
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+          {isAdmin ? (
+            <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm xl:col-span-1">
+              <div className="mb-5 flex items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-2xl font-semibold text-slate-900">
+                    {editingId ? 'Editar ingreso' : 'Nuevo ingreso'}
+                  </h2>
+                  <p className="mt-1 text-sm text-slate-500">
+                    {editingId
+                      ? 'Modifique los datos del ingreso seleccionado.'
+                      : 'Registre un nuevo movimiento de ingreso para la empresa activa.'}
+                  </p>
+                </div>
 
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          <h2 className="text-2xl font-semibold text-slate-900">
-            Nuevo ingreso
-          </h2>
-          <p className="mb-4 mt-1 text-sm text-slate-500">
-            Registrar ingreso para la empresa activa.
-          </p>
-
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="mb-2 block text-sm text-slate-600">Fecha</label>
-              <input
-                type="date"
-                name="fecha"
-                value={form.fecha}
-                onChange={handleChange}
-                className="w-full rounded-xl border border-slate-300 px-4 py-3"
-                required
-              />
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm text-slate-600">
-                Condición de pago
-              </label>
-              <select
-                name="condicion_pago"
-                value={form.condicion_pago}
-                onChange={handleChange}
-                className="w-full rounded-xl border border-slate-300 px-4 py-3"
-                required
-              >
-                <option value="contado">Contado</option>
-                <option value="30">30 días</option>
-                <option value="45">45 días</option>
-                <option value="60">60 días</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm text-slate-600">
-                Fecha vencimiento
-              </label>
-              <input
-                type="date"
-                name="fecha_vencimiento"
-                value={form.fecha_vencimiento}
-                readOnly
-                className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3"
-              />
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm text-slate-600">Cliente</label>
-              <select
-                name="cliente_id"
-                value={form.cliente_id}
-                onChange={handleChange}
-                className="w-full rounded-xl border border-slate-300 px-4 py-3"
-                required
-              >
-                <option value="">Seleccionar cliente</option>
-                {clientes.map((cliente) => (
-                  <option key={cliente.id} value={cliente.id}>
-                    {cliente.nombre}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm text-slate-600">
-                Tipo de documento
-              </label>
-              <select
-                name="tipo_documento"
-                value={form.tipo_documento}
-                onChange={handleChange}
-                className="w-full rounded-xl border border-slate-300 px-4 py-3"
-                required
-              >
-                <option value="factura">Factura</option>
-                <option value="boleta">Boleta</option>
-                <option value="nota_credito">Nota de crédito</option>
-                <option value="nota_debito">Nota de débito</option>
-                <option value="comprobante">Comprobante</option>
-                <option value="otro">Otro</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm text-slate-600">
-                ¿Documento exento?
-              </label>
-              <select
-                name="es_exento"
-                value={form.es_exento}
-                onChange={handleChange}
-                className="w-full rounded-xl border border-slate-300 px-4 py-3"
-              >
-                <option value="false">No</option>
-                <option value="true">Sí</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm text-slate-600">
-                Número de documento
-              </label>
-              <input
-                type="text"
-                name="numero_documento"
-                value={form.numero_documento}
-                onChange={handleChange}
-                className="w-full rounded-xl border border-slate-300 px-4 py-3"
-              />
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm text-slate-600">
-                Descripción
-              </label>
-              <textarea
-                name="descripcion"
-                value={form.descripcion}
-                onChange={handleChange}
-                className="w-full rounded-xl border border-slate-300 px-4 py-3"
-                rows={3}
-                required
-              />
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm text-slate-600">Neto</label>
-              <input
-                type="number"
-                name="monto_neto"
-                value={form.monto_neto}
-                onChange={handleChange}
-                className="w-full rounded-xl border border-slate-300 px-4 py-3"
-                required
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="mb-2 block text-sm text-slate-600">IVA</label>
-                <input
-                  type="number"
-                  name="monto_iva"
-                  value={form.monto_iva}
-                  readOnly
-                  className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3"
-                />
+                {editingId ? (
+                  <button
+                    type="button"
+                    onClick={handleCancelEdit}
+                    className="rounded-xl border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                  >
+                    Cancelar
+                  </button>
+                ) : null}
               </div>
 
-              <div>
-                <label className="mb-2 block text-sm text-slate-600">Total</label>
-                <input
-                  type="number"
-                  name="monto_total"
-                  value={form.monto_total}
-                  readOnly
-                  className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3"
-                />
-              </div>
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-slate-700">
+                    Fecha
+                  </label>
+                  <input
+                    type="date"
+                    name="fecha"
+                    value={formData.fecha}
+                    onChange={handleChange}
+                    className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-slate-700">
+                    Tipo documento
+                  </label>
+                  <select
+                    name="tipo_documento"
+                    value={formData.tipo_documento}
+                    onChange={handleChange}
+                    className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
+                  >
+                    <option value="factura">Factura</option>
+                    <option value="boleta">Boleta</option>
+                    <option value="recibo">Recibo</option>
+                    <option value="otro">Otro</option>
+                    <option value="nota_credito">Nota de crédito</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-slate-700">
+                    Número documento
+                  </label>
+                  <input
+                    type="text"
+                    name="numero_documento"
+                    value={formData.numero_documento}
+                    onChange={handleChange}
+                    className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
+                    placeholder="Ej: 12345"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-slate-700">
+                    Descripción
+                  </label>
+                  <textarea
+                    name="descripcion"
+                    value={formData.descripcion}
+                    onChange={handleChange}
+                    className="min-h-[100px] w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
+                    placeholder="Detalle del ingreso"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-slate-700">
+                    Monto total
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    name="monto_total"
+                    value={formData.monto_total}
+                    onChange={handleChange}
+                    className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
+                    placeholder="0"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-slate-700">
+                    Estado
+                  </label>
+                  <select
+                    name="estado"
+                    value={formData.estado}
+                    onChange={handleChange}
+                    className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
+                  >
+                    <option value="pendiente">Pendiente</option>
+                    <option value="pagado">Pagado</option>
+                    <option value="anulado">Anulado</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-slate-700">
+                    Cliente
+                  </label>
+                  <select
+                    name="cliente_id"
+                    value={formData.cliente_id}
+                    onChange={handleChange}
+                    className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
+                  >
+                    <option value="">Seleccionar cliente</option>
+                    {clientes.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.nombre}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-slate-700">
+                    Categoría
+                  </label>
+                  <select
+                    name="categoria_id"
+                    value={formData.categoria_id}
+                    onChange={handleChange}
+                    className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
+                  >
+                    <option value="">Seleccionar categoría</option>
+                    {categorias.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.nombre}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-slate-700">
+                    Centro de costo
+                  </label>
+                  <select
+                    name="centro_costo_id"
+                    value={formData.centro_costo_id}
+                    onChange={handleChange}
+                    className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
+                  >
+                    <option value="">Seleccionar centro de costo</option>
+                    {centrosCosto.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.nombre}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-slate-700">
+                    Cuenta bancaria
+                  </label>
+                  <select
+                    name="cuenta_bancaria_id"
+                    value={formData.cuenta_bancaria_id}
+                    onChange={handleChange}
+                    className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
+                  >
+                    <option value="">Seleccionar cuenta</option>
+                    {cuentas.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.banco} · {item.nombre_cuenta}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {error ? (
+                  <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                    {error}
+                  </div>
+                ) : null}
+
+                {success ? (
+                  <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+                    {success}
+                  </div>
+                ) : null}
+
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="w-full rounded-xl bg-[#163A5F] px-4 py-2.5 text-sm font-medium text-white transition hover:bg-[#245C90] disabled:opacity-70"
+                >
+                  {saving
+                    ? editingId
+                      ? 'Actualizando...'
+                      : 'Guardando...'
+                    : editingId
+                      ? 'Actualizar ingreso'
+                      : 'Registrar ingreso'}
+                </button>
+              </form>
+            </section>
+          ) : (
+            <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm xl:col-span-1">
+              <h2 className="text-2xl font-semibold text-slate-900">
+                Acciones restringidas
+              </h2>
+              <p className="mt-2 text-sm text-slate-500">
+                Este módulo permite visualizar y filtrar ingresos, pero solo el administrador puede registrar, editar o anular.
+              </p>
+            </section>
+          )}
+
+          <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm xl:col-span-2">
+            <div className="mb-4">
+              <h2 className="text-2xl font-semibold text-slate-900">
+                Listado de ingresos
+              </h2>
+              <p className="mt-1 text-sm text-slate-500">
+                Historial de ingresos registrados para la empresa activa.
+              </p>
             </div>
 
-            <div>
-              <label className="mb-2 block text-sm text-slate-600">Estado</label>
-              <select
-                name="estado"
-                value={form.estado}
-                onChange={handleChange}
-                className="w-full rounded-xl border border-slate-300 px-4 py-3"
-                required
-              >
-                <option value="pagado">Pagado</option>
-                <option value="pendiente">Pendiente</option>
-              </select>
-            </div>
+            {loading && <div className="text-slate-500">Cargando ingresos...</div>}
 
-            <div>
-              <label className="mb-2 block text-sm text-slate-600">
-                Cuenta bancaria
-              </label>
-              <select
-                name="cuenta_bancaria_id"
-                value={form.cuenta_bancaria_id}
-                onChange={handleChange}
-                className="w-full rounded-xl border border-slate-300 px-4 py-3"
-              >
-                <option value="">Seleccionar cuenta</option>
-                {cuentas.map((cuenta) => (
-                  <option key={cuenta.id} value={cuenta.id}>
-                    {cuenta.banco} - {cuenta.nombre_cuenta}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm text-slate-600">Categoría</label>
-              <select
-                name="categoria_id"
-                value={form.categoria_id}
-                onChange={handleChange}
-                className="w-full rounded-xl border border-slate-300 px-4 py-3"
-              >
-                <option value="">Seleccionar categoría</option>
-                {categorias.map((categoria) => (
-                  <option key={categoria.id} value={categoria.id}>
-                    {categoria.nombre}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm text-slate-600">
-                Centro de costo
-              </label>
-              <select
-                name="centro_costo_id"
-                value={form.centro_costo_id}
-                onChange={handleChange}
-                className="w-full rounded-xl border border-slate-300 px-4 py-3"
-              >
-                <option value="">Seleccionar centro de costo</option>
-                {centrosCosto.map((centro) => (
-                  <option key={centro.id} value={centro.id}>
-                    {centro.nombre}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {error && (
+            {!loading && error && (
               <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
                 {error}
               </div>
             )}
 
-            {success && (
-              <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
-                {success}
+            {!loading && !error && ingresosFiltrados.length === 0 && (
+              <div className="text-sm text-slate-500">
+                No hay ingresos para el filtro seleccionado.
               </div>
             )}
 
-            <button
-              type="submit"
-              disabled={saving}
-              className="w-full rounded-xl border border-slate-300 py-3 font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
-            >
-              {saving ? 'Guardando...' : 'Guardar ingreso'}
-            </button>
-          </form>
+            {!loading && !error && ingresosFiltrados.length > 0 && (
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[1280px] text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-200 text-left text-slate-500">
+                      <th className="py-3 pr-4">Fecha</th>
+                      <th className="py-3 pr-4">Documento</th>
+                      <th className="py-3 pr-4">Descripción</th>
+                      <th className="py-3 pr-4">Cliente</th>
+                      <th className="py-3 pr-4">Categoría</th>
+                      <th className="py-3 pr-4">Centro costo</th>
+                      <th className="py-3 pr-4">Cuenta</th>
+                      <th className="py-3 pr-4">Monto</th>
+                      <th className="py-3 pr-4">Estado</th>
+                      {isAdmin ? <th className="py-3 pr-4">Acciones</th> : null}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ingresosFiltrados.map((item) => {
+                      const isAnulado = (item.estado || '').toLowerCase() === 'anulado'
+
+                      return (
+                        <tr key={item.id} className="border-b border-slate-100">
+                          <td className="py-3 pr-4">{formatDate(item.fecha)}</td>
+                          <td className="py-3 pr-4">
+                            {item.tipo_documento || '-'} {item.numero_documento || ''}
+                          </td>
+                          <td className="py-3 pr-4">{item.descripcion}</td>
+                          <td className="py-3 pr-4">{item.cliente_nombre || '-'}</td>
+                          <td className="py-3 pr-4">{item.categoria_nombre || '-'}</td>
+                          <td className="py-3 pr-4">{item.centro_costo_nombre || '-'}</td>
+                          <td className="py-3 pr-4">
+                            {item.cuenta_bancaria_nombre || '-'}
+                          </td>
+                          <td className="py-3 pr-4 font-medium">
+                            {formatCLP(Number(item.monto_total))}
+                          </td>
+                          <td className="py-3 pr-4">
+                            <StatusBadge status={item.estado} />
+                          </td>
+
+                          {isAdmin ? (
+                            <td className="py-3 pr-4">
+                              <div className="flex flex-wrap gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => handleEdit(item)}
+                                  disabled={isAnulado}
+                                  className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                  Editar
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => void handleAnular(item)}
+                                  disabled={isAnulado}
+                                  className="rounded-lg border border-red-300 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                  Anular
+                                </button>
+                              </div>
+                            </td>
+                          ) : null}
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
         </div>
-      </div>
-    </main>
-</ProtectedModuleRoute>
+      </main>
+    </ProtectedModuleRoute>
   )
 }

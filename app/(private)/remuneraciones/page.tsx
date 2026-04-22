@@ -65,6 +65,8 @@ export default function RemuneracionesPage() {
   const [anulandoId, setAnulandoId] = useState('')
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const [usuarioRol, setUsuarioRol] = useState('')
+  const [isAdmin, setIsAdmin] = useState(false)
 
   const [form, setForm] = useState({
     trabajador_nombre: '',
@@ -128,11 +130,9 @@ export default function RemuneracionesPage() {
     const totalNoImponible =
       bonoColacion + bonoMovilizacion + otrosHaberesNoImponibles
 
-    const totalDescuentos =
-      afp + salud + afc + anticipo + otrosDescuentos
+    const totalDescuentos = afp + salud + afc + anticipo + otrosDescuentos
 
-    const liquidoPagar =
-      totalImponible + totalNoImponible - totalDescuentos
+    const liquidoPagar = totalImponible + totalNoImponible - totalDescuentos
 
     return {
       totalImponible,
@@ -208,6 +208,7 @@ export default function RemuneracionesPage() {
       }
 
       const accessToken = sessionData.session.access_token
+      const userId = sessionData.session.user.id
       const apiKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
       const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
 
@@ -216,7 +217,7 @@ export default function RemuneracionesPage() {
         Authorization: `Bearer ${accessToken}`,
       }
 
-      const [remResp, cuentasResp, categoriasResp] = await Promise.all([
+      const [remResp, cuentasResp, categoriasResp, rolResp] = await Promise.all([
         fetch(
           `${baseUrl}/rest/v1/remuneraciones?empresa_id=eq.${empresaActivaId}&select=*&order=periodo.desc,trabajador_nombre.asc`,
           { headers }
@@ -229,11 +230,16 @@ export default function RemuneracionesPage() {
           `${baseUrl}/rest/v1/categorias?empresa_id=eq.${empresaActivaId}&tipo=eq.egreso&nombre=ilike.Remuneraciones&select=id,nombre`,
           { headers }
         ),
+        fetch(
+          `${baseUrl}/rest/v1/usuario_empresas?select=rol&usuario_id=eq.${userId}&empresa_id=eq.${empresaActivaId}&activo=eq.true`,
+          { headers }
+        ),
       ])
 
       const remJson = await remResp.json()
       const cuentasJson = await cuentasResp.json()
       const categoriasJson = await categoriasResp.json()
+      const rolJson = await rolResp.json()
 
       if (!remResp.ok) {
         console.error(remJson)
@@ -252,6 +258,18 @@ export default function RemuneracionesPage() {
         setError('No se pudieron cargar las categorías.')
         return
       }
+
+      if (!rolResp.ok) {
+        console.error(rolJson)
+        setError('No se pudo cargar el rol del usuario.')
+        return
+      }
+
+      const rol =
+        Array.isArray(rolJson) && rolJson.length > 0 ? rolJson[0].rol || '' : ''
+
+      setUsuarioRol(rol)
+      setIsAdmin(rol === 'admin')
 
       setRemuneraciones(remJson ?? [])
       setCuentas(cuentasJson ?? [])
@@ -283,6 +301,11 @@ export default function RemuneracionesPage() {
 
     setError('')
     setSuccess('')
+
+    if (!isAdmin) {
+      setError('Solo el administrador puede registrar remuneraciones.')
+      return
+    }
 
     if (!empresaActivaId) {
       setError('Debes seleccionar una empresa activa.')
@@ -332,12 +355,12 @@ export default function RemuneracionesPage() {
       const apiKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
       const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
 
-    const perfilId = sessionData.session.user.id
+      const perfilId = sessionData.session.user.id
 
-if (!perfilId) {
-  setError('No se pudo obtener el perfil del usuario autenticado.')
-  return
-}
+      if (!perfilId) {
+        setError('No se pudo obtener el perfil del usuario autenticado.')
+        return
+      }
 
       let movimientoId: string | null = null
 
@@ -455,6 +478,11 @@ if (!perfilId) {
   }
 
   const handleAnular = async (id: string) => {
+    if (!isAdmin) {
+      setError('Solo el administrador puede anular remuneraciones.')
+      return
+    }
+
     const confirmar = window.confirm(
       '¿Deseas anular esta remuneración? El registro seguirá existiendo, pero quedará marcado como anulado.'
     )
@@ -514,244 +542,269 @@ if (!perfilId) {
     }
   }
 
- return (
-<ProtectedModuleRoute moduleKey="remuneraciones">
-  <ModuleAccessGuard moduleKey="remuneraciones">
-    <main className="space-y-6">
-      <div>
-        <h1 className="text-4xl font-semibold text-slate-900">Remuneraciones</h1>
-        <p className="text-slate-600 mt-2">
-          Registro interno de sueldos por empresa.
-        </p>
-      </div>
+  return (
+    <ProtectedModuleRoute moduleKey="remuneraciones">
+      <ModuleAccessGuard moduleKey="remuneraciones">
+        <main className="space-y-6">
+          <div>
+            <h1 className="text-4xl font-semibold text-slate-900">Remuneraciones</h1>
+            <p className="mt-2 text-slate-600">
+              Registro interno de sueldos por empresa.
+            </p>
+          </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        <div className="xl:col-span-2 rounded-2xl bg-white p-6 shadow-sm border border-slate-200">
-          <h2 className="text-2xl font-semibold text-slate-900">
-            Listado de remuneraciones
-          </h2>
-          <p className="text-slate-500 text-sm mt-1 mb-4">
-            Sueldos registrados para la empresa activa.
-          </p>
-
-          {loading && <div className="text-slate-500">Cargando remuneraciones...</div>}
-
-          {!loading && !error && remuneraciones.length === 0 && (
-            <div className="text-slate-500 text-sm">
-              No hay remuneraciones registradas para la empresa activa.
+          {!isAdmin && !loading ? (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              El usuario actual tiene rol{' '}
+              <span className="font-semibold">{usuarioRol || 'sin rol asignado'}</span>.
+              Solo el administrador puede registrar o anular remuneraciones.
             </div>
-          )}
+          ) : null}
 
-          {!loading && !error && remuneraciones.length > 0 && (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-slate-200 text-left text-slate-500">
-                    <th className="py-3 pr-4">Trabajador</th>
-                    <th className="py-3 pr-4">Período</th>
-                    <th className="py-3 pr-4">Imponible</th>
-                    <th className="py-3 pr-4">No imponible</th>
-                    <th className="py-3 pr-4">Descuentos</th>
-                    <th className="py-3 pr-4">Líquido</th>
-                    <th className="py-3 pr-4">Estado</th>
-                    <th className="py-3 pr-4">Acciones</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {remuneraciones.map((item) => (
-                    <tr key={item.id} className="border-b border-slate-100">
-                      <td className="py-3 pr-4">{item.trabajador_nombre}</td>
-                      <td className="py-3 pr-4">{item.periodo}</td>
-                      <td className="py-3 pr-4">{formatCLP(item.total_imponible)}</td>
-                      <td className="py-3 pr-4">{formatCLP(item.total_no_imponible)}</td>
-                      <td className="py-3 pr-4">{formatCLP(item.total_descuentos)}</td>
-                      <td className="py-3 pr-4 font-medium">
-                        {formatCLP(item.liquido_pagar)}
-                      </td>
-                      <td className="py-3 pr-4">
-                        <StatusBadge status={item.estado} />
-                      </td>
-                      <td className="py-3 pr-4">
-                        <div className="flex gap-2">
-                          <Link
-                            href={`/remuneraciones/${item.id}`}
-                            className="inline-flex rounded-xl border border-slate-300 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                          >
-                            Ver liquidación
-                          </Link>
+          <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm xl:col-span-2">
+              <h2 className="text-2xl font-semibold text-slate-900">
+                Listado de remuneraciones
+              </h2>
+              <p className="mb-4 mt-1 text-sm text-slate-500">
+                Sueldos registrados para la empresa activa.
+              </p>
 
-                          {item.estado !== 'anulada' && (
-                            <button
-                              type="button"
-                              onClick={() => handleAnular(item.id)}
-                              disabled={anulandoId === item.id}
-                              className="inline-flex rounded-xl border border-red-300 px-3 py-2 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-60"
-                            >
-                              {anulandoId === item.id ? 'Anulando...' : 'Anular'}
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
+              {loading && <div className="text-slate-500">Cargando remuneraciones...</div>}
 
-        <div className="rounded-2xl bg-white p-6 shadow-sm border border-slate-200">
-          <h2 className="text-2xl font-semibold text-slate-900">
-            Nueva remuneración
-          </h2>
-          <p className="text-slate-500 text-sm mt-1 mb-4">
-            Liquidación interna simple.
-          </p>
+              {!loading && !error && remuneraciones.length === 0 && (
+                <div className="text-sm text-slate-500">
+                  No hay remuneraciones registradas para la empresa activa.
+                </div>
+              )}
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="block text-sm text-slate-600 mb-2">Trabajador</label>
-              <input
-                type="text"
-                name="trabajador_nombre"
-                value={form.trabajador_nombre}
-                onChange={handleChange}
-                className="w-full rounded-xl border border-slate-300 px-4 py-3"
-                required
-              />
+              {!loading && !error && remuneraciones.length > 0 && (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-200 text-left text-slate-500">
+                        <th className="py-3 pr-4">Trabajador</th>
+                        <th className="py-3 pr-4">Período</th>
+                        <th className="py-3 pr-4">Imponible</th>
+                        <th className="py-3 pr-4">No imponible</th>
+                        <th className="py-3 pr-4">Descuentos</th>
+                        <th className="py-3 pr-4">Líquido</th>
+                        <th className="py-3 pr-4">Estado</th>
+                        <th className="py-3 pr-4">Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {remuneraciones.map((item) => (
+                        <tr key={item.id} className="border-b border-slate-100">
+                          <td className="py-3 pr-4">{item.trabajador_nombre}</td>
+                          <td className="py-3 pr-4">{item.periodo}</td>
+                          <td className="py-3 pr-4">{formatCLP(item.total_imponible)}</td>
+                          <td className="py-3 pr-4">{formatCLP(item.total_no_imponible)}</td>
+                          <td className="py-3 pr-4">{formatCLP(item.total_descuentos)}</td>
+                          <td className="py-3 pr-4 font-medium">
+                            {formatCLP(item.liquido_pagar)}
+                          </td>
+                          <td className="py-3 pr-4">
+                            <StatusBadge status={item.estado} />
+                          </td>
+                          <td className="py-3 pr-4">
+                            <div className="flex gap-2">
+                              <Link
+                                href={`/remuneraciones/${item.id}`}
+                                className="inline-flex rounded-xl border border-slate-300 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                              >
+                                Ver liquidación
+                              </Link>
+
+                              {isAdmin && item.estado !== 'anulada' ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleAnular(item.id)}
+                                  disabled={anulandoId === item.id}
+                                  className="inline-flex rounded-xl border border-red-300 px-3 py-2 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-60"
+                                >
+                                  {anulandoId === item.id ? 'Anulando...' : 'Anular'}
+                                </button>
+                              ) : null}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {!loading && error ? (
+                <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  {error}
+                </div>
+              ) : null}
             </div>
 
-            <div>
-              <label className="block text-sm text-slate-600 mb-2">Cargo</label>
-              <input
-                type="text"
-                name="cargo"
-                value={form.cargo}
-                onChange={handleChange}
-                className="w-full rounded-xl border border-slate-300 px-4 py-3"
-              />
-            </div>
+            {isAdmin ? (
+              <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                <h2 className="text-2xl font-semibold text-slate-900">
+                  Nueva remuneración
+                </h2>
+                <p className="mb-4 mt-1 text-sm text-slate-500">
+                  Liquidación interna simple.
+                </p>
 
-            <div>
-              <label className="block text-sm text-slate-600 mb-2">Período</label>
-              <input
-                type="text"
-                name="periodo"
-                value={form.periodo}
-                onChange={handleChange}
-                placeholder="Ejemplo: 2026-04"
-                className="w-full rounded-xl border border-slate-300 px-4 py-3"
-                required
-              />
-            </div>
+                <form onSubmit={handleSubmit} className="space-y-4">
+                  <div>
+                    <label className="mb-2 block text-sm text-slate-600">Trabajador</label>
+                    <input
+                      type="text"
+                      name="trabajador_nombre"
+                      value={form.trabajador_nombre}
+                      onChange={handleChange}
+                      className="w-full rounded-xl border border-slate-300 px-4 py-3"
+                      required
+                    />
+                  </div>
 
-            <div className="rounded-xl border border-slate-200 p-4 space-y-3">
-              <h3 className="font-semibold text-slate-900">Haberes imponibles</h3>
-              <input type="number" name="sueldo_base" value={form.sueldo_base} onChange={handleChange} placeholder="Sueldo base" className="w-full rounded-xl border border-slate-300 px-4 py-3" />
-              <input type="number" name="gratificacion" value={form.gratificacion} onChange={handleChange} placeholder="Gratificación" className="w-full rounded-xl border border-slate-300 px-4 py-3" />
-              <input type="number" name="horas_extra" value={form.horas_extra} onChange={handleChange} placeholder="Horas extra" className="w-full rounded-xl border border-slate-300 px-4 py-3" />
-              <input type="number" name="otros_haberes_imponibles" value={form.otros_haberes_imponibles} onChange={handleChange} placeholder="Otros haberes imponibles" className="w-full rounded-xl border border-slate-300 px-4 py-3" />
-            </div>
+                  <div>
+                    <label className="mb-2 block text-sm text-slate-600">Cargo</label>
+                    <input
+                      type="text"
+                      name="cargo"
+                      value={form.cargo}
+                      onChange={handleChange}
+                      className="w-full rounded-xl border border-slate-300 px-4 py-3"
+                    />
+                  </div>
 
-            <div className="rounded-xl border border-slate-200 p-4 space-y-3">
-              <h3 className="font-semibold text-slate-900">Haberes no imponibles</h3>
-              <input type="number" name="bono_colacion" value={form.bono_colacion} onChange={handleChange} placeholder="Bono colación" className="w-full rounded-xl border border-slate-300 px-4 py-3" />
-              <input type="number" name="bono_movilizacion" value={form.bono_movilizacion} onChange={handleChange} placeholder="Bono movilización" className="w-full rounded-xl border border-slate-300 px-4 py-3" />
-              <input type="number" name="otros_haberes_no_imponibles" value={form.otros_haberes_no_imponibles} onChange={handleChange} placeholder="Otros haberes no imponibles" className="w-full rounded-xl border border-slate-300 px-4 py-3" />
-            </div>
+                  <div>
+                    <label className="mb-2 block text-sm text-slate-600">Período</label>
+                    <input
+                      type="text"
+                      name="periodo"
+                      value={form.periodo}
+                      onChange={handleChange}
+                      placeholder="Ejemplo: 2026-04"
+                      className="w-full rounded-xl border border-slate-300 px-4 py-3"
+                      required
+                    />
+                  </div>
 
-            <div className="rounded-xl border border-slate-200 p-4 space-y-3">
-              <h3 className="font-semibold text-slate-900">Descuentos</h3>
-              <input type="number" name="afp" value={form.afp} onChange={handleChange} placeholder="AFP" className="w-full rounded-xl border border-slate-300 px-4 py-3" />
-              <input type="number" name="salud" value={form.salud} onChange={handleChange} placeholder="Salud" className="w-full rounded-xl border border-slate-300 px-4 py-3" />
-              <input type="number" name="afc" value={form.afc} onChange={handleChange} placeholder="AFC" className="w-full rounded-xl border border-slate-300 px-4 py-3" />
-              <input type="number" name="anticipo" value={form.anticipo} onChange={handleChange} placeholder="Anticipo" className="w-full rounded-xl border border-slate-300 px-4 py-3" />
-              <input type="number" name="otros_descuentos" value={form.otros_descuentos} onChange={handleChange} placeholder="Otros descuentos" className="w-full rounded-xl border border-slate-300 px-4 py-3" />
-            </div>
+                  <div className="space-y-3 rounded-xl border border-slate-200 p-4">
+                    <h3 className="font-semibold text-slate-900">Haberes imponibles</h3>
+                    <input type="number" name="sueldo_base" value={form.sueldo_base} onChange={handleChange} placeholder="Sueldo base" className="w-full rounded-xl border border-slate-300 px-4 py-3" />
+                    <input type="number" name="gratificacion" value={form.gratificacion} onChange={handleChange} placeholder="Gratificación" className="w-full rounded-xl border border-slate-300 px-4 py-3" />
+                    <input type="number" name="horas_extra" value={form.horas_extra} onChange={handleChange} placeholder="Horas extra" className="w-full rounded-xl border border-slate-300 px-4 py-3" />
+                    <input type="number" name="otros_haberes_imponibles" value={form.otros_haberes_imponibles} onChange={handleChange} placeholder="Otros haberes imponibles" className="w-full rounded-xl border border-slate-300 px-4 py-3" />
+                  </div>
 
-            <div className="grid grid-cols-1 gap-3">
-              <input type="number" name="total_imponible" value={form.total_imponible} readOnly placeholder="Total imponible" className="w-full rounded-xl border border-slate-300 px-4 py-3 bg-slate-50" />
-              <input type="number" name="total_no_imponible" value={form.total_no_imponible} readOnly placeholder="Total no imponible" className="w-full rounded-xl border border-slate-300 px-4 py-3 bg-slate-50" />
-              <input type="number" name="total_descuentos" value={form.total_descuentos} readOnly placeholder="Total descuentos" className="w-full rounded-xl border border-slate-300 px-4 py-3 bg-slate-50" />
-              <input type="number" name="liquido_pagar" value={form.liquido_pagar} readOnly placeholder="Líquido a pagar" className="w-full rounded-xl border border-slate-300 px-4 py-3 bg-slate-50 font-medium" />
-            </div>
+                  <div className="space-y-3 rounded-xl border border-slate-200 p-4">
+                    <h3 className="font-semibold text-slate-900">Haberes no imponibles</h3>
+                    <input type="number" name="bono_colacion" value={form.bono_colacion} onChange={handleChange} placeholder="Bono colación" className="w-full rounded-xl border border-slate-300 px-4 py-3" />
+                    <input type="number" name="bono_movilizacion" value={form.bono_movilizacion} onChange={handleChange} placeholder="Bono movilización" className="w-full rounded-xl border border-slate-300 px-4 py-3" />
+                    <input type="number" name="otros_haberes_no_imponibles" value={form.otros_haberes_no_imponibles} onChange={handleChange} placeholder="Otros haberes no imponibles" className="w-full rounded-xl border border-slate-300 px-4 py-3" />
+                  </div>
 
-            <div>
-              <label className="block text-sm text-slate-600 mb-2">Fecha de pago</label>
-              <input
-                type="date"
-                name="fecha_pago"
-                value={form.fecha_pago}
-                onChange={handleChange}
-                className="w-full rounded-xl border border-slate-300 px-4 py-3"
-              />
-            </div>
+                  <div className="space-y-3 rounded-xl border border-slate-200 p-4">
+                    <h3 className="font-semibold text-slate-900">Descuentos</h3>
+                    <input type="number" name="afp" value={form.afp} onChange={handleChange} placeholder="AFP" className="w-full rounded-xl border border-slate-300 px-4 py-3" />
+                    <input type="number" name="salud" value={form.salud} onChange={handleChange} placeholder="Salud" className="w-full rounded-xl border border-slate-300 px-4 py-3" />
+                    <input type="number" name="afc" value={form.afc} onChange={handleChange} placeholder="AFC" className="w-full rounded-xl border border-slate-300 px-4 py-3" />
+                    <input type="number" name="anticipo" value={form.anticipo} onChange={handleChange} placeholder="Anticipo" className="w-full rounded-xl border border-slate-300 px-4 py-3" />
+                    <input type="number" name="otros_descuentos" value={form.otros_descuentos} onChange={handleChange} placeholder="Otros descuentos" className="w-full rounded-xl border border-slate-300 px-4 py-3" />
+                  </div>
 
-            <div>
-              <label className="block text-sm text-slate-600 mb-2">Estado</label>
-              <select
-                name="estado"
-                value={form.estado}
-                onChange={handleChange}
-                className="w-full rounded-xl border border-slate-300 px-4 py-3"
-              >
-                <option value="pendiente">Pendiente</option>
-                <option value="pagado">Pagado</option>
-              </select>
-            </div>
+                  <div className="grid grid-cols-1 gap-3">
+                    <input type="number" name="total_imponible" value={form.total_imponible} readOnly placeholder="Total imponible" className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3" />
+                    <input type="number" name="total_no_imponible" value={form.total_no_imponible} readOnly placeholder="Total no imponible" className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3" />
+                    <input type="number" name="total_descuentos" value={form.total_descuentos} readOnly placeholder="Total descuentos" className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3" />
+                    <input type="number" name="liquido_pagar" value={form.liquido_pagar} readOnly placeholder="Líquido a pagar" className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 font-medium" />
+                  </div>
 
-            <div>
-              <label className="block text-sm text-slate-600 mb-2">Cuenta bancaria</label>
-              <select
-                name="cuenta_bancaria_id"
-                value={form.cuenta_bancaria_id}
-                onChange={handleChange}
-                className="w-full rounded-xl border border-slate-300 px-4 py-3"
-              >
-                <option value="">Seleccionar cuenta</option>
-                {cuentas.map((cuenta) => (
-                  <option key={cuenta.id} value={cuenta.id}>
-                    {cuenta.banco} - {cuenta.nombre_cuenta}
-                  </option>
-                ))}
-              </select>
-            </div>
+                  <div>
+                    <label className="mb-2 block text-sm text-slate-600">Fecha de pago</label>
+                    <input
+                      type="date"
+                      name="fecha_pago"
+                      value={form.fecha_pago}
+                      onChange={handleChange}
+                      className="w-full rounded-xl border border-slate-300 px-4 py-3"
+                    />
+                  </div>
 
-            <div>
-              <label className="block text-sm text-slate-600 mb-2">Observación</label>
-              <textarea
-                name="observacion"
-                value={form.observacion}
-                onChange={handleChange}
-                rows={3}
-                className="w-full rounded-xl border border-slate-300 px-4 py-3"
-              />
-            </div>
+                  <div>
+                    <label className="mb-2 block text-sm text-slate-600">Estado</label>
+                    <select
+                      name="estado"
+                      value={form.estado}
+                      onChange={handleChange}
+                      className="w-full rounded-xl border border-slate-300 px-4 py-3"
+                    >
+                      <option value="pendiente">Pendiente</option>
+                      <option value="pagado">Pagado</option>
+                    </select>
+                  </div>
 
-            {error && (
-              <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
-                {error}
+                  <div>
+                    <label className="mb-2 block text-sm text-slate-600">Cuenta bancaria</label>
+                    <select
+                      name="cuenta_bancaria_id"
+                      value={form.cuenta_bancaria_id}
+                      onChange={handleChange}
+                      className="w-full rounded-xl border border-slate-300 px-4 py-3"
+                    >
+                      <option value="">Seleccionar cuenta</option>
+                      {cuentas.map((cuenta) => (
+                        <option key={cuenta.id} value={cuenta.id}>
+                          {cuenta.banco} - {cuenta.nombre_cuenta}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="mb-2 block text-sm text-slate-600">Observación</label>
+                    <textarea
+                      name="observacion"
+                      value={form.observacion}
+                      onChange={handleChange}
+                      rows={3}
+                      className="w-full rounded-xl border border-slate-300 px-4 py-3"
+                    />
+                  </div>
+
+                  {error && (
+                    <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                      {error}
+                    </div>
+                  )}
+
+                  {success && (
+                    <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+                      {success}
+                    </div>
+                  )}
+
+                  <button
+                    type="submit"
+                    disabled={saving}
+                    className="w-full rounded-xl bg-slate-900 py-3 font-medium text-white disabled:opacity-60"
+                  >
+                    {saving ? 'Guardando...' : 'Guardar remuneración'}
+                  </button>
+                </form>
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                <h2 className="text-2xl font-semibold text-slate-900">
+                  Acciones restringidas
+                </h2>
+                <p className="mt-2 text-sm text-slate-500">
+                  Este módulo permite visualizar remuneraciones y liquidaciones, pero solo el administrador puede registrar o anular.
+                </p>
               </div>
             )}
-
-            {success && (
-              <div className="rounded-xl bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-700">
-                {success}
-              </div>
-            )}
-
-            <button
-              type="submit"
-              disabled={saving}
-              className="w-full rounded-xl bg-slate-900 text-white py-3 font-medium disabled:opacity-60"
-            >
-              {saving ? 'Guardando...' : 'Guardar remuneración'}
-            </button>
-          </form>
-        </div>
-      </div>
+          </div>
         </main>
-  </ModuleAccessGuard>
-</ProtectedModuleRoute>
+      </ModuleAccessGuard>
+    </ProtectedModuleRoute>
   )
 }

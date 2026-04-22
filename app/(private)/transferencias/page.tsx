@@ -7,7 +7,6 @@ import StatusBadge from '../../../components/StatusBadge'
 import ModuleAccessGuard from '../../../components/ModuleAccessGuard'
 import ProtectedModuleRoute from '@/components/ProtectedModuleRoute'
 
-
 type CuentaBancaria = {
   id: string
   banco: string
@@ -42,6 +41,8 @@ export default function TransferenciasPage() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const [usuarioRol, setUsuarioRol] = useState('')
+  const [isAdmin, setIsAdmin] = useState(false)
 
   const [form, setForm] = useState({
     fecha: '',
@@ -92,6 +93,7 @@ export default function TransferenciasPage() {
       }
 
       const accessToken = sessionData.session.access_token
+      const userId = sessionData.session.user.id
       const apiKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
       const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
 
@@ -100,7 +102,7 @@ export default function TransferenciasPage() {
         Authorization: `Bearer ${accessToken}`,
       }
 
-      const [transferenciasResp, cuentasResp] = await Promise.all([
+      const [transferenciasResp, cuentasResp, rolResp] = await Promise.all([
         fetch(
           `${baseUrl}/rest/v1/transferencias_bancarias?empresa_id=eq.${empresaActivaId}&select=*&order=fecha.desc,created_at.desc`,
           { headers }
@@ -109,10 +111,15 @@ export default function TransferenciasPage() {
           `${baseUrl}/rest/v1/cuentas_bancarias?empresa_id=eq.${empresaActivaId}&select=id,banco,nombre_cuenta&activa=eq.true&order=banco.asc,nombre_cuenta.asc`,
           { headers }
         ),
+        fetch(
+          `${baseUrl}/rest/v1/usuario_empresas?select=rol&usuario_id=eq.${userId}&empresa_id=eq.${empresaActivaId}&activo=eq.true`,
+          { headers }
+        ),
       ])
 
       const transferenciasJson = await transferenciasResp.json()
       const cuentasJson = await cuentasResp.json()
+      const rolJson = await rolResp.json()
 
       if (!transferenciasResp.ok) {
         console.error(transferenciasJson)
@@ -125,6 +132,18 @@ export default function TransferenciasPage() {
         setError('No se pudieron cargar las cuentas bancarias.')
         return
       }
+
+      if (!rolResp.ok) {
+        console.error(rolJson)
+        setError('No se pudo cargar el rol del usuario.')
+        return
+      }
+
+      const rol =
+        Array.isArray(rolJson) && rolJson.length > 0 ? rolJson[0].rol || '' : ''
+
+      setUsuarioRol(rol)
+      setIsAdmin(rol === 'admin')
 
       const cuentasData = cuentasJson ?? []
       const mapa = Object.fromEntries(
@@ -164,6 +183,11 @@ export default function TransferenciasPage() {
 
     setError('')
     setSuccess('')
+
+    if (!isAdmin) {
+      setError('Solo el administrador puede registrar transferencias.')
+      return
+    }
 
     if (!empresaActivaId) {
       setError('Debes seleccionar una empresa activa.')
@@ -253,6 +277,11 @@ export default function TransferenciasPage() {
   }
 
   const handleAnular = async (transferencia: Transferencia) => {
+    if (!isAdmin) {
+      setError('Solo el administrador puede anular transferencias.')
+      return
+    }
+
     const confirmar = window.confirm(
       '¿Deseas anular esta transferencia? Dejará de considerarse en los cálculos bancarios.'
     )
@@ -310,185 +339,214 @@ export default function TransferenciasPage() {
   }
 
   return (
-<ProtectedModuleRoute moduleKey="transferencias">
-  <ModuleAccessGuard moduleKey="transferencias">
-    <main className="space-y-6">
-      <div>
-        <h1 className="text-4xl font-semibold text-slate-900">Transferencias</h1>
-        <p className="text-slate-600 mt-2">
-          Traspasos entre cuentas bancarias propias, sin afectar ingresos ni egresos.
-        </p>
-      </div>
+    <ProtectedModuleRoute moduleKey="transferencias">
+      <ModuleAccessGuard moduleKey="transferencias">
+        <main className="space-y-6">
+          <div>
+            <h1 className="text-4xl font-semibold text-slate-900">Transferencias</h1>
+            <p className="mt-2 text-slate-600">
+              Traspasos entre cuentas bancarias propias, sin afectar ingresos ni egresos.
+            </p>
+          </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        <div className="xl:col-span-2 rounded-2xl bg-white p-6 shadow-sm border border-slate-200">
-          <h2 className="text-2xl font-semibold text-slate-900">
-            Listado de transferencias
-          </h2>
-          <p className="text-slate-500 text-sm mt-1 mb-4">
-            Movimientos entre bancos de la empresa activa.
-          </p>
-
-          {loading && <div className="text-slate-500">Cargando transferencias...</div>}
-
-          {!loading && !error && transferencias.length === 0 && (
-            <div className="text-slate-500 text-sm">
-              No hay transferencias registradas para esta empresa.
+          {!isAdmin && !loading ? (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              El usuario actual tiene rol{' '}
+              <span className="font-semibold">{usuarioRol || 'sin rol asignado'}</span>.
+              Solo el administrador puede registrar o anular transferencias.
             </div>
-          )}
+          ) : null}
 
-          {!loading && !error && transferencias.length > 0 && (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-slate-200 text-left text-slate-500">
-                    <th className="py-3 pr-4">Fecha</th>
-                    <th className="py-3 pr-4">Origen</th>
-                    <th className="py-3 pr-4">Destino</th>
-                    <th className="py-3 pr-4">Monto</th>
-                    <th className="py-3 pr-4">Descripción</th>
-                    <th className="py-3 pr-4">Estado</th>
-                    <th className="py-3 pr-4">Acción</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {transferencias.map((item) => (
-                    <tr key={item.id} className="border-b border-slate-100">
-                      <td className="py-3 pr-4">{item.fecha}</td>
-                      <td className="py-3 pr-4">
-                        {mapaCuentas[item.cuenta_origen_id] ?? item.cuenta_origen_id}
-                      </td>
-                      <td className="py-3 pr-4">
-                        {mapaCuentas[item.cuenta_destino_id] ?? item.cuenta_destino_id}
-                      </td>
-                      <td className="py-3 pr-4 font-medium">{formatCLP(item.monto)}</td>
-                      <td className="py-3 pr-4">{item.descripcion ?? '-'}</td>
-                      <td className="py-3 pr-4">
-                        <StatusBadge status={item.estado} />
-                      </td>
-                      <td className="py-3 pr-4">
-                        {item.estado !== 'anulada' && (
-                          <button
-                            type="button"
-                            onClick={() => handleAnular(item)}
-                            className="rounded-xl border border-red-300 px-3 py-2 text-xs font-medium text-red-700 hover:bg-red-50"
-                          >
-                            Anular
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
+          <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm xl:col-span-2">
+              <h2 className="text-2xl font-semibold text-slate-900">
+                Listado de transferencias
+              </h2>
+              <p className="mb-4 mt-1 text-sm text-slate-500">
+                Movimientos entre bancos de la empresa activa.
+              </p>
 
-        <div className="rounded-2xl bg-white p-6 shadow-sm border border-slate-200">
-          <h2 className="text-2xl font-semibold text-slate-900">
-            Nueva transferencia
-          </h2>
-          <p className="text-slate-500 text-sm mt-1 mb-4">
-            Registra un traspaso entre tus propias cuentas.
-          </p>
+              {loading && <div className="text-slate-500">Cargando transferencias...</div>}
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="block text-sm text-slate-600 mb-2">Fecha</label>
-              <input
-                type="date"
-                name="fecha"
-                value={form.fecha}
-                onChange={handleChange}
-                className="w-full rounded-xl border border-slate-300 px-4 py-3"
-                required
-              />
+              {!loading && !error && transferencias.length === 0 && (
+                <div className="text-sm text-slate-500">
+                  No hay transferencias registradas para esta empresa.
+                </div>
+              )}
+
+              {!loading && !error && transferencias.length > 0 && (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-200 text-left text-slate-500">
+                        <th className="py-3 pr-4">Fecha</th>
+                        <th className="py-3 pr-4">Origen</th>
+                        <th className="py-3 pr-4">Destino</th>
+                        <th className="py-3 pr-4">Monto</th>
+                        <th className="py-3 pr-4">Descripción</th>
+                        <th className="py-3 pr-4">Estado</th>
+                        {isAdmin ? <th className="py-3 pr-4">Acción</th> : null}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {transferencias.map((item) => (
+                        <tr key={item.id} className="border-b border-slate-100">
+                          <td className="py-3 pr-4">{item.fecha}</td>
+                          <td className="py-3 pr-4">
+                            {mapaCuentas[item.cuenta_origen_id] ?? item.cuenta_origen_id}
+                          </td>
+                          <td className="py-3 pr-4">
+                            {mapaCuentas[item.cuenta_destino_id] ?? item.cuenta_destino_id}
+                          </td>
+                          <td className="py-3 pr-4 font-medium">
+                            {formatCLP(item.monto)}
+                          </td>
+                          <td className="py-3 pr-4">{item.descripcion ?? '-'}</td>
+                          <td className="py-3 pr-4">
+                            <StatusBadge status={item.estado} />
+                          </td>
+                          {isAdmin ? (
+                            <td className="py-3 pr-4">
+                              {item.estado !== 'anulada' && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleAnular(item)}
+                                  className="rounded-xl border border-red-300 px-3 py-2 text-xs font-medium text-red-700 hover:bg-red-50"
+                                >
+                                  Anular
+                                </button>
+                              )}
+                            </td>
+                          ) : null}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {!loading && error ? (
+                <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  {error}
+                </div>
+              ) : null}
             </div>
 
-            <div>
-              <label className="block text-sm text-slate-600 mb-2">Cuenta origen</label>
-              <select
-                name="cuenta_origen_id"
-                value={form.cuenta_origen_id}
-                onChange={handleChange}
-                className="w-full rounded-xl border border-slate-300 px-4 py-3"
-                required
-              >
-                <option value="">Seleccionar cuenta origen</option>
-                {cuentas.map((cuenta) => (
-                  <option key={cuenta.id} value={cuenta.id}>
-                    {cuenta.banco} - {cuenta.nombre_cuenta}
-                  </option>
-                ))}
-              </select>
-            </div>
+            {isAdmin ? (
+              <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                <h2 className="text-2xl font-semibold text-slate-900">
+                  Nueva transferencia
+                </h2>
+                <p className="mb-4 mt-1 text-sm text-slate-500">
+                  Registra un traspaso entre tus propias cuentas.
+                </p>
 
-            <div>
-              <label className="block text-sm text-slate-600 mb-2">Cuenta destino</label>
-              <select
-                name="cuenta_destino_id"
-                value={form.cuenta_destino_id}
-                onChange={handleChange}
-                className="w-full rounded-xl border border-slate-300 px-4 py-3"
-                required
-              >
-                <option value="">Seleccionar cuenta destino</option>
-                {cuentas.map((cuenta) => (
-                  <option key={cuenta.id} value={cuenta.id}>
-                    {cuenta.banco} - {cuenta.nombre_cuenta}
-                  </option>
-                ))}
-              </select>
-            </div>
+                <form onSubmit={handleSubmit} className="space-y-4">
+                  <div>
+                    <label className="mb-2 block text-sm text-slate-600">Fecha</label>
+                    <input
+                      type="date"
+                      name="fecha"
+                      value={form.fecha}
+                      onChange={handleChange}
+                      className="w-full rounded-xl border border-slate-300 px-4 py-3"
+                      required
+                    />
+                  </div>
 
-            <div>
-              <label className="block text-sm text-slate-600 mb-2">Monto</label>
-              <input
-                type="number"
-                name="monto"
-                value={form.monto}
-                onChange={handleChange}
-                className="w-full rounded-xl border border-slate-300 px-4 py-3"
-                required
-              />
-            </div>
+                  <div>
+                    <label className="mb-2 block text-sm text-slate-600">Cuenta origen</label>
+                    <select
+                      name="cuenta_origen_id"
+                      value={form.cuenta_origen_id}
+                      onChange={handleChange}
+                      className="w-full rounded-xl border border-slate-300 px-4 py-3"
+                      required
+                    >
+                      <option value="">Seleccionar cuenta origen</option>
+                      {cuentas.map((cuenta) => (
+                        <option key={cuenta.id} value={cuenta.id}>
+                          {cuenta.banco} - {cuenta.nombre_cuenta}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
-            <div>
-              <label className="block text-sm text-slate-600 mb-2">Descripción</label>
-              <textarea
-                name="descripcion"
-                value={form.descripcion}
-                onChange={handleChange}
-                rows={3}
-                className="w-full rounded-xl border border-slate-300 px-4 py-3"
-              />
-            </div>
+                  <div>
+                    <label className="mb-2 block text-sm text-slate-600">Cuenta destino</label>
+                    <select
+                      name="cuenta_destino_id"
+                      value={form.cuenta_destino_id}
+                      onChange={handleChange}
+                      className="w-full rounded-xl border border-slate-300 px-4 py-3"
+                      required
+                    >
+                      <option value="">Seleccionar cuenta destino</option>
+                      {cuentas.map((cuenta) => (
+                        <option key={cuenta.id} value={cuenta.id}>
+                          {cuenta.banco} - {cuenta.nombre_cuenta}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
-            {error && (
-              <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
-                {error}
+                  <div>
+                    <label className="mb-2 block text-sm text-slate-600">Monto</label>
+                    <input
+                      type="number"
+                      name="monto"
+                      value={form.monto}
+                      onChange={handleChange}
+                      className="w-full rounded-xl border border-slate-300 px-4 py-3"
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-2 block text-sm text-slate-600">Descripción</label>
+                    <textarea
+                      name="descripcion"
+                      value={form.descripcion}
+                      onChange={handleChange}
+                      rows={3}
+                      className="w-full rounded-xl border border-slate-300 px-4 py-3"
+                    />
+                  </div>
+
+                  {error && (
+                    <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                      {error}
+                    </div>
+                  )}
+
+                  {success && (
+                    <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+                      {success}
+                    </div>
+                  )}
+
+                  <button
+                    type="submit"
+                    disabled={saving}
+                    className="w-full rounded-xl bg-slate-900 py-3 font-medium text-white disabled:opacity-60"
+                  >
+                    {saving ? 'Guardando...' : 'Guardar transferencia'}
+                  </button>
+                </form>
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                <h2 className="text-2xl font-semibold text-slate-900">
+                  Acciones restringidas
+                </h2>
+                <p className="mt-2 text-sm text-slate-500">
+                  Este módulo permite visualizar transferencias, pero solo el administrador puede registrar o anular.
+                </p>
               </div>
             )}
-
-            {success && (
-              <div className="rounded-xl bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-700">
-                {success}
-              </div>
-            )}
-
-            <button
-              type="submit"
-              disabled={saving}
-              className="w-full rounded-xl bg-slate-900 text-white py-3 font-medium disabled:opacity-60"
-            >
-              {saving ? 'Guardando...' : 'Guardar transferencia'}
-            </button>
-          </form>
-        </div>
-      </div>
-       </main>
-  </ModuleAccessGuard>
-</ProtectedModuleRoute>
+          </div>
+        </main>
+      </ModuleAccessGuard>
+    </ProtectedModuleRoute>
   )
 }

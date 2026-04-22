@@ -1,13 +1,14 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { supabase } from '@/lib/supabase/client'
-import DateRangeFilter from '../reportes/components/DateRangeFilter'
-import ExportExcelButton from '../reportes/components/ExportExcelButton'
-import StatusBadge from '@/components/StatusBadge'
+import { supabase } from '../../../lib/supabase/client'
+import StatusBadge from '../../../components/StatusBadge'
+import EmpresaActivaBanner from '../../../components/EmpresaActivaBanner'
+import ProtectedModuleRoute from '@/components/ProtectedModuleRoute'
 
-type CobranzaPendiente = {
+type CobranzaItem = {
   fecha_emision: string
   fecha_vencimiento: string | null
   cliente: string
@@ -19,85 +20,24 @@ type CobranzaPendiente = {
   empresa_id?: string
 }
 
-type GestionCobranza = {
-  estado_gestion: string
-  fecha_contacto: string
-  proximo_contacto: string
-  observacion: string
-  updated_at: string
-}
+type FiltroEstado = 'todos' | 'pendiente' | 'parcial' | 'vencido'
 
-type GestionCobranzaRow = {
-  numero_factura: string
-  estado_gestion: string
-  fecha_contacto: string | null
-  proximo_contacto: string | null
-  observacion: string | null
-  updated_at: string
-}
-
-type CuentaBancariaOption = {
-  id: string
-  banco: string
-  nombre_cuenta: string
-}
-
-type CuentaPorCobrarRow = {
-  id: string
-  empresa_id: string
-  movimiento_id: string | null
-  cliente_id: string | null
-  fecha_emision: string | null
-  fecha_vencimiento: string | null
-  monto_total: number | null
-  monto_pagado: number | null
-  saldo_pendiente: number | null
-  estado: string | null
-}
-
-type MovimientoRow = {
-  id: string
-  cliente_id: string | null
-  descripcion: string | null
-  monto_total: number | null
-  monto_neto: number | null
-  monto_iva: number | null
-  monto_exento: number | null
-  observaciones: string | null
-}
-
-type GestionesMap = Record<string, GestionCobranza>
-
-const STORAGE_ID_KEY = 'empresa_activa_id'
-const STORAGE_NAME_KEY = 'empresa_activa_nombre'
+const STORAGE_KEY = 'empresa_activa_id'
 
 const formatCLP = (value: number) =>
   `$${Number(value || 0).toLocaleString('es-CL')}`
 
-const formatFecha = (value: string | null) => {
+const formatDate = (value: string | null) => {
   if (!value) return '-'
-  return new Date(`${value}T00:00:00`).toLocaleDateString('es-CL')
+
+  const date = new Date(`${value}T00:00:00`)
+  if (Number.isNaN(date.getTime())) return value
+
+  return date.toLocaleDateString('es-CL')
 }
-
-const getToday = () => new Date().toISOString().slice(0, 10)
-
-const getFirstDayOfMonth = () => {
-  const now = new Date()
-  return new Date(now.getFullYear(), now.getMonth(), 1)
-    .toISOString()
-    .slice(0, 10)
-}
-
-const normalize = (value: string) =>
-  value
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-
-const getEstadoBase = (estado: string) => normalize(estado || '')
 
 const getEstadoVisual = (estado: string, fechaVencimiento: string | null) => {
-  const base = getEstadoBase(estado)
+  const base = (estado || '').toLowerCase()
 
   if (base === 'vencido') return 'vencido'
   if (!fechaVencimiento) return estado
@@ -114,7 +54,7 @@ const getEstadoVisual = (estado: string, fechaVencimiento: string | null) => {
 }
 
 const isVencida = (estado: string, fechaVencimiento: string | null) => {
-  const base = getEstadoBase(estado)
+  const base = (estado || '').toLowerCase()
 
   if (base === 'vencido') return true
   if (!fechaVencimiento) return false
@@ -126,108 +66,23 @@ const isVencida = (estado: string, fechaVencimiento: string | null) => {
   return (base === 'pendiente' || base === 'parcial') && vencimiento < hoy
 }
 
-const isPorVencerEn7Dias = (
-  estado: string,
-  fechaVencimiento: string | null
-) => {
+const isPorVencerEstaSemana = (estado: string, fechaVencimiento: string | null) => {
   if (!fechaVencimiento) return false
 
-  const base = getEstadoBase(estado)
+  const base = (estado || '').toLowerCase()
   if (base === 'pagado' || base === 'vencido') return false
 
   const hoy = new Date()
   const inicioHoy = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate())
-  const limite = new Date(inicioHoy)
-  limite.setDate(limite.getDate() + 7)
+  const finSemana = new Date(inicioHoy)
+  finSemana.setDate(finSemana.getDate() + 7)
 
   const vencimiento = new Date(`${fechaVencimiento}T00:00:00`)
 
   return (
     (base === 'pendiente' || base === 'parcial') &&
     vencimiento >= inicioHoy &&
-    vencimiento <= limite
-  )
-}
-
-const getDiasRespectoVencimiento = (fechaVencimiento: string | null) => {
-  if (!fechaVencimiento) return null
-
-  const hoy = new Date()
-  const inicioHoy = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate())
-  const vencimiento = new Date(`${fechaVencimiento}T00:00:00`)
-
-  const diffMs = vencimiento.getTime() - inicioHoy.getTime()
-  return Math.round(diffMs / 86400000)
-}
-
-const getGestionLabel = (estadoGestion: string) => {
-  switch (estadoGestion) {
-    case 'contactado':
-      return 'Contactado'
-    case 'compromiso_pago':
-      return 'Compromiso de pago'
-    case 'en_revision':
-      return 'En revisión'
-    case 'sin_respuesta':
-      return 'Sin respuesta'
-    default:
-      return 'Sin gestión'
-  }
-}
-
-const isSinGestion = (gestion?: GestionCobranza) =>
-  !gestion || gestion.estado_gestion === 'sin_gestion'
-
-const isConGestion = (gestion?: GestionCobranza) =>
-  !!gestion && gestion.estado_gestion !== 'sin_gestion'
-
-const isCompromisoPago = (gestion?: GestionCobranza) =>
-  gestion?.estado_gestion === 'compromiso_pago'
-
-const isProximoContactoVencidoOHoy = (gestion?: GestionCobranza) => {
-  if (!gestion?.proximo_contacto) return false
-
-  const hoy = new Date()
-  const inicioHoy = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate())
-  const proximo = new Date(`${gestion.proximo_contacto}T00:00:00`)
-
-  return proximo <= inicioHoy
-}
-
-const buildClipboardText = (
-  item: CobranzaPendiente,
-  gestion?: GestionCobranza
-) => {
-  const estadoVisual = getEstadoVisual(item.estado, item.fecha_vencimiento)
-
-  return [
-    `Cliente: ${item.cliente || '-'}`,
-    `Factura: ${item.numero_factura || '-'}`,
-    `Fecha emisión: ${formatFecha(item.fecha_emision)}`,
-    `Fecha vencimiento: ${formatFecha(item.fecha_vencimiento)}`,
-    `Descripción: ${item.descripcion || '-'}`,
-    `Monto total: ${formatCLP(item.monto_total)}`,
-    `Saldo pendiente: ${formatCLP(item.saldo_pendiente)}`,
-    `Estado: ${estadoVisual}`,
-    `Gestión: ${gestion ? getGestionLabel(gestion.estado_gestion) : 'Sin gestión'}`,
-    `Fecha contacto: ${gestion?.fecha_contacto ? formatFecha(gestion.fecha_contacto) : '-'}`,
-    `Próximo contacto: ${gestion?.proximo_contacto ? formatFecha(gestion.proximo_contacto) : '-'}`,
-    `Observación: ${gestion?.observacion || '-'}`,
-  ].join('\n')
-}
-
-function DetailRow({
-  label,
-  value,
-}: {
-  label: string
-  value: string
-}) {
-  return (
-    <div className="grid grid-cols-1 gap-1 border-b border-slate-100 py-3 md:grid-cols-[180px_1fr]">
-      <div className="text-sm font-medium text-slate-500">{label}</div>
-      <div className="text-sm text-slate-900">{value}</div>
-    </div>
+    vencimiento <= finSemana
   )
 }
 
@@ -235,47 +90,17 @@ export default function CobranzaPage() {
   const router = useRouter()
 
   const [empresaActivaId, setEmpresaActivaId] = useState('')
-  const [empresaActivaNombre, setEmpresaActivaNombre] = useState('')
+  const [cobranza, setCobranza] = useState<CobranzaItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [cobranza, setCobranza] = useState<CobranzaPendiente[]>([])
-
-  const [desde, setDesde] = useState(getFirstDayOfMonth())
-  const [hasta, setHasta] = useState(getToday())
-
-  const [busqueda, setBusqueda] = useState('')
-  const [estadoFiltro, setEstadoFiltro] = useState('todos')
-  const [vistaRapida, setVistaRapida] = useState<
-    'todas' | 'vencidas' | 'por_vencer' | 'criticas'
-  >('todas')
-  const [gestionFiltro, setGestionFiltro] = useState('todos')
-
-  const [detalleSeleccionado, setDetalleSeleccionado] =
-    useState<CobranzaPendiente | null>(null)
-
-  const [gestiones, setGestiones] = useState<GestionesMap>({})
-
-  const [estadoGestionInput, setEstadoGestionInput] = useState('sin_gestion')
-  const [fechaContactoInput, setFechaContactoInput] = useState('')
-  const [proximoContactoInput, setProximoContactoInput] = useState('')
-  const [observacionInput, setObservacionInput] = useState('')
-
-  const [cuentasBancarias, setCuentasBancarias] = useState<
-    CuentaBancariaOption[]
-  >([])
-  const [fechaPagoInput, setFechaPagoInput] = useState(getToday())
-  const [cuentaBancariaPagoId, setCuentaBancariaPagoId] = useState('')
-  const [medioPagoInput, setMedioPagoInput] = useState('transferencia')
-  const [observacionPagoInput, setObservacionPagoInput] = useState('')
-  const [savingPago, setSavingPago] = useState(false)
+  const [filtroEstado, setFiltroEstado] = useState<FiltroEstado>('todos')
+  const [usuarioRol, setUsuarioRol] = useState('')
+  const [isAdmin, setIsAdmin] = useState(false)
 
   useEffect(() => {
     const syncEmpresaActiva = () => {
-      const empresaId = window.localStorage.getItem(STORAGE_ID_KEY) || ''
-      const empresaNombre = window.localStorage.getItem(STORAGE_NAME_KEY) || ''
-
+      const empresaId = window.localStorage.getItem(STORAGE_KEY) || ''
       setEmpresaActivaId(empresaId)
-      setEmpresaActivaNombre(empresaNombre)
     }
 
     syncEmpresaActiva()
@@ -286,1241 +111,391 @@ export default function CobranzaPage() {
     }
   }, [])
 
-  useEffect(() => {
-    const fetchGestiones = async () => {
-      if (!empresaActivaId) {
-        setGestiones({})
-        return
-      }
-
-      try {
-        const { data, error } = await supabase
-          .from('cobranza_gestiones')
-          .select(
-            'numero_factura, estado_gestion, fecha_contacto, proximo_contacto, observacion, updated_at'
-          )
-          .eq('empresa_id', empresaActivaId)
-
-        if (error) {
-          console.error('Error cargando gestiones:', error)
-          return
-        }
-
-        const mapped: GestionesMap = {}
-
-        ;(data || []).forEach((item: GestionCobranzaRow) => {
-          mapped[item.numero_factura] = {
-            estado_gestion: item.estado_gestion || 'sin_gestion',
-            fecha_contacto: item.fecha_contacto || '',
-            proximo_contacto: item.proximo_contacto || '',
-            observacion: item.observacion || '',
-            updated_at: item.updated_at || '',
-          }
-        })
-
-        setGestiones(mapped)
-      } catch (err) {
-        console.error('Error cargando gestiones:', err)
-      }
-    }
-
-    fetchGestiones()
-  }, [empresaActivaId])
-
-  useEffect(() => {
-    const fetchCuentasBancarias = async () => {
-      if (!empresaActivaId) {
-        setCuentasBancarias([])
-        return
-      }
-
-      try {
-        const { data, error } = await supabase
-          .from('cuentas_bancarias')
-          .select('id,banco,nombre_cuenta')
-          .eq('empresa_id', empresaActivaId)
-          .order('banco', { ascending: true })
-
-        if (error) {
-          console.error('Error cargando cuentas bancarias:', error)
-          return
-        }
-
-        setCuentasBancarias((data || []) as CuentaBancariaOption[])
-      } catch (err) {
-        console.error('Error cargando cuentas bancarias:', err)
-      }
-    }
-
-    fetchCuentasBancarias()
-  }, [empresaActivaId])
-
-  useEffect(() => {
-    if (!detalleSeleccionado) return
-
-    const gestion = gestiones[detalleSeleccionado.numero_factura]
-
-    setEstadoGestionInput(gestion?.estado_gestion || 'sin_gestion')
-    setFechaContactoInput(gestion?.fecha_contacto || '')
-    setProximoContactoInput(gestion?.proximo_contacto || '')
-    setObservacionInput(gestion?.observacion || '')
-
-    setFechaPagoInput(getToday())
-    setCuentaBancariaPagoId('')
-    setMedioPagoInput('transferencia')
-    setObservacionPagoInput('')
-  }, [detalleSeleccionado, gestiones])
-
-  const handlePresetChange = (preset: string) => {
-    const now = new Date()
-
-    if (preset === 'este_mes') {
-      setDesde(
-        new Date(now.getFullYear(), now.getMonth(), 1)
-          .toISOString()
-          .slice(0, 10)
-      )
-      setHasta(getToday())
-      return
-    }
-
-    if (preset === 'mes_pasado') {
-      const firstDayPrev = new Date(now.getFullYear(), now.getMonth() - 1, 1)
-      const lastDayPrev = new Date(now.getFullYear(), now.getMonth(), 0)
-
-      setDesde(firstDayPrev.toISOString().slice(0, 10))
-      setHasta(lastDayPrev.toISOString().slice(0, 10))
-      return
-    }
-
-    if (preset === 'anio_actual') {
-      setDesde(new Date(now.getFullYear(), 0, 1).toISOString().slice(0, 10))
-      setHasta(getToday())
-      return
-    }
-
-    if (preset === 'ultimos_30') {
-      const d = new Date()
-      d.setDate(d.getDate() - 30)
-      setDesde(d.toISOString().slice(0, 10))
-      setHasta(getToday())
-    }
-  }
-
-  useEffect(() => {
-    const fetchCobranza = async () => {
-      if (!empresaActivaId || !desde || !hasta) {
-        setLoading(false)
-        return
-      }
-
-      try {
-        setLoading(true)
-        setError('')
-
-        const { data: sessionData } = await supabase.auth.getSession()
-
-        if (!sessionData.session) {
-          router.push('/login')
-          return
-        }
-
-        const accessToken = sessionData.session.access_token
-        const apiKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-        const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
-
-        const headers = {
-          apikey: apiKey,
-          Authorization: `Bearer ${accessToken}`,
-        }
-
-        const response = await fetch(
-          `${baseUrl}/rest/v1/v_cobranza_pendiente?empresa_id=eq.${empresaActivaId}&fecha_emision=gte.${desde}&fecha_emision=lte.${hasta}&select=*&order=fecha_vencimiento.asc.nullslast`,
-          { headers }
-        )
-
-        const data = await response.json()
-
-        if (!response.ok) {
-          setError('No se pudo cargar la cobranza.')
-          return
-        }
-
-        setCobranza(Array.isArray(data) ? data : [])
-      } catch (err) {
-        if (err instanceof Error) {
-          setError(err.message)
-        } else {
-          setError('Error desconocido')
-        }
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    fetchCobranza()
-  }, [router, empresaActivaId, desde, hasta])
-
-  const totalPorCobrar = useMemo(() => {
-    return cobranza.reduce(
-      (acc, item) => acc + Number(item.saldo_pendiente || 0),
-      0
-    )
-  }, [cobranza])
-
-  const vencidas = useMemo(() => {
-    return cobranza.filter((item) =>
-      isVencida(item.estado, item.fecha_vencimiento)
-    )
-  }, [cobranza])
-
-  const porVencer = useMemo(() => {
-    return cobranza.filter((item) =>
-      isPorVencerEn7Dias(item.estado, item.fecha_vencimiento)
-    )
-  }, [cobranza])
-
-  const montoVencido = useMemo(() => {
-    return vencidas.reduce(
-      (acc, item) => acc + Number(item.saldo_pendiente || 0),
-      0
-    )
-  }, [vencidas])
-
-  const montoPorVencer = useMemo(() => {
-    return porVencer.reduce(
-      (acc, item) => acc + Number(item.saldo_pendiente || 0),
-      0
-    )
-  }, [porVencer])
-
-  const sinGestionItems = useMemo(() => {
-    return cobranza.filter((item) =>
-      isSinGestion(gestiones[item.numero_factura])
-    )
-  }, [cobranza, gestiones])
-
-  const compromisoPagoItems = useMemo(() => {
-    return cobranza.filter((item) =>
-      isCompromisoPago(gestiones[item.numero_factura])
-    )
-  }, [cobranza, gestiones])
-
-  const proximoContactoVencidoItems = useMemo(() => {
-    return cobranza.filter((item) =>
-      isProximoContactoVencidoOHoy(gestiones[item.numero_factura])
-    )
-  }, [cobranza, gestiones])
-
-  const cobranzaFiltrada = useMemo(() => {
-    const texto = normalize(busqueda.trim())
-
-    return cobranza.filter((item) => {
-      const estadoVisual = normalize(
-        getEstadoVisual(item.estado, item.fecha_vencimiento)
-      )
-      const estadoBase = getEstadoBase(item.estado)
-      const gestion = gestiones[item.numero_factura]
-
-      const cumpleBusqueda =
-        !texto ||
-        normalize(item.cliente || '').includes(texto) ||
-        normalize(item.numero_factura || '').includes(texto) ||
-        normalize(item.descripcion || '').includes(texto)
-
-      const cumpleEstado =
-        estadoFiltro === 'todos' ||
-        estadoVisual === estadoFiltro ||
-        estadoBase === estadoFiltro
-
-      let cumpleVista = true
-
-      if (vistaRapida === 'vencidas') {
-        cumpleVista = isVencida(item.estado, item.fecha_vencimiento)
-      }
-
-      if (vistaRapida === 'por_vencer') {
-        cumpleVista = isPorVencerEn7Dias(item.estado, item.fecha_vencimiento)
-      }
-
-      if (vistaRapida === 'criticas') {
-        cumpleVista =
-          isVencida(item.estado, item.fecha_vencimiento) ||
-          isPorVencerEn7Dias(item.estado, item.fecha_vencimiento)
-      }
-
-      let cumpleGestion = true
-
-      if (gestionFiltro === 'con_gestion') {
-        cumpleGestion = isConGestion(gestion)
-      } else if (gestionFiltro === 'sin_gestion') {
-        cumpleGestion = isSinGestion(gestion)
-      } else if (gestionFiltro === 'proximo_contacto_vencido') {
-        cumpleGestion = isProximoContactoVencidoOHoy(gestion)
-      } else if (gestionFiltro !== 'todos') {
-        cumpleGestion =
-          (gestion?.estado_gestion || 'sin_gestion') === gestionFiltro
-      }
-
-      return cumpleBusqueda && cumpleEstado && cumpleVista && cumpleGestion
-    })
-  }, [cobranza, busqueda, estadoFiltro, vistaRapida, gestionFiltro, gestiones])
-
-  const totalFiltrado = useMemo(() => {
-    return cobranzaFiltrada.reduce(
-      (acc, item) => acc + Number(item.saldo_pendiente || 0),
-      0
-    )
-  }, [cobranzaFiltrada])
-
-  const excelRows = useMemo(() => {
-    return cobranzaFiltrada.map((item) => {
-      const gestion = gestiones[item.numero_factura]
-
-      return {
-        Cliente: item.cliente || '-',
-        Factura: item.numero_factura || '-',
-        Emision: formatFecha(item.fecha_emision),
-        Vencimiento: formatFecha(item.fecha_vencimiento),
-        Descripcion: item.descripcion || '-',
-        Monto_total: Number(item.monto_total || 0),
-        Saldo_pendiente: Number(item.saldo_pendiente || 0),
-        Estado: getEstadoVisual(item.estado, item.fecha_vencimiento),
-        Gestion: gestion ? getGestionLabel(gestion.estado_gestion) : 'Sin gestión',
-        Fecha_contacto: gestion?.fecha_contacto
-          ? formatFecha(gestion.fecha_contacto)
-          : '-',
-        Proximo_contacto: gestion?.proximo_contacto
-          ? formatFecha(gestion.proximo_contacto)
-          : '-',
-        Observacion: gestion?.observacion || '-',
-      }
-    })
-  }, [cobranzaFiltrada, gestiones])
-
-  const handleCopy = async (item: CobranzaPendiente) => {
-    try {
-      const gestion = gestiones[item.numero_factura]
-      await navigator.clipboard.writeText(buildClipboardText(item, gestion))
-      alert('Detalle copiado al portapapeles.')
-    } catch (error) {
-      console.error('Error copiando detalle:', error)
-      alert('No se pudo copiar el detalle.')
-    }
-  }
-
-  const handleSaveGestion = async () => {
-    if (!detalleSeleccionado || !empresaActivaId) return
-
-    const payload = {
-      empresa_id: empresaActivaId,
-      numero_factura: detalleSeleccionado.numero_factura,
-      estado_gestion: estadoGestionInput,
-      fecha_contacto: fechaContactoInput || null,
-      proximo_contacto: proximoContactoInput || null,
-      observacion: observacionInput || null,
-      updated_at: new Date().toISOString(),
-    }
-
-    const { error } = await supabase
-      .from('cobranza_gestiones')
-      .upsert(payload, { onConflict: 'empresa_id,numero_factura' })
-
-    if (error) {
-      console.error('Error guardando gestión:', error)
-      alert('No se pudo guardar el seguimiento.')
-      return
-    }
-
-    setGestiones((prev) => ({
-      ...prev,
-      [detalleSeleccionado.numero_factura]: {
-        estado_gestion: estadoGestionInput,
-        fecha_contacto: fechaContactoInput,
-        proximo_contacto: proximoContactoInput,
-        observacion: observacionInput,
-        updated_at: payload.updated_at,
-      },
-    }))
-
-    alert('Seguimiento guardado.')
-  }
-
-  const handleRegistrarPago = async () => {
-    if (!detalleSeleccionado || !empresaActivaId) return
-
-    if (!cuentaBancariaPagoId) {
-      alert('Debes seleccionar la cuenta bancaria donde ingresó el pago.')
-      return
-    }
+  const loadData = useCallback(async () => {
+    if (!empresaActivaId) return
 
     try {
-      setSavingPago(true)
+      setLoading(true)
+      setError('')
 
-      const numeroFactura = String(detalleSeleccionado.numero_factura || '').trim()
-      const montoDocumento = Number(detalleSeleccionado.monto_total || 0)
-      const observacionPago = observacionPagoInput.trim() || null
+      const { data: sessionData } = await supabase.auth.getSession()
 
-      const {
-        data: sessionData,
-        error: sessionError,
-      } = await supabase.auth.getSession()
-
-      if (sessionError || !sessionData.session) {
+      if (!sessionData.session) {
         router.push('/login')
         return
       }
 
-      const currentUserId = sessionData.session.user.id
+      const accessToken = sessionData.session.access_token
+      const userId = sessionData.session.user.id
+      const apiKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+      const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
 
-      let movimientoExistente: MovimientoRow | null = null
-      let cxcRow: CuentaPorCobrarRow | null = null
+      const headers = {
+        apikey: apiKey,
+        Authorization: `Bearer ${accessToken}`,
+      }
 
-      const { data: movimientoData, error: movimientoError } = await supabase
-        .from('movimientos')
-        .select(
-          'id,cliente_id,descripcion,monto_total,monto_neto,monto_iva,monto_exento,observaciones'
-        )
-        .eq('empresa_id', empresaActivaId)
-        .eq('tipo_movimiento', 'ingreso')
-        .ilike('tipo_documento', 'factura')
-        .eq('numero_documento', numeroFactura)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle()
+      const [cobranzaResp, rolResp] = await Promise.all([
+        fetch(
+          `${baseUrl}/rest/v1/v_cobranza_pendiente?empresa_id=eq.${empresaActivaId}&select=*&order=fecha_vencimiento.asc.nullslast`,
+          { headers }
+        ),
+        fetch(
+          `${baseUrl}/rest/v1/usuario_empresas?select=rol&usuario_id=eq.${userId}&empresa_id=eq.${empresaActivaId}&activo=eq.true`,
+          { headers }
+        ),
+      ])
 
-      if (movimientoError) {
-        console.error('Error buscando movimiento existente:', movimientoError)
-        alert('No se pudo validar el movimiento asociado.')
+      const cobranzaJson = await cobranzaResp.json()
+      const rolJson = await rolResp.json()
+
+      if (!cobranzaResp.ok) {
+        setError('No se pudo cargar la cobranza pendiente.')
         return
       }
 
-      movimientoExistente = (movimientoData as MovimientoRow | null) || null
-
-      if (movimientoExistente?.id) {
-        const { data: cxcByMovimiento, error: cxcByMovimientoError } =
-          await supabase
-            .from('cuentas_por_cobrar')
-            .select(
-              'id,empresa_id,movimiento_id,cliente_id,fecha_emision,fecha_vencimiento,monto_total,monto_pagado,saldo_pendiente,estado'
-            )
-            .eq('empresa_id', empresaActivaId)
-            .eq('movimiento_id', movimientoExistente.id)
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .maybeSingle()
-
-        if (cxcByMovimientoError) {
-          console.error(
-            'Error buscando cuenta por cobrar por movimiento:',
-            cxcByMovimientoError
-          )
-          alert('No se pudo identificar la cuenta por cobrar.')
-          return
-        }
-
-        cxcRow = (cxcByMovimiento as CuentaPorCobrarRow | null) || null
-      }
-
-      if (!cxcRow) {
-        const { data: cxcFallback, error: cxcFallbackError } = await supabase
-          .from('cuentas_por_cobrar')
-          .select(
-            'id,empresa_id,movimiento_id,cliente_id,fecha_emision,fecha_vencimiento,monto_total,monto_pagado,saldo_pendiente,estado'
-          )
-          .eq('empresa_id', empresaActivaId)
-          .eq('fecha_emision', detalleSeleccionado.fecha_emision)
-          .eq(
-            'fecha_vencimiento',
-            detalleSeleccionado.fecha_vencimiento || detalleSeleccionado.fecha_emision
-          )
-          .eq('monto_total', montoDocumento)
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle()
-
-        if (cxcFallbackError) {
-          console.error(
-            'Error buscando cuenta por cobrar por fallback:',
-            cxcFallbackError
-          )
-          alert('No se pudo identificar la cuenta por cobrar.')
-          return
-        }
-
-        cxcRow = (cxcFallback as CuentaPorCobrarRow | null) || null
-      }
-
-      if (!cxcRow) {
-        alert(
-          'No se encontró el registro de cuenta por cobrar asociado a esta factura.'
-        )
+      if (!rolResp.ok) {
+        setError('No se pudo cargar el rol del usuario.')
         return
       }
 
-      const montoPago = Number(cxcRow.monto_total || detalleSeleccionado.monto_total || 0)
+      const rol =
+        Array.isArray(rolJson) && rolJson.length > 0 ? rolJson[0].rol || '' : ''
 
-      let movimientoId = cxcRow.movimiento_id || movimientoExistente?.id || null
-
-      if (movimientoId) {
-        const { error: movimientoUpdateError } = await supabase
-          .from('movimientos')
-          .update({
-            fecha: fechaPagoInput,
-            cuenta_bancaria_id: cuentaBancariaPagoId,
-            estado: 'pagado',
-            medio_pago: medioPagoInput || null,
-            observaciones: observacionPago,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', movimientoId)
-
-        if (movimientoUpdateError) {
-          console.error(
-            'Error actualizando movimiento de ingreso:',
-            movimientoUpdateError
-          )
-          alert('No se pudo actualizar el ingreso asociado.')
-          return
-        }
-      } else {
-        const { data: nuevoMovimiento, error: nuevoMovimientoError } =
-          await supabase
-            .from('movimientos')
-            .insert({
-              empresa_id: empresaActivaId,
-              tipo_movimiento: 'ingreso',
-              fecha: fechaPagoInput,
-              fecha_vencimiento: detalleSeleccionado.fecha_vencimiento || null,
-              tercero_tipo: 'cliente',
-              cliente_id: cxcRow.cliente_id || null,
-              cuenta_bancaria_id: cuentaBancariaPagoId,
-              tipo_documento: 'factura',
-              numero_documento: numeroFactura,
-              descripcion:
-                detalleSeleccionado.descripcion ||
-                movimientoExistente?.descripcion ||
-                `Pago factura ${numeroFactura}`,
-              monto_neto:
-                Number(movimientoExistente?.monto_neto || 0) || montoPago,
-              monto_iva: Number(movimientoExistente?.monto_iva || 0),
-              monto_exento: Number(movimientoExistente?.monto_exento || 0),
-              monto_total: montoPago,
-              estado: 'pagado',
-              medio_pago: medioPagoInput || null,
-              observaciones:
-                observacionPago ||
-                movimientoExistente?.observaciones ||
-                null,
-              created_by: currentUserId,
-              updated_at: new Date().toISOString(),
-            })
-            .select('id')
-            .single()
-
-        if (nuevoMovimientoError || !nuevoMovimiento?.id) {
-          console.error('Error creando movimiento de ingreso:', nuevoMovimientoError)
-          alert('No se pudo crear el ingreso asociado al pago.')
-          return
-        }
-
-        movimientoId = nuevoMovimiento.id
-      }
-
-      const { error: cxcUpdateError } = await supabase
-        .from('cuentas_por_cobrar')
-        .update({
-          movimiento_id: movimientoId,
-          monto_pagado: montoPago,
-          saldo_pendiente: 0,
-          estado: 'pagado',
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', cxcRow.id)
-
-      if (cxcUpdateError) {
-        console.error('Error actualizando cuenta por cobrar:', cxcUpdateError)
-        alert('No se pudo actualizar la cuenta por cobrar.')
-        return
-      }
-
-      alert('Pago registrado correctamente.')
-
-      const facturaPagada = detalleSeleccionado.numero_factura
-
-      setCobranza((prev) =>
-        prev.filter((item) => item.numero_factura !== facturaPagada)
-      )
-
-      setDetalleSeleccionado(null)
-      setCuentaBancariaPagoId('')
-      setObservacionPagoInput('')
+      setUsuarioRol(rol)
+      setIsAdmin(rol === 'admin')
+      setCobranza(cobranzaJson ?? [])
     } catch (err) {
-      console.error('Error registrando pago:', err)
-      alert('Ocurrió un error al registrar el pago.')
+      if (err instanceof Error) {
+        setError(err.message)
+      } else {
+        setError('Error desconocido al cargar cobranza.')
+      }
     } finally {
-      setSavingPago(false)
+      setLoading(false)
     }
-  }
+  }, [empresaActivaId, router])
 
-  const detalleGestion = detalleSeleccionado
-    ? gestiones[detalleSeleccionado.numero_factura]
-    : null
+  useEffect(() => {
+    void loadData()
+  }, [loadData])
 
-  const detalleDias = detalleSeleccionado
-    ? getDiasRespectoVencimiento(detalleSeleccionado.fecha_vencimiento)
-    : null
+  const cobranzaConEstadoVisual = useMemo(
+    () =>
+      cobranza.map((item) => ({
+        ...item,
+        estado_visual: getEstadoVisual(item.estado, item.fecha_vencimiento),
+      })),
+    [cobranza]
+  )
+
+  const totalPendiente = useMemo(
+    () =>
+      cobranzaConEstadoVisual.reduce(
+        (acc, item) => acc + Number(item.saldo_pendiente || 0),
+        0
+      ),
+    [cobranzaConEstadoVisual]
+  )
+
+  const vencidas = useMemo(
+    () =>
+      cobranzaConEstadoVisual.filter((item) =>
+        isVencida(item.estado, item.fecha_vencimiento)
+      ),
+    [cobranzaConEstadoVisual]
+  )
+
+  const porVencer = useMemo(
+    () =>
+      cobranzaConEstadoVisual.filter((item) =>
+        isPorVencerEstaSemana(item.estado, item.fecha_vencimiento)
+      ),
+    [cobranzaConEstadoVisual]
+  )
+
+  const montoVencido = useMemo(
+    () =>
+      vencidas.reduce(
+        (acc, item) => acc + Number(item.saldo_pendiente || 0),
+        0
+      ),
+    [vencidas]
+  )
+
+  const cobranzasParciales = useMemo(
+    () =>
+      cobranzaConEstadoVisual.filter(
+        (item) => (item.estado || '').toLowerCase() === 'parcial'
+      ),
+    [cobranzaConEstadoVisual]
+  )
+
+  const datosFiltrados = useMemo(() => {
+    if (filtroEstado === 'todos') return cobranzaConEstadoVisual
+
+    if (filtroEstado === 'vencido') {
+      return cobranzaConEstadoVisual.filter(
+        (item) => item.estado_visual.toLowerCase() === 'vencido'
+      )
+    }
+
+    return cobranzaConEstadoVisual.filter(
+      (item) => (item.estado || '').toLowerCase() === filtroEstado
+    )
+  }, [cobranzaConEstadoVisual, filtroEstado])
 
   return (
-    <main className="space-y-6">
-      <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-          <div className="space-y-2">
-            <p className="text-sm text-slate-500">Gestión de cobranza</p>
-            <h1 className="text-2xl font-semibold text-slate-900">Cobranza</h1>
-            <p className="text-sm text-slate-600">
-              Empresa activa: {empresaActivaNombre || 'Sin empresa activa'}
+    <ProtectedModuleRoute moduleKey="cobranza">
+      <main className="space-y-6">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h1 className="text-4xl font-semibold text-slate-900">Cobranza</h1>
+            <p className="mt-2 text-slate-600">
+              Seguimiento de facturas pendientes y documentos por cobrar de la empresa activa.
             </p>
           </div>
 
-          <div className="no-print">
-            <ExportExcelButton
-              fileName={`cobranza_${empresaActivaNombre || 'empresa'}_${desde}_${hasta}.xlsx`}
-              sheetName="Cobranza"
-              rows={excelRows}
-              disabled={loading}
-            />
+          <Link
+            href="/reportes"
+            className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+          >
+            Ver reportes
+          </Link>
+        </div>
+
+        <EmpresaActivaBanner
+          modulo="Cobranza"
+          descripcion="Todos los documentos visibles corresponden únicamente a la empresa activa seleccionada."
+        />
+
+        {!isAdmin && !loading ? (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            El usuario actual tiene rol <span className="font-semibold">{usuarioRol || 'sin rol asignado'}</span>. En cobranza solo el administrador tendrá disponibles acciones sensibles.
           </div>
-        </div>
-      </section>
+        ) : null}
 
-      <DateRangeFilter
-        desde={desde}
-        hasta={hasta}
-        onDesdeChange={setDesde}
-        onHastaChange={setHasta}
-        onPresetChange={handlePresetChange}
-      />
+        <section className="rounded-2xl border-2 border-[#163A5F] bg-white p-4 shadow-sm">
+          <div className="mb-3">
+            <h2 className="text-lg font-semibold text-slate-900">
+              Filtros de cobranza
+            </h2>
+            <p className="text-sm text-slate-500">
+              Filtre los documentos por estado del seguimiento.
+            </p>
+          </div>
 
-      {loading && (
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          Cargando cobranza...
-        </div>
-      )}
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => setFiltroEstado('todos')}
+              className={`rounded-xl px-4 py-2 text-sm font-medium transition ${
+                filtroEstado === 'todos'
+                  ? 'bg-[#163A5F] text-white'
+                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+              }`}
+            >
+              Todos
+            </button>
 
-      {error && (
-        <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-red-700 shadow-sm">
-          {error}
-        </div>
-      )}
+            <button
+              onClick={() => setFiltroEstado('pendiente')}
+              className={`rounded-xl px-4 py-2 text-sm font-medium transition ${
+                filtroEstado === 'pendiente'
+                  ? 'bg-[#163A5F] text-white'
+                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+              }`}
+            >
+              Pendientes
+            </button>
 
-      {!loading && !error && (
-        <>
+            <button
+              onClick={() => setFiltroEstado('parcial')}
+              className={`rounded-xl px-4 py-2 text-sm font-medium transition ${
+                filtroEstado === 'parcial'
+                  ? 'bg-[#163A5F] text-white'
+                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+              }`}
+            >
+              Parciales
+            </button>
+
+            <button
+              onClick={() => setFiltroEstado('vencido')}
+              className={`rounded-xl px-4 py-2 text-sm font-medium transition ${
+                filtroEstado === 'vencido'
+                  ? 'bg-[#163A5F] text-white'
+                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+              }`}
+            >
+              Vencidos
+            </button>
+          </div>
+        </section>
+
+        {!loading && !error && (
           <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
               <p className="text-sm text-slate-500">Total por cobrar</p>
-              <p className="mt-2 text-2xl font-semibold text-slate-900">
-                {formatCLP(totalPorCobrar)}
-              </p>
-            </div>
-
-            <div className="rounded-2xl border border-red-200 bg-red-50 p-6 shadow-sm">
-              <p className="text-sm text-red-700">Facturas vencidas</p>
-              <p className="mt-2 text-2xl font-semibold text-red-800">
-                {vencidas.length}
-              </p>
-            </div>
-
-            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6 shadow-sm">
-              <p className="text-sm text-amber-700">Monto vencido</p>
-              <p className="mt-2 text-2xl font-semibold text-amber-800">
-                {formatCLP(montoVencido)}
-              </p>
-            </div>
-
-            <div className="rounded-2xl border border-blue-200 bg-blue-50 p-6 shadow-sm">
-              <p className="text-sm text-blue-700">Por vencer en 7 días</p>
-              <p className="mt-2 text-2xl font-semibold text-blue-800">
-                {formatCLP(montoPorVencer)}
-              </p>
-            </div>
-          </section>
-
-          <section className="grid grid-cols-1 gap-4 md:grid-cols-3">
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-              <p className="text-sm text-slate-500">Sin gestión</p>
-              <p className="mt-2 text-2xl font-semibold text-slate-900">
-                {sinGestionItems.length}
-              </p>
-              <p className="mt-1 text-sm text-slate-500">
-                {formatCLP(
-                  sinGestionItems.reduce(
-                    (acc, item) => acc + Number(item.saldo_pendiente || 0),
-                    0
-                  )
-                )}
-              </p>
-            </div>
-
-            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-6 shadow-sm">
-              <p className="text-sm text-emerald-700">Compromiso de pago</p>
-              <p className="mt-2 text-2xl font-semibold text-emerald-800">
-                {compromisoPagoItems.length}
-              </p>
-              <p className="mt-1 text-sm text-emerald-700">
-                {formatCLP(
-                  compromisoPagoItems.reduce(
-                    (acc, item) => acc + Number(item.saldo_pendiente || 0),
-                    0
-                  )
-                )}
-              </p>
-            </div>
-
-            <div className="rounded-2xl border border-orange-200 bg-orange-50 p-6 shadow-sm">
-              <p className="text-sm text-orange-700">Próximo contacto vencido/hoy</p>
-              <p className="mt-2 text-2xl font-semibold text-orange-800">
-                {proximoContactoVencidoItems.length}
-              </p>
-              <p className="mt-1 text-sm text-orange-700">
-                {formatCLP(
-                  proximoContactoVencidoItems.reduce(
-                    (acc, item) => acc + Number(item.saldo_pendiente || 0),
-                    0
-                  )
-                )}
-              </p>
-            </div>
-          </section>
-
-          <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700">
-                  Buscar
-                </label>
-                <input
-                  type="text"
-                  value={busqueda}
-                  onChange={(e) => setBusqueda(e.target.value)}
-                  placeholder="Cliente, factura o descripción"
-                  className="h-10 w-full rounded-lg border border-slate-300 px-3 text-sm"
-                />
-              </div>
-
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700">
-                  Estado documento
-                </label>
-                <select
-                  value={estadoFiltro}
-                  onChange={(e) => setEstadoFiltro(e.target.value)}
-                  className="h-10 w-full rounded-lg border border-slate-300 px-3 text-sm"
-                >
-                  <option value="todos">Todos</option>
-                  <option value="pendiente">Pendiente</option>
-                  <option value="parcial">Parcial</option>
-                  <option value="vencido">Vencido</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700">
-                  Gestión
-                </label>
-                <select
-                  value={gestionFiltro}
-                  onChange={(e) => setGestionFiltro(e.target.value)}
-                  className="h-10 w-full rounded-lg border border-slate-300 px-3 text-sm"
-                >
-                  <option value="todos">Todas</option>
-                  <option value="con_gestion">Solo con gestión</option>
-                  <option value="sin_gestion">Solo sin gestión</option>
-                  <option value="contactado">Contactado</option>
-                  <option value="compromiso_pago">Compromiso de pago</option>
-                  <option value="en_revision">En revisión</option>
-                  <option value="sin_respuesta">Sin respuesta</option>
-                  <option value="proximo_contacto_vencido">
-                    Próximo contacto vencido/hoy
-                  </option>
-                </select>
-              </div>
-
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700">
-                  Resultado filtrado
-                </label>
-                <div className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-700">
-                  {cobranzaFiltrada.length} registro(s) · {formatCLP(totalFiltrado)}
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-4 flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => setVistaRapida('todas')}
-                className={`rounded-lg px-4 py-2 text-sm font-medium ${
-                  vistaRapida === 'todas'
-                    ? 'bg-slate-900 text-white'
-                    : 'bg-slate-100 text-slate-700'
-                }`}
-              >
-                Todas
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setVistaRapida('vencidas')}
-                className={`rounded-lg px-4 py-2 text-sm font-medium ${
-                  vistaRapida === 'vencidas'
-                    ? 'bg-red-700 text-white'
-                    : 'bg-red-50 text-red-700'
-                }`}
-              >
-                Solo vencidas
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setVistaRapida('por_vencer')}
-                className={`rounded-lg px-4 py-2 text-sm font-medium ${
-                  vistaRapida === 'por_vencer'
-                    ? 'bg-blue-700 text-white'
-                    : 'bg-blue-50 text-blue-700'
-                }`}
-              >
-                Por vencer
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setVistaRapida('criticas')}
-                className={`rounded-lg px-4 py-2 text-sm font-medium ${
-                  vistaRapida === 'criticas'
-                    ? 'bg-amber-700 text-white'
-                    : 'bg-amber-50 text-amber-700'
-                }`}
-              >
-                Críticas
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setGestionFiltro('sin_gestion')}
-                className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700"
-              >
-                Sin gestión
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setGestionFiltro('compromiso_pago')}
-                className="rounded-lg bg-emerald-50 px-4 py-2 text-sm font-medium text-emerald-700"
-              >
-                Compromiso de pago
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setGestionFiltro('proximo_contacto_vencido')}
-                className="rounded-lg bg-orange-50 px-4 py-2 text-sm font-medium text-orange-700"
-              >
-                Próx. contacto vencido/hoy
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setBusqueda('')
-                  setEstadoFiltro('todos')
-                  setVistaRapida('todas')
-                  setGestionFiltro('todos')
-                }}
-                className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700"
-              >
-                Limpiar filtros
-              </button>
-            </div>
-          </section>
-
-          {vencidas.length > 0 && (
-            <section className="rounded-2xl border border-red-200 bg-red-50 p-6 shadow-sm">
-              <h2 className="text-lg font-semibold text-red-800">
-                Alertas de cobranza
+              <h2 className="mt-2 text-3xl font-semibold text-slate-900">
+                {formatCLP(totalPendiente)}
               </h2>
-              <p className="mt-1 text-sm text-red-700">
-                Tienes {vencidas.length} factura(s) vencida(s) para seguimiento inmediato.
+            </article>
+
+            <article className="rounded-2xl border border-red-200 bg-red-50 p-5 shadow-sm">
+              <p className="text-sm text-red-700">Facturas vencidas</p>
+              <h2 className="mt-2 text-3xl font-semibold text-red-900">
+                {vencidas.length}
+              </h2>
+            </article>
+
+            <article className="rounded-2xl border border-amber-200 bg-amber-50 p-5 shadow-sm">
+              <p className="text-sm text-amber-700">Monto vencido</p>
+              <h2 className="mt-2 text-3xl font-semibold text-amber-900">
+                {formatCLP(montoVencido)}
+              </h2>
+            </article>
+
+            <article className="rounded-2xl border border-blue-200 bg-blue-50 p-5 shadow-sm">
+              <p className="text-sm text-blue-700">Por vencer esta semana</p>
+              <h2 className="mt-2 text-3xl font-semibold text-blue-900">
+                {porVencer.length}
+              </h2>
+            </article>
+          </section>
+        )}
+
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+          <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm xl:col-span-2">
+            <div className="mb-4">
+              <h2 className="text-2xl font-semibold text-slate-900">
+                Listado de cobranza
+              </h2>
+              <p className="mt-1 text-sm text-slate-500">
+                Facturas y saldos pendientes obtenidos desde la vista de cobranza.
               </p>
-            </section>
-          )}
-
-          <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-sm">
-                <thead className="bg-slate-50">
-                  <tr className="text-left text-slate-600">
-                    <th className="px-4 py-3 font-medium">Cliente</th>
-                    <th className="px-4 py-3 font-medium">Factura</th>
-                    <th className="px-4 py-3 font-medium">Emisión</th>
-                    <th className="px-4 py-3 font-medium">Vencimiento</th>
-                    <th className="px-4 py-3 font-medium">Gestión</th>
-                    <th className="px-4 py-3 font-medium">Próx. contacto</th>
-                    <th className="px-4 py-3 font-medium text-right">Saldo pendiente</th>
-                    <th className="px-4 py-3 font-medium">Estado</th>
-                    <th className="px-4 py-3 font-medium">Acciones</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {cobranzaFiltrada.length === 0 ? (
-                    <tr>
-                      <td
-                        colSpan={9}
-                        className="px-4 py-8 text-center text-slate-500"
-                      >
-                        No hay facturas para los filtros seleccionados.
-                      </td>
-                    </tr>
-                  ) : (
-                    cobranzaFiltrada.map((item, index) => {
-                      const estadoVisual = getEstadoVisual(
-                        item.estado,
-                        item.fecha_vencimiento
-                      )
-                      const gestion = gestiones[item.numero_factura]
-
-                      return (
-                        <tr
-                          key={`${item.numero_factura}-${index}`}
-                          className="border-t border-slate-100"
-                        >
-                          <td className="px-4 py-3 text-slate-700">
-                            {item.cliente}
-                          </td>
-                          <td className="px-4 py-3 text-slate-700">
-                            {item.numero_factura}
-                          </td>
-                          <td className="px-4 py-3 text-slate-700">
-                            {formatFecha(item.fecha_emision)}
-                          </td>
-                          <td className="px-4 py-3 text-slate-700">
-                            {formatFecha(item.fecha_vencimiento)}
-                          </td>
-                          <td className="px-4 py-3 text-slate-700">
-                            {gestion
-                              ? getGestionLabel(gestion.estado_gestion)
-                              : 'Sin gestión'}
-                          </td>
-                          <td className="px-4 py-3 text-slate-700">
-                            {gestion?.proximo_contacto
-                              ? formatFecha(gestion.proximo_contacto)
-                              : '-'}
-                          </td>
-                          <td className="px-4 py-3 text-right font-medium text-slate-900">
-                            {formatCLP(item.saldo_pendiente)}
-                          </td>
-                          <td className="px-4 py-3">
-                            <StatusBadge status={estadoVisual} />
-                          </td>
-                          <td className="px-4 py-3">
-                            <div className="flex flex-wrap gap-2">
-                              <button
-                                type="button"
-                                onClick={() => setDetalleSeleccionado(item)}
-                                className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700"
-                              >
-                                Detalle
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => void handleCopy(item)}
-                                className="rounded-lg bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700"
-                              >
-                                Copiar
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      )
-                    })
-                  )}
-                </tbody>
-              </table>
             </div>
+
+            {loading && <div className="text-slate-500">Cargando cobranza...</div>}
+
+            {!loading && error && (
+              <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                {error}
+              </div>
+            )}
+
+            {!loading && !error && datosFiltrados.length === 0 && (
+              <div className="text-sm text-slate-500">
+                No hay documentos para el filtro seleccionado.
+              </div>
+            )}
+
+            {!loading && !error && datosFiltrados.length > 0 && (
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[980px] text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-200 text-left text-slate-500">
+                      <th className="py-3 pr-4">Cliente</th>
+                      <th className="py-3 pr-4">Factura</th>
+                      <th className="py-3 pr-4">Emisión</th>
+                      <th className="py-3 pr-4">Vencimiento</th>
+                      <th className="py-3 pr-4">Descripción</th>
+                      <th className="py-3 pr-4">Monto total</th>
+                      <th className="py-3 pr-4">Saldo pendiente</th>
+                      <th className="py-3 pr-4">Estado</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {datosFiltrados.map((item, index) => (
+                      <tr
+                        key={`${item.numero_factura}-${index}`}
+                        className="border-b border-slate-100"
+                      >
+                        <td className="py-3 pr-4">{item.cliente}</td>
+                        <td className="py-3 pr-4">{item.numero_factura}</td>
+                        <td className="py-3 pr-4">{formatDate(item.fecha_emision)}</td>
+                        <td className="py-3 pr-4">{formatDate(item.fecha_vencimiento)}</td>
+                        <td className="py-3 pr-4">{item.descripcion}</td>
+                        <td className="py-3 pr-4">
+                          {formatCLP(Number(item.monto_total))}
+                        </td>
+                        <td className="py-3 pr-4 font-medium">
+                          {formatCLP(Number(item.saldo_pendiente))}
+                        </td>
+                        <td className="py-3 pr-4">
+                          <StatusBadge status={item.estado_visual} />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </section>
 
-          {detalleSeleccionado && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-              <div className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-2xl bg-white p-6 shadow-xl">
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <p className="text-sm text-slate-500">Detalle de cobranza</p>
-                    <h2 className="text-xl font-semibold text-slate-900">
-                      Factura {detalleSeleccionado.numero_factura || '-'}
-                    </h2>
-                    <p className="mt-1 text-sm text-slate-600">
-                      {detalleSeleccionado.cliente || '-'}
-                    </p>
-                  </div>
+          <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm xl:col-span-1">
+            <h2 className="text-2xl font-semibold text-slate-900">
+              Resumen de cobranza
+            </h2>
+            <p className="mb-4 mt-1 text-sm text-slate-500">
+              Indicadores rápidos de seguimiento.
+            </p>
 
-                  <button
-                    type="button"
-                    onClick={() => setDetalleSeleccionado(null)}
-                    className="rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-700"
-                  >
-                    Cerrar
-                  </button>
-                </div>
+            <div className="space-y-4">
+              <article className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <p className="text-sm text-slate-500">Documentos pendientes</p>
+                <p className="mt-2 text-2xl font-semibold text-slate-900">
+                  {
+                    cobranzaConEstadoVisual.filter(
+                      (item) => (item.estado || '').toLowerCase() === 'pendiente'
+                    ).length
+                  }
+                </p>
+              </article>
 
-                <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4">
-                  <div className="flex flex-wrap items-center gap-3">
-                    <StatusBadge
-                      status={getEstadoVisual(
-                        detalleSeleccionado.estado,
-                        detalleSeleccionado.fecha_vencimiento
-                      )}
-                    />
-                    <span className="text-sm text-slate-700">
-                      Saldo pendiente:{' '}
-                      <strong>{formatCLP(detalleSeleccionado.saldo_pendiente)}</strong>
-                    </span>
-                    {detalleDias !== null && (
-                      <span className="text-sm text-slate-700">
-                        {detalleDias < 0
-                          ? `${Math.abs(detalleDias)} día(s) vencida`
-                          : detalleDias === 0
-                          ? 'Vence hoy'
-                          : `${detalleDias} día(s) para vencer`}
-                      </span>
-                    )}
-                  </div>
-                </div>
+              <article className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <p className="text-sm text-slate-500">Documentos parciales</p>
+                <p className="mt-2 text-2xl font-semibold text-slate-900">
+                  {cobranzasParciales.length}
+                </p>
+              </article>
 
-                <div className="mt-6">
-                  <DetailRow
-                    label="Cliente"
-                    value={detalleSeleccionado.cliente || '-'}
-                  />
-                  <DetailRow
-                    label="Factura"
-                    value={detalleSeleccionado.numero_factura || '-'}
-                  />
-                  <DetailRow
-                    label="Fecha de emisión"
-                    value={formatFecha(detalleSeleccionado.fecha_emision)}
-                  />
-                  <DetailRow
-                    label="Fecha de vencimiento"
-                    value={formatFecha(detalleSeleccionado.fecha_vencimiento)}
-                  />
-                  <DetailRow
-                    label="Descripción"
-                    value={detalleSeleccionado.descripcion || '-'}
-                  />
-                  <DetailRow
-                    label="Monto total"
-                    value={formatCLP(detalleSeleccionado.monto_total)}
-                  />
-                  <DetailRow
-                    label="Saldo pendiente"
-                    value={formatCLP(detalleSeleccionado.saldo_pendiente)}
-                  />
-                  <DetailRow
-                    label="Estado documento"
-                    value={String(
-                      getEstadoVisual(
-                        detalleSeleccionado.estado,
-                        detalleSeleccionado.fecha_vencimiento
-                      )
-                    )}
-                  />
-                </div>
+              <article className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <p className="text-sm text-slate-500">Vencidas</p>
+                <p className="mt-2 text-2xl font-semibold text-slate-900">
+                  {vencidas.length}
+                </p>
+              </article>
 
-                <div className="mt-8 rounded-2xl border border-slate-200 bg-white p-5">
-                  <h3 className="text-lg font-semibold text-slate-900">
-                    Seguimiento manual
-                  </h3>
-                  <p className="mt-1 text-sm text-slate-500">
-                    Este seguimiento queda guardado en Supabase por empresa.
+              <article className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <p className="text-sm text-slate-500">Por vencer esta semana</p>
+                <p className="mt-2 text-2xl font-semibold text-slate-900">
+                  {porVencer.length}
+                </p>
+              </article>
+
+              {isAdmin ? (
+                <article className="rounded-xl border border-[#163A5F] bg-slate-50 p-4">
+                  <p className="text-sm font-medium text-slate-700">
+                    Acciones sensibles reservadas
                   </p>
-
-                  <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
-                    <div>
-                      <label className="mb-2 block text-sm font-medium text-slate-700">
-                        Estado de gestión
-                      </label>
-                      <select
-                        value={estadoGestionInput}
-                        onChange={(e) => setEstadoGestionInput(e.target.value)}
-                        className="h-10 w-full rounded-lg border border-slate-300 px-3 text-sm"
-                      >
-                        <option value="sin_gestion">Sin gestión</option>
-                        <option value="contactado">Contactado</option>
-                        <option value="compromiso_pago">Compromiso de pago</option>
-                        <option value="en_revision">En revisión</option>
-                        <option value="sin_respuesta">Sin respuesta</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="mb-2 block text-sm font-medium text-slate-700">
-                        Fecha de contacto
-                      </label>
-                      <input
-                        type="date"
-                        value={fechaContactoInput}
-                        onChange={(e) => setFechaContactoInput(e.target.value)}
-                        className="h-10 w-full rounded-lg border border-slate-300 px-3 text-sm"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="mb-2 block text-sm font-medium text-slate-700">
-                        Próximo contacto
-                      </label>
-                      <input
-                        type="date"
-                        value={proximoContactoInput}
-                        onChange={(e) => setProximoContactoInput(e.target.value)}
-                        className="h-10 w-full rounded-lg border border-slate-300 px-3 text-sm"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="mt-4">
-                    <label className="mb-2 block text-sm font-medium text-slate-700">
-                      Observación
-                    </label>
-                    <textarea
-                      value={observacionInput}
-                      onChange={(e) => setObservacionInput(e.target.value)}
-                      rows={4}
-                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                      placeholder="Registrar comentario, compromiso, llamada realizada, respuesta del cliente, etc."
-                    />
-                  </div>
-
-                  {detalleGestion?.updated_at ? (
-                    <p className="mt-3 text-xs text-slate-500">
-                      Última actualización:{' '}
-                      {new Date(detalleGestion.updated_at).toLocaleString('es-CL')}
-                    </p>
-                  ) : null}
-
-                  <div className="mt-5 flex flex-wrap gap-3">
-                    <button
-                      type="button"
-                      onClick={() => void handleSaveGestion()}
-                      className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white"
-                    >
-                      Guardar seguimiento
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => void handleCopy(detalleSeleccionado)}
-                      className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white"
-                    >
-                      Copiar detalle
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setDetalleSeleccionado(null)}
-                      className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700"
-                    >
-                      Cerrar panel
-                    </button>
-                  </div>
-                </div>
-
-                <div className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50 p-5">
-                  <h3 className="text-lg font-semibold text-emerald-900">
-                    Registrar pago confirmado
-                  </h3>
-                  <p className="mt-1 text-sm text-emerald-800">
-                    Esto dejará la factura como pagada en cobranza y actualizará o
-                    creará el ingreso en movimientos para que impacte bancos.
+                  <p className="mt-2 text-sm text-slate-500">
+                    Este bloque queda reservado para futuras acciones de gestión de cobranza exclusivas para administrador.
                   </p>
-
-                  <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
-                    <div>
-                      <label className="mb-2 block text-sm font-medium text-slate-700">
-                        Fecha de pago
-                      </label>
-                      <input
-                        type="date"
-                        value={fechaPagoInput}
-                        onChange={(e) => setFechaPagoInput(e.target.value)}
-                        className="h-10 w-full rounded-lg border border-slate-300 px-3 text-sm"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="mb-2 block text-sm font-medium text-slate-700">
-                        Cuenta bancaria
-                      </label>
-                      <select
-                        value={cuentaBancariaPagoId}
-                        onChange={(e) => setCuentaBancariaPagoId(e.target.value)}
-                        className="h-10 w-full rounded-lg border border-slate-300 px-3 text-sm"
-                      >
-                        <option value="">Seleccionar cuenta</option>
-                        {cuentasBancarias.map((cuenta) => (
-                          <option key={cuenta.id} value={cuenta.id}>
-                            {cuenta.banco} - {cuenta.nombre_cuenta}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="mb-2 block text-sm font-medium text-slate-700">
-                        Medio de pago
-                      </label>
-                      <select
-                        value={medioPagoInput}
-                        onChange={(e) => setMedioPagoInput(e.target.value)}
-                        className="h-10 w-full rounded-lg border border-slate-300 px-3 text-sm"
-                      >
-                        <option value="transferencia">Transferencia</option>
-                        <option value="deposito">Depósito</option>
-                        <option value="cheque">Cheque</option>
-                        <option value="efectivo">Efectivo</option>
-                        <option value="otro">Otro</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="mt-4">
-                    <label className="mb-2 block text-sm font-medium text-slate-700">
-                      Observación del pago
-                    </label>
-                    <textarea
-                      value={observacionPagoInput}
-                      onChange={(e) => setObservacionPagoInput(e.target.value)}
-                      rows={3}
-                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                      placeholder="Ejemplo: transferencia recibida, abono confirmado, número de referencia, etc."
-                    />
-                  </div>
-
-                  <div className="mt-5 flex flex-wrap gap-3">
-                    <button
-                      type="button"
-                      onClick={() => void handleRegistrarPago()}
-                      disabled={savingPago}
-                      className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
-                    >
-                      {savingPago ? 'Registrando pago...' : 'Registrar pago'}
-                    </button>
-                  </div>
-                </div>
-              </div>
+                </article>
+              ) : (
+                <article className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-sm font-medium text-slate-700">
+                    Acciones restringidas
+                  </p>
+                  <p className="mt-2 text-sm text-slate-500">
+                    El usuario actual puede visualizar y filtrar, pero no tendrá acciones sensibles habilitadas.
+                  </p>
+                </article>
+              )}
             </div>
-          )}
-        </>
-      )}
-    </main>
+          </section>
+        </div>
+      </main>
+    </ProtectedModuleRoute>
   )
 }
