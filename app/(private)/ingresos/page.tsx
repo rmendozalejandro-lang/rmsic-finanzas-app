@@ -41,12 +41,19 @@ type CentroCosto = {
   nombre: string
 }
 
+type TratamientoTributario = 'afecto_iva' | 'exento' | 'mixto'
+
 type Ingreso = {
   id: string
   fecha: string
   tipo_documento: string | null
   numero_documento: string | null
   descripcion: string
+  tratamiento_tributario: string | null
+  monto_neto: number | null
+  monto_exento: number | null
+  monto_iva: number | null
+  impuesto_especifico: number | null
   monto_total: number
   estado: string
   cliente_id: string | null
@@ -65,6 +72,11 @@ type FormData = {
   tipo_documento: string
   numero_documento: string
   descripcion: string
+  tratamiento_tributario: TratamientoTributario
+  monto_neto: string
+  monto_exento: string
+  monto_iva: string
+  impuesto_especifico: string
   monto_total: string
   estado: string
   cliente_id: string
@@ -76,12 +88,18 @@ type FormData = {
 type FiltroEstado = 'todos' | 'pendiente' | 'pagado' | 'anulado'
 
 const STORAGE_KEY = 'empresa_activa_id'
+const IVA_RATE = 0.19
 
 const buildInitialForm = (): FormData => ({
   fecha: new Date().toISOString().slice(0, 10),
   tipo_documento: 'factura',
   numero_documento: '',
   descripcion: '',
+  tratamiento_tributario: 'afecto_iva',
+  monto_neto: '',
+  monto_exento: '',
+  monto_iva: '',
+  impuesto_especifico: '0',
   monto_total: '',
   estado: 'pendiente',
   cliente_id: '',
@@ -100,6 +118,32 @@ const formatDate = (value: string | null) => {
   if (Number.isNaN(date.getTime())) return value
 
   return date.toLocaleDateString('es-CL')
+}
+
+const formatTratamientoTributario = (value: string | null | undefined) => {
+  switch (value) {
+    case 'afecto_iva':
+      return 'Con IVA'
+    case 'exento':
+      return 'Exento de IVA'
+    case 'mixto':
+      return 'Con IVA + Exento IVA'
+    default:
+      return value || '-'
+  }
+}
+
+const inferTratamientoTributario = (item: Ingreso): TratamientoTributario => {
+  if (item.tratamiento_tributario === 'afecto_iva') return 'afecto_iva'
+  if (item.tratamiento_tributario === 'exento') return 'exento'
+  if (item.tratamiento_tributario === 'mixto') return 'mixto'
+
+  const neto = Number(item.monto_neto || 0)
+  const exento = Number(item.monto_exento || 0)
+
+  if (neto > 0 && exento > 0) return 'mixto'
+  if (exento > 0 && neto <= 0) return 'exento'
+  return 'afecto_iva'
 }
 
 export default function IngresosPage() {
@@ -187,7 +231,7 @@ export default function IngresosPage() {
           { headers }
         ),
         fetch(
-          `${baseUrl}/rest/v1/movimientos?select=id,fecha,tipo_documento,numero_documento,descripcion,monto_total,estado,cliente_id,categoria_id,centro_costo_id,cuenta_bancaria_id,empresa_id&empresa_id=eq.${empresaActivaId}&tipo_movimiento=eq.ingreso&order=fecha.desc`,
+          `${baseUrl}/rest/v1/movimientos?select=id,fecha,tipo_documento,numero_documento,descripcion,tratamiento_tributario,monto_neto,monto_exento,monto_iva,impuesto_especifico,monto_total,estado,cliente_id,categoria_id,centro_costo_id,cuenta_bancaria_id,empresa_id&empresa_id=eq.${empresaActivaId}&tipo_movimiento=eq.ingreso&order=fecha.desc`,
           { headers }
         ),
         fetch(
@@ -239,7 +283,9 @@ export default function IngresosPage() {
       const centrosData = (centrosJson ?? []) as CentroCosto[]
       const ingresosBase = (ingresosJson ?? []) as Ingreso[]
 
-      const rol = Array.isArray(rolJson) && rolJson.length > 0 ? rolJson[0].rol || '' : ''
+      const rol =
+        Array.isArray(rolJson) && rolJson.length > 0 ? rolJson[0].rol || '' : ''
+
       setUsuarioRol(rol)
       setIsAdmin(rol === 'admin')
 
@@ -292,10 +338,49 @@ export default function IngresosPage() {
     void loadData()
   }, [loadData])
 
+  useEffect(() => {
+    const neto = Number(formData.monto_neto || 0)
+    const exento = Number(formData.monto_exento || 0)
+
+    let iva = 0
+    let total = 0
+
+    if (formData.tratamiento_tributario === 'afecto_iva') {
+      iva = Math.round(neto * IVA_RATE)
+      total = neto + iva
+    } else if (formData.tratamiento_tributario === 'exento') {
+      iva = 0
+      total = exento
+    } else if (formData.tratamiento_tributario === 'mixto') {
+      iva = Math.round(neto * IVA_RATE)
+      total = neto + iva + exento
+    }
+
+    const nextIva = iva ? String(iva) : ''
+    const nextTotal = total ? String(total) : ''
+
+    setFormData((prev) => {
+      if (prev.monto_iva === nextIva && prev.monto_total === nextTotal) {
+        return prev
+      }
+
+      return {
+        ...prev,
+        monto_iva: nextIva,
+        monto_total: nextTotal,
+      }
+    })
+  }, [
+    formData.tratamiento_tributario,
+    formData.monto_neto,
+    formData.monto_exento,
+  ])
+
   const handleChange = (
     e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
   ) => {
     const { name, value } = e.target
+
     setFormData((prev) => ({
       ...prev,
       [name]: value,
@@ -310,6 +395,8 @@ export default function IngresosPage() {
   const handleEdit = (item: Ingreso) => {
     if (!isAdmin) return
 
+    const tratamiento = inferTratamientoTributario(item)
+
     setError('')
     setSuccess('')
     setEditingId(item.id)
@@ -318,6 +405,11 @@ export default function IngresosPage() {
       tipo_documento: item.tipo_documento || 'factura',
       numero_documento: item.numero_documento || '',
       descripcion: item.descripcion || '',
+      tratamiento_tributario: tratamiento,
+      monto_neto: String(Number(item.monto_neto || 0) || ''),
+      monto_exento: String(Number(item.monto_exento || 0) || ''),
+      monto_iva: String(Number(item.monto_iva || 0) || ''),
+      impuesto_especifico: String(Number(item.impuesto_especifico || 0) || '0'),
       monto_total: String(item.monto_total || ''),
       estado: item.estado || 'pendiente',
       cliente_id: item.cliente_id || '',
@@ -348,8 +440,40 @@ export default function IngresosPage() {
       return
     }
 
-    if (!formData.fecha || !formData.descripcion || !formData.monto_total) {
+    if (!formData.fecha || !formData.descripcion) {
       setError('Complete los campos obligatorios del ingreso.')
+      return
+    }
+
+    const neto = Number(formData.monto_neto || 0)
+    const exento = Number(formData.monto_exento || 0)
+    const iva = Number(formData.monto_iva || 0)
+    const total = Number(formData.monto_total || 0)
+
+    if (formData.tratamiento_tributario === 'afecto_iva' && neto <= 0) {
+      setError('Debes ingresar un monto neto afecto mayor a 0.')
+      return
+    }
+
+    if (formData.tratamiento_tributario === 'exento' && exento <= 0) {
+      setError('Debes ingresar un monto exento mayor a 0.')
+      return
+    }
+
+    if (formData.tratamiento_tributario === 'mixto') {
+      if (neto <= 0) {
+        setError('Debes ingresar un monto neto afecto mayor a 0 para un documento mixto.')
+        return
+      }
+
+      if (exento <= 0) {
+        setError('Debes ingresar un monto exento mayor a 0 para un documento mixto.')
+        return
+      }
+    }
+
+    if (total <= 0) {
+      setError('El monto total debe ser mayor a 0.')
       return
     }
 
@@ -376,7 +500,12 @@ export default function IngresosPage() {
         tipo_documento: formData.tipo_documento || null,
         numero_documento: formData.numero_documento || null,
         descripcion: formData.descripcion,
-        monto_total: Number(formData.monto_total || 0),
+        tratamiento_tributario: formData.tratamiento_tributario,
+        monto_neto: formData.tratamiento_tributario === 'exento' ? 0 : neto,
+        monto_exento: formData.tratamiento_tributario === 'afecto_iva' ? 0 : exento,
+        monto_iva: iva,
+        impuesto_especifico: 0,
+        monto_total: total,
         estado: formData.estado,
         cliente_id: formData.cliente_id || null,
         categoria_id: formData.categoria_id || null,
@@ -407,11 +536,19 @@ export default function IngresosPage() {
 
       if (!resp.ok) {
         console.error(json)
-        setError(isEditing ? 'No se pudo actualizar el ingreso.' : 'No se pudo registrar el ingreso.')
+        setError(
+          isEditing
+            ? 'No se pudo actualizar el ingreso.'
+            : 'No se pudo registrar el ingreso.'
+        )
         return
       }
 
-      setSuccess(isEditing ? 'Ingreso actualizado correctamente.' : 'Ingreso registrado correctamente.')
+      setSuccess(
+        isEditing
+          ? 'Ingreso actualizado correctamente.'
+          : 'Ingreso registrado correctamente.'
+      )
       resetForm()
       await loadData()
     } catch (err) {
@@ -550,7 +687,9 @@ export default function IngresosPage() {
 
         {!isAdmin && !loading ? (
           <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-            El usuario actual tiene rol <span className="font-semibold">{usuarioRol || 'sin rol asignado'}</span>. Solo el administrador puede registrar, editar o anular ingresos.
+            El usuario actual tiene rol{' '}
+            <span className="font-semibold">{usuarioRol || 'sin rol asignado'}</span>.
+            Solo el administrador puede registrar, editar o anular ingresos.
           </div>
         ) : null}
 
@@ -732,19 +871,82 @@ export default function IngresosPage() {
 
                 <div>
                   <label className="mb-1 block text-sm font-medium text-slate-700">
-                    Monto total
+                    Tratamiento tributario
                   </label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="1"
-                    name="monto_total"
-                    value={formData.monto_total}
+                  <select
+                    name="tratamiento_tributario"
+                    value={formData.tratamiento_tributario}
                     onChange={handleChange}
                     className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
-                    placeholder="0"
-                    required
-                  />
+                  >
+                    <option value="afecto_iva">Con IVA</option>
+                    <option value="exento">Exento de IVA</option>
+                    <option value="mixto">Con IVA + Exento IVA</option>
+                  </select>
+                </div>
+
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-slate-700">
+                      Neto afecto
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      name="monto_neto"
+                      value={formData.monto_neto}
+                      onChange={handleChange}
+                      disabled={formData.tratamiento_tributario === 'exento'}
+                      className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm disabled:bg-slate-50 disabled:text-slate-400"
+                      placeholder="0"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-slate-700">
+                      Monto exento
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      name="monto_exento"
+                      value={formData.monto_exento}
+                      onChange={handleChange}
+                      disabled={formData.tratamiento_tributario === 'afecto_iva'}
+                      className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm disabled:bg-slate-50 disabled:text-slate-400"
+                      placeholder="0"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-slate-700">
+                      IVA
+                    </label>
+                    <input
+                      type="number"
+                      name="monto_iva"
+                      value={formData.monto_iva}
+                      readOnly
+                      className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-2.5 text-sm"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-slate-700">
+                      Total
+                    </label>
+                    <input
+                      type="number"
+                      name="monto_total"
+                      value={formData.monto_total}
+                      readOnly
+                      className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-2.5 text-sm font-medium"
+                    />
+                  </div>
                 </div>
 
                 <div>
@@ -903,17 +1105,18 @@ export default function IngresosPage() {
 
             {!loading && !error && ingresosFiltrados.length > 0 && (
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[1280px] text-sm">
+                <table className="w-full min-w-[1520px] text-sm">
                   <thead>
                     <tr className="border-b border-slate-200 text-left text-slate-500">
                       <th className="py-3 pr-4">Fecha</th>
                       <th className="py-3 pr-4">Documento</th>
                       <th className="py-3 pr-4">Descripción</th>
                       <th className="py-3 pr-4">Cliente</th>
-                      <th className="py-3 pr-4">Categoría</th>
-                      <th className="py-3 pr-4">Centro costo</th>
-                      <th className="py-3 pr-4">Cuenta</th>
-                      <th className="py-3 pr-4">Monto</th>
+                      <th className="py-3 pr-4">Tratamiento</th>
+                      <th className="py-3 pr-4">Neto</th>
+                      <th className="py-3 pr-4">Exento</th>
+                      <th className="py-3 pr-4">IVA</th>
+                      <th className="py-3 pr-4">Total</th>
                       <th className="py-3 pr-4">Estado</th>
                       {isAdmin ? <th className="py-3 pr-4">Acciones</th> : null}
                     </tr>
@@ -930,13 +1133,20 @@ export default function IngresosPage() {
                           </td>
                           <td className="py-3 pr-4">{item.descripcion}</td>
                           <td className="py-3 pr-4">{item.cliente_nombre || '-'}</td>
-                          <td className="py-3 pr-4">{item.categoria_nombre || '-'}</td>
-                          <td className="py-3 pr-4">{item.centro_costo_nombre || '-'}</td>
                           <td className="py-3 pr-4">
-                            {item.cuenta_bancaria_nombre || '-'}
+                            {formatTratamientoTributario(item.tratamiento_tributario)}
                           </td>
                           <td className="py-3 pr-4 font-medium">
-                            {formatCLP(Number(item.monto_total))}
+                            {formatCLP(Number(item.monto_neto || 0))}
+                          </td>
+                          <td className="py-3 pr-4 font-medium">
+                            {formatCLP(Number(item.monto_exento || 0))}
+                          </td>
+                          <td className="py-3 pr-4 font-medium">
+                            {formatCLP(Number(item.monto_iva || 0))}
+                          </td>
+                          <td className="py-3 pr-4 font-medium">
+                            {formatCLP(Number(item.monto_total || 0))}
                           </td>
                           <td className="py-3 pr-4">
                             <StatusBadge status={item.estado} />
