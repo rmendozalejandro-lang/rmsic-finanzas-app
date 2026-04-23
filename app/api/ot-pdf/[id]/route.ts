@@ -128,7 +128,9 @@ if (missingVars.length > 0) {
     500
   )
 }
-
+const supabaseUrlSafe = supabaseUrl as string
+const supabaseAnonKeySafe = supabaseAnonKey as string
+const supabaseServiceRoleKeySafe = supabaseServiceRoleKey as string
     const authHeader = request.headers.get('authorization') || ''
     const token = authHeader.startsWith('Bearer ')
       ? authHeader.slice(7).trim()
@@ -138,7 +140,7 @@ if (missingVars.length > 0) {
       return jsonError('No autorizado.', 401)
     }
 
-    const authClient = createClient(supabaseUrl, supabaseAnonKey, {
+    const authClient = createClient(supabaseUrlSafe, supabaseAnonKeySafe, {
       auth: {
         persistSession: false,
         autoRefreshToken: false,
@@ -155,7 +157,7 @@ if (missingVars.length > 0) {
       return jsonError('Sesión no válida.', 401)
     }
 
-    const adminClient = createClient(supabaseUrl, supabaseServiceRoleKey, {
+    const adminClient = createClient(supabaseUrlSafe, supabaseServiceRoleKeySafe, {
       auth: {
         persistSession: false,
         autoRefreshToken: false,
