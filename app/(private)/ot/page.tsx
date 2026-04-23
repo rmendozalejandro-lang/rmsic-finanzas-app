@@ -5,7 +5,6 @@ import { useEffect, useMemo, useState } from 'react'
 import ProtectedModuleRoute from '../../../components/ProtectedModuleRoute'
 import { OTDataTable } from '../../../components/ot/ot-data-table'
 import { supabase } from '../../../lib/supabase/client'
-import { getOTResumenList } from '../../../lib/ot/queries'
 import type { OTResumen } from '../../../lib/ot/types'
 
 function OTPageContent() {
@@ -18,13 +17,21 @@ function OTPageContent() {
 
     const load = async () => {
       try {
-        setLoading(true)
-        setError('')
-        const rows = await getOTResumenList(supabase)
+       setLoading(true)
+setError('')
 
-        if (active) {
-          setOts(rows)
-        }
+const { data, error } = await supabase
+  .from('ot_vw_resumen')
+  .select('*')
+  .order('created_at', { ascending: false })
+
+if (error) {
+  throw new Error(`No se pudo cargar el listado OT: ${error.message}`)
+}
+
+if (active) {
+  setOts((data ?? []) as OTResumen[])
+}
       } catch (err) {
         if (active) {
           setError(
