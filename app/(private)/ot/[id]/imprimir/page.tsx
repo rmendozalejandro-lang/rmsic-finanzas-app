@@ -207,13 +207,17 @@ function CompactField({
 function Section({
   title,
   children,
+  className = '',
 }: {
   title: string
   children: React.ReactNode
+  className?: string
 }) {
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-6 print:rounded-none print:border-slate-300">
-      <h2 className="print-keep-with-next text-base font-semibold uppercase tracking-[0.08em] text-slate-900">
+    <section
+      className={`ot-print-section rounded-2xl border border-slate-200 bg-white p-6 print:rounded-none print:border-slate-300 ${className}`}
+    >
+      <h2 className="ot-print-section-title text-base font-semibold uppercase tracking-[0.08em] text-slate-900">
         {title}
       </h2>
       <div className="mt-4">{children}</div>
@@ -232,7 +236,7 @@ function TextBlock({
 
   return (
     <div className="space-y-2">
-      <h3 className="print-keep-with-next text-sm font-semibold uppercase tracking-[0.08em] text-slate-800">
+      <h3 className="ot-print-section-title text-sm font-semibold uppercase tracking-[0.08em] text-slate-800">
         {title}
       </h3>
       <p className="whitespace-pre-wrap text-sm leading-7 text-slate-700">
@@ -253,20 +257,20 @@ function PhotoGroup({
 
   return (
     <div className="space-y-4">
-      <h3 className="print-keep-with-next text-sm font-semibold uppercase tracking-[0.08em] text-slate-800">
+      <h3 className="ot-print-section-title text-sm font-semibold uppercase tracking-[0.08em] text-slate-800">
         {title}
       </h3>
 
-      <div className="grid gap-4 md:grid-cols-2 print:grid-cols-1">
+      <div className="ot-print-photo-grid grid gap-4 md:grid-cols-2 print:grid-cols-1">
         {items.map((item) => (
           <div
             key={item.id}
-            className="print-break-avoid overflow-hidden rounded-2xl border border-slate-200"
+            className="ot-print-photo-card overflow-hidden rounded-2xl border border-slate-200"
           >
             <img
               src={item.archivo_url}
               alt={item.archivo_nombre ?? 'Evidencia'}
-              className="h-60 w-full object-cover print:h-48"
+              className="ot-print-photo-img h-60 w-full object-cover print:h-48"
             />
             <div className="space-y-2 p-4">
               <p className="text-sm font-semibold text-slate-900">
@@ -293,7 +297,7 @@ function ReceptionCard({
   signatureUrl?: string | null
 }) {
   return (
-    <div className="print-break-avoid rounded-2xl border border-slate-200 p-5">
+    <div className="ot-print-avoid rounded-2xl border border-slate-200 p-5">
       <div className="grid gap-3">
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
@@ -653,35 +657,93 @@ function PrintOTPageContent() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl space-y-5 bg-slate-50 print:max-w-none print:bg-white print:space-y-4">
+    <div className="ot-print-root mx-auto max-w-5xl space-y-5 bg-slate-50 print:max-w-none print:bg-white print:space-y-4">
       <style jsx global>{`
         @media print {
+          html,
           body {
+            width: 100% !important;
             background: white !important;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
           }
 
           @page {
             size: A4;
-            margin: 12mm;
+            margin: 10mm;
           }
 
-          .print-break-avoid {
+          .ot-print-root {
+            width: 100% !important;
+            max-width: none !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            background: white !important;
+            display: block !important;
+          }
+
+          .ot-print-root .ot-print-hide {
+            display: none !important;
+          }
+
+          .ot-print-root .ot-print-header {
+            display: grid !important;
+            grid-template-columns: 1.3fr 0.7fr !important;
+            gap: 16px !important;
+            align-items: start !important;
+          }
+
+          .ot-print-root .ot-print-grid-two {
+            display: grid !important;
+            grid-template-columns: 1fr 1fr !important;
+            gap: 12px !important;
+          }
+
+          .ot-print-root .ot-print-section {
+            width: 100% !important;
+            max-width: none !important;
+            break-inside: auto;
+            page-break-inside: auto;
+          }
+
+          .ot-print-root .ot-print-section-title {
+            break-after: avoid-page;
+            page-break-after: avoid;
+          }
+
+          .ot-print-root .ot-print-avoid {
             break-inside: avoid-page;
             page-break-inside: avoid;
           }
 
-          .print-keep-with-next {
-            break-after: avoid-page;
-            page-break-after: avoid;
+          .ot-print-root .ot-print-photo-grid {
+            display: block !important;
+          }
+
+          .ot-print-root .ot-print-photo-card {
+            width: 100% !important;
+            margin-bottom: 12px !important;
+            break-inside: avoid-page;
+            page-break-inside: avoid;
+          }
+
+          .ot-print-root .ot-print-photo-img {
+            height: 165px !important;
+            object-fit: cover !important;
+          }
+
+          .ot-print-root .ot-print-reception {
+            break-inside: avoid-page;
+            page-break-inside: avoid;
           }
         }
       `}</style>
 
-      <div className="print:hidden flex flex-wrap gap-3">
+      <div className="ot-print-hide flex flex-wrap gap-3">
         <button
           type="button"
           onClick={() => window.print()}
-          className="inline-flex items-center justify-center rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800"
+          className="inline-flex items-center justify-center rounded-xl bg-[#163A5F] px-5 py-3 text-sm font-semibold text-white hover:bg-[#245C90]"
         >
           Imprimir / Guardar PDF
         </button>
@@ -696,7 +758,7 @@ function PrintOTPageContent() {
 
       <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white print:rounded-none print:border-slate-300">
         <div className="h-2 bg-slate-900" />
-        <div className="grid gap-6 p-6 md:grid-cols-[1.3fr_0.7fr]">
+        <div className="ot-print-header grid gap-6 p-6 md:grid-cols-[1.3fr_0.7fr]">
           <div className="flex items-start gap-4">
             <div className="flex h-20 w-28 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-white p-3">
               <img
@@ -749,13 +811,11 @@ function PrintOTPageContent() {
       </div>
 
       <Section title="Datos del cliente y servicio">
-        <div className="grid grid-cols-2 gap-3">
+        <div className="ot-print-grid-two grid grid-cols-2 gap-3">
           <CompactField label="Razón social" value={resumen.cliente_nombre} />
           <CompactField label="Fecha visita" value={formatDate(detalle.fecha_ot)} />
-
           <CompactField label="Hora inicio" value={formatTime(horaLlegada)} />
           <CompactField label="Hora término" value={formatTime(horaSalida)} />
-
           <CompactField label="Técnico ejecutante" value={nombreTecnico} />
           <CompactField label="Área / sector" value={areaTrabajo} />
         </div>
@@ -845,7 +905,7 @@ function PrintOTPageContent() {
         </Section>
       ) : null}
 
-      <Section title="Recepción y conformidad del servicio">
+      <Section title="Recepción y conformidad del servicio" className="ot-print-reception">
         <div className="mx-auto max-w-xl">
           <ReceptionCard
             name={nombreRecepcion}
