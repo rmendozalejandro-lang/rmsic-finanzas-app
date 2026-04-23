@@ -1107,11 +1107,11 @@ function OTDetalleContent() {
             </Link>
 
            <Link
-  href={`/ot/${otId}/imprimir`}
+  href={`/ot/${otId}/pdf`}
   style={{ backgroundColor: '#163A5F', color: '#ffffff' }}
   className="inline-flex rounded-xl bg-[#163A5F] px-4 py-2 text-sm font-semibold text-white hover:bg-[#245C90]"
 >
-  Ver informe / PDF
+  PDF real
 </Link>
 
             <Link

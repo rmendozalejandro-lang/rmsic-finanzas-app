@@ -566,10 +566,10 @@ function FirmaClienteView() {
         </Link>
 
         <Link
-          href={`/ot/${otId}/imprimir`}
+          href={`/ot/${otId}/pdf`}
           className="inline-flex items-center justify-center rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800"
         >
-          Ver informe PDF
+          PDF real
         </Link>
       </div>
 
