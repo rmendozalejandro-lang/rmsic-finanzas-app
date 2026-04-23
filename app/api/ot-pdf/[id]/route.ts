@@ -114,12 +114,20 @@ export async function GET(
       process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
     const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 
-    if (!supabaseUrl || !supabaseAnonKey || !supabaseServiceRoleKey) {
-      return jsonError(
-        'Faltan variables de entorno de Supabase para generar el PDF real.',
-        500
-      )
-    }
+    const missingVars = [
+  !supabaseUrl ? 'NEXT_PUBLIC_SUPABASE_URL' : null,
+  !supabaseAnonKey
+    ? 'NEXT_PUBLIC_SUPABASE_ANON_KEY o NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY'
+    : null,
+  !supabaseServiceRoleKey ? 'SUPABASE_SERVICE_ROLE_KEY' : null,
+].filter(Boolean)
+
+if (missingVars.length > 0) {
+  return jsonError(
+    `Faltan variables de entorno: ${missingVars.join(', ')}`,
+    500
+  )
+}
 
     const authHeader = request.headers.get('authorization') || ''
     const token = authHeader.startsWith('Bearer ')

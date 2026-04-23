@@ -20,8 +20,17 @@ function OTPdfRealPageContent() {
   const [error, setError] = useState('')
   const [blobUrl, setBlobUrl] = useState('')
   const [fileName, setFileName] = useState('ot.pdf')
+  const [isIOS, setIsIOS] = useState(false)
 
   const blobUrlRef = useRef('')
+
+  useEffect(() => {
+    const isiPadOrIOS =
+      /iPad|iPhone|iPod/.test(window.navigator.userAgent) ||
+      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+
+    setIsIOS(isiPadOrIOS)
+  }, [])
 
   useEffect(() => {
     let active = true
@@ -97,6 +106,33 @@ function OTPdfRealPageContent() {
     }
   }, [])
 
+  const handleOpenPdf = () => {
+    if (!blobUrl) return
+    window.location.href = blobUrl
+  }
+
+  const handleSharePdf = async () => {
+    try {
+      if (!blobUrl) return
+
+      const response = await fetch(blobUrl)
+      const blob = await response.blob()
+      const file = new File([blob], fileName, { type: 'application/pdf' })
+
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          title: fileName,
+          files: [file],
+        })
+        return
+      }
+
+      window.location.href = blobUrl
+    } catch (_error) {
+      window.location.href = blobUrl
+    }
+  }
+
   if (loading) {
     return (
       <div className="mx-auto max-w-6xl rounded-2xl border border-slate-200 bg-white p-8">
@@ -138,22 +174,31 @@ function OTPdfRealPageContent() {
           <div className="flex flex-wrap gap-3">
             {blobUrl ? (
               <>
-                <a
-                  href={blobUrl}
-                  target="_blank"
-                  rel="noreferrer"
+                <button
+                  type="button"
+                  onClick={handleOpenPdf}
                   className="inline-flex items-center justify-center rounded-xl bg-[#163A5F] px-5 py-3 text-sm font-semibold text-white hover:bg-[#245C90]"
                 >
                   Abrir PDF real
-                </a>
+                </button>
 
-                <a
-                  href={blobUrl}
-                  download={fileName}
-                  className="inline-flex items-center justify-center rounded-xl border border-slate-300 px-5 py-3 text-sm font-medium text-slate-700 hover:bg-slate-100"
-                >
-                  Descargar PDF
-                </a>
+                {isIOS ? (
+                  <button
+                    type="button"
+                    onClick={handleSharePdf}
+                    className="inline-flex items-center justify-center rounded-xl border border-slate-300 px-5 py-3 text-sm font-medium text-slate-700 hover:bg-slate-100"
+                  >
+                    Compartir PDF
+                  </button>
+                ) : (
+                  <a
+                    href={blobUrl}
+                    download={fileName}
+                    className="inline-flex items-center justify-center rounded-xl border border-slate-300 px-5 py-3 text-sm font-medium text-slate-700 hover:bg-slate-100"
+                  >
+                    Descargar PDF
+                  </a>
+                )}
               </>
             ) : null}
 
@@ -168,13 +213,22 @@ function OTPdfRealPageContent() {
       </div>
 
       {blobUrl ? (
-        <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
-          <iframe
-            title="PDF real OT"
-            src={blobUrl}
-            className="h-[85vh] w-full rounded-xl border border-slate-200"
-          />
-        </div>
+        isIOS ? (
+          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <p className="text-sm text-slate-600">
+              El PDF fue generado correctamente. En iPad conviene abrirlo o
+              compartirlo con los botones superiores.
+            </p>
+          </div>
+        ) : (
+          <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+            <iframe
+              title="PDF real OT"
+              src={blobUrl}
+              className="h-[85vh] w-full rounded-xl border border-slate-200"
+            />
+          </div>
+        )
       ) : null}
     </div>
   )

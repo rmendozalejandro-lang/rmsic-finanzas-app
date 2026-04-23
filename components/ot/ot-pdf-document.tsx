@@ -253,25 +253,26 @@ const styles = StyleSheet.create({
   },
 
   photoCard: {
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    borderRadius: 12,
-    marginBottom: 12,
-    paddingBottom: 10,
-  },
+  borderWidth: 1,
+  borderColor: '#e2e8f0',
+  borderRadius: 12,
+  marginBottom: 12,
+  backgroundColor: '#ffffff',
+  overflow: 'hidden',
+},
 
-  photoImage: {
-    width: '100%',
-    height: 205,
-    objectFit: 'cover',
-    borderTopLeftRadius: 12,
-    borderTopRightRadius: 12,
-  },
+photoImage: {
+  width: '100%',
+  height: 300,
+  objectFit: 'contain',
+  backgroundColor: '#ffffff',
+},
 
-  photoBody: {
-    paddingHorizontal: 10,
-    paddingTop: 10,
-  },
+photoBody: {
+  paddingHorizontal: 10,
+  paddingTop: 10,
+  paddingBottom: 10,
+},
 
   photoTitle: {
     fontSize: 10,
