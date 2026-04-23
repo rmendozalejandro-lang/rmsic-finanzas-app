@@ -1,8 +1,10 @@
 import { NextRequest } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { renderToBuffer } from '@react-pdf/renderer'
+import type { DocumentProps } from '@react-pdf/renderer'
 import { OTPdfDocument } from '../../../../components/ot/ot-pdf-document'
 import type { OTResumen } from '../../../../lib/ot/types'
+import React from 'react'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -282,22 +284,22 @@ export async function GET(
     const tiposServicio = (tiposResp.data ?? []) as TipoServicioOption[]
     const logoUrl = new URL('/rmsic-logo.png', request.url).toString()
 
-    const buffer = await renderToBuffer(
-      <OTPdfDocument
-        resumen={resumen}
-        detalle={detalle}
-        evidencias={evidencias}
-        firmas={firmas}
-        perfilesMap={perfilesMap}
-        tiposServicio={tiposServicio}
-        logoUrl={logoUrl}
-      />
-    )
+ const pdfElement = React.createElement(OTPdfDocument, {
+  resumen,
+  detalle,
+  evidencias,
+  firmas,
+  perfilesMap,
+  tiposServicio,
+  logoUrl,
+}) as React.ReactElement<DocumentProps>
 
-    const safeFolio = (detalle.folio || 'ot').replace(/[^\w.-]+/g, '_')
+const buffer = await renderToBuffer(pdfElement)
+const pdfBytes = new Uint8Array(buffer)
 
-    return new Response(buffer, {
-      status: 200,
+const safeFolio = (detalle.folio || 'ot').replace(/[^\w.-]+/g, '_')
+
+return new Response(pdfBytes, {      status: 200,
       headers: {
         'Content-Type': 'application/pdf',
         'Content-Disposition': `inline; filename="${safeFolio}.pdf"`,
