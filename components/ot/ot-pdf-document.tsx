@@ -66,7 +66,7 @@ type TipoServicioPdf = {
   nombre: string
 }
 
-type OTPdfDocumentProps = {
+export type OTPdfDocumentProps = {
   resumen: ResumenLike
   detalle: OTDetallePdf
   evidencias: EvidenciaPdf[]
@@ -192,18 +192,15 @@ const styles = StyleSheet.create({
     color: '#0f172a',
   },
 
-  grid: {
+  rowTwo: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginLeft: -4,
-    marginRight: -4,
+    justifyContent: 'space-between',
+    gap: 8,
+    marginBottom: 8,
   },
 
-  compactCard: {
+  compactCardHalf: {
     width: '48.8%',
-    marginLeft: 4,
-    marginRight: 4,
-    marginBottom: 8,
     borderWidth: 1,
     borderColor: '#e2e8f0',
     borderRadius: 10,
@@ -253,38 +250,46 @@ const styles = StyleSheet.create({
   },
 
   photoCard: {
-  borderWidth: 1,
-  borderColor: '#e2e8f0',
-  borderRadius: 12,
-  marginBottom: 12,
-  backgroundColor: '#ffffff',
-  overflow: 'hidden',
-},
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 12,
+    marginBottom: 16,
+    backgroundColor: '#ffffff',
+    overflow: 'hidden',
+  },
 
-photoImage: {
-  width: '100%',
-  height: 300,
-  objectFit: 'contain',
-  backgroundColor: '#ffffff',
-},
+  photoImage: {
+    width: '100%',
+    height: 320,
+    objectFit: 'contain',
+    backgroundColor: '#ffffff',
+  },
 
-photoBody: {
-  paddingHorizontal: 10,
-  paddingTop: 10,
-  paddingBottom: 10,
-},
+  photoBody: {
+    paddingHorizontal: 14,
+    paddingTop: 12,
+    paddingBottom: 14,
+  },
 
   photoTitle: {
-    fontSize: 10,
+    fontSize: 10.5,
     fontWeight: 700,
     color: '#0f172a',
-    marginBottom: 5,
+    marginBottom: 6,
+    lineHeight: 1.35,
   },
 
   photoText: {
-    fontSize: 9.5,
-    lineHeight: 1.45,
+    fontSize: 10,
+    lineHeight: 1.55,
     color: '#334155',
+  },
+
+  photoFileName: {
+    fontSize: 8.5,
+    lineHeight: 1.35,
+    color: '#64748b',
+    marginTop: 4,
   },
 
   receptionWrap: {
@@ -408,7 +413,7 @@ function humanizePerson(value: string | null | undefined) {
   return raw
 }
 
-function FieldCard({
+function FieldCardHalf({
   label,
   value,
 }: {
@@ -418,7 +423,7 @@ function FieldCard({
   if (value == null || value === '' || value === '-') return null
 
   return (
-    <View style={styles.compactCard}>
+    <View style={styles.compactCardHalf}>
       <Text style={styles.fieldLabel}>{label}</Text>
       <Text style={styles.fieldValue}>{String(value)}</Text>
     </View>
@@ -455,19 +460,29 @@ function PhotoGroup({
     <View wrap={false} style={{ marginBottom: 12 }}>
       <Text style={styles.photoGroupTitle}>{title}</Text>
 
-      {items.map((item) => (
-        <View key={item.id} wrap={false} style={styles.photoCard}>
-          <Image src={item.archivo_url} style={styles.photoImage} />
-          <View style={styles.photoBody}>
-            <Text style={styles.photoTitle}>
-              {item.archivo_nombre ?? 'Registro fotográfico'}
-            </Text>
-            <Text style={styles.photoText}>
-              {item.descripcion?.trim() ? item.descripcion : 'Sin detalle informado.'}
-            </Text>
+      {items.map((item) => {
+        const hasDescription = !!item.descripcion?.trim()
+        const titleText = hasDescription
+          ? item.descripcion!.trim()
+          : item.archivo_nombre ?? 'Registro fotográfico'
+
+        return (
+          <View key={item.id} wrap={false} style={styles.photoCard}>
+            <Image src={item.archivo_url} style={styles.photoImage} />
+            <View style={styles.photoBody}>
+              <Text style={styles.photoTitle}>{titleText}</Text>
+
+              {hasDescription && item.archivo_nombre ? (
+                <Text style={styles.photoFileName}>{item.archivo_nombre}</Text>
+              ) : null}
+
+              {!hasDescription ? (
+                <Text style={styles.photoText}>Sin detalle informado.</Text>
+              ) : null}
+            </View>
           </View>
-        </View>
-      ))}
+        )
+      })}
     </View>
   )
 }
@@ -579,13 +594,19 @@ export function OTPdfDocument({
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>DATOS DEL CLIENTE Y SERVICIO</Text>
 
-          <View style={styles.grid}>
-            <FieldCard label="RAZÓN SOCIAL" value={resumen.cliente_nombre} />
-            <FieldCard label="FECHA VISITA" value={formatDate(detalle.fecha_ot)} />
-            <FieldCard label="HORA INICIO" value={formatTime(detalle.hora_inicio)} />
-            <FieldCard label="HORA TÉRMINO" value={formatTime(detalle.hora_termino)} />
-            <FieldCard label="TÉCNICO EJECUTANTE" value={nombreTecnico} />
-            <FieldCard label="ÁREA / SECTOR" value={areaTrabajo} />
+          <View style={styles.rowTwo}>
+            <FieldCardHalf label="RAZÓN SOCIAL" value={resumen.cliente_nombre} />
+            <FieldCardHalf label="FECHA VISITA" value={formatDate(detalle.fecha_ot)} />
+          </View>
+
+          <View style={styles.rowTwo}>
+            <FieldCardHalf label="HORA INICIO" value={formatTime(detalle.hora_inicio)} />
+            <FieldCardHalf label="HORA TÉRMINO" value={formatTime(detalle.hora_termino)} />
+          </View>
+
+          <View style={styles.rowTwo}>
+            <FieldCardHalf label="TÉCNICO EJECUTANTE" value={nombreTecnico} />
+            <FieldCardHalf label="ÁREA / SECTOR" value={areaTrabajo} />
           </View>
         </View>
 
