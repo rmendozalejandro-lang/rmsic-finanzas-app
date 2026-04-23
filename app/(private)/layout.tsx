@@ -41,6 +41,7 @@ const menuItems: MenuItem[] = [
   { href: '/proveedores', label: 'Proveedores', moduleKey: 'proveedores' },
   { href: '/transferencias', label: 'Transferencias', moduleKey: 'transferencias' },
   { href: '/remuneraciones', label: 'Remuneraciones', moduleKey: 'remuneraciones' },
+  { href: '/ot', label: 'OT', moduleKey: 'ot' },
 ]
 
 const STORAGE_ID_KEY = 'empresa_activa_id'
@@ -331,17 +332,18 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
               const active = isActiveRoute(item.href)
 
               return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={`flex items-center rounded-2xl px-3 py-3 text-sm font-medium no-underline transition ${
-                    active
-                      ? 'bg-[#163A5F] text-white shadow-sm'
-                      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-                  }`}
-                >
-                  {item.label}
-                </Link>
+               <Link
+  key={item.href}
+  href={item.href}
+  style={active ? { color: '#ffffff' } : undefined}
+  className={`flex items-center rounded-2xl px-3 py-3 text-sm font-medium no-underline transition ${
+    active
+      ? 'bg-[#163A5F] !text-white shadow-sm'
+      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+  }`}
+>
+  {item.label}
+</Link>
               )
             })}
           </nav>
@@ -423,16 +425,17 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
 
                   return (
                     <Link
-                      key={item.href}
-                      href={item.href}
-                      className={`rounded-2xl px-4 py-2 text-sm font-medium no-underline transition ${
-                        active
-                          ? 'bg-[#163A5F] text-white'
-                          : 'bg-slate-100 text-slate-700 hover:bg-slate-200 hover:text-slate-900'
-                      }`}
-                    >
-                      {item.label}
-                    </Link>
+  key={item.href}
+  href={item.href}
+  style={active ? { color: '#ffffff' } : undefined}
+  className={`rounded-2xl px-4 py-2 text-sm font-medium no-underline transition ${
+    active
+      ? 'bg-[#163A5F] !text-white'
+      : 'bg-slate-100 text-slate-700 hover:bg-slate-200 hover:text-slate-900'
+  }`}
+>
+  {item.label}
+</Link>
                   )
                 })}
               </nav>

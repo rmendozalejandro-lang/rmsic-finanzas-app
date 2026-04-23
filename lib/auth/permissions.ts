@@ -1,80 +1,83 @@
 export type RolEmpresa =
-  | "admin"
-  | "administracion_financiera"
-  | "cobranzas"
-  | "comercial";
+  | 'admin'
+  | 'administracion_financiera'
+  | 'cobranzas'
+  | 'comercial'
 
 export type ModuleKey =
-  | "dashboard"
-  | "clientes"
-  | "proveedores"
-  | "cotizaciones"
-  | "ingresos"
-  | "egresos"
-  | "cobranza"
-  | "bancos"
-  | "transferencias"
-  | "remuneraciones"
-  | "reportes";
+  | 'dashboard'
+  | 'clientes'
+  | 'proveedores'
+  | 'cotizaciones'
+  | 'ingresos'
+  | 'egresos'
+  | 'cobranza'
+  | 'bancos'
+  | 'transferencias'
+  | 'remuneraciones'
+  | 'reportes'
+  | 'ot'
 
 const ROLE_MODULES: Record<RolEmpresa, ModuleKey[]> = {
   admin: [
-    "dashboard",
-    "clientes",
-    "proveedores",
-    "cotizaciones",
-    "ingresos",
-    "egresos",
-    "cobranza",
-    "bancos",
-    "transferencias",
-    "remuneraciones",
-    "reportes",
+    'dashboard',
+    'clientes',
+    'proveedores',
+    'cotizaciones',
+    'ingresos',
+    'egresos',
+    'cobranza',
+    'bancos',
+    'transferencias',
+    'remuneraciones',
+    'reportes',
+    'ot',
   ],
   administracion_financiera: [
-    "dashboard",
-    "clientes",
-    "proveedores",
-    "cotizaciones",
-    "ingresos",
-    "egresos",
-    "cobranza",
-    "bancos",
-    "reportes",
+    'dashboard',
+    'clientes',
+    'proveedores',
+    'cotizaciones',
+    'ingresos',
+    'egresos',
+    'cobranza',
+    'bancos',
+    'reportes',
+    'ot',
   ],
   cobranzas: [
-    "dashboard",
-    "clientes",
-    "cobranza",
-    "bancos",
-    "reportes",
+    'dashboard',
+    'clientes',
+    'cobranza',
+    'bancos',
+    'reportes',
   ],
   comercial: [
-    "dashboard",
-    "clientes",
-    "cotizaciones",
+    'dashboard',
+    'clientes',
+    'cotizaciones',
   ],
-};
+}
 
 export function canAccessModule(
   rol: RolEmpresa | string | null | undefined,
   moduleKey: ModuleKey
 ) {
-  if (!rol) return false;
+  if (!rol) return false
 
-  const normalizedRol = rol as RolEmpresa;
-  const allowedModules = ROLE_MODULES[normalizedRol];
+  const normalizedRol = rol as RolEmpresa
+  const allowedModules = ROLE_MODULES[normalizedRol]
 
-  if (!allowedModules) return false;
+  if (!allowedModules) return false
 
-  return allowedModules.includes(moduleKey);
+  return allowedModules.includes(moduleKey)
 }
 
 export function getModulesForRole(
   rol: RolEmpresa | string | null | undefined
 ): ModuleKey[] {
-  if (!rol) return [];
+  if (!rol) return []
 
-  const normalizedRol = rol as RolEmpresa;
-  return ROLE_MODULES[normalizedRol] ?? [];
+  const normalizedRol = rol as RolEmpresa
+  return ROLE_MODULES[normalizedRol] ?? []
 }

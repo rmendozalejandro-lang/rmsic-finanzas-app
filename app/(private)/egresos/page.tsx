@@ -41,12 +41,23 @@ type CentroCosto = {
   nombre: string
 }
 
+type TratamientoTributario =
+  | 'afecto_iva'
+  | 'exento'
+  | 'mixto'
+  | 'combustible'
+
 type Egreso = {
   id: string
   fecha: string
   tipo_documento: string | null
   numero_documento: string | null
   descripcion: string
+  tratamiento_tributario: string | null
+  monto_neto: number | null
+  monto_exento: number | null
+  monto_iva: number | null
+  impuesto_especifico: number | null
   monto_total: number
   estado: string
   proveedor_id: string | null
@@ -65,6 +76,11 @@ type FormData = {
   tipo_documento: string
   numero_documento: string
   descripcion: string
+  tratamiento_tributario: TratamientoTributario
+  monto_neto: string
+  monto_exento: string
+  monto_iva: string
+  impuesto_especifico: string
   monto_total: string
   estado: string
   proveedor_id: string
@@ -76,12 +92,18 @@ type FormData = {
 type FiltroEstado = 'todos' | 'pendiente' | 'pagado' | 'anulado'
 
 const STORAGE_KEY = 'empresa_activa_id'
+const IVA_RATE = 0.19
 
 const buildInitialForm = (): FormData => ({
   fecha: new Date().toISOString().slice(0, 10),
   tipo_documento: 'factura',
   numero_documento: '',
   descripcion: '',
+  tratamiento_tributario: 'afecto_iva',
+  monto_neto: '',
+  monto_exento: '',
+  monto_iva: '',
+  impuesto_especifico: '0',
   monto_total: '',
   estado: 'pendiente',
   proveedor_id: '',
@@ -100,6 +122,37 @@ const formatDate = (value: string | null) => {
   if (Number.isNaN(date.getTime())) return value
 
   return date.toLocaleDateString('es-CL')
+}
+
+const formatTratamientoTributario = (value: string | null | undefined) => {
+  switch (value) {
+    case 'afecto_iva':
+      return 'Con IVA'
+    case 'exento':
+      return 'Exento de IVA'
+    case 'mixto':
+      return 'Con IVA + Exento IVA'
+    case 'combustible':
+      return 'IVA + Impuesto específico'
+    default:
+      return value || '-'
+  }
+}
+
+const inferTratamientoTributario = (item: Egreso): TratamientoTributario => {
+  if (item.tratamiento_tributario === 'afecto_iva') return 'afecto_iva'
+  if (item.tratamiento_tributario === 'exento') return 'exento'
+  if (item.tratamiento_tributario === 'mixto') return 'mixto'
+  if (item.tratamiento_tributario === 'combustible') return 'combustible'
+
+  const neto = Number(item.monto_neto || 0)
+  const exento = Number(item.monto_exento || 0)
+  const impuestoEspecifico = Number(item.impuesto_especifico || 0)
+
+  if (impuestoEspecifico > 0) return 'combustible'
+  if (neto > 0 && exento > 0) return 'mixto'
+  if (exento > 0 && neto <= 0) return 'exento'
+  return 'afecto_iva'
 }
 
 export default function EgresosPage() {
@@ -187,7 +240,7 @@ export default function EgresosPage() {
           { headers }
         ),
         fetch(
-          `${baseUrl}/rest/v1/movimientos?select=id,fecha,tipo_documento,numero_documento,descripcion,monto_total,estado,proveedor_id,categoria_id,centro_costo_id,cuenta_bancaria_id,empresa_id&empresa_id=eq.${empresaActivaId}&tipo_movimiento=eq.egreso&order=fecha.desc`,
+          `${baseUrl}/rest/v1/movimientos?select=id,fecha,tipo_documento,numero_documento,descripcion,tratamiento_tributario,monto_neto,monto_exento,monto_iva,impuesto_especifico,monto_total,estado,proveedor_id,categoria_id,centro_costo_id,cuenta_bancaria_id,empresa_id&empresa_id=eq.${empresaActivaId}&tipo_movimiento=eq.egreso&order=fecha.desc`,
           { headers }
         ),
         fetch(
@@ -241,6 +294,7 @@ export default function EgresosPage() {
 
       const rol =
         Array.isArray(rolJson) && rolJson.length > 0 ? rolJson[0].rol || '' : ''
+
       setUsuarioRol(rol)
       setIsAdmin(rol === 'admin')
 
@@ -293,10 +347,54 @@ export default function EgresosPage() {
     void loadData()
   }, [loadData])
 
+  useEffect(() => {
+    const neto = Number(formData.monto_neto || 0)
+    const exento = Number(formData.monto_exento || 0)
+    const impuestoEspecifico = Number(formData.impuesto_especifico || 0)
+
+    let iva = 0
+    let total = 0
+
+    if (formData.tratamiento_tributario === 'afecto_iva') {
+      iva = Math.round(neto * IVA_RATE)
+      total = neto + iva
+    } else if (formData.tratamiento_tributario === 'exento') {
+      iva = 0
+      total = exento
+    } else if (formData.tratamiento_tributario === 'mixto') {
+      iva = Math.round(neto * IVA_RATE)
+      total = neto + iva + exento
+    } else if (formData.tratamiento_tributario === 'combustible') {
+      iva = Math.round(neto * IVA_RATE)
+      total = neto + iva + impuestoEspecifico
+    }
+
+    const nextIva = iva ? String(iva) : ''
+    const nextTotal = total ? String(total) : ''
+
+    setFormData((prev) => {
+      if (prev.monto_iva === nextIva && prev.monto_total === nextTotal) {
+        return prev
+      }
+
+      return {
+        ...prev,
+        monto_iva: nextIva,
+        monto_total: nextTotal,
+      }
+    })
+  }, [
+    formData.tratamiento_tributario,
+    formData.monto_neto,
+    formData.monto_exento,
+    formData.impuesto_especifico,
+  ])
+
   const handleChange = (
     e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
   ) => {
     const { name, value } = e.target
+
     setFormData((prev) => ({
       ...prev,
       [name]: value,
@@ -311,6 +409,8 @@ export default function EgresosPage() {
   const handleEdit = (item: Egreso) => {
     if (!isAdmin) return
 
+    const tratamiento = inferTratamientoTributario(item)
+
     setError('')
     setSuccess('')
     setEditingId(item.id)
@@ -319,6 +419,11 @@ export default function EgresosPage() {
       tipo_documento: item.tipo_documento || 'factura',
       numero_documento: item.numero_documento || '',
       descripcion: item.descripcion || '',
+      tratamiento_tributario: tratamiento,
+      monto_neto: String(Number(item.monto_neto || 0) || ''),
+      monto_exento: String(Number(item.monto_exento || 0) || ''),
+      monto_iva: String(Number(item.monto_iva || 0) || ''),
+      impuesto_especifico: String(Number(item.impuesto_especifico || 0) || '0'),
       monto_total: String(item.monto_total || ''),
       estado: item.estado || 'pendiente',
       proveedor_id: item.proveedor_id || '',
@@ -349,8 +454,53 @@ export default function EgresosPage() {
       return
     }
 
-    if (!formData.fecha || !formData.descripcion || !formData.monto_total) {
+    if (!formData.fecha || !formData.descripcion) {
       setError('Complete los campos obligatorios del egreso.')
+      return
+    }
+
+    const neto = Number(formData.monto_neto || 0)
+    const exento = Number(formData.monto_exento || 0)
+    const iva = Number(formData.monto_iva || 0)
+    const impuestoEspecifico = Number(formData.impuesto_especifico || 0)
+    const total = Number(formData.monto_total || 0)
+
+    if (formData.tratamiento_tributario === 'afecto_iva' && neto <= 0) {
+      setError('Debes ingresar un monto neto afecto mayor a 0.')
+      return
+    }
+
+    if (formData.tratamiento_tributario === 'exento' && exento <= 0) {
+      setError('Debes ingresar un monto exento mayor a 0.')
+      return
+    }
+
+    if (formData.tratamiento_tributario === 'mixto') {
+      if (neto <= 0) {
+        setError('Debes ingresar un monto neto afecto mayor a 0 para un documento mixto.')
+        return
+      }
+
+      if (exento <= 0) {
+        setError('Debes ingresar un monto exento mayor a 0 para un documento mixto.')
+        return
+      }
+    }
+
+    if (formData.tratamiento_tributario === 'combustible') {
+      if (neto <= 0) {
+        setError('Debes ingresar un monto neto afecto mayor a 0 para combustible.')
+        return
+      }
+
+      if (impuestoEspecifico < 0) {
+        setError('El impuesto específico no puede ser negativo.')
+        return
+      }
+    }
+
+    if (total <= 0) {
+      setError('El monto total debe ser mayor a 0.')
       return
     }
 
@@ -377,7 +527,20 @@ export default function EgresosPage() {
         tipo_documento: formData.tipo_documento || null,
         numero_documento: formData.numero_documento || null,
         descripcion: formData.descripcion,
-        monto_total: Number(formData.monto_total || 0),
+        tratamiento_tributario: formData.tratamiento_tributario,
+        monto_neto:
+          formData.tratamiento_tributario === 'exento' ? 0 : neto,
+        monto_exento:
+          formData.tratamiento_tributario === 'afecto_iva' ||
+          formData.tratamiento_tributario === 'combustible'
+            ? 0
+            : exento,
+        monto_iva: iva,
+        impuesto_especifico:
+          formData.tratamiento_tributario === 'combustible'
+            ? impuestoEspecifico
+            : 0,
+        monto_total: total,
         estado: formData.estado,
         proveedor_id: formData.proveedor_id || null,
         categoria_id: formData.categoria_id || null,
@@ -559,7 +722,9 @@ export default function EgresosPage() {
 
         {!isAdmin && !loading ? (
           <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-            El usuario actual tiene rol <span className="font-semibold">{usuarioRol || 'sin rol asignado'}</span>. Solo el administrador puede registrar, editar o anular egresos.
+            El usuario actual tiene rol{' '}
+            <span className="font-semibold">{usuarioRol || 'sin rol asignado'}</span>.
+            Solo el administrador puede registrar, editar o anular egresos.
           </div>
         ) : null}
 
@@ -740,18 +905,102 @@ export default function EgresosPage() {
 
                 <div>
                   <label className="mb-1 block text-sm font-medium text-slate-700">
-                    Monto total
+                    Tratamiento tributario
+                  </label>
+                  <select
+                    name="tratamiento_tributario"
+                    value={formData.tratamiento_tributario}
+                    onChange={handleChange}
+                    className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
+                  >
+                    <option value="afecto_iva">Con IVA</option>
+                    <option value="exento">Exento de IVA</option>
+                    <option value="mixto">Con IVA + Exento IVA</option>
+                    <option value="combustible">IVA + Impuesto específico</option>
+                  </select>
+                </div>
+
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-slate-700">
+                      Neto afecto
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      name="monto_neto"
+                      value={formData.monto_neto}
+                      onChange={handleChange}
+                      disabled={formData.tratamiento_tributario === 'exento'}
+                      className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm disabled:bg-slate-50 disabled:text-slate-400"
+                      placeholder="0"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-slate-700">
+                      Monto exento
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      name="monto_exento"
+                      value={formData.monto_exento}
+                      onChange={handleChange}
+                      disabled={
+                        formData.tratamiento_tributario === 'afecto_iva' ||
+                        formData.tratamiento_tributario === 'combustible'
+                      }
+                      className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm disabled:bg-slate-50 disabled:text-slate-400"
+                      placeholder="0"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-slate-700">
+                      IVA
+                    </label>
+                    <input
+                      type="number"
+                      name="monto_iva"
+                      value={formData.monto_iva}
+                      readOnly
+                      className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-2.5 text-sm"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-slate-700">
+                      Impuesto específico
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      name="impuesto_especifico"
+                      value={formData.impuesto_especifico}
+                      onChange={handleChange}
+                      disabled={formData.tratamiento_tributario !== 'combustible'}
+                      className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm disabled:bg-slate-50 disabled:text-slate-400"
+                      placeholder="0"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-slate-700">
+                    Total
                   </label>
                   <input
                     type="number"
-                    min="0"
-                    step="1"
                     name="monto_total"
                     value={formData.monto_total}
-                    onChange={handleChange}
-                    className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
-                    placeholder="0"
-                    required
+                    readOnly
+                    className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-2.5 text-sm font-medium"
                   />
                 </div>
 
@@ -897,6 +1146,12 @@ export default function EgresosPage() {
 
             {loading && <div className="text-slate-500">Cargando egresos...</div>}
 
+            {!loading && error && (
+              <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                {error}
+              </div>
+            )}
+
             {!loading && !error && egresosFiltrados.length === 0 && (
               <div className="text-sm text-slate-500">
                 No hay egresos para el filtro seleccionado.
@@ -905,17 +1160,19 @@ export default function EgresosPage() {
 
             {!loading && !error && egresosFiltrados.length > 0 && (
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[1280px] text-sm">
+                <table className="w-full min-w-[1600px] text-sm">
                   <thead>
                     <tr className="border-b border-slate-200 text-left text-slate-500">
                       <th className="py-3 pr-4">Fecha</th>
                       <th className="py-3 pr-4">Documento</th>
                       <th className="py-3 pr-4">Descripción</th>
                       <th className="py-3 pr-4">Proveedor</th>
-                      <th className="py-3 pr-4">Categoría</th>
-                      <th className="py-3 pr-4">Centro costo</th>
-                      <th className="py-3 pr-4">Cuenta</th>
-                      <th className="py-3 pr-4">Monto</th>
+                      <th className="py-3 pr-4">Tratamiento</th>
+                      <th className="py-3 pr-4">Neto</th>
+                      <th className="py-3 pr-4">Exento</th>
+                      <th className="py-3 pr-4">IVA</th>
+                      <th className="py-3 pr-4">Imp. específico</th>
+                      <th className="py-3 pr-4">Total</th>
                       <th className="py-3 pr-4">Estado</th>
                       {isAdmin ? <th className="py-3 pr-4">Acciones</th> : null}
                     </tr>
@@ -932,13 +1189,23 @@ export default function EgresosPage() {
                           </td>
                           <td className="py-3 pr-4">{item.descripcion}</td>
                           <td className="py-3 pr-4">{item.proveedor_nombre || '-'}</td>
-                          <td className="py-3 pr-4">{item.categoria_nombre || '-'}</td>
-                          <td className="py-3 pr-4">{item.centro_costo_nombre || '-'}</td>
                           <td className="py-3 pr-4">
-                            {item.cuenta_bancaria_nombre || '-'}
+                            {formatTratamientoTributario(item.tratamiento_tributario)}
                           </td>
                           <td className="py-3 pr-4 font-medium">
-                            {formatCLP(Number(item.monto_total))}
+                            {formatCLP(Number(item.monto_neto || 0))}
+                          </td>
+                          <td className="py-3 pr-4 font-medium">
+                            {formatCLP(Number(item.monto_exento || 0))}
+                          </td>
+                          <td className="py-3 pr-4 font-medium">
+                            {formatCLP(Number(item.monto_iva || 0))}
+                          </td>
+                          <td className="py-3 pr-4 font-medium">
+                            {formatCLP(Number(item.impuesto_especifico || 0))}
+                          </td>
+                          <td className="py-3 pr-4 font-medium">
+                            {formatCLP(Number(item.monto_total || 0))}
                           </td>
                           <td className="py-3 pr-4">
                             <StatusBadge status={item.estado} />
@@ -974,12 +1241,6 @@ export default function EgresosPage() {
                 </table>
               </div>
             )}
-
-            {!loading && error ? (
-              <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                {error}
-              </div>
-            ) : null}
           </section>
         </div>
       </main>

@@ -1,14 +1,53 @@
 'use client'
 
 import { FormEvent, useEffect, useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../../lib/supabase/client'
+
+function AurenSymbol({ className = 'h-14 w-14' }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 64 64"
+      className={className}
+      aria-hidden="true"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <defs>
+        <linearGradient id="aurenGradientMainLogin" x1="8" y1="8" x2="56" y2="56" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#2563EB" />
+          <stop offset="1" stopColor="#38BDF8" />
+        </linearGradient>
+        <linearGradient id="aurenGradientAccentLogin" x1="18" y1="34" x2="46" y2="46" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#0EA5E9" />
+          <stop offset="1" stopColor="#60A5FA" />
+        </linearGradient>
+      </defs>
+
+      <path
+        d="M9 54L25.5 11.5C26.5 9 30 9 31.1 11.4L46.8 45.8C47.6 47.5 46.3 49.5 44.4 49.5H36.8C35.4 49.5 34.2 48.7 33.6 47.5L28.5 36.1L20.2 54H9Z"
+        fill="url(#aurenGradientMainLogin)"
+      />
+      <path
+        d="M28.6 36.1L46.8 45.7L38.8 54.1C37.6 55.3 35.8 55.6 34.3 54.9L20.2 48.2L28.6 36.1Z"
+        fill="url(#aurenGradientAccentLogin)"
+      />
+      <path
+        d="M31.6 17.6L39.7 35.2H31.4L27 25.5L31.6 17.6Z"
+        fill="#0F172A"
+        fillOpacity="0.2"
+      />
+    </svg>
+  )
+}
 
 export default function LoginPage() {
   const router = useRouter()
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [rememberMe, setRememberMe] = useState(true)
   const [loading, setLoading] = useState(false)
   const [checkingSession, setCheckingSession] = useState(true)
   const [error, setError] = useState('')
@@ -27,23 +66,42 @@ export default function LoginPage() {
       }
     }
 
-    void checkSession()
+    checkSession()
   }, [router])
 
-  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
+  const handleLogin = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
-    setLoading(true)
     setError('')
 
+    if (!email.trim()) {
+      setError('Debes ingresar tu correo electrónico.')
+      return
+    }
+
+    if (!password.trim()) {
+      setError('Debes ingresar tu contraseña.')
+      return
+    }
+
     try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
+      setLoading(true)
+
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
         password,
       })
 
-      if (error) {
-        setError(error.message || 'No fue posible iniciar sesión.')
+      if (signInError) {
+        setError('No fue posible iniciar sesión. Revisa tu correo y contraseña.')
         return
+      }
+
+      if (!rememberMe) {
+        try {
+          window.sessionStorage.setItem('auren-session-temp', 'true')
+        } catch {
+          // no-op
+        }
       }
 
       router.replace('/')
@@ -52,7 +110,7 @@ export default function LoginPage() {
       if (err instanceof Error) {
         setError(err.message)
       } else {
-        setError('Error desconocido al iniciar sesión.')
+        setError('Ocurrió un error inesperado al iniciar sesión.')
       }
     } finally {
       setLoading(false)
@@ -61,16 +119,14 @@ export default function LoginPage() {
 
   if (checkingSession) {
     return (
-      <main className="min-h-screen bg-[#F6F8FB] px-4 py-6 sm:px-6 lg:px-10">
-        <div className="mx-auto flex min-h-[calc(100vh-3rem)] max-w-7xl items-center justify-center rounded-[32px] border border-slate-200 bg-white shadow-xl">
-          <div className="space-y-2 px-6 text-center">
-            <p className="text-sm font-medium text-slate-500">Auren</p>
-            <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
-              Verificando acceso
-            </h1>
-            <p className="text-sm text-slate-500">
-              Estamos preparando su entorno empresarial.
-            </p>
+      <main className="min-h-screen bg-[#081120] text-white">
+        <div className="flex min-h-screen items-center justify-center px-6">
+          <div className="w-full max-w-md rounded-3xl border border-white/10 bg-white/5 p-8 text-center shadow-2xl backdrop-blur">
+            <div className="mx-auto mb-5 flex h-20 w-20 items-center justify-center rounded-3xl bg-white/5 ring-1 ring-white/10">
+              <AurenSymbol className="h-12 w-12" />
+            </div>
+            <h1 className="text-2xl font-semibold tracking-tight">Auren</h1>
+            <p className="mt-2 text-sm text-slate-300">Cargando acceso seguro...</p>
           </div>
         </div>
       </main>
@@ -78,148 +134,195 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#F6F8FB] px-4 py-6 sm:px-6 lg:px-10">
-      <div className="mx-auto grid min-h-[calc(100vh-3rem)] max-w-7xl overflow-hidden rounded-[32px] border border-slate-200 bg-white shadow-xl lg:grid-cols-2">
-        <section className="relative flex flex-col justify-between overflow-hidden bg-[#163A5F] px-8 py-10 text-white sm:px-10 lg:px-12">
-          <div className="absolute inset-0 opacity-[0.08]">
-            <div className="absolute -left-10 top-10 h-56 w-56 rounded-full border border-white" />
-            <div className="absolute bottom-16 right-10 h-72 w-72 rounded-full border border-white" />
-            <div className="absolute left-1/3 top-1/3 h-28 w-28 rotate-12 rounded-3xl border border-white" />
-          </div>
+    <main className="min-h-screen overflow-hidden bg-[#081120] text-white">
+      <div className="relative min-h-screen">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(37,99,235,0.22),_transparent_32%),radial-gradient(circle_at_bottom_right,_rgba(6,182,212,0.18),_transparent_28%),linear-gradient(135deg,_#081120_0%,_#0B1630_45%,_#0A1120_100%)]" />
+        <div className="absolute inset-0 opacity-30">
+          <div className="absolute left-[-10%] top-[8%] h-72 w-72 rounded-full bg-cyan-400/10 blur-3xl" />
+          <div className="absolute bottom-[10%] right-[-8%] h-80 w-80 rounded-full bg-blue-500/10 blur-3xl" />
+        </div>
 
-          <div className="relative z-10 space-y-8">
-            <div className="flex items-center gap-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/12 backdrop-blur-sm">
-                <span className="text-lg font-semibold">A</span>
+        <div className="relative z-10 mx-auto grid min-h-screen max-w-7xl grid-cols-1 items-center gap-10 px-6 py-10 lg:grid-cols-[1.1fr_0.9fr] lg:px-10">
+          <section className="hidden lg:block">
+            <div className="max-w-2xl">
+              <div className="mb-8 flex items-center gap-4">
+                <div className="flex h-20 w-20 items-center justify-center rounded-3xl bg-white/5 shadow-xl ring-1 ring-white/10 backdrop-blur">
+                  <AurenSymbol className="h-14 w-14" />
+                </div>
+                <div>
+                  <p className="text-sm uppercase tracking-[0.28em] text-cyan-300/90">
+                    Plataforma empresarial
+                  </p>
+                  <h1 className="mt-1 text-6xl font-semibold tracking-tight text-white">
+                    Auren
+                  </h1>
+                </div>
               </div>
-              <div>
-                <div className="text-xl font-semibold tracking-tight">Auren</div>
-                <div className="text-sm text-white/75">
-                  Plataforma de gestión financiera y administrativa
+
+              <p className="max-w-xl text-lg leading-8 text-slate-300">
+                Plataforma empresarial modular para la gestión financiera,
+                administrativa y operativa de empresas multiárea y multiempresa.
+              </p>
+
+              <div className="mt-10 grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur">
+                  <p className="text-sm font-medium text-cyan-300">Confianza</p>
+                  <p className="mt-2 text-sm text-slate-300">
+                    Seguridad y respaldo para operar con trazabilidad.
+                  </p>
+                </div>
+
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur">
+                  <p className="text-sm font-medium text-cyan-300">Evolución</p>
+                  <p className="mt-2 text-sm text-slate-300">
+                    Una identidad tecnológica diseñada para crecer por módulos.
+                  </p>
+                </div>
+
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur">
+                  <p className="text-sm font-medium text-cyan-300">Control</p>
+                  <p className="mt-2 text-sm text-slate-300">
+                    Información clara para una gestión empresarial más precisa.
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-10 rounded-3xl border border-white/10 bg-white/5 p-6 backdrop-blur">
+                <div className="mb-4 flex items-center gap-3">
+                  <div className="h-2.5 w-2.5 rounded-full bg-cyan-300" />
+                  <p className="text-sm font-medium text-slate-200">
+                    Acceso corporativo Auren
+                  </p>
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-3">
+                  <div className="rounded-2xl bg-[#0D1B36]/80 p-4 ring-1 ring-white/5">
+                    <p className="text-xs uppercase tracking-[0.18em] text-slate-400">
+                      Finanzas
+                    </p>
+                    <p className="mt-3 text-sm text-slate-200">
+                      Ingresos, egresos, bancos, transferencias y reportes.
+                    </p>
+                  </div>
+
+                  <div className="rounded-2xl bg-[#0D1B36]/80 p-4 ring-1 ring-white/5">
+                    <p className="text-xs uppercase tracking-[0.18em] text-slate-400">
+                      Comercial
+                    </p>
+                    <p className="mt-3 text-sm text-slate-200">
+                      Cotizaciones, clientes y seguimiento comercial.
+                    </p>
+                  </div>
+
+                  <div className="rounded-2xl bg-[#0D1B36]/80 p-4 ring-1 ring-white/5">
+                    <p className="text-xs uppercase tracking-[0.18em] text-slate-400">
+                      Gestión
+                    </p>
+                    <p className="mt-3 text-sm text-slate-200">
+                      Roles, control interno y operación multiempresa.
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>
+          </section>
 
-            <div className="max-w-xl space-y-5">
-              <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-medium text-white/90 backdrop-blur-sm">
-                Acceso corporativo
+          <section className="mx-auto w-full max-w-md">
+            <div className="rounded-[28px] border border-white/10 bg-white/90 p-8 shadow-2xl backdrop-blur-xl sm:p-10">
+              <div className="mb-8 text-center">
+                <div className="mx-auto mb-5 flex h-20 w-20 items-center justify-center rounded-3xl bg-[#0D1B36] shadow-lg">
+                  <AurenSymbol className="h-12 w-12" />
+                </div>
+                <h2 className="text-3xl font-semibold tracking-tight text-slate-900">
+                  Iniciar sesión
+                </h2>
+                <p className="mt-2 text-sm text-slate-500">
+                  Accede a tu entorno empresarial en Auren.
+                </p>
               </div>
 
-              <h1 className="text-4xl font-semibold leading-tight tracking-tight sm:text-5xl">
-                Control, trazabilidad y operación centralizada.
-              </h1>
-
-              <p className="max-w-lg text-base leading-7 text-white/80 sm:text-lg">
-                Una plataforma multiempresa diseñada para ordenar la gestión financiera y administrativa con una experiencia clara, corporativa y escalable.
-              </p>
-            </div>
-          </div>
-
-          <div className="relative z-10 mt-10 grid gap-4 sm:grid-cols-3">
-            <div className="rounded-3xl border border-white/15 bg-white/10 p-4 backdrop-blur-sm">
-              <div className="text-2xl font-semibold">Multi</div>
-              <div className="mt-1 text-sm text-white/75">Empresa</div>
-            </div>
-            <div className="rounded-3xl border border-white/15 bg-white/10 p-4 backdrop-blur-sm">
-              <div className="text-2xl font-semibold">Roles</div>
-              <div className="mt-1 text-sm text-white/75">Acceso segmentado</div>
-            </div>
-            <div className="rounded-3xl border border-white/15 bg-white/10 p-4 backdrop-blur-sm">
-              <div className="text-2xl font-semibold">24/7</div>
-              <div className="mt-1 text-sm text-white/75">Disponibilidad</div>
-            </div>
-          </div>
-
-          <div className="relative z-10 mt-10 text-sm text-white/70">
-            Desarrollado e implementado por RMSIC
-          </div>
-        </section>
-
-        <section className="flex items-center justify-center px-6 py-10 sm:px-10 lg:px-12">
-          <div className="w-full max-w-md rounded-[28px] border border-slate-200 bg-white p-8 shadow-lg shadow-slate-200/50">
-            <div className="space-y-3 pb-6">
-              <div className="inline-flex w-fit items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
-                Acceso corporativo
-              </div>
-
-              <h2 className="text-3xl font-semibold tracking-tight text-slate-900">
-                Ingrese al sistema
-              </h2>
-
-              <p className="text-sm leading-6 text-slate-500">
-                Ingrese con sus credenciales para acceder a su entorno empresarial.
-              </p>
-            </div>
-
-            <form onSubmit={handleSubmit} className="space-y-5">
-              <div className="space-y-2">
-                <label
-                  htmlFor="email"
-                  className="block text-sm font-medium text-slate-700"
-                >
-                  Correo electrónico
-                </label>
-                <input
-                  id="email"
-                  type="email"
-                  placeholder="nombre@empresa.cl"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="h-12 w-full rounded-2xl border border-slate-200 px-4 text-sm outline-none transition focus:border-[#245C90]"
-                  autoComplete="email"
-                  required
-                />
-              </div>
-
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <label
-                    htmlFor="password"
-                    className="block text-sm font-medium text-slate-700"
-                  >
-                    Contraseña
+              <form onSubmit={handleLogin} className="space-y-5">
+                <div>
+                  <label htmlFor="email" className="mb-2 block text-sm font-medium text-slate-700">
+                    Correo electrónico
                   </label>
+                  <input
+                    id="email"
+                    type="email"
+                    autoComplete="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="nombre@empresa.cl"
+                    className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-[#155CFF] focus:ring-4 focus:ring-blue-100"
+                  />
                 </div>
 
-                <input
-                  id="password"
-                  type="password"
-                  placeholder="••••••••••"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="h-12 w-full rounded-2xl border border-slate-200 px-4 text-sm outline-none transition focus:border-[#245C90]"
-                  autoComplete="current-password"
-                  required
-                />
-              </div>
+                <div>
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <label htmlFor="password" className="block text-sm font-medium text-slate-700">
+                      Contraseña
+                    </label>
+                    <Link
+                      href="#"
+                      className="text-xs font-medium text-[#155CFF] hover:text-[#0F4AE6]"
+                    >
+                      ¿Olvidaste tu contraseña?
+                    </Link>
+                  </div>
 
-              <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-                <span>Soporte de acceso y administración de cuentas</span>
-                <span className="font-medium text-[#163A5F]">Auren</span>
-              </div>
-
-              {error ? (
-                <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                  {error}
+                  <input
+                    id="password"
+                    type="password"
+                    autoComplete="current-password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="Ingresa tu contraseña"
+                    className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-[#155CFF] focus:ring-4 focus:ring-blue-100"
+                  />
                 </div>
-              ) : null}
 
-              <button
-                type="submit"
-                disabled={loading}
-                className="h-12 w-full rounded-2xl bg-[#163A5F] px-4 text-base font-medium text-white transition hover:bg-[#245C90] disabled:cursor-not-allowed disabled:opacity-70"
-              >
-                {loading ? 'Ingresando...' : 'Ingresar al sistema'}
-              </button>
+                <div className="flex items-center justify-between gap-4">
+                  <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-600">
+                    <input
+                      type="checkbox"
+                      checked={rememberMe}
+                      onChange={(e) => setRememberMe(e.target.checked)}
+                      className="h-4 w-4 rounded border-slate-300 text-[#155CFF] focus:ring-[#155CFF]"
+                    />
+                    Recordarme
+                  </label>
 
-              <div className="flex items-center gap-3 pt-2 text-xs text-slate-400">
-                <div className="h-px flex-1 bg-slate-200" />
-                <span>© Auren · Plataforma corporativa</span>
-                <div className="h-px flex-1 bg-slate-200" />
+                  <span className="text-xs text-slate-400">
+                    Acceso seguro
+                  </span>
+                </div>
+
+                {error ? (
+                  <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                    {error}
+                  </div>
+                ) : null}
+
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full rounded-2xl bg-[#155CFF] px-4 py-3.5 text-sm font-medium text-white transition hover:bg-[#0F4AE6] disabled:cursor-not-allowed disabled:opacity-70"
+                >
+                  {loading ? 'Ingresando...' : 'Ingresar a Auren'}
+                </button>
+              </form>
+
+              <div className="mt-8 border-t border-slate-200 pt-6 text-center">
+                <p className="text-xs uppercase tracking-[0.18em] text-slate-400">
+                  Auren
+                </p>
+                <p className="mt-2 text-sm text-slate-500">
+                  Plataforma empresarial modular
+                </p>
               </div>
-            </form>
-          </div>
-        </section>
+            </div>
+          </section>
+        </div>
       </div>
     </main>
   )
