@@ -258,11 +258,21 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
 
-  photoImage: {
-    width: '100%',
-    height: 320,
-    objectFit: 'contain',
+  photoImageWrap: {
+    height: 260,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e2e8f0',
     backgroundColor: '#ffffff',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+  },
+
+  photoImage: {
+    width: 500,
+    height: 236,
+    objectFit: 'contain',
   },
 
   photoBody: {
@@ -468,7 +478,10 @@ function PhotoGroup({
 
         return (
           <View key={item.id} wrap={false} style={styles.photoCard}>
-            <Image src={item.archivo_url} style={styles.photoImage} />
+            <View style={styles.photoImageWrap}>
+              <Image src={item.archivo_url} style={styles.photoImage} />
+            </View>
+
             <View style={styles.photoBody}>
               <Text style={styles.photoTitle}>{titleText}</Text>
 
