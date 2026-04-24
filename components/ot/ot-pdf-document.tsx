@@ -255,57 +255,59 @@ const styles = StyleSheet.create({
   },
 
   photoCard: {
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    borderRadius: 12,
-    marginBottom: 16,
-    backgroundColor: '#ffffff',
-    overflow: 'hidden',
-  },
+  borderWidth: 1,
+  borderColor: '#e2e8f0',
+  borderRadius: 12,
+  marginBottom: 18,
+  backgroundColor: '#ffffff',
+  overflow: 'hidden',
+},
 
-  photoImageWrap: {
-    height: 260,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e2e8f0',
-    backgroundColor: '#ffffff',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-  },
+photoImageWrap: {
+  height: 340,
+  borderBottomWidth: 1,
+  borderBottomColor: '#e2e8f0',
+  backgroundColor: '#ffffff',
+  justifyContent: 'center',
+  alignItems: 'center',
+  paddingHorizontal: 14,
+  paddingVertical: 14,
+},
 
-  photoImage: {
-    width: 480,
-    height: 230,
-    objectFit: 'contain',
-  },
+photoImage: {
+  width: 430,
+  height: 310,
+  objectFit: 'contain',
+},
 
-  photoBody: {
-    paddingHorizontal: 14,
-    paddingTop: 12,
-    paddingBottom: 14,
-  },
+photoBody: {
+  paddingHorizontal: 14,
+  paddingTop: 12,
+  paddingBottom: 16,
+  minHeight: 70,
+},
 
-  photoTitle: {
-    fontSize: 10.5,
-    fontWeight: 700,
-    color: '#0f172a',
-    marginBottom: 6,
-    lineHeight: 1.35,
-  },
+photoTitle: {
+  fontSize: 10.5,
+  fontWeight: 700,
+  color: '#0f172a',
+  marginBottom: 4,
+  lineHeight: 1.35,
+},
 
-  photoText: {
-    fontSize: 10,
-    lineHeight: 1.55,
-    color: '#334155',
-  },
+photoText: {
+  fontSize: 9.5,
+  lineHeight: 1.45,
+  color: '#334155',
+  marginTop: 4,
+},
 
-  photoFileName: {
-    fontSize: 8.5,
-    lineHeight: 1.35,
-    color: '#64748b',
-    marginTop: 4,
-  },
+photoFileName: {
+  fontSize: 8.5,
+  lineHeight: 1.35,
+  color: '#64748b',
+  marginTop: 4,
+},
 
   receptionWrap: {
     width: '100%',
@@ -476,10 +478,9 @@ function PhotoGroup({
       <Text style={styles.photoGroupTitle}>{title}</Text>
 
       {items.map((item) => {
-        const hasDescription = !!item.descripcion?.trim()
-        const titleText = hasDescription
-          ? item.descripcion!.trim()
-          : item.archivo_nombre ?? 'Registro fotográfico'
+        const descripcion = item.descripcion?.trim() ?? ''
+        const nombreArchivo =
+          item.archivo_nombre?.trim() ?? 'Registro fotográfico'
 
         return (
           <View key={item.id} wrap={false} style={styles.photoCard}>
@@ -488,14 +489,12 @@ function PhotoGroup({
             </View>
 
             <View style={styles.photoBody}>
-              <Text style={styles.photoTitle}>{titleText}</Text>
+              <Text style={styles.photoTitle}>
+                {descripcion || nombreArchivo}
+              </Text>
 
-              {hasDescription && item.archivo_nombre ? (
-                <Text style={styles.photoFileName}>{item.archivo_nombre}</Text>
-              ) : null}
-
-              {!hasDescription ? (
-                <Text style={styles.photoText}>Sin detalle informado.</Text>
+              {descripcion ? (
+                <Text style={styles.photoFileName}>{nombreArchivo}</Text>
               ) : null}
             </View>
           </View>
@@ -504,7 +503,6 @@ function PhotoGroup({
     </View>
   )
 }
-
 export function OTPdfDocument({
   resumen,
   detalle,
