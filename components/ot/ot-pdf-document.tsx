@@ -403,10 +403,17 @@ function humanizePerson(value: string | null | undefined) {
   const lower = raw.toLowerCase()
 
   const knownMap: Record<string, string> = {
+    'rmendoza@rmsic.cl': 'Raúl Mendoza',
+    'dallendes@rmsic.cl': 'David Allendes',
     'rmendozaalejandro@gmail.com': 'Raúl Mendoza',
     'raul mendoza': 'Raúl Mendoza',
     'raúl mendoza': 'Raúl Mendoza',
+    'raul mendoza c.': 'Raúl Mendoza',
+    'raúl mendoza c.': 'Raúl Mendoza',
     'david allendes': 'David Allendes',
+    'david allendes a.': 'David Allendes',
+    'rmendoza': 'Raúl Mendoza',
+    'dallendes': 'David Allendes',
   }
 
   if (knownMap[lower]) return knownMap[lower]
@@ -419,19 +426,21 @@ function humanizePerson(value: string | null | undefined) {
     return 'Raúl Mendoza'
   }
 
-  if (lower.includes('david') && lower.includes('allendes')) {
+  if (lower.includes('dallendes') || (lower.includes('david') && lower.includes('allendes'))) {
     return 'David Allendes'
   }
 
   if (raw.includes('@')) {
-    const localPart = raw.split('@')[0]
+    const localPart = raw.split('@')[0].toLowerCase().trim()
+
+    if (knownMap[localPart]) return knownMap[localPart]
+
     const cleaned = localPart.replace(/[._-]+/g, ' ').replace(/\s+/g, ' ').trim()
     return toTitleCase(cleaned)
   }
 
   return raw
 }
-
 function FieldCardHalf({
   label,
   value,
