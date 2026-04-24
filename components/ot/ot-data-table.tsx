@@ -93,11 +93,11 @@ export function OTDataTable({ data }: Props) {
                 </td>
                 <td className="px-4 py-3 text-right">
                   <Link
-                    href={`/ot/${ot.id}`}
-                    className="inline-flex rounded-lg border border-slate-300 px-3 py-1.5 font-medium text-slate-700 hover:bg-slate-100"
-                  >
-                    Ver detalle
-                  </Link>
+  href={`/ot/${row.id}`}
+  className="inline-flex items-center justify-center rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-100"
+>
+  Detalle
+</Link>
                 </td>
               </tr>
             ))}
