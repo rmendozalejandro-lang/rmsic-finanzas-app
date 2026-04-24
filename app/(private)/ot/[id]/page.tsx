@@ -182,18 +182,62 @@ function labelOrDash(value: string | null | undefined) {
   return value
 }
 
+function toTitleCase(text: string) {
+  return text
+    .split(' ')
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ')
+}
+
+function humanizePerson(value: string | null | undefined) {
+  if (!value || !value.trim()) return '-'
+
+  const raw = value.trim()
+  const lower = raw.toLowerCase()
+
+  const knownMap: Record<string, string> = {
+    'rmendozaalejandro@gmail.com': 'Raúl Mendoza',
+    'raul mendoza': 'Raúl Mendoza',
+    'raúl mendoza': 'Raúl Mendoza',
+    'david allendes': 'David Allendes',
+  }
+
+  if (knownMap[lower]) return knownMap[lower]
+
+  if (
+    lower.includes('rmendoza') ||
+    (lower.includes('raul') && lower.includes('mendoza')) ||
+    (lower.includes('raúl') && lower.includes('mendoza'))
+  ) {
+    return 'Raúl Mendoza'
+  }
+
+  if (lower.includes('david') && lower.includes('allendes')) {
+    return 'David Allendes'
+  }
+
+  if (raw.includes('@')) {
+    const localPart = raw.split('@')[0]
+    const cleaned = localPart.replace(/[._-]+/g, ' ').replace(/\s+/g, ' ').trim()
+    return toTitleCase(cleaned)
+  }
+
+  return raw
+}
+
 function toDateInputValue(value: string | null | undefined) {
   if (!value) return ''
   return value.slice(0, 10)
 }
 
-function toISOStringFromLocal(value: string) {
-  if (!value) return null
+function combineDateAndTimeToISOString(dateValue: string, timeValue: string) {
+  if (!dateValue || !timeValue) return null
 
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return null
+  const composed = new Date(`${dateValue}T${timeValue}`)
+  if (Number.isNaN(composed.getTime())) return null
 
-  return date.toISOString()
+  return composed.toISOString()
 }
 
 function DetailField({
@@ -371,10 +415,7 @@ function OTDetalleContent() {
     return !!form.trabajo_realizado.trim()
   }, [form.trabajo_realizado, form.diagnostico, form.conclusiones_tecnicas, isAsesoria])
 
-  const hasTiempos = useMemo(() => {
-    return tiempos.length > 0
-  }, [tiempos])
-
+  const hasTiempos = useMemo(() => tiempos.length > 0, [tiempos])
   const hasAnyFirma = useMemo(() => firmas.length > 0, [firmas])
 
   const hasFirmaTecnico = useMemo(
@@ -520,27 +561,21 @@ function OTDetalleContent() {
         if (resumenResp.error) {
           throw new Error(`No se pudo cargar el resumen OT: ${resumenResp.error.message}`)
         }
-
         if (detalleResp.error) {
           throw new Error(`No se pudo cargar el detalle OT: ${detalleResp.error.message}`)
         }
-
         if (estadosResp.error) {
           throw new Error(`No se pudieron cargar los estados: ${estadosResp.error.message}`)
         }
-
         if (tiposResp.error) {
           throw new Error(`No se pudieron cargar los tipos de servicio: ${tiposResp.error.message}`)
         }
-
         if (tiemposResp.error) {
           throw new Error(`No se pudieron cargar los tiempos: ${tiemposResp.error.message}`)
         }
-
         if (firmasResp.error) {
           throw new Error(`No se pudieron cargar las firmas: ${firmasResp.error.message}`)
         }
-
         if (checklistResp.error) {
           throw new Error(`No se pudo validar checklist: ${checklistResp.error.message}`)
         }
@@ -572,11 +607,11 @@ function OTDetalleContent() {
 
           perfilesSelectData = perfilesRaw.map((item) => ({
             id: item.id,
-            label: item.email || item.id,
+            label: humanizePerson(item.email || item.id),
           }))
 
           nextMap = perfilesRaw.reduce<Record<string, string>>((acc, item) => {
-            acc[item.id] = item.email || item.id
+            acc[item.id] = humanizePerson(item.email || item.id)
             return acc
           }, {})
         }
@@ -658,10 +693,7 @@ function OTDetalleContent() {
     }
   }, [form.tipo_servicio_id, tipoPreventivaId])
 
-  const handleChange = <K extends keyof FormState>(
-    field: K,
-    value: FormState[K]
-  ) => {
+  const handleChange = <K extends keyof FormState>(field: K, value: FormState[K]) => {
     setForm((prev) => ({
       ...prev,
       [field]: value,
@@ -679,21 +711,10 @@ function OTDetalleContent() {
   }
 
   const validateForm = () => {
-    if (!form.tipo_servicio_id) {
-      return 'Debes seleccionar un tipo de servicio.'
-    }
-
-    if (!form.estado_id) {
-      return 'Debes seleccionar un estado.'
-    }
-
-    if (!form.titulo.trim()) {
-      return 'Debes ingresar un título.'
-    }
-
-    if (!form.fecha_ot) {
-      return 'Debes indicar la fecha OT.'
-    }
+    if (!form.tipo_servicio_id) return 'Debes seleccionar un tipo de servicio.'
+    if (!form.estado_id) return 'Debes seleccionar un estado.'
+    if (!form.titulo.trim()) return 'Debes ingresar un título.'
+    if (!form.fecha_ot) return 'Debes indicar la fecha OT.'
 
     if (isUrgenciaOAsistencia && form.mostrar_nota_valor_hora) {
       const valor = Number(form.valor_hora_uf)
@@ -722,8 +743,8 @@ function OTDetalleContent() {
       return 'Debes indicar la hora de término.'
     }
 
-    const inicio = new Date(tiempoForm.hora_inicio)
-    const termino = new Date(tiempoForm.hora_termino)
+    const inicio = new Date(`${tiempoForm.fecha}T${tiempoForm.hora_inicio}`)
+    const termino = new Date(`${tiempoForm.fecha}T${tiempoForm.hora_termino}`)
 
     if (Number.isNaN(inicio.getTime()) || Number.isNaN(termino.getTime())) {
       return 'Las horas ingresadas no son válidas.'
@@ -765,7 +786,9 @@ function OTDetalleContent() {
           isUrgenciaOAsistencia || isAsesoria
             ? form.diagnostico.trim() || null
             : null,
-        causa_probable: isUrgenciaOAsistencia ? form.causa_probable.trim() || null : null,
+        causa_probable: isUrgenciaOAsistencia
+          ? form.causa_probable.trim() || null
+          : null,
         trabajo_realizado:
           isPreventiva || isUrgenciaOAsistencia
             ? form.trabajo_realizado.trim() || null
@@ -784,7 +807,9 @@ function OTDetalleContent() {
             ? form.resultado_servicio.trim() || null
             : null,
         hallazgos: isPreventiva ? form.hallazgos.trim() || null : null,
-        conclusiones_tecnicas: isAsesoria ? form.conclusiones_tecnicas.trim() || null : null,
+        conclusiones_tecnicas: isAsesoria
+          ? form.conclusiones_tecnicas.trim() || null
+          : null,
         mostrar_nota_valor_hora: isUrgenciaOAsistencia
           ? form.mostrar_nota_valor_hora
           : false,
@@ -831,8 +856,8 @@ function OTDetalleContent() {
         ot_id: otId,
         usuario_id: tiempoForm.usuario_id,
         fecha: tiempoForm.fecha,
-        hora_inicio: toISOStringFromLocal(tiempoForm.hora_inicio),
-        hora_termino: toISOStringFromLocal(tiempoForm.hora_termino),
+        hora_inicio: combineDateAndTimeToISOString(tiempoForm.fecha, tiempoForm.hora_inicio),
+        hora_termino: combineDateAndTimeToISOString(tiempoForm.fecha, tiempoForm.hora_termino),
         tipo_tiempo: tiempoForm.tipo_tiempo,
         observacion: tiempoForm.observacion.trim() || null,
       }
@@ -1106,13 +1131,13 @@ function OTDetalleContent() {
               Abrir vista cliente / firma
             </Link>
 
-           <Link
-  href={`/ot/${otId}/pdf`}
-  style={{ backgroundColor: '#163A5F', color: '#ffffff' }}
-  className="inline-flex rounded-xl bg-[#163A5F] px-4 py-2 text-sm font-semibold text-white hover:bg-[#245C90]"
->
-  PDF real
-</Link>
+            <Link
+              href={`/ot/${otId}/pdf`}
+              style={{ backgroundColor: '#163A5F', color: '#ffffff' }}
+              className="inline-flex rounded-xl bg-[#163A5F] px-4 py-2 text-sm font-semibold text-white hover:bg-[#245C90]"
+            >
+              PDF real
+            </Link>
 
             <Link
               href="/ot"
@@ -1320,41 +1345,45 @@ function OTDetalleContent() {
             </div>
           </div>
 
-          <div className="mt-5 grid gap-4 md:grid-cols-2">
-            <div>
-              <label className="mb-2 block text-sm font-medium text-slate-700">
-                Técnico responsable
-              </label>
-              <select
-                value={form.tecnico_responsable_id}
-                onChange={(e) => handleChange('tecnico_responsable_id', e.target.value)}
-                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
-              >
-                <option value="">Sin asignar</option>
-                {perfiles.map((perfil) => (
-                  <option key={perfil.id} value={perfil.id}>
-                    {perfil.label}
-                  </option>
-                ))}
-              </select>
-            </div>
+          <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <h3 className="text-base font-semibold text-slate-900">Asignación</h3>
 
-            <div>
-              <label className="mb-2 block text-sm font-medium text-slate-700">
-                Supervisor
-              </label>
-              <select
-                value={form.supervisor_id}
-                onChange={(e) => handleChange('supervisor_id', e.target.value)}
-                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
-              >
-                <option value="">Sin asignar</option>
-                {perfiles.map((perfil) => (
-                  <option key={perfil.id} value={perfil.id}>
-                    {perfil.label}
-                  </option>
-                ))}
-              </select>
+            <div className="mt-5 grid gap-4 md:grid-cols-2">
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  Técnico responsable
+                </label>
+                <select
+                  value={form.tecnico_responsable_id}
+                  onChange={(e) => handleChange('tecnico_responsable_id', e.target.value)}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
+                >
+                  <option value="">Sin asignar</option>
+                  {perfiles.map((perfil) => (
+                    <option key={perfil.id} value={perfil.id}>
+                      {perfil.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  Supervisor
+                </label>
+                <select
+                  value={form.supervisor_id}
+                  onChange={(e) => handleChange('supervisor_id', e.target.value)}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
+                >
+                  <option value="">Sin asignar</option>
+                  {perfiles.map((perfil) => (
+                    <option key={perfil.id} value={perfil.id}>
+                      {perfil.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
           </div>
 
@@ -1837,7 +1866,7 @@ function OTDetalleContent() {
                 Hora inicio *
               </label>
               <input
-                type="datetime-local"
+                type="time"
                 value={tiempoForm.hora_inicio}
                 onChange={(e) => handleTiempoChange('hora_inicio', e.target.value)}
                 className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
@@ -1849,7 +1878,7 @@ function OTDetalleContent() {
                 Hora término *
               </label>
               <input
-                type="datetime-local"
+                type="time"
                 value={tiempoForm.hora_termino}
                 onChange={(e) => handleTiempoChange('hora_termino', e.target.value)}
                 className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"

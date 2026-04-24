@@ -150,7 +150,7 @@ const styles = StyleSheet.create({
   },
 
   headerCard: {
-    width: 155,
+    width: 175,
     borderWidth: 1,
     borderColor: '#e2e8f0',
     backgroundColor: '#f8fafc',
@@ -163,6 +163,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginBottom: 8,
+  },
+
+  headerMetaLeft: {
+    width: 70,
+  },
+
+  headerMetaRight: {
+    width: 82,
   },
 
   fieldLabel: {
@@ -458,6 +466,29 @@ function TextBlock({
   )
 }
 
+function PhotoCard({ item }: { item: EvidenciaPdf }) {
+  const descripcion = item.descripcion?.trim() ?? ''
+  const nombreArchivo = item.archivo_nombre?.trim() ?? 'Registro fotográfico'
+
+  return (
+    <View wrap={false} style={styles.photoCard}>
+      <Image src={item.archivo_url} style={styles.photoImage} />
+
+      <View style={styles.photoBody}>
+        <Text style={styles.photoTitle}>
+          {descripcion || nombreArchivo}
+        </Text>
+
+        {descripcion ? (
+          <Text style={styles.photoFileName}>{nombreArchivo}</Text>
+        ) : (
+          <Text style={styles.photoText}>Sin detalle informado.</Text>
+        )}
+      </View>
+    </View>
+  )
+}
+
 function PhotoGroup({
   title,
   items,
@@ -467,33 +498,20 @@ function PhotoGroup({
 }) {
   if (items.length === 0) return null
 
+  const [firstItem, ...restItems] = items
+
   return (
     <View style={styles.photoGroupWrap}>
-      <Text style={styles.photoGroupTitle}>{title}</Text>
+      {firstItem ? (
+        <View wrap={false}>
+          <Text style={styles.photoGroupTitle}>{title}</Text>
+          <PhotoCard item={firstItem} />
+        </View>
+      ) : null}
 
-      {items.map((item) => {
-        const descripcion = item.descripcion?.trim() ?? ''
-        const nombreArchivo =
-          item.archivo_nombre?.trim() ?? 'Registro fotográfico'
-
-        return (
-          <View key={item.id} wrap={false} style={styles.photoCard}>
-            <Image src={item.archivo_url} style={styles.photoImage} />
-
-            <View style={styles.photoBody}>
-              <Text style={styles.photoTitle}>
-                {descripcion || nombreArchivo}
-              </Text>
-
-              {descripcion ? (
-                <Text style={styles.photoFileName}>{nombreArchivo}</Text>
-              ) : (
-                <Text style={styles.photoText}>Sin detalle informado.</Text>
-              )}
-            </View>
-          </View>
-        )
-      })}
+      {restItems.map((item) => (
+        <PhotoCard key={item.id} item={item} />
+      ))}
     </View>
   )
 }
@@ -584,12 +602,12 @@ export function OTPdfDocument({
 
           <View style={styles.headerCard}>
             <View style={styles.headerCardRow}>
-              <View>
+              <View style={styles.headerMetaLeft}>
                 <Text style={styles.fieldLabel}>FOLIO OT</Text>
                 <Text style={styles.fieldValue}>{detalle.folio || '-'}</Text>
               </View>
 
-              <View>
+              <View style={styles.headerMetaRight}>
                 <Text style={styles.fieldLabel}>FECHA</Text>
                 <Text style={styles.fieldValue}>{formatDate(detalle.fecha_ot)}</Text>
               </View>
