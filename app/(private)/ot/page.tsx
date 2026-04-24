@@ -25,17 +25,84 @@ function OTPageContent() {
         setLoading(true)
         setError('')
 
-        const { data, error } = await supabase
-          .from('ot_vw_resumen')
-          .select('*')
-          .order('created_at', { ascending: false })
+        const {
+          data: { session },
+          error: sessionError,
+        } = await supabase.auth.getSession()
 
-        if (error) {
-          throw new Error(`No se pudo cargar el listado OT: ${error.message}`)
+        if (sessionError || !session) {
+          throw new Error('No se pudo validar la sesión actual.')
+        }
+
+        const empresaActivaId =
+          typeof window !== 'undefined'
+            ? window.localStorage.getItem(STORAGE_ID_KEY) || ''
+            : ''
+
+        if (!empresaActivaId) {
+          throw new Error('No hay empresa activa seleccionada.')
+        }
+
+        const userId = session.user.id
+
+        const { data: rolData, error: rolError } = await supabase
+          .from('usuario_empresas')
+          .select('rol')
+          .eq('usuario_id', userId)
+          .eq('empresa_id', empresaActivaId)
+          .eq('activo', true)
+          .maybeSingle()
+
+        if (rolError) {
+          throw new Error(`No se pudo validar el rol del usuario: ${rolError.message}`)
+        }
+
+        const currentRole = rolData?.rol || ''
+
+        let otsData: OTResumen[] = []
+
+        if (currentRole === 'tecnico_ot') {
+          const { data: ownOtRows, error: ownOtError } = await supabase
+            .from('ot_ordenes_trabajo')
+            .select('id')
+            .eq('empresa_id', empresaActivaId)
+            .or(`tecnico_responsable_id.eq.${userId},created_by.eq.${userId}`)
+
+          if (ownOtError) {
+            throw new Error(`No se pudo cargar las OT del técnico: ${ownOtError.message}`)
+          }
+
+          const ownOtIds = (ownOtRows ?? []).map((item) => item.id).filter(Boolean)
+
+          if (ownOtIds.length > 0) {
+            const { data, error } = await supabase
+              .from('ot_vw_resumen')
+              .select('*')
+              .in('id', ownOtIds)
+              .order('created_at', { ascending: false })
+
+            if (error) {
+              throw new Error(`No se pudo cargar el listado OT: ${error.message}`)
+            }
+
+            otsData = (data ?? []) as OTResumen[]
+          }
+        } else {
+          const { data, error } = await supabase
+            .from('ot_vw_resumen')
+            .select('*')
+            .eq('empresa_id', empresaActivaId)
+            .order('created_at', { ascending: false })
+
+          if (error) {
+            throw new Error(`No se pudo cargar el listado OT: ${error.message}`)
+          }
+
+          otsData = (data ?? []) as OTResumen[]
         }
 
         if (active) {
-          setOts((data ?? []) as OTResumen[])
+          setOts(otsData)
         }
       } catch (err) {
         if (active) {
