@@ -5,6 +5,20 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../../lib/supabase/client'
 
+const STORAGE_ID_KEY = 'empresa_activa_id'
+const STORAGE_NAME_KEY = 'empresa_activa_nombre'
+
+type UsuarioEmpresaRow = {
+  empresa_id: string
+  rol: string
+  activo: boolean
+}
+
+type EmpresaRow = {
+  id: string
+  nombre: string
+}
+
 function AurenSymbol({ className = 'h-14 w-14' }: { className?: string }) {
   return (
     <svg
@@ -15,11 +29,25 @@ function AurenSymbol({ className = 'h-14 w-14' }: { className?: string }) {
       xmlns="http://www.w3.org/2000/svg"
     >
       <defs>
-        <linearGradient id="aurenGradientMainLogin" x1="8" y1="8" x2="56" y2="56" gradientUnits="userSpaceOnUse">
+        <linearGradient
+          id="aurenGradientMainLogin"
+          x1="8"
+          y1="8"
+          x2="56"
+          y2="56"
+          gradientUnits="userSpaceOnUse"
+        >
           <stop stopColor="#2563EB" />
           <stop offset="1" stopColor="#38BDF8" />
         </linearGradient>
-        <linearGradient id="aurenGradientAccentLogin" x1="18" y1="34" x2="46" y2="46" gradientUnits="userSpaceOnUse">
+        <linearGradient
+          id="aurenGradientAccentLogin"
+          x1="18"
+          y1="34"
+          x2="46"
+          y2="46"
+          gradientUnits="userSpaceOnUse"
+        >
           <stop stopColor="#0EA5E9" />
           <stop offset="1" stopColor="#60A5FA" />
         </linearGradient>
@@ -42,6 +70,91 @@ function AurenSymbol({ className = 'h-14 w-14' }: { className?: string }) {
   )
 }
 
+async function resolvePostLoginRoute() {
+  const {
+    data: { session },
+    error: sessionError,
+  } = await supabase.auth.getSession()
+
+  if (sessionError) {
+    throw new Error(`No se pudo validar la sesión: ${sessionError.message}`)
+  }
+
+  if (!session) {
+    return '/login'
+  }
+
+  const accessToken = session.access_token
+  const userId = session.user.id
+
+  const apiKey =
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
+    ''
+  const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+
+  if (!apiKey || !baseUrl) {
+    return '/'
+  }
+
+  const headers = {
+    apikey: apiKey,
+    Authorization: `Bearer ${accessToken}`,
+  }
+
+  const usuarioEmpresasResp = await fetch(
+    `${baseUrl}/rest/v1/usuario_empresas?select=empresa_id,rol,activo&usuario_id=eq.${userId}&activo=eq.true`,
+    { headers }
+  )
+
+  const usuarioEmpresasJson = (await usuarioEmpresasResp.json()) as
+    | UsuarioEmpresaRow[]
+    | { message?: string }
+
+  if (!usuarioEmpresasResp.ok || !Array.isArray(usuarioEmpresasJson)) {
+    return '/'
+  }
+
+  const accesos = usuarioEmpresasJson.filter((item) => item.activo)
+
+  if (accesos.length === 0) {
+    return '/'
+  }
+
+  const empresaGuardada =
+    typeof window !== 'undefined'
+      ? window.localStorage.getItem(STORAGE_ID_KEY) || ''
+      : ''
+
+  const accesoActivo =
+    accesos.find((item) => item.empresa_id === empresaGuardada) || accesos[0]
+
+  const empresaResp = await fetch(
+    `${baseUrl}/rest/v1/empresas?select=id,nombre&id=eq.${accesoActivo.empresa_id}`,
+    { headers }
+  )
+
+  const empresaJson = (await empresaResp.json()) as
+    | EmpresaRow[]
+    | { message?: string }
+
+  if (empresaResp.ok && Array.isArray(empresaJson) && empresaJson.length > 0) {
+    const empresa = empresaJson[0]
+
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(STORAGE_ID_KEY, empresa.id)
+      window.localStorage.setItem(STORAGE_NAME_KEY, empresa.nombre)
+      window.dispatchEvent(new Event('empresa-activa-cambiada'))
+    }
+  }
+
+  if (accesoActivo.rol === 'tecnico_ot') {
+    return '/ot'
+  }
+
+  return '/'
+}
+
 export default function LoginPage() {
   const router = useRouter()
 
@@ -58,15 +171,18 @@ export default function LoginPage() {
         const { data } = await supabase.auth.getSession()
 
         if (data.session) {
-          router.replace('/')
+          const targetRoute = await resolvePostLoginRoute()
+          router.replace(targetRoute)
           return
         }
+      } catch (_error) {
+        // no-op
       } finally {
         setCheckingSession(false)
       }
     }
 
-    checkSession()
+    void checkSession()
   }, [router])
 
   const handleLogin = async (e: FormEvent<HTMLFormElement>) => {
@@ -104,7 +220,8 @@ export default function LoginPage() {
         }
       }
 
-      router.replace('/')
+      const targetRoute = await resolvePostLoginRoute()
+      router.replace(targetRoute)
       router.refresh()
     } catch (err) {
       if (err instanceof Error) {
@@ -243,7 +360,10 @@ export default function LoginPage() {
 
               <form onSubmit={handleLogin} className="space-y-5">
                 <div>
-                  <label htmlFor="email" className="mb-2 block text-sm font-medium text-slate-700">
+                  <label
+                    htmlFor="email"
+                    className="mb-2 block text-sm font-medium text-slate-700"
+                  >
                     Correo electrónico
                   </label>
                   <input
@@ -259,7 +379,10 @@ export default function LoginPage() {
 
                 <div>
                   <div className="mb-2 flex items-center justify-between gap-3">
-                    <label htmlFor="password" className="block text-sm font-medium text-slate-700">
+                    <label
+                      htmlFor="password"
+                      className="block text-sm font-medium text-slate-700"
+                    >
                       Contraseña
                     </label>
                     <Link
@@ -292,9 +415,7 @@ export default function LoginPage() {
                     Recordarme
                   </label>
 
-                  <span className="text-xs text-slate-400">
-                    Acceso seguro
-                  </span>
+                  <span className="text-xs text-slate-400">Acceso seguro</span>
                 </div>
 
                 {error ? (
