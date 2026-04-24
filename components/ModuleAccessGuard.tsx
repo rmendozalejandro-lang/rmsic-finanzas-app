@@ -2,8 +2,9 @@
 
 import Link from 'next/link'
 import { ReactNode, useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { supabase } from '../lib/supabase/client'
-import { canAccessModule, ModuleKey, RolEmpresa } from '../lib/auth/permissions'
+import { canAccessModule, ModuleKey } from '../lib/auth/permissions'
 
 const STORAGE_KEY = 'empresa_activa_id'
 
@@ -13,60 +14,76 @@ type Props = {
 }
 
 export default function ModuleAccessGuard({ moduleKey, children }: Props) {
+  const router = useRouter()
   const [loading, setLoading] = useState(true)
   const [allowed, setAllowed] = useState(false)
 
   useEffect(() => {
+    let active = true
+
     const checkAccess = async () => {
       try {
         const empresaId = window.localStorage.getItem(STORAGE_KEY) || ''
 
         if (!empresaId) {
-          setAllowed(false)
+          if (active) setAllowed(false)
           return
         }
 
-        const { data } = await supabase.auth.getSession()
+        const {
+          data: { session },
+          error: sessionError,
+        } = await supabase.auth.getSession()
 
-        if (!data.session) {
-          setAllowed(false)
+        if (sessionError || !session) {
+          if (active) setAllowed(false)
           return
         }
 
-        const accessToken = data.session.access_token
-        const apiKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-        const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
-        const userId = data.session.user.id
+        const userId = session.user.id
 
-        const resp = await fetch(
-          `${baseUrl}/rest/v1/usuario_empresas?select=rol&usuario_id=eq.${userId}&empresa_id=eq.${empresaId}&activo=eq.true`,
-          {
-            headers: {
-              apikey: apiKey,
-              Authorization: `Bearer ${accessToken}`,
-            },
+        const { data, error } = await supabase
+          .from('usuario_empresas')
+          .select('rol')
+          .eq('usuario_id', userId)
+          .eq('empresa_id', empresaId)
+          .eq('activo', true)
+          .maybeSingle()
+
+        if (error || !data?.rol) {
+          if (active) setAllowed(false)
+          return
+        }
+
+        const rol = data.rol as string
+
+        if (!active) return
+
+        if (rol === 'tecnico_ot') {
+          if (moduleKey !== 'ot') {
+            router.replace('/ot')
+            return
           }
-        )
 
-        const json = await resp.json()
-
-        if (!resp.ok || !json?.length) {
-          setAllowed(false)
+          setAllowed(true)
           return
         }
 
-        const rol = (json[0].rol ?? '') as RolEmpresa
         setAllowed(canAccessModule(rol, moduleKey))
       } catch (error) {
         console.error('Error validando acceso al módulo:', error)
-        setAllowed(false)
+        if (active) setAllowed(false)
       } finally {
-        setLoading(false)
+        if (active) setLoading(false)
       }
     }
 
-    checkAccess()
-  }, [moduleKey])
+    void checkAccess()
+
+    return () => {
+      active = false
+    }
+  }, [moduleKey, router])
 
   if (loading) {
     return (
@@ -87,10 +104,10 @@ export default function ModuleAccessGuard({ moduleKey, children }: Props) {
             No tienes permisos para acceder a este módulo.
           </p>
           <Link
-            href="/"
+            href="/ot"
             className="inline-block mt-4 rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white"
           >
-            Volver al dashboard
+            Volver
           </Link>
         </div>
       </main>

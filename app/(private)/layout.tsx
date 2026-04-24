@@ -21,6 +21,7 @@ type Empresa = {
 type Perfil = {
   id: string
   email?: string | null
+  nombre_completo?: string | null
 }
 
 type MenuItem = {
@@ -69,13 +70,13 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
     try {
       const perfilResp = await supabase
         .from('perfiles')
-        .select('id, email')
-        .eq('email', email)
+        .select('id, email, nombre_completo')
+        .eq('id', userId)
         .maybeSingle()
 
       if (!perfilResp.error && perfilResp.data) {
         const perfil = perfilResp.data as Perfil
-        setUsuarioNombre(perfil.email || email)
+        setUsuarioNombre(perfil.nombre_completo || perfil.email || email)
         setUsuarioEmail(perfil.email || email)
       } else {
         setUsuarioNombre(email)
@@ -175,9 +176,7 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
         const guardada = window.localStorage.getItem(STORAGE_ID_KEY)
 
         if (guardada) {
-          const empresaGuardada = empresasData.find(
-            (empresa) => empresa.id === guardada
-          )
+          const empresaGuardada = empresasData.find((empresa) => empresa.id === guardada)
 
           if (empresaGuardada) {
             await persistEmpresaActiva(empresaGuardada, email, userId)
@@ -210,7 +209,6 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
 
   const handleEmpresaChange = async (empresaId: string) => {
     const empresaSeleccionada = empresas.find((empresa) => empresa.id === empresaId)
-
     if (!empresaSeleccionada) return
 
     const { data } = await supabase.auth.getSession()
@@ -226,11 +224,9 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
 
   const empresasParaSelector = useMemo(() => {
     if (empresas.length > 0) return empresas
-
     if (empresaActivaId && empresaActivaNombreLocal) {
       return [{ id: empresaActivaId, nombre: empresaActivaNombreLocal }]
     }
-
     return []
   }, [empresas, empresaActivaId, empresaActivaNombreLocal])
 
@@ -304,9 +300,7 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
                 <div className="text-xl font-semibold tracking-tight text-slate-900">
                   Auren
                 </div>
-                <div className="text-xs text-slate-500">
-                  {appSubtitle}
-                </div>
+                <div className="text-xs text-slate-500">{appSubtitle}</div>
               </div>
             </div>
           </div>
@@ -337,17 +331,6 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
               )
             })}
           </nav>
-
-          <div className="border-t border-slate-200 px-4 py-4">
-            <div className="rounded-2xl bg-slate-50 p-3">
-              <div className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                Respaldo
-              </div>
-              <div className="mt-1 text-sm font-medium text-slate-800">
-                Desarrollado e implementado por RMSIC
-              </div>
-            </div>
-          </div>
         </aside>
 
         <div className="flex min-h-screen flex-col">
@@ -429,12 +412,6 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
                   )
                 })}
               </nav>
-
-              {rolResuelto && visibleMenuItems.length === 0 ? (
-                <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                  Este usuario no tiene módulos habilitados para la empresa activa.
-                </div>
-              ) : null}
             </div>
           </header>
 

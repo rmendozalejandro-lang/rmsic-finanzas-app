@@ -2,7 +2,11 @@ export type RolEmpresa =
   | 'admin'
   | 'administracion_financiera'
   | 'cobranzas'
+  | 'cobranza'
   | 'comercial'
+  | 'finanzas'
+  | 'gerencia'
+  | 'tecnico_ot'
 
 export type ModuleKey =
   | 'dashboard'
@@ -45,7 +49,40 @@ const ROLE_MODULES: Record<RolEmpresa, ModuleKey[]> = {
     'reportes',
     'ot',
   ],
+  finanzas: [
+    'dashboard',
+    'clientes',
+    'proveedores',
+    'cotizaciones',
+    'ingresos',
+    'egresos',
+    'cobranza',
+    'bancos',
+    'reportes',
+    'ot',
+  ],
+  gerencia: [
+    'dashboard',
+    'clientes',
+    'proveedores',
+    'cotizaciones',
+    'ingresos',
+    'egresos',
+    'cobranza',
+    'bancos',
+    'transferencias',
+    'remuneraciones',
+    'reportes',
+    'ot',
+  ],
   cobranzas: [
+    'dashboard',
+    'clientes',
+    'cobranza',
+    'bancos',
+    'reportes',
+  ],
+  cobranza: [
     'dashboard',
     'clientes',
     'cobranza',
@@ -57,6 +94,7 @@ const ROLE_MODULES: Record<RolEmpresa, ModuleKey[]> = {
     'clientes',
     'cotizaciones',
   ],
+  tecnico_ot: ['ot'],
 }
 
 export function canAccessModule(
