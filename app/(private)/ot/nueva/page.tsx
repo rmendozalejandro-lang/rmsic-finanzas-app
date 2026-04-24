@@ -24,18 +24,24 @@ type EstadoOption = {
   orden: number
 }
 
-type PerfilOption = {
+type SelectOption = {
   id: string
   label: string
 }
 
-type OTTecnico = {
+type OTTecnicoRow = {
   user_id: string
   nombre_completo: string
   cargo: string
   activo: boolean
   puede_crear_ot: boolean
   puede_cerrar_ot: boolean
+}
+
+type PerfilRow = {
+  id: string
+  nombre_completo: string | null
+  email: string | null
 }
 
 type FormDataState = {
@@ -48,23 +54,10 @@ type FormDataState = {
   titulo: string
   descripcion_solicitud: string
   problema_reportado: string
-  diagnostico: string
-  causa_probable: string
-  trabajo_realizado: string
-  recomendaciones: string
   tecnico_responsable_id: string
   supervisor_id: string
   prioridad: 'baja' | 'media' | 'alta' | 'critica'
   requiere_checklist: boolean
-  contacto_cliente_nombre: string
-  contacto_cliente_cargo: string
-  area_trabajo: string
-  resultado_servicio: string
-  hallazgos: string
-  conclusiones_tecnicas: string
-  mostrar_nota_valor_hora: boolean
-  valor_hora_uf: string
-  observaciones_cierre: string
 }
 
 const STORAGE_ID_KEY = 'empresa_activa_id'
@@ -78,21 +71,20 @@ function todayLocalDate() {
   return `${year}-${month}-${day}`
 }
 
-function SectionTitle({
-  title,
-  subtitle,
-}: {
-  title: string
-  subtitle?: string
-}) {
-  return (
-    <div>
-      <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
-      {subtitle ? (
-        <p className="mt-1 text-sm text-slate-500">{subtitle}</p>
-      ) : null}
-    </div>
-  )
+function buildSupervisorLabel(item: PerfilRow) {
+  if (item.nombre_completo?.trim() && item.email?.trim()) {
+    return `${item.nombre_completo} - ${item.email}`
+  }
+
+  if (item.nombre_completo?.trim()) {
+    return item.nombre_completo
+  }
+
+  if (item.email?.trim()) {
+    return item.email
+  }
+
+  return item.id
 }
 
 function NuevaOTContent() {
@@ -110,7 +102,8 @@ function NuevaOTContent() {
   const [clientes, setClientes] = useState<ClienteOption[]>([])
   const [tiposServicio, setTiposServicio] = useState<TipoServicioOption[]>([])
   const [estados, setEstados] = useState<EstadoOption[]>([])
-  const [perfiles, setPerfiles] = useState<PerfilOption[]>([])
+  const [tecnicos, setTecnicos] = useState<SelectOption[]>([])
+  const [supervisores, setSupervisores] = useState<SelectOption[]>([])
 
   const [form, setForm] = useState<FormDataState>({
     empresa_id: '',
@@ -122,23 +115,10 @@ function NuevaOTContent() {
     titulo: '',
     descripcion_solicitud: '',
     problema_reportado: '',
-    diagnostico: '',
-    causa_probable: '',
-    trabajo_realizado: '',
-    recomendaciones: '',
     tecnico_responsable_id: '',
     supervisor_id: '',
     prioridad: 'media',
     requiere_checklist: false,
-    contacto_cliente_nombre: '',
-    contacto_cliente_cargo: '',
-    area_trabajo: '',
-    resultado_servicio: '',
-    hallazgos: '',
-    conclusiones_tecnicas: '',
-    mostrar_nota_valor_hora: false,
-    valor_hora_uf: '2.10',
-    observaciones_cierre: '',
   })
 
   const estadoAsignadaId = useMemo(() => {
@@ -152,13 +132,6 @@ function NuevaOTContent() {
   const selectedTipo = useMemo(() => {
     return tiposServicio.find((item) => item.id === form.tipo_servicio_id) ?? null
   }, [tiposServicio, form.tipo_servicio_id])
-
-  const tipoCodigo = selectedTipo?.codigo ?? ''
-  const isPreventiva = tipoCodigo === 'preventiva'
-  const isUrgencia = tipoCodigo === 'urgencia'
-  const isAsistencia = tipoCodigo === 'general'
-  const isUrgenciaOAsistencia = isUrgencia || isAsistencia
-  const isAsesoria = tipoCodigo === 'asesoria'
 
   useEffect(() => {
     const storedEmpresaId = window.localStorage.getItem(STORAGE_ID_KEY) || ''
@@ -189,46 +162,70 @@ function NuevaOTContent() {
           throw new Error('No hay empresa activa seleccionada.')
         }
 
-        const clientesResp = await supabase
-          .from('clientes')
-          .select('id, nombre')
-          .eq('empresa_id', storedEmpresaId)
-          .order('nombre', { ascending: true })
+        const {
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser()
+
+        if (userError) {
+          throw new Error(`No se pudo validar el usuario actual: ${userError.message}`)
+        }
+
+        if (!user) {
+          throw new Error('No hay usuario autenticado.')
+        }
+
+        const [clientesResp, tiposResp, estadosResp, tecnicosResp, supervisoresResp] =
+          await Promise.all([
+            supabase
+              .from('clientes')
+              .select('id, nombre')
+              .eq('empresa_id', storedEmpresaId)
+              .order('nombre', { ascending: true }),
+
+            supabase
+              .from('ot_tipos_servicio')
+              .select('id, codigo, nombre')
+              .eq('activo', true)
+              .order('nombre', { ascending: true }),
+
+            supabase
+              .from('ot_estados')
+              .select('id, codigo, nombre, orden')
+              .eq('activo', true)
+              .order('orden', { ascending: true }),
+
+            supabase
+              .from('ot_tecnicos')
+              .select(
+                'user_id, nombre_completo, cargo, activo, puede_crear_ot, puede_cerrar_ot'
+              )
+              .eq('activo', true)
+              .order('nombre_completo', { ascending: true }),
+
+            supabase
+              .from('perfiles')
+              .select('id, nombre_completo, email')
+              .order('nombre_completo', { ascending: true }),
+          ])
 
         if (clientesResp.error) {
           throw new Error(`No se pudieron cargar los clientes: ${clientesResp.error.message}`)
         }
 
-        const tiposResp = await supabase
-          .from('ot_tipos_servicio')
-          .select('id, codigo, nombre')
-          .eq('activo', true)
-          .order('nombre', { ascending: true })
-
         if (tiposResp.error) {
-          throw new Error(`No se pudieron cargar los tipos de servicio: ${tiposResp.error.message}`)
+          throw new Error(
+            `No se pudieron cargar los tipos de servicio: ${tiposResp.error.message}`
+          )
         }
-
-        const estadosResp = await supabase
-          .from('ot_estados')
-          .select('id, codigo, nombre, orden')
-          .eq('activo', true)
-          .order('orden', { ascending: true })
 
         if (estadosResp.error) {
           throw new Error(`No se pudieron cargar los estados: ${estadosResp.error.message}`)
         }
 
-        const [tecnicosResp, authResp] = await Promise.all([
-          supabase
-            .from('ot_tecnicos')
-            .select(
-              'user_id, nombre_completo, cargo, activo, puede_crear_ot, puede_cerrar_ot'
-            )
-            .eq('activo', true)
-            .order('nombre_completo', { ascending: true }),
-          supabase.auth.getUser(),
-        ])
+        if (tecnicosResp.error) {
+          throw new Error(`No se pudieron cargar los técnicos OT: ${tecnicosResp.error.message}`)
+        }
 
         const clientesData: ClienteOption[] = (clientesResp.data ?? []).map((item) => ({
           id: item.id,
@@ -248,28 +245,36 @@ function NuevaOTContent() {
           orden: item.orden,
         }))
 
-        let perfilesData: PerfilOption[] = []
+        const tecnicosRaw = (tecnicosResp.data ?? []) as OTTecnicoRow[]
+        const tecnicosData: SelectOption[] = tecnicosRaw.map((item) => ({
+          id: item.user_id,
+          label: item.cargo?.trim()
+            ? `${item.nombre_completo} - ${item.cargo}`
+            : item.nombre_completo,
+        }))
+
+        let supervisoresData: SelectOption[] = []
         let nextWarning = ''
 
-        if (tecnicosResp.error) {
+        if (supervisoresResp.error) {
           nextWarning =
-            'No se pudieron cargar los técnicos OT. Puedes crear la OT igual, pero sin asignar técnico o supervisor por ahora.'
+            'No se pudieron cargar los supervisores. Puedes crear la OT igual, pero sin asignar supervisor por ahora.'
         } else {
-          const tecnicosRaw = (tecnicosResp.data ?? []) as OTTecnico[]
-          perfilesData = tecnicosRaw.map((item) => ({
-            id: item.user_id,
-            label: `${item.nombre_completo} - ${item.cargo}`,
+          supervisoresData = ((supervisoresResp.data ?? []) as PerfilRow[]).map((item) => ({
+            id: item.id,
+            label: buildSupervisorLabel(item),
           }))
         }
 
-        const currentUserId = authResp.data.user?.id || ''
+        const tecnicoActual = tecnicosRaw.find((item) => item.user_id === user.id)
 
         if (!active) return
 
         setClientes(clientesData)
         setTiposServicio(tiposData)
         setEstados(estadosData)
-        setPerfiles(perfilesData)
+        setTecnicos(tecnicosData)
+        setSupervisores(supervisoresData)
         setWarning(nextWarning)
 
         const tipoGeneral =
@@ -287,7 +292,8 @@ function NuevaOTContent() {
           empresa_id: storedEmpresaId,
           tipo_servicio_id: prev.tipo_servicio_id || tipoGeneral,
           estado_id: prev.estado_id || estadoAsignada,
-          tecnico_responsable_id: prev.tecnico_responsable_id || currentUserId,
+          tecnico_responsable_id:
+            prev.tecnico_responsable_id || tecnicoActual?.user_id || '',
         }))
       } catch (err) {
         if (!active) return
@@ -348,13 +354,6 @@ function NuevaOTContent() {
       return 'Debes ingresar un título para la OT.'
     }
 
-    if (isUrgenciaOAsistencia && form.mostrar_nota_valor_hora) {
-      const valor = Number(form.valor_hora_uf)
-      if (Number.isNaN(valor) || valor <= 0) {
-        return 'Debes ingresar un valor hora UF válido.'
-      }
-    }
-
     return ''
   }
 
@@ -394,41 +393,11 @@ function NuevaOTContent() {
         fecha_programada: form.fecha_programada || null,
         titulo: form.titulo.trim(),
         descripcion_solicitud: form.descripcion_solicitud.trim() || null,
-        problema_reportado:
-          isUrgenciaOAsistencia || isAsesoria
-            ? form.problema_reportado.trim() || null
-            : null,
-        diagnostico:
-          isUrgenciaOAsistencia || isAsesoria
-            ? form.diagnostico.trim() || null
-            : null,
-        causa_probable: isUrgenciaOAsistencia ? form.causa_probable.trim() || null : null,
-        trabajo_realizado:
-          isPreventiva || isUrgenciaOAsistencia
-            ? form.trabajo_realizado.trim() || null
-            : null,
-        recomendaciones: form.recomendaciones.trim() || null,
+        problema_reportado: form.problema_reportado.trim() || null,
         tecnico_responsable_id: form.tecnico_responsable_id || null,
         supervisor_id: form.supervisor_id || null,
         prioridad: form.prioridad,
         requiere_checklist: form.requiere_checklist,
-        contacto_cliente_nombre: form.contacto_cliente_nombre.trim() || null,
-        contacto_cliente_cargo: form.contacto_cliente_cargo.trim() || null,
-        area_trabajo: form.area_trabajo.trim() || null,
-        resultado_servicio:
-          isPreventiva || isUrgenciaOAsistencia
-            ? form.resultado_servicio.trim() || null
-            : null,
-        hallazgos: isPreventiva ? form.hallazgos.trim() || null : null,
-        conclusiones_tecnicas: isAsesoria ? form.conclusiones_tecnicas.trim() || null : null,
-        mostrar_nota_valor_hora: isUrgenciaOAsistencia
-          ? form.mostrar_nota_valor_hora
-          : false,
-        valor_hora_uf:
-          isUrgenciaOAsistencia && form.mostrar_nota_valor_hora
-            ? Number(form.valor_hora_uf)
-            : 2.1,
-        observaciones_cierre: form.observaciones_cierre.trim() || null,
         created_by: user.id,
       }
 
@@ -484,7 +453,9 @@ function NuevaOTContent() {
       ) : (
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-            <SectionTitle title="Datos generales" />
+            <h2 className="text-lg font-semibold text-slate-900">
+              Datos generales
+            </h2>
 
             <div className="mt-5 grid gap-4 md:grid-cols-2">
               <div>
@@ -620,48 +591,6 @@ function NuevaOTContent() {
               </div>
             </div>
 
-            <div className="mt-5 grid gap-4 md:grid-cols-3">
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700">
-                  Contacto cliente
-                </label>
-                <input
-                  type="text"
-                  value={form.contacto_cliente_nombre}
-                  onChange={(e) =>
-                    handleChange('contacto_cliente_nombre', e.target.value)
-                  }
-                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
-                />
-              </div>
-
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700">
-                  Cargo contacto
-                </label>
-                <input
-                  type="text"
-                  value={form.contacto_cliente_cargo}
-                  onChange={(e) =>
-                    handleChange('contacto_cliente_cargo', e.target.value)
-                  }
-                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
-                />
-              </div>
-
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700">
-                  Área / sector de trabajo
-                </label>
-                <input
-                  type="text"
-                  value={form.area_trabajo}
-                  onChange={(e) => handleChange('area_trabajo', e.target.value)}
-                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
-                />
-              </div>
-            </div>
-
             {selectedTipo?.codigo === 'preventiva' ? (
               <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
                 Para OT de mantención preventiva, el checklist queda marcado automáticamente.
@@ -675,406 +604,61 @@ function NuevaOTContent() {
             ) : null}
           </div>
 
-          {isPreventiva ? (
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-              <SectionTitle
-                title="Información técnica"
-                subtitle="Estructura para mantenimiento preventivo."
-              />
+          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <h2 className="text-lg font-semibold text-slate-900">
+              Información técnica
+            </h2>
 
-              <div className="mt-5 grid gap-4">
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-slate-700">
-                    Título *
-                  </label>
-                  <input
-                    type="text"
-                    value={form.titulo}
-                    onChange={(e) => handleChange('titulo', e.target.value)}
-                    placeholder="Ejemplo: Mantenimiento preventivo sistema de bombeo"
-                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-slate-700">
-                    Objetivo del mantenimiento
-                  </label>
-                  <textarea
-                    value={form.descripcion_solicitud}
-                    onChange={(e) =>
-                      handleChange('descripcion_solicitud', e.target.value)
-                    }
-                    rows={4}
-                    placeholder="Describe el objetivo general del mantenimiento."
-                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-slate-700">
-                    Actividades ejecutadas
-                  </label>
-                  <textarea
-                    value={form.trabajo_realizado}
-                    onChange={(e) => handleChange('trabajo_realizado', e.target.value)}
-                    rows={4}
-                    placeholder="Describe las actividades preventivas ejecutadas."
-                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-slate-700">
-                    Hallazgos detectados
-                  </label>
-                  <textarea
-                    value={form.hallazgos}
-                    onChange={(e) => handleChange('hallazgos', e.target.value)}
-                    rows={4}
-                    placeholder="Registra hallazgos observados durante la revisión."
-                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-slate-700">
-                    Resultado del servicio
-                  </label>
-                  <textarea
-                    value={form.resultado_servicio}
-                    onChange={(e) =>
-                      handleChange('resultado_servicio', e.target.value)
-                    }
-                    rows={4}
-                    placeholder="Indica el resultado final del mantenimiento."
-                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-slate-700">
-                    Recomendaciones
-                  </label>
-                  <textarea
-                    value={form.recomendaciones}
-                    onChange={(e) => handleChange('recomendaciones', e.target.value)}
-                    rows={4}
-                    placeholder="Indica recomendaciones preventivas o acciones sugeridas."
-                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-500"
-                  />
-                </div>
-              </div>
-            </div>
-          ) : null}
-
-          {isUrgenciaOAsistencia ? (
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-              <SectionTitle
-                title="Información técnica"
-                subtitle="Estructura para urgencia o asistencia técnica."
-              />
-
-              <div className="mt-5 grid gap-4">
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-slate-700">
-                    Título *
-                  </label>
-                  <input
-                    type="text"
-                    value={form.titulo}
-                    onChange={(e) => handleChange('titulo', e.target.value)}
-                    placeholder="Ejemplo: Falla de bomba de producto"
-                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-slate-700">
-                    Solicitud del cliente
-                  </label>
-                  <textarea
-                    value={form.descripcion_solicitud}
-                    onChange={(e) =>
-                      handleChange('descripcion_solicitud', e.target.value)
-                    }
-                    rows={4}
-                    placeholder="Describe el requerimiento general del trabajo."
-                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-slate-700">
-                    Problema reportado
-                  </label>
-                  <textarea
-                    value={form.problema_reportado}
-                    onChange={(e) =>
-                      handleChange('problema_reportado', e.target.value)
-                    }
-                    rows={4}
-                    placeholder="Describe el problema informado por el cliente o supervisor."
-                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-slate-700">
-                    Diagnóstico
-                  </label>
-                  <textarea
-                    value={form.diagnostico}
-                    onChange={(e) => handleChange('diagnostico', e.target.value)}
-                    rows={4}
-                    placeholder="Describe el diagnóstico preliminar."
-                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-slate-700">
-                    Causa probable
-                  </label>
-                  <textarea
-                    value={form.causa_probable}
-                    onChange={(e) => handleChange('causa_probable', e.target.value)}
-                    rows={4}
-                    placeholder="Indica la causa probable del problema."
-                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-slate-700">
-                    Solución implementada
-                  </label>
-                  <textarea
-                    value={form.trabajo_realizado}
-                    onChange={(e) => handleChange('trabajo_realizado', e.target.value)}
-                    rows={4}
-                    placeholder="Describe la solución o labores realizadas."
-                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-slate-700">
-                    Resultado del servicio
-                  </label>
-                  <textarea
-                    value={form.resultado_servicio}
-                    onChange={(e) =>
-                      handleChange('resultado_servicio', e.target.value)
-                    }
-                    rows={4}
-                    placeholder="Indica el estado final luego de la intervención."
-                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-slate-700">
-                    Recomendaciones
-                  </label>
-                  <textarea
-                    value={form.recomendaciones}
-                    onChange={(e) => handleChange('recomendaciones', e.target.value)}
-                    rows={4}
-                    placeholder="Ingresa recomendaciones técnicas o comerciales."
-                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-500"
-                  />
-                </div>
-              </div>
-
-              <div className="mt-5 space-y-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <label className="flex items-center gap-3 text-sm font-medium text-slate-700">
-                  <input
-                    type="checkbox"
-                    checked={form.mostrar_nota_valor_hora}
-                    onChange={(e) =>
-                      handleChange('mostrar_nota_valor_hora', e.target.checked)
-                    }
-                  />
-                  Mostrar nota informativa de valor por hora
+            <div className="mt-5 grid gap-4">
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  Título *
                 </label>
+                <input
+                  type="text"
+                  value={form.titulo}
+                  onChange={(e) => handleChange('titulo', e.target.value)}
+                  placeholder="Ejemplo: Revisión sistema de bombeo"
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
+                />
+              </div>
 
-                {form.mostrar_nota_valor_hora ? (
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div>
-                      <label className="mb-2 block text-sm font-medium text-slate-700">
-                        Valor hora UF
-                      </label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        value={form.valor_hora_uf}
-                        onChange={(e) => handleChange('valor_hora_uf', e.target.value)}
-                        className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
-                      />
-                    </div>
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  Descripción de la solicitud
+                </label>
+                <textarea
+                  value={form.descripcion_solicitud}
+                  onChange={(e) =>
+                    handleChange('descripcion_solicitud', e.target.value)
+                  }
+                  rows={4}
+                  placeholder="Describe el requerimiento general del trabajo."
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-500"
+                />
+              </div>
 
-                    <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                      Esta nota quedará disponible para el PDF cliente solo cuando la actives.
-                    </div>
-                  </div>
-                ) : null}
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  Problema reportado
+                </label>
+                <textarea
+                  value={form.problema_reportado}
+                  onChange={(e) =>
+                    handleChange('problema_reportado', e.target.value)
+                  }
+                  rows={4}
+                  placeholder="Describe el problema informado por el cliente o supervisor."
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-500"
+                />
               </div>
             </div>
-          ) : null}
-
-          {isAsesoria ? (
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-              <SectionTitle
-                title="Información técnica"
-                subtitle="Estructura para consultoría o asesoría técnica."
-              />
-
-              <div className="mt-5 grid gap-4">
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-slate-700">
-                    Título *
-                  </label>
-                  <input
-                    type="text"
-                    value={form.titulo}
-                    onChange={(e) => handleChange('titulo', e.target.value)}
-                    placeholder="Ejemplo: Evaluación técnica de sistema"
-                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-slate-700">
-                    Objetivo de la asesoría
-                  </label>
-                  <textarea
-                    value={form.descripcion_solicitud}
-                    onChange={(e) =>
-                      handleChange('descripcion_solicitud', e.target.value)
-                    }
-                    rows={4}
-                    placeholder="Describe el objetivo de la visita o consultoría."
-                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-slate-700">
-                    Antecedentes observados
-                  </label>
-                  <textarea
-                    value={form.problema_reportado}
-                    onChange={(e) =>
-                      handleChange('problema_reportado', e.target.value)
-                    }
-                    rows={4}
-                    placeholder="Describe antecedentes relevantes observados en terreno o entregados por el cliente."
-                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-slate-700">
-                    Análisis técnico
-                  </label>
-                  <textarea
-                    value={form.diagnostico}
-                    onChange={(e) => handleChange('diagnostico', e.target.value)}
-                    rows={5}
-                    placeholder="Describe el análisis técnico realizado."
-                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-slate-700">
-                    Conclusiones técnicas
-                  </label>
-                  <textarea
-                    value={form.conclusiones_tecnicas}
-                    onChange={(e) =>
-                      handleChange('conclusiones_tecnicas', e.target.value)
-                    }
-                    rows={4}
-                    placeholder="Resume conclusiones técnicas de la asesoría."
-                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-slate-700">
-                    Recomendaciones
-                  </label>
-                  <textarea
-                    value={form.recomendaciones}
-                    onChange={(e) => handleChange('recomendaciones', e.target.value)}
-                    rows={4}
-                    placeholder="Indica recomendaciones técnicas."
-                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-500"
-                  />
-                </div>
-              </div>
-            </div>
-          ) : null}
-
-          {!isPreventiva && !isUrgenciaOAsistencia && !isAsesoria ? (
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-              <SectionTitle
-                title="Información técnica"
-                subtitle="Modo general de respaldo."
-              />
-
-              <div className="mt-5 grid gap-4">
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-slate-700">
-                    Título *
-                  </label>
-                  <input
-                    type="text"
-                    value={form.titulo}
-                    onChange={(e) => handleChange('titulo', e.target.value)}
-                    placeholder="Ejemplo: Revisión sistema de bombeo"
-                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-slate-700">
-                    Descripción de la solicitud
-                  </label>
-                  <textarea
-                    value={form.descripcion_solicitud}
-                    onChange={(e) =>
-                      handleChange('descripcion_solicitud', e.target.value)
-                    }
-                    rows={4}
-                    placeholder="Describe el requerimiento general del trabajo."
-                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-slate-700">
-                    Problema reportado
-                  </label>
-                  <textarea
-                    value={form.problema_reportado}
-                    onChange={(e) =>
-                      handleChange('problema_reportado', e.target.value)
-                    }
-                    rows={4}
-                    placeholder="Describe el problema informado por el cliente o supervisor."
-                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-500"
-                  />
-                </div>
-              </div>
-            </div>
-          ) : null}
+          </div>
 
           <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-            <SectionTitle title="Asignación" />
+            <h2 className="text-lg font-semibold text-slate-900">
+              Asignación
+            </h2>
 
             <div className="mt-5 grid gap-4 md:grid-cols-2">
               <div>
@@ -1089,9 +673,9 @@ function NuevaOTContent() {
                   className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
                 >
                   <option value="">Sin asignar</option>
-                  {perfiles.map((perfil) => (
-                    <option key={perfil.id} value={perfil.id}>
-                      {perfil.label}
+                  {tecnicos.map((tecnico) => (
+                    <option key={tecnico.id} value={tecnico.id}>
+                      {tecnico.label}
                     </option>
                   ))}
                 </select>
@@ -1107,7 +691,7 @@ function NuevaOTContent() {
                   className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
                 >
                   <option value="">Sin asignar</option>
-                  {perfiles.map((perfil) => (
+                  {supervisores.map((perfil) => (
                     <option key={perfil.id} value={perfil.id}>
                       {perfil.label}
                     </option>
