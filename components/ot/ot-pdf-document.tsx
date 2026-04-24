@@ -92,7 +92,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'flex-start',
     marginBottom: 16,
-    gap: 10,
   },
 
   headerLeft: {
@@ -163,7 +162,6 @@ const styles = StyleSheet.create({
   headerCardRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    gap: 6,
     marginBottom: 8,
   },
 
@@ -246,6 +244,10 @@ const styles = StyleSheet.create({
     color: '#92400e',
   },
 
+  photoGroupWrap: {
+    marginBottom: 12,
+  },
+
   photoGroupTitle: {
     fontSize: 9,
     fontWeight: 700,
@@ -255,59 +257,51 @@ const styles = StyleSheet.create({
   },
 
   photoCard: {
-  borderWidth: 1,
-  borderColor: '#e2e8f0',
-  borderRadius: 12,
-  marginBottom: 18,
-  backgroundColor: '#ffffff',
-  overflow: 'hidden',
-},
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 12,
+    marginBottom: 18,
+    backgroundColor: '#ffffff',
+    paddingTop: 14,
+    paddingHorizontal: 14,
+    paddingBottom: 14,
+  },
 
-photoImageWrap: {
-  height: 340,
-  borderBottomWidth: 1,
-  borderBottomColor: '#e2e8f0',
-  backgroundColor: '#ffffff',
-  justifyContent: 'center',
-  alignItems: 'center',
-  paddingHorizontal: 14,
-  paddingVertical: 14,
-},
+  photoImage: {
+    width: 460,
+    height: 260,
+    objectFit: 'contain',
+    alignSelf: 'center',
+    marginBottom: 12,
+  },
 
-photoImage: {
-  width: 430,
-  height: 310,
-  objectFit: 'contain',
-},
+  photoBody: {
+    borderTopWidth: 1,
+    borderTopColor: '#e2e8f0',
+    paddingTop: 10,
+  },
 
-photoBody: {
-  paddingHorizontal: 14,
-  paddingTop: 12,
-  paddingBottom: 16,
-  minHeight: 70,
-},
+  photoTitle: {
+    fontSize: 10.5,
+    fontWeight: 700,
+    color: '#0f172a',
+    marginBottom: 4,
+    lineHeight: 1.35,
+  },
 
-photoTitle: {
-  fontSize: 10.5,
-  fontWeight: 700,
-  color: '#0f172a',
-  marginBottom: 4,
-  lineHeight: 1.35,
-},
+  photoText: {
+    fontSize: 9.5,
+    lineHeight: 1.45,
+    color: '#334155',
+    marginTop: 4,
+  },
 
-photoText: {
-  fontSize: 9.5,
-  lineHeight: 1.45,
-  color: '#334155',
-  marginTop: 4,
-},
-
-photoFileName: {
-  fontSize: 8.5,
-  lineHeight: 1.35,
-  color: '#64748b',
-  marginTop: 4,
-},
+  photoFileName: {
+    fontSize: 8.5,
+    lineHeight: 1.35,
+    color: '#64748b',
+    marginTop: 4,
+  },
 
   receptionWrap: {
     width: '100%',
@@ -474,7 +468,7 @@ function PhotoGroup({
   if (items.length === 0) return null
 
   return (
-    <View wrap={false} style={{ marginBottom: 12 }}>
+    <View style={styles.photoGroupWrap}>
       <Text style={styles.photoGroupTitle}>{title}</Text>
 
       {items.map((item) => {
@@ -484,9 +478,7 @@ function PhotoGroup({
 
         return (
           <View key={item.id} wrap={false} style={styles.photoCard}>
-            <View style={styles.photoImageWrap}>
-              <Image src={item.archivo_url} style={styles.photoImage} />
-            </View>
+            <Image src={item.archivo_url} style={styles.photoImage} />
 
             <View style={styles.photoBody}>
               <Text style={styles.photoTitle}>
@@ -495,7 +487,9 @@ function PhotoGroup({
 
               {descripcion ? (
                 <Text style={styles.photoFileName}>{nombreArchivo}</Text>
-              ) : null}
+              ) : (
+                <Text style={styles.photoText}>Sin detalle informado.</Text>
+              )}
             </View>
           </View>
         )
@@ -503,6 +497,7 @@ function PhotoGroup({
     </View>
   )
 }
+
 export function OTPdfDocument({
   resumen,
   detalle,
