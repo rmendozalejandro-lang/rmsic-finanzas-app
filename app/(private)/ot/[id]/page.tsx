@@ -9,6 +9,14 @@ import { OTFirmasPanel } from '../../../../components/ot/ot-firmas-panel'
 import { supabase } from '../../../../lib/supabase/client'
 import type { OTResumen } from '../../../../lib/ot/types'
 
+type OTTecnico = {
+  user_id: string
+  nombre_completo: string
+  cargo: string
+  activo: boolean
+  puede_crear_ot: boolean
+  puede_cerrar_ot: boolean
+}
 type OTDetalle = {
   id: string
   folio: string | null
@@ -591,30 +599,33 @@ function OTDetalleContent() {
 
         setCurrentUserId(userId)
 
-        const perfilesResp = await supabase
-          .from('perfiles')
-          .select('id, email')
-          .order('email', { ascending: true })
+        const tecnicosResp = await supabase
+  .from('ot_tecnicos')
+  .select(
+    'user_id, nombre_completo, cargo, activo, puede_crear_ot, puede_cerrar_ot'
+  )
+  .eq('activo', true)
+  .order('nombre_completo', { ascending: true })
 
-        let perfilesSelectData: PerfilOption[] = []
-        let perfilesWarning = ''
-        let nextMap: Record<string, string> = {}
+let perfilesSelectData: PerfilOption[] = []
+let perfilesWarning = ''
+let nextMap: Record<string, string> = {}
 
-        if (perfilesResp.error) {
-          perfilesWarning = 'No se pudo cargar la lista de perfiles para asignación.'
-        } else {
-          const perfilesRaw = (perfilesResp.data ?? []) as PerfilMini[]
+if (tecnicosResp.error) {
+  perfilesWarning = 'No se pudo cargar la lista de técnicos OT.'
+} else {
+  const tecnicosRaw = (tecnicosResp.data ?? []) as OTTecnico[]
 
-          perfilesSelectData = perfilesRaw.map((item) => ({
-            id: item.id,
-            label: humanizePerson(item.email || item.id),
-          }))
+  perfilesSelectData = tecnicosRaw.map((item) => ({
+    id: item.user_id,
+    label: `${item.nombre_completo} - ${item.cargo}`,
+  }))
 
-          nextMap = perfilesRaw.reduce<Record<string, string>>((acc, item) => {
-            acc[item.id] = humanizePerson(item.email || item.id)
-            return acc
-          }, {})
-        }
+  nextMap = tecnicosRaw.reduce<Record<string, string>>((acc, item) => {
+    acc[item.user_id] = item.nombre_completo
+    return acc
+  }, {})
+}
 
         setResumen(resumenData)
         setDetalle(detalleData)

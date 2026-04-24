@@ -29,6 +29,15 @@ type PerfilOption = {
   label: string
 }
 
+type OTTecnico = {
+  user_id: string
+  nombre_completo: string
+  cargo: string
+  activo: boolean
+  puede_crear_ot: boolean
+  puede_cerrar_ot: boolean
+}
+
 type FormDataState = {
   empresa_id: string
   cliente_id: string
@@ -210,10 +219,16 @@ function NuevaOTContent() {
           throw new Error(`No se pudieron cargar los estados: ${estadosResp.error.message}`)
         }
 
-        const perfilesResp = await supabase
-          .from('perfiles')
-          .select('id, email')
-          .order('email', { ascending: true })
+        const [tecnicosResp, authResp] = await Promise.all([
+          supabase
+            .from('ot_tecnicos')
+            .select(
+              'user_id, nombre_completo, cargo, activo, puede_crear_ot, puede_cerrar_ot'
+            )
+            .eq('activo', true)
+            .order('nombre_completo', { ascending: true }),
+          supabase.auth.getUser(),
+        ])
 
         const clientesData: ClienteOption[] = (clientesResp.data ?? []).map((item) => ({
           id: item.id,
@@ -236,15 +251,18 @@ function NuevaOTContent() {
         let perfilesData: PerfilOption[] = []
         let nextWarning = ''
 
-        if (perfilesResp.error) {
+        if (tecnicosResp.error) {
           nextWarning =
-            'No se pudieron cargar los perfiles. Puedes crear la OT igual, pero sin asignar técnico o supervisor por ahora.'
+            'No se pudieron cargar los técnicos OT. Puedes crear la OT igual, pero sin asignar técnico o supervisor por ahora.'
         } else {
-          perfilesData = (perfilesResp.data ?? []).map((item) => ({
-            id: item.id,
-            label: item.email || item.id,
+          const tecnicosRaw = (tecnicosResp.data ?? []) as OTTecnico[]
+          perfilesData = tecnicosRaw.map((item) => ({
+            id: item.user_id,
+            label: `${item.nombre_completo} - ${item.cargo}`,
           }))
         }
+
+        const currentUserId = authResp.data.user?.id || ''
 
         if (!active) return
 
@@ -269,6 +287,7 @@ function NuevaOTContent() {
           empresa_id: storedEmpresaId,
           tipo_servicio_id: prev.tipo_servicio_id || tipoGeneral,
           estado_id: prev.estado_id || estadoAsignada,
+          tecnico_responsable_id: prev.tecnico_responsable_id || currentUserId,
         }))
       } catch (err) {
         if (!active) return

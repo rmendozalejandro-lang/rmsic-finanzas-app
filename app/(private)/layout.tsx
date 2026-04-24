@@ -260,6 +260,8 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
 
   const empresaActiva = empresas.find((empresa) => empresa.id === empresaActivaId)
 
+  const isTecnicoOT = usuarioRol === 'tecnico_ot'
+
   const empresasParaSelector = useMemo(() => {
     if (empresas.length > 0) return empresas
 
@@ -272,16 +274,42 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
 
   const visibleMenuItems = useMemo(() => {
     if (!rolResuelto) return []
+
+    if (isTecnicoOT) {
+      return menuItems.filter((item) => item.moduleKey === 'ot')
+    }
+
     return menuItems.filter((item) => canAccessModule(usuarioRol, item.moduleKey))
-  }, [usuarioRol, rolResuelto])
+  }, [usuarioRol, rolResuelto, isTecnicoOT])
 
   const isActiveRoute = (href: string) => {
     if (href === '/') return pathname === '/'
     return pathname === href || pathname.startsWith(`${href}/`)
   }
 
+  useEffect(() => {
+    if (!rolResuelto || !isTecnicoOT) return
+
+    const isOtRoute = pathname === '/ot' || pathname.startsWith('/ot/')
+    if (!isOtRoute) {
+      router.replace('/ot')
+    }
+  }, [isTecnicoOT, pathname, rolResuelto, router])
+
   const empresaActivaNombreVisual =
     empresaActiva?.nombre || empresaActivaNombreLocal || 'Sin empresa activa'
+
+  const appTitle = isTecnicoOT
+    ? 'Módulo OT'
+    : 'Plataforma financiera y administrativa'
+
+  const appSubtitle = isTecnicoOT
+    ? 'Órdenes de trabajo y gestión en terreno'
+    : 'Plataforma financiera y administrativa'
+
+  const sidebarSupportText = isTecnicoOT
+    ? 'Acceso restringido al módulo OT para ejecución, firmas y evidencia en terreno.'
+    : 'Gestión multiempresa con una visual clara, sobria y corporativa.'
 
   if (checkingSession) {
     return (
@@ -315,7 +343,7 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
                   Auren
                 </div>
                 <div className="text-xs text-slate-500">
-                  Plataforma financiera y administrativa
+                  {appSubtitle}
                 </div>
               </div>
             </div>
@@ -323,7 +351,7 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
 
           <div className="px-3 pb-3">
             <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-600">
-              Gestión multiempresa con una visual clara, sobria y corporativa.
+              {sidebarSupportText}
             </div>
           </div>
 
@@ -332,18 +360,18 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
               const active = isActiveRoute(item.href)
 
               return (
-               <Link
-  key={item.href}
-  href={item.href}
-  style={active ? { color: '#ffffff' } : undefined}
-  className={`flex items-center rounded-2xl px-3 py-3 text-sm font-medium no-underline transition ${
-    active
-      ? 'bg-[#163A5F] !text-white shadow-sm'
-      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-  }`}
->
-  {item.label}
-</Link>
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  style={active ? { color: '#ffffff' } : undefined}
+                  className={`flex items-center rounded-2xl px-3 py-3 text-sm font-medium no-underline transition ${
+                    active
+                      ? 'bg-[#163A5F] !text-white shadow-sm'
+                      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                  }`}
+                >
+                  {item.label}
+                </Link>
               )
             })}
           </nav>
@@ -367,7 +395,7 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
                 <div>
                   <p className="text-sm font-medium text-slate-500">Auren</p>
                   <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
-                    Plataforma financiera y administrativa
+                    {appTitle}
                   </h1>
                 </div>
 
@@ -425,17 +453,17 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
 
                   return (
                     <Link
-  key={item.href}
-  href={item.href}
-  style={active ? { color: '#ffffff' } : undefined}
-  className={`rounded-2xl px-4 py-2 text-sm font-medium no-underline transition ${
-    active
-      ? 'bg-[#163A5F] !text-white'
-      : 'bg-slate-100 text-slate-700 hover:bg-slate-200 hover:text-slate-900'
-  }`}
->
-  {item.label}
-</Link>
+                      key={item.href}
+                      href={item.href}
+                      style={active ? { color: '#ffffff' } : undefined}
+                      className={`rounded-2xl px-4 py-2 text-sm font-medium no-underline transition ${
+                        active
+                          ? 'bg-[#163A5F] !text-white'
+                          : 'bg-slate-100 text-slate-700 hover:bg-slate-200 hover:text-slate-900'
+                      }`}
+                    >
+                      {item.label}
+                    </Link>
                   )
                 })}
               </nav>
