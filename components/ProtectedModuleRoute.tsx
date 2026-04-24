@@ -65,19 +65,24 @@ export default function ProtectedModuleRoute({
 
         const rol = data?.rol || ''
 
-        if (!active) return
+if (!active) return
 
-        if (rol === 'tecnico_ot') {
-          if (moduleKey !== 'ot') {
-            router.replace('/ot')
-            return
-          }
+if (!rol) {
+  router.replace('/login')
+  return
+}
 
-          setAllowed(true)
-          return
-        }
+if (rol === 'tecnico_ot') {
+  if (moduleKey !== 'ot') {
+    router.replace('/ot')
+    return
+  }
 
-        setAllowed(true)
+  setAllowed(true)
+  return
+}
+
+setAllowed(true)
       } catch (_error) {
         router.replace('/login')
       } finally {

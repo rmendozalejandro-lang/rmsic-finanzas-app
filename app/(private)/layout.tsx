@@ -62,29 +62,19 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
   const [rolResuelto, setRolResuelto] = useState(false)
 
   const fetchUsuarioContexto = async (
-    accessToken: string,
     empresaId: string,
     email: string,
     userId: string
   ) => {
     try {
-      const apiKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-      const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+      const perfilResp = await supabase
+        .from('perfiles')
+        .select('id, email')
+        .eq('email', email)
+        .maybeSingle()
 
-      const headers = {
-        apikey: apiKey,
-        Authorization: `Bearer ${accessToken}`,
-      }
-
-      const perfilResp = await fetch(
-        `${baseUrl}/rest/v1/perfiles?select=id,email&email=eq.${encodeURIComponent(email)}`,
-        { headers }
-      )
-
-      const perfilJson = await perfilResp.json()
-
-      if (perfilResp.ok && perfilJson?.length) {
-        const perfil = perfilJson[0] as Perfil
+      if (!perfilResp.error && perfilResp.data) {
+        const perfil = perfilResp.data as Perfil
         setUsuarioNombre(perfil.email || email)
         setUsuarioEmail(perfil.email || email)
       } else {
@@ -92,15 +82,16 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
         setUsuarioEmail(email)
       }
 
-      const rolResp = await fetch(
-        `${baseUrl}/rest/v1/usuario_empresas?select=rol&usuario_id=eq.${userId}&empresa_id=eq.${empresaId}&activo=eq.true`,
-        { headers }
-      )
+      const rolResp = await supabase
+        .from('usuario_empresas')
+        .select('rol')
+        .eq('usuario_id', userId)
+        .eq('empresa_id', empresaId)
+        .eq('activo', true)
+        .maybeSingle()
 
-      const rolJson = await rolResp.json()
-
-      if (rolResp.ok && rolJson?.length) {
-        setUsuarioRol(rolJson[0].rol || '')
+      if (!rolResp.error && rolResp.data) {
+        setUsuarioRol(rolResp.data.rol || '')
       } else {
         setUsuarioRol('')
       }
@@ -116,7 +107,6 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
 
   const persistEmpresaActiva = async (
     empresa: Empresa,
-    accessToken?: string,
     email?: string,
     userId?: string
   ) => {
@@ -128,24 +118,17 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
     window.localStorage.setItem(STORAGE_NAME_KEY, empresa.nombre)
     window.dispatchEvent(new Event('empresa-activa-cambiada'))
 
-    let resolvedAccessToken = accessToken || ''
     let resolvedEmail = email || ''
     let resolvedUserId = userId || ''
 
-    if (!resolvedAccessToken || !resolvedEmail || !resolvedUserId) {
+    if (!resolvedEmail || !resolvedUserId) {
       const { data } = await supabase.auth.getSession()
-      resolvedAccessToken = data.session?.access_token || ''
       resolvedEmail = data.session?.user.email || ''
       resolvedUserId = data.session?.user.id || ''
     }
 
-    if (resolvedAccessToken && resolvedEmail && resolvedUserId) {
-      await fetchUsuarioContexto(
-        resolvedAccessToken,
-        empresa.id,
-        resolvedEmail,
-        resolvedUserId
-      )
+    if (resolvedEmail && resolvedUserId) {
+      await fetchUsuarioContexto(empresa.id, resolvedEmail, resolvedUserId)
     } else {
       setRolResuelto(true)
     }
@@ -170,66 +153,42 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
           return
         }
 
-        const accessToken = data.session.access_token
         const email = data.session.user.email || ''
         const userId = data.session.user.id || ''
-        const apiKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-        const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
 
         setUsuarioEmail(email)
 
-        const resp = await fetch(
-          `${baseUrl}/rest/v1/empresas?select=id,nombre&order=nombre.asc`,
-          {
-            headers: {
-              apikey: apiKey,
-              Authorization: `Bearer ${accessToken}`,
-            },
-          }
-        )
+        const empresasResp = await supabase
+          .from('empresas')
+          .select('id, nombre')
+          .order('nombre', { ascending: true })
 
-        const json = await resp.json()
+        if (empresasResp.error) {
+          console.error('No se pudieron cargar empresas:', empresasResp.error.message)
+          setRolResuelto(true)
+          return
+        }
 
-        if (resp.ok) {
-          const empresasData = (json ?? []) as Empresa[]
-          setEmpresas(empresasData)
+        const empresasData = (empresasResp.data ?? []) as Empresa[]
+        setEmpresas(empresasData)
 
-          const guardada = window.localStorage.getItem(STORAGE_ID_KEY)
+        const guardada = window.localStorage.getItem(STORAGE_ID_KEY)
 
-          if (guardada) {
-            const empresaGuardada = empresasData.find(
-              (empresa) => empresa.id === guardada
-            )
+        if (guardada) {
+          const empresaGuardada = empresasData.find(
+            (empresa) => empresa.id === guardada
+          )
 
-            if (empresaGuardada) {
-              await persistEmpresaActiva(
-                empresaGuardada,
-                accessToken,
-                email,
-                userId
-              )
-            } else if (empresasData.length > 0) {
-              await persistEmpresaActiva(
-                empresasData[0],
-                accessToken,
-                email,
-                userId
-              )
-            } else {
-              setRolResuelto(true)
-            }
+          if (empresaGuardada) {
+            await persistEmpresaActiva(empresaGuardada, email, userId)
           } else if (empresasData.length > 0) {
-            await persistEmpresaActiva(
-              empresasData[0],
-              accessToken,
-              email,
-              userId
-            )
+            await persistEmpresaActiva(empresasData[0], email, userId)
           } else {
             setRolResuelto(true)
           }
+        } else if (empresasData.length > 0) {
+          await persistEmpresaActiva(empresasData[0], email, userId)
         } else {
-          console.error('No se pudieron cargar empresas:', json)
           setRolResuelto(true)
         }
       } catch (error) {
@@ -240,7 +199,7 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
       }
     }
 
-    checkSessionAndLoadEmpresas()
+    void checkSessionAndLoadEmpresas()
   }, [router])
 
   const handleLogout = async () => {
@@ -254,12 +213,15 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
 
     if (!empresaSeleccionada) return
 
-    await persistEmpresaActiva(empresaSeleccionada)
+    const { data } = await supabase.auth.getSession()
+    const email = data.session?.user.email || ''
+    const userId = data.session?.user.id || ''
+
+    await persistEmpresaActiva(empresaSeleccionada, email, userId)
     router.refresh()
   }
 
   const empresaActiva = empresas.find((empresa) => empresa.id === empresaActivaId)
-
   const isTecnicoOT = usuarioRol === 'tecnico_ot'
 
   const empresasParaSelector = useMemo(() => {
