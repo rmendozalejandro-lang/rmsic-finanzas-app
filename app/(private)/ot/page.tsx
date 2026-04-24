@@ -7,31 +7,36 @@ import { OTDataTable } from '../../../components/ot/ot-data-table'
 import { supabase } from '../../../lib/supabase/client'
 import type { OTResumen } from '../../../lib/ot/types'
 
+const STORAGE_ID_KEY = 'empresa_activa_id'
+
 function OTPageContent() {
   const [ots, setOts] = useState<OTResumen[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+
+  const [checkingRole, setCheckingRole] = useState(true)
+  const [canManageTecnicos, setCanManageTecnicos] = useState(false)
 
   useEffect(() => {
     let active = true
 
     const load = async () => {
       try {
-       setLoading(true)
-setError('')
+        setLoading(true)
+        setError('')
 
-const { data, error } = await supabase
-  .from('ot_vw_resumen')
-  .select('*')
-  .order('created_at', { ascending: false })
+        const { data, error } = await supabase
+          .from('ot_vw_resumen')
+          .select('*')
+          .order('created_at', { ascending: false })
 
-if (error) {
-  throw new Error(`No se pudo cargar el listado OT: ${error.message}`)
-}
+        if (error) {
+          throw new Error(`No se pudo cargar el listado OT: ${error.message}`)
+        }
 
-if (active) {
-  setOts((data ?? []) as OTResumen[])
-}
+        if (active) {
+          setOts((data ?? []) as OTResumen[])
+        }
       } catch (err) {
         if (active) {
           setError(
@@ -46,6 +51,71 @@ if (active) {
     }
 
     void load()
+
+    return () => {
+      active = false
+    }
+  }, [])
+
+  useEffect(() => {
+    let active = true
+
+    const resolveRole = async () => {
+      try {
+        setCheckingRole(true)
+
+        const {
+          data: { session },
+          error: sessionError,
+        } = await supabase.auth.getSession()
+
+        if (sessionError || !session) {
+          if (active) {
+            setCanManageTecnicos(false)
+          }
+          return
+        }
+
+        const empresaActivaId =
+          typeof window !== 'undefined'
+            ? window.localStorage.getItem(STORAGE_ID_KEY) || ''
+            : ''
+
+        if (!empresaActivaId) {
+          if (active) {
+            setCanManageTecnicos(false)
+          }
+          return
+        }
+
+        const { data, error } = await supabase
+          .from('usuario_empresas')
+          .select('rol')
+          .eq('usuario_id', session.user.id)
+          .eq('empresa_id', empresaActivaId)
+          .eq('activo', true)
+          .maybeSingle()
+
+        if (error) {
+          if (active) {
+            setCanManageTecnicos(false)
+          }
+          return
+        }
+
+        const rol = data?.rol || ''
+
+        if (active) {
+          setCanManageTecnicos(rol !== 'tecnico_ot')
+        }
+      } finally {
+        if (active) {
+          setCheckingRole(false)
+        }
+      }
+    }
+
+    void resolveRole()
 
     return () => {
       active = false
@@ -79,14 +149,23 @@ if (active) {
           </p>
         </div>
 
-        <div className="flex gap-3">
-        <Link
-  href="/ot/nueva"
-  style={{ backgroundColor: '#163A5F', color: '#ffffff' }}
-  className="inline-flex items-center justify-center rounded-xl bg-[#163A5F] px-4 py-2 text-sm font-semibold text-white hover:bg-[#245C90]"
->
-  Nueva OT
-</Link>
+        <div className="flex flex-wrap gap-3">
+          {canManageTecnicos && !checkingRole ? (
+            <Link
+              href="/ot/tecnicos"
+              className="inline-flex items-center justify-center rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+            >
+              Técnicos OT
+            </Link>
+          ) : null}
+
+          <Link
+            href="/ot/nueva"
+            style={{ backgroundColor: '#163A5F', color: '#ffffff' }}
+            className="inline-flex items-center justify-center rounded-xl bg-[#163A5F] px-4 py-2 text-sm font-semibold text-white hover:bg-[#245C90]"
+          >
+            Nueva OT
+          </Link>
         </div>
       </div>
 
