@@ -90,19 +90,22 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'flex-start',
     marginBottom: 16,
-    gap: 14,
+    gap: 10,
   },
 
   headerLeft: {
     flexDirection: 'row',
     flexGrow: 1,
     flexShrink: 1,
+    flexBasis: 0,
+    maxWidth: 360,
   },
 
   logoBox: {
-    width: 94,
-    height: 62,
+    width: 82,
+    height: 58,
     borderWidth: 1,
     borderColor: '#cbd5e1',
     borderRadius: 12,
@@ -120,8 +123,9 @@ const styles = StyleSheet.create({
 
   headerTextWrap: {
     marginLeft: 14,
-    flexShrink: 1,
     flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 0,
   },
 
   company: {
@@ -132,47 +136,49 @@ const styles = StyleSheet.create({
   },
 
   mainTitle: {
-    fontSize: 19,
+    fontSize: 17,
     fontWeight: 700,
     marginTop: 6,
     color: '#0f172a',
+    lineHeight: 1.2,
   },
 
   subTitle: {
-    fontSize: 10,
+    fontSize: 9.5,
     color: '#475569',
     marginTop: 8,
-    lineHeight: 1.45,
+    lineHeight: 1.35,
   },
 
   headerCard: {
-    width: 190,
+    width: 155,
     borderWidth: 1,
     borderColor: '#e2e8f0',
     backgroundColor: '#f8fafc',
     borderRadius: 14,
-    padding: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
   },
 
   headerCardRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    gap: 8,
-    marginBottom: 10,
+    gap: 6,
+    marginBottom: 8,
   },
 
   fieldLabel: {
-    fontSize: 7.5,
+    fontSize: 7.2,
     color: '#64748b',
     fontWeight: 700,
     letterSpacing: 0.8,
   },
 
   fieldValue: {
-    fontSize: 10,
+    fontSize: 9.5,
     color: '#0f172a',
-    marginTop: 4,
-    lineHeight: 1.35,
+    marginTop: 3,
+    lineHeight: 1.3,
   },
 
   section: {
@@ -195,12 +201,11 @@ const styles = StyleSheet.create({
   rowTwo: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    gap: 8,
     marginBottom: 8,
   },
 
   compactCardHalf: {
-    width: '48.8%',
+    width: 245,
     borderWidth: 1,
     borderColor: '#e2e8f0',
     borderRadius: 10,
@@ -270,8 +275,8 @@ const styles = StyleSheet.create({
   },
 
   photoImage: {
-    width: 500,
-    height: 236,
+    width: 480,
+    height: 230,
     objectFit: 'contain',
   },
 
@@ -634,22 +639,13 @@ export function OTPdfDocument({
               title="ACTIVIDADES EJECUTADAS"
               value={detalle.trabajo_realizado}
             />
-            <TextBlock
-              title="HALLAZGOS DETECTADOS"
-              value={detalle.hallazgos}
-            />
+            <TextBlock title="HALLAZGOS DETECTADOS" value={detalle.hallazgos} />
             <TextBlock
               title="RESULTADO DEL SERVICIO"
               value={detalle.resultado_servicio}
             />
-            <TextBlock
-              title="RECOMENDACIONES"
-              value={detalle.recomendaciones}
-            />
-            <TextBlock
-              title="OBSERVACIONES"
-              value={detalle.observaciones_cierre}
-            />
+            <TextBlock title="RECOMENDACIONES" value={detalle.recomendaciones} />
+            <TextBlock title="OBSERVACIONES" value={detalle.observaciones_cierre} />
           </View>
         ) : null}
 
@@ -664,10 +660,7 @@ export function OTPdfDocument({
               title="PROBLEMA DETECTADO"
               value={detalle.problema_reportado}
             />
-            <TextBlock
-              title="CAUSA PROBABLE"
-              value={detalle.causa_probable}
-            />
+            <TextBlock title="CAUSA PROBABLE" value={detalle.causa_probable} />
             <TextBlock
               title="SOLUCIÓN IMPLEMENTADA"
               value={detalle.trabajo_realizado}
@@ -676,14 +669,8 @@ export function OTPdfDocument({
               title="RESULTADO DEL SERVICIO"
               value={detalle.resultado_servicio}
             />
-            <TextBlock
-              title="RECOMENDACIONES"
-              value={detalle.recomendaciones}
-            />
-            <TextBlock
-              title="OBSERVACIONES"
-              value={detalle.observaciones_cierre}
-            />
+            <TextBlock title="RECOMENDACIONES" value={detalle.recomendaciones} />
+            <TextBlock title="OBSERVACIONES" value={detalle.observaciones_cierre} />
 
             {detalle.mostrar_nota_valor_hora ? (
               <View style={styles.noteBox}>
@@ -719,22 +706,13 @@ export function OTPdfDocument({
               title="ANTECEDENTES OBSERVADOS"
               value={detalle.problema_reportado}
             />
-            <TextBlock
-              title="ANÁLISIS TÉCNICO"
-              value={detalle.diagnostico}
-            />
+            <TextBlock title="ANÁLISIS TÉCNICO" value={detalle.diagnostico} />
             <TextBlock
               title="CONCLUSIONES TÉCNICAS"
               value={detalle.conclusiones_tecnicas}
             />
-            <TextBlock
-              title="RECOMENDACIONES"
-              value={detalle.recomendaciones}
-            />
-            <TextBlock
-              title="OBSERVACIONES"
-              value={detalle.observaciones_cierre}
-            />
+            <TextBlock title="RECOMENDACIONES" value={detalle.recomendaciones} />
+            <TextBlock title="OBSERVACIONES" value={detalle.observaciones_cierre} />
           </View>
         ) : null}
 
@@ -749,10 +727,7 @@ export function OTPdfDocument({
               title="PROBLEMA DETECTADO"
               value={detalle.problema_reportado}
             />
-            <TextBlock
-              title="DIAGNÓSTICO"
-              value={detalle.diagnostico}
-            />
+            <TextBlock title="DIAGNÓSTICO" value={detalle.diagnostico} />
             <TextBlock
               title="SOLUCIÓN IMPLEMENTADA"
               value={detalle.trabajo_realizado}
@@ -761,14 +736,8 @@ export function OTPdfDocument({
               title="RESULTADO DEL SERVICIO"
               value={detalle.resultado_servicio}
             />
-            <TextBlock
-              title="RECOMENDACIONES"
-              value={detalle.recomendaciones}
-            />
-            <TextBlock
-              title="OBSERVACIONES"
-              value={detalle.observaciones_cierre}
-            />
+            <TextBlock title="RECOMENDACIONES" value={detalle.recomendaciones} />
+            <TextBlock title="OBSERVACIONES" value={detalle.observaciones_cierre} />
           </View>
         ) : null}
 
