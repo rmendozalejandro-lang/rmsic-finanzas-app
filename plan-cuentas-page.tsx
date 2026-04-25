@@ -13,16 +13,16 @@ type CuentaContable = {
   tipo: TipoCuenta | string
   acepta_movimientos: boolean
   activa: boolean
-  updated_at: string | null
+  created_at: string
+  updated_at: string
+  created_by?: string | null
+  updated_by?: string | null
   deleted_at?: string | null
+  deleted_by?: string | null
   descripcion?: string | null
   naturaleza?: string | null
   nivel?: number | null
   parent_id?: string | null
-  movimientos_count?: number | null
-  total_ingresos?: number | null
-  total_egresos?: number | null
-  ultima_fecha_movimiento?: string | null
 }
 
 type FormState = {
@@ -74,14 +74,6 @@ function formatDate(value?: string | null) {
   } catch {
     return '-'
   }
-}
-
-function formatCLP(value?: number | null) {
-  return new Intl.NumberFormat('es-CL', {
-    style: 'currency',
-    currency: 'CLP',
-    maximumFractionDigits: 0,
-  }).format(Number(value || 0))
 }
 
 function inferNivel(codigo: string) {
@@ -153,8 +145,28 @@ export default function PlanCuentasPage() {
       setError('')
 
       const { data, error: cuentasError } = await supabase
-        .from('v_cuentas_contables_resumen')
-        .select('*')
+        .from('cuentas_contables')
+        .select(
+          `
+            id,
+            empresa_id,
+            codigo,
+            nombre,
+            tipo,
+            acepta_movimientos,
+            activa,
+            created_at,
+            updated_at,
+            created_by,
+            updated_by,
+            deleted_at,
+            deleted_by,
+            descripcion,
+            naturaleza,
+            nivel,
+            parent_id
+          `
+        )
         .eq('empresa_id', empresaId)
         .order('codigo', { ascending: true })
 
@@ -199,22 +211,6 @@ export default function PlanCuentasPage() {
     }
   }, [])
 
-  const resumen = useMemo(() => {
-    return cuentas.reduce(
-      (acc, cuenta) => {
-        const archivada = !cuenta.activa || Boolean(cuenta.deleted_at)
-        if (archivada) return acc
-
-        acc.cuentas += 1
-        acc.movimientos += Number(cuenta.movimientos_count || 0)
-        acc.ingresos += Number(cuenta.total_ingresos || 0)
-        acc.egresos += Number(cuenta.total_egresos || 0)
-        return acc
-      },
-      { cuentas: 0, movimientos: 0, ingresos: 0, egresos: 0 }
-    )
-  }, [cuentas])
-
   const cuentasFiltradas = useMemo(() => {
     const texto = busqueda.trim().toLowerCase()
 
@@ -256,17 +252,7 @@ export default function PlanCuentasPage() {
     setSuccess('')
   }
 
-  const openEdit = async (cuenta: CuentaContable) => {
-    setError('')
-    setSuccess('')
-
-    const { data } = await supabase
-      .from('cuentas_contables')
-      .select('descripcion')
-      .eq('id', cuenta.id)
-      .eq('empresa_id', empresaActivaId)
-      .maybeSingle()
-
+  const openEdit = (cuenta: CuentaContable) => {
     setForm({
       id: cuenta.id,
       codigo: cuenta.codigo,
@@ -275,10 +261,12 @@ export default function PlanCuentasPage() {
       naturaleza: cuenta.naturaleza || getNaturalezaByTipo(cuenta.tipo as TipoCuenta),
       nivel: cuenta.nivel ? String(cuenta.nivel) : '',
       parent_id: cuenta.parent_id || '',
-      descripcion: data?.descripcion || cuenta.descripcion || '',
+      descripcion: cuenta.descripcion || '',
       acepta_movimientos: cuenta.acepta_movimientos,
     })
     setShowForm(true)
+    setError('')
+    setSuccess('')
   }
 
   const handleTipoChange = (tipo: TipoCuenta) => {
@@ -379,13 +367,8 @@ export default function PlanCuentasPage() {
       return
     }
 
-    const movimientosCount = Number(cuenta.movimientos_count || 0)
-    const detalleUso = movimientosCount > 0
-      ? `\n\nAdvertencia: esta cuenta tiene ${movimientosCount} movimiento(s) asociado(s). Se conservará el historial, pero la cuenta dejará de estar disponible para nuevos registros.`
-      : ''
-
     const confirmed = window.confirm(
-      `¿Deseas archivar la cuenta ${cuenta.codigo} - ${cuenta.nombre}? No se borrará de la base de datos.${detalleUso}`
+      `¿Deseas archivar la cuenta ${cuenta.codigo} - ${cuenta.nombre}? No se borrará de la base de datos.`
     )
 
     if (!confirmed) return
@@ -504,7 +487,7 @@ export default function PlanCuentasPage() {
             </h1>
             <p className="mt-2 max-w-3xl text-sm text-slate-600">
               Administra las cuentas contables de la empresa activa. Esta pantalla usa la tabla
-              cuentas_contables y muestra el uso real de cada cuenta desde movimientos.
+              cuentas_contables y no elimina registros físicamente.
             </p>
             <p className="mt-2 text-sm text-slate-500">
               Empresa activa:{' '}
@@ -523,25 +506,6 @@ export default function PlanCuentasPage() {
               Nueva cuenta
             </button>
           )}
-        </div>
-      </section>
-
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
-          <p className="text-sm text-slate-500">Cuentas activas</p>
-          <p className="mt-2 text-2xl font-semibold text-slate-900">{resumen.cuentas}</p>
-        </div>
-        <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
-          <p className="text-sm text-slate-500">Movimientos asociados</p>
-          <p className="mt-2 text-2xl font-semibold text-slate-900">{resumen.movimientos}</p>
-        </div>
-        <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
-          <p className="text-sm text-slate-500">Ingresos asociados</p>
-          <p className="mt-2 text-2xl font-semibold text-emerald-700">{formatCLP(resumen.ingresos)}</p>
-        </div>
-        <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
-          <p className="text-sm text-slate-500">Egresos asociados</p>
-          <p className="mt-2 text-2xl font-semibold text-rose-700">{formatCLP(resumen.egresos)}</p>
         </div>
       </section>
 
@@ -782,11 +746,10 @@ export default function PlanCuentasPage() {
                   <th className="px-4 py-3">Cuenta</th>
                   <th className="px-4 py-3">Tipo</th>
                   <th className="px-4 py-3">Naturaleza</th>
+                  <th className="px-4 py-3">Nivel</th>
                   <th className="px-4 py-3">Mov.</th>
-                  <th className="px-4 py-3">Ingresos</th>
-                  <th className="px-4 py-3">Egresos</th>
-                  <th className="px-4 py-3">Último mov.</th>
                   <th className="px-4 py-3">Estado</th>
+                  <th className="px-4 py-3">Actualizada</th>
                   <th className="px-4 py-3 text-right">Acciones</th>
                 </tr>
               </thead>
@@ -794,14 +757,13 @@ export default function PlanCuentasPage() {
               <tbody className="divide-y divide-slate-100 bg-white">
                 {cuentasFiltradas.length === 0 ? (
                   <tr>
-                    <td colSpan={10} className="px-4 py-8 text-center text-slate-500">
+                    <td colSpan={9} className="px-4 py-8 text-center text-slate-500">
                       No hay cuentas contables para los filtros seleccionados.
                     </td>
                   </tr>
                 ) : (
                   cuentasFiltradas.map((cuenta) => {
                     const archivada = !cuenta.activa || Boolean(cuenta.deleted_at)
-                    const movimientosCount = Number(cuenta.movimientos_count || 0)
 
                     return (
                       <tr key={cuenta.id} className="align-top">
@@ -810,9 +772,11 @@ export default function PlanCuentasPage() {
                         </td>
                         <td className="px-4 py-3">
                           <div className="font-medium text-slate-900">{cuenta.nombre}</div>
-                          <div className="mt-1 text-xs text-slate-500">
-                            {cuenta.acepta_movimientos ? 'Acepta movimientos' : 'Cuenta agrupadora'}
-                          </div>
+                          {cuenta.descripcion && (
+                            <div className="mt-1 max-w-lg text-xs text-slate-500">
+                              {cuenta.descripcion}
+                            </div>
+                          )}
                         </td>
                         <td className="whitespace-nowrap px-4 py-3 text-slate-700">
                           {tipoLabels[cuenta.tipo as TipoCuenta] || cuenta.tipo}
@@ -820,17 +784,11 @@ export default function PlanCuentasPage() {
                         <td className="whitespace-nowrap px-4 py-3 text-slate-700">
                           {cuenta.naturaleza || '-'}
                         </td>
-                        <td className="whitespace-nowrap px-4 py-3 font-semibold text-slate-900">
-                          {movimientosCount}
+                        <td className="whitespace-nowrap px-4 py-3 text-slate-700">
+                          {cuenta.nivel ?? '-'}
                         </td>
-                        <td className="whitespace-nowrap px-4 py-3 text-emerald-700">
-                          {formatCLP(cuenta.total_ingresos)}
-                        </td>
-                        <td className="whitespace-nowrap px-4 py-3 text-rose-700">
-                          {formatCLP(cuenta.total_egresos)}
-                        </td>
-                        <td className="whitespace-nowrap px-4 py-3 text-slate-600">
-                          {formatDate(cuenta.ultima_fecha_movimiento)}
+                        <td className="whitespace-nowrap px-4 py-3 text-slate-700">
+                          {cuenta.acepta_movimientos ? 'Sí' : 'No'}
                         </td>
                         <td className="whitespace-nowrap px-4 py-3">
                           <span
@@ -843,12 +801,15 @@ export default function PlanCuentasPage() {
                             {archivada ? 'Archivada' : 'Activa'}
                           </span>
                         </td>
+                        <td className="whitespace-nowrap px-4 py-3 text-slate-600">
+                          {formatDate(cuenta.updated_at)}
+                        </td>
                         <td className="whitespace-nowrap px-4 py-3 text-right">
                           {canManage ? (
                             <div className="flex justify-end gap-2">
                               <button
                                 type="button"
-                                onClick={() => void openEdit(cuenta)}
+                                onClick={() => openEdit(cuenta)}
                                 className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
                               >
                                 Editar
@@ -866,11 +827,7 @@ export default function PlanCuentasPage() {
                                 <button
                                   type="button"
                                   onClick={() => void handleArchive(cuenta)}
-                                  className={`rounded-xl border px-3 py-1.5 text-xs font-medium ${
-                                    movimientosCount > 0
-                                      ? 'border-amber-300 text-amber-700 hover:bg-amber-50'
-                                      : 'border-rose-300 text-rose-700 hover:bg-rose-50'
-                                  }`}
+                                  className="rounded-xl border border-rose-300 px-3 py-1.5 text-xs font-medium text-rose-700 hover:bg-rose-50"
                                 >
                                   Archivar
                                 </button>
