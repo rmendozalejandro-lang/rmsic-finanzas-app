@@ -663,7 +663,7 @@ export default function EgresosPage() {
       const descripcion = (item.descripcion || '').toLowerCase()
       const proveedorId = item.proveedor_id || ''
       const fecha = item.fecha || ''
-      const search = filters.text.trim().toLowerCase()
+      const search = filters.texto.trim().toLowerCase()
 
       const matchesEstado = filters.estado === 'todos' || estado === filters.estado
       const matchesDesde = !filters.fechaDesde || fecha >= filters.fechaDesde
@@ -817,7 +817,7 @@ export default function EgresosPage() {
               <label className="mb-1 block text-sm font-medium text-slate-700">Buscar</label>
               <input
                 type="text"
-                value={filters.text}
+                value={filters.texto}
                 onChange={(e) => setFilters((prev) => ({ ...prev, text: e.target.value }))}
                 placeholder="Descripción, proveedor o categoría"
                 className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
