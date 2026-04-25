@@ -273,23 +273,23 @@ export default function EgresosPage() {
         rolResp,
       ] = await Promise.all([
         fetch(
-          `${baseUrl}/rest/v1/proveedores?select=id,nombre&empresa_id=eq.${empresaActivaId}&order=nombre.asc`,
+          `${baseUrl}/rest/v1/proveedores?select=id,nombre&empresa_id=eq.${empresaActivaId}&activo=eq.true&deleted_at=is.null&order=nombre.asc`,
           { headers }
         ),
         fetch(
-          `${baseUrl}/rest/v1/cuentas_bancarias?select=id,banco,nombre_cuenta&empresa_id=eq.${empresaActivaId}&order=banco.asc`,
+          `${baseUrl}/rest/v1/cuentas_bancarias?select=id,banco,nombre_cuenta&empresa_id=eq.${empresaActivaId}&activa=eq.true&deleted_at=is.null&order=banco.asc`,
           { headers }
         ),
         fetch(
-          `${baseUrl}/rest/v1/categorias?select=id,empresa_id,nombre,tipo,clasificacion_financiera,activa&empresa_id=eq.${empresaActivaId}&tipo=eq.egreso&activa=eq.true&order=nombre.asc`,
+          `${baseUrl}/rest/v1/categorias?select=id,empresa_id,nombre,tipo,clasificacion_financiera,activa&empresa_id=eq.${empresaActivaId}&tipo=eq.egreso&activa=eq.true&deleted_at=is.null&order=nombre.asc`,
           { headers }
         ),
         fetch(
-          `${baseUrl}/rest/v1/centros_costo?select=id,empresa_id,nombre&empresa_id=eq.${empresaActivaId}&order=nombre.asc`,
+          `${baseUrl}/rest/v1/centros_costo?select=id,empresa_id,nombre&empresa_id=eq.${empresaActivaId}&activo=eq.true&deleted_at=is.null&order=nombre.asc`,
           { headers }
         ),
         fetch(
-          `${baseUrl}/rest/v1/movimientos?select=id,fecha,tipo_documento,numero_documento,descripcion,tratamiento_tributario,monto_neto,monto_exento,monto_iva,impuesto_especifico,monto_total,estado,proveedor_id,categoria_id,centro_costo_id,cuenta_bancaria_id,empresa_id&empresa_id=eq.${empresaActivaId}&tipo_movimiento=eq.egreso&order=fecha.desc`,
+          `${baseUrl}/rest/v1/movimientos?select=id,fecha,tipo_documento,numero_documento,descripcion,tratamiento_tributario,monto_neto,monto_exento,monto_iva,impuesto_especifico,monto_total,estado,proveedor_id,categoria_id,centro_costo_id,cuenta_bancaria_id,empresa_id,activo,deleted_at&empresa_id=eq.${empresaActivaId}&tipo_movimiento=eq.egreso&activo=eq.true&deleted_at=is.null&order=fecha.desc`,
           { headers }
         ),
         fetch(
@@ -534,10 +534,13 @@ export default function EgresosPage() {
       }
 
       const accessToken = sessionData.session.access_token
+      const userId = sessionData.session.user.id
       const apiKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
       const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
 
-      const payload = {
+      const updatedAt = new Date().toISOString()
+
+      const basePayload = {
         empresa_id: empresaActivaId,
         tipo_movimiento: 'egreso',
         fecha: formData.fecha,
@@ -560,11 +563,23 @@ export default function EgresosPage() {
         categoria_id: formData.categoria_id || null,
         centro_costo_id: formData.centro_costo_id || null,
         cuenta_bancaria_id: formData.cuenta_bancaria_id || null,
+        updated_by: userId,
+        updated_at: updatedAt,
       }
 
       const isEditing = Boolean(editingId)
+      const payload = isEditing
+        ? basePayload
+        : {
+            ...basePayload,
+            created_by: userId,
+            activo: true,
+            deleted_at: null,
+            deleted_by: null,
+          }
+
       const url = isEditing
-        ? `${baseUrl}/rest/v1/movimientos?id=eq.${editingId}`
+        ? `${baseUrl}/rest/v1/movimientos?id=eq.${editingId}&empresa_id=eq.${empresaActivaId}&tipo_movimiento=eq.egreso&activo=eq.true&deleted_at=is.null`
         : `${baseUrl}/rest/v1/movimientos`
       const method = isEditing ? 'PATCH' : 'POST'
 
@@ -601,14 +616,15 @@ export default function EgresosPage() {
     }
   }
 
-  const handleAnular = async (item: Egreso) => {
+  const handleArchivar = async (item: Egreso) => {
     if (!isAdmin) {
-      setError('Solo el administrador puede anular egresos.')
+      setError('Solo el administrador puede archivar egresos.')
       return
     }
-    if (item.estado?.toLowerCase() === 'anulado') return
 
-    const confirmacion = window.confirm(`¿Desea anular el egreso "${item.descripcion}"?`)
+    const confirmacion = window.confirm(
+      `¿Desea archivar el egreso "${item.descripcion}"? No se borrará de la base de datos.`
+    )
     if (!confirmacion) return
 
     try {
@@ -622,36 +638,48 @@ export default function EgresosPage() {
       }
 
       const accessToken = sessionData.session.access_token
+      const userId = sessionData.session.user.id
       const apiKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
       const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+      const deletedAt = new Date().toISOString()
 
-      const resp = await fetch(`${baseUrl}/rest/v1/movimientos?id=eq.${item.id}`, {
-        method: 'PATCH',
-        headers: {
-          apikey: apiKey,
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-          Prefer: 'return=representation',
-        },
-        body: JSON.stringify({ estado: 'anulado' }),
-      })
+      const resp = await fetch(
+        `${baseUrl}/rest/v1/movimientos?id=eq.${item.id}&empresa_id=eq.${empresaActivaId}&tipo_movimiento=eq.egreso&activo=eq.true&deleted_at=is.null`,
+        {
+          method: 'PATCH',
+          headers: {
+            apikey: apiKey,
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+            Prefer: 'return=representation',
+          },
+          body: JSON.stringify({
+            estado: 'anulado',
+            activo: false,
+            deleted_at: deletedAt,
+            deleted_by: userId,
+            updated_by: userId,
+            updated_at: deletedAt,
+          }),
+        }
+      )
 
       const json = await resp.json()
       if (!resp.ok) {
         console.error(json)
-        setError('No se pudo anular el egreso.')
+        setError('No se pudo archivar el egreso.')
         return
       }
 
       if (editingId === item.id) closeModal()
 
-      setSuccess('Egreso anulado correctamente.')
+      setSuccess('Egreso archivado correctamente.')
       await loadData()
     } catch (err) {
       if (err instanceof Error) {
         setError(err.message)
       } else {
-        setError('Error desconocido al anular el egreso.')
+        setError('Error desconocido al archivar el egreso.')
       }
     }
   }
@@ -741,7 +769,7 @@ export default function EgresosPage() {
           <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
             El usuario actual tiene rol{' '}
             <span className="font-semibold">{usuarioRol || 'sin rol asignado'}</span>.
-            Solo el administrador puede registrar, editar o anular egresos.
+            Solo el administrador puede registrar, editar o archivar egresos.
           </div>
         ) : null}
 
@@ -818,7 +846,7 @@ export default function EgresosPage() {
               <input
                 type="text"
                 value={filters.texto}
-                onChange={(e) => setFilters((prev) => ({ ...prev, text: e.target.value }))}
+                onChange={(e) => setFilters((prev) => ({ ...prev, texto: e.target.value }))}
                 placeholder="Descripción, proveedor o categoría"
                 className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
               />
@@ -920,10 +948,10 @@ export default function EgresosPage() {
                             </button>
                             <button
                               type="button"
-                              onClick={() => void handleAnular(item)}
+                              onClick={() => void handleArchivar(item)}
                               className="rounded-xl border border-red-300 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50"
                             >
-                              Anular
+                              Archivar
                             </button>
                           </div>
                         </td>
