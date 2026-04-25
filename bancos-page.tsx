@@ -14,7 +14,6 @@ type CuentaBancaria = {
   moneda: string | null
   saldo_inicial: number
   activa: boolean
-  deleted_at?: string | null
 }
 
 type SaldoBancario = {
@@ -30,8 +29,6 @@ type SaldoBancario = {
   saldo_calculado: number
   transferencias_entrantes: number
   transferencias_salientes: number
-  activa?: boolean | null
-  deleted_at?: string | null
 }
 type MovimientoBanco = {
   id: string
@@ -43,9 +40,6 @@ type MovimientoBanco = {
   estado: string
   cuenta_bancaria_id: string | null
   empresa_id: string
-  origen?: string | null
-  activo?: boolean | null
-  deleted_at?: string | null
 }
 
 const STORAGE_KEY = 'empresa_activa_id'
@@ -117,19 +111,24 @@ export default function BancosPage() {
         Authorization: `Bearer ${accessToken}`,
       }
 
-      const [cuentasResp, saldosResp] = await Promise.all([
+      const [cuentasResp, saldosResp, movimientosResp] = await Promise.all([
         fetch(
-          `${baseUrl}/rest/v1/cuentas_bancarias?empresa_id=eq.${empresaActivaId}&activa=eq.true&deleted_at=is.null&select=id,empresa_id,banco,nombre_cuenta,tipo_cuenta,moneda,saldo_inicial,activa&order=banco.asc,nombre_cuenta.asc`,
+          `${baseUrl}/rest/v1/cuentas_bancarias?empresa_id=eq.${empresaActivaId}&select=id,empresa_id,banco,nombre_cuenta,tipo_cuenta,moneda,saldo_inicial,activa&order=banco.asc,nombre_cuenta.asc`,
           { headers }
         ),
         fetch(
           `${baseUrl}/rest/v1/v_saldos_bancarios?empresa_id=eq.${empresaActivaId}&select=*`,
           { headers }
         ),
+        fetch(
+         `${baseUrl}/rest/v1/v_movimientos_bancarios?empresa_id=eq.${empresaActivaId}&select=id,fecha,tipo_movimiento,tipo_documento,numero_documento,descripcion,monto_total,estado,cuenta_bancaria_id,empresa_id,origen&cuenta_bancaria_id=not.is.null&order=fecha.desc&limit=30`,
+          { headers }
+        ),
       ])
 
       const cuentasJson = await cuentasResp.json()
       const saldosJson = await saldosResp.json()
+      const movimientosJson = await movimientosResp.json()
 
       if (!cuentasResp.ok) {
         console.error(cuentasJson)
@@ -143,52 +142,15 @@ export default function BancosPage() {
         return
       }
 
-      const cuentasActivas = (cuentasJson ?? []) as CuentaBancaria[]
-      const cuentasActivasIds = new Set(cuentasActivas.map((cuenta) => cuenta.id))
-      const saldosActivos = ((saldosJson ?? []) as SaldoBancario[]).filter(
-        (saldo) => cuentasActivasIds.has(saldo.id)
-      )
-
-      const movimientosBaseUrl = `${baseUrl}/rest/v1/v_movimientos_bancarios?empresa_id=eq.${empresaActivaId}&select=id,fecha,tipo_movimiento,tipo_documento,numero_documento,descripcion,monto_total,estado,cuenta_bancaria_id,empresa_id,origen&cuenta_bancaria_id=not.is.null&order=fecha.desc&limit=30`
-
-      let movimientosResp = await fetch(
-        `${movimientosBaseUrl}&activo=eq.true&deleted_at=is.null`,
-        { headers }
-      )
-
-      let movimientosJson = await movimientosResp.json()
-
-      if (!movimientosResp.ok) {
-        console.warn(
-          'La vista v_movimientos_bancarios no permitió filtrar por activo/deleted_at. Se usará filtro por cuentas activas como respaldo.',
-          movimientosJson
-        )
-
-        movimientosResp = await fetch(movimientosBaseUrl, { headers })
-        movimientosJson = await movimientosResp.json()
-      }
-
       if (!movimientosResp.ok) {
         console.error(movimientosJson)
         setError('No se pudieron cargar los movimientos bancarios.')
         return
       }
 
-      const movimientosActivos = ((movimientosJson ?? []) as MovimientoBanco[]).filter(
-        (movimiento) => {
-          const cuentaId = movimiento.cuenta_bancaria_id
-
-          if (!cuentaId || !cuentasActivasIds.has(cuentaId)) return false
-          if (movimiento.activo === false) return false
-          if (movimiento.deleted_at) return false
-
-          return true
-        }
-      )
-
-      setCuentas(cuentasActivas)
-      setSaldos(saldosActivos)
-      setMovimientos(movimientosActivos)
+      setCuentas(cuentasJson ?? [])
+      setSaldos(saldosJson ?? [])
+      setMovimientos(movimientosJson ?? [])
     } catch (err) {
       if (err instanceof Error) {
         setError(err.message)
