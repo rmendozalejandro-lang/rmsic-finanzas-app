@@ -37,14 +37,12 @@ const menuItems: MenuItem[] = [
   { href: '/cobranza', label: 'Cobranza', moduleKey: 'cobranza' },
   { href: '/bancos', label: 'Bancos', moduleKey: 'bancos' },
   { href: '/reportes', label: 'Reportes', moduleKey: 'reportes' },
-  { href: '/plan-cuentas', label: 'Plan de Cuentas', moduleKey: 'plan_cuentas' },
   { href: '/clientes', label: 'Clientes', moduleKey: 'clientes' },
   { href: '/cotizaciones', label: 'Cotizaciones', moduleKey: 'cotizaciones' },
   { href: '/proveedores', label: 'Proveedores', moduleKey: 'proveedores' },
   { href: '/transferencias', label: 'Transferencias', moduleKey: 'transferencias' },
   { href: '/remuneraciones', label: 'Remuneraciones', moduleKey: 'remuneraciones' },
   { href: '/ot', label: 'OT', moduleKey: 'ot' },
-  
 ]
 
 const STORAGE_ID_KEY = 'empresa_activa_id'

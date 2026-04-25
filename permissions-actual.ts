@@ -20,7 +20,6 @@ export type ModuleKey =
   | 'transferencias'
   | 'remuneraciones'
   | 'reportes'
-  | 'plan_cuentas'
   | 'ot'
 
 const ROLE_MODULES: Record<RolEmpresa, ModuleKey[]> = {
@@ -36,7 +35,6 @@ const ROLE_MODULES: Record<RolEmpresa, ModuleKey[]> = {
     'transferencias',
     'remuneraciones',
     'reportes',
-    'plan_cuentas',
     'ot',
   ],
   administracion_financiera: [
@@ -49,7 +47,6 @@ const ROLE_MODULES: Record<RolEmpresa, ModuleKey[]> = {
     'cobranza',
     'bancos',
     'reportes',
-    'plan_cuentas',
     'ot',
   ],
   finanzas: [
@@ -62,7 +59,6 @@ const ROLE_MODULES: Record<RolEmpresa, ModuleKey[]> = {
     'cobranza',
     'bancos',
     'reportes',
-    'plan_cuentas',
     'ot',
   ],
   gerencia: [
@@ -77,7 +73,6 @@ const ROLE_MODULES: Record<RolEmpresa, ModuleKey[]> = {
     'transferencias',
     'remuneraciones',
     'reportes',
-    'plan_cuentas',
     'ot',
   ],
   cobranzas: [
