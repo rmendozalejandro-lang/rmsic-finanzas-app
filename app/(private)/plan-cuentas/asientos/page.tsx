@@ -462,6 +462,13 @@ export default function AsientosContablesPage() {
 
           <div className="flex flex-col gap-3 sm:flex-row">
             <Link
+  href="/plan-cuentas/asientos/nuevo"
+  className="rounded-2xl border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+>
+  Nuevo asiento
+</Link>
+
+            <Link
               href="/plan-cuentas"
               className="rounded-2xl border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
             >
