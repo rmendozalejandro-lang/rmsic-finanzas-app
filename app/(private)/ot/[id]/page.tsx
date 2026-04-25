@@ -68,11 +68,6 @@ type TipoServicioOption = {
   nombre: string
 }
 
-type PerfilMini = {
-  id: string
-  email: string | null
-}
-
 type PerfilOption = {
   id: string
   label: string
@@ -220,7 +215,10 @@ function humanizePerson(value: string | null | undefined) {
     return 'Raúl Mendoza'
   }
 
-  if (lower.includes('dallendes') || (lower.includes('david') && lower.includes('allendes'))) {
+  if (
+    lower.includes('dallendes') ||
+    (lower.includes('david') && lower.includes('allendes'))
+  ) {
     return 'David Allendes'
   }
 
@@ -329,6 +327,7 @@ function OTDetalleContent() {
   const [saving, setSaving] = useState(false)
   const [savingTiempo, setSavingTiempo] = useState(false)
   const [closingOt, setClosingOt] = useState(false)
+  const [deletingOt, setDeletingOt] = useState(false)
 
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
@@ -337,6 +336,7 @@ function OTDetalleContent() {
   const [tiempoSuccess, setTiempoSuccess] = useState('')
   const [cierreError, setCierreError] = useState('')
   const [cierreSuccess, setCierreSuccess] = useState('')
+  const [deleteError, setDeleteError] = useState('')
 
   const [resumen, setResumen] = useState<OTResumen | null>(null)
   const [detalle, setDetalle] = useState<OTDetalle | null>(null)
@@ -455,12 +455,11 @@ function OTDetalleContent() {
   const loadData = useCallback(
     async (withLoader = true) => {
       try {
-        if (withLoader) {
-          setLoading(true)
-        }
+        if (withLoader) setLoading(true)
 
         setError('')
         setWarning('')
+        setDeleteError('')
 
         if (!otId) {
           throw new Error('No se recibió el identificador de la OT.')
@@ -499,9 +498,10 @@ function OTDetalleContent() {
 
           if (!rolResp.error && rolResp.data?.rol) {
             rolActual = rolResp.data.rol
-            setCurrentRole(rolActual)
           }
         }
+
+        setCurrentRole(rolActual)
 
         const [
           resumenResp,
@@ -614,7 +614,9 @@ function OTDetalleContent() {
           throw new Error(`No se pudieron cargar los estados: ${estadosResp.error.message}`)
         }
         if (tiposResp.error) {
-          throw new Error(`No se pudieron cargar los tipos de servicio: ${tiposResp.error.message}`)
+          throw new Error(
+            `No se pudieron cargar los tipos de servicio: ${tiposResp.error.message}`
+          )
         }
         if (tiemposResp.error) {
           throw new Error(`No se pudieron cargar los tiempos: ${tiemposResp.error.message}`)
@@ -719,10 +721,7 @@ function OTDetalleContent() {
 
         setTiempoForm((prev) => ({
           usuario_id:
-            prev.usuario_id ||
-            detalleData.tecnico_responsable_id ||
-            user.id ||
-            '',
+            prev.usuario_id || detalleData.tecnico_responsable_id || user.id || '',
           fecha: prev.fecha || toDateInputValue(detalleData.fecha_ot) || todayLocalDate(),
           hora_inicio: prev.hora_inicio,
           hora_termino: prev.hora_termino,
@@ -732,9 +731,7 @@ function OTDetalleContent() {
       } catch (err) {
         setError(err instanceof Error ? err.message : 'No se pudo cargar la OT.')
       } finally {
-        if (withLoader) {
-          setLoading(false)
-        }
+        if (withLoader) setLoading(false)
       }
     },
     [otId]
@@ -787,21 +784,10 @@ function OTDetalleContent() {
   }
 
   const validateTiempoForm = () => {
-    if (!tiempoForm.usuario_id) {
-      return 'Debes seleccionar un usuario para el tiempo.'
-    }
-
-    if (!tiempoForm.fecha) {
-      return 'Debes indicar la fecha del registro.'
-    }
-
-    if (!tiempoForm.hora_inicio) {
-      return 'Debes indicar la hora de inicio.'
-    }
-
-    if (!tiempoForm.hora_termino) {
-      return 'Debes indicar la hora de término.'
-    }
+    if (!tiempoForm.usuario_id) return 'Debes seleccionar un usuario para el tiempo.'
+    if (!tiempoForm.fecha) return 'Debes indicar la fecha del registro.'
+    if (!tiempoForm.hora_inicio) return 'Debes indicar la hora de inicio.'
+    if (!tiempoForm.hora_termino) return 'Debes indicar la hora de término.'
 
     const inicio = new Date(`${tiempoForm.fecha}T${tiempoForm.hora_inicio}`)
     const termino = new Date(`${tiempoForm.fecha}T${tiempoForm.hora_termino}`)
@@ -846,9 +832,7 @@ function OTDetalleContent() {
           isUrgenciaOAsistencia || isAsesoria
             ? form.diagnostico.trim() || null
             : null,
-        causa_probable: isUrgenciaOAsistencia
-          ? form.causa_probable.trim() || null
-          : null,
+        causa_probable: isUrgenciaOAsistencia ? form.causa_probable.trim() || null : null,
         trabajo_realizado:
           isPreventiva || isUrgenciaOAsistencia
             ? form.trabajo_realizado.trim() || null
@@ -933,11 +917,7 @@ function OTDetalleContent() {
       await loadData(false)
 
       setTiempoForm((prev) => ({
-        usuario_id:
-          prev.usuario_id ||
-          form.tecnico_responsable_id ||
-          currentUserId ||
-          '',
+        usuario_id: prev.usuario_id || form.tecnico_responsable_id || currentUserId || '',
         fecha: prev.fecha || todayLocalDate(),
         hora_inicio: '',
         hora_termino: '',
@@ -990,10 +970,6 @@ function OTDetalleContent() {
       setCierreSuccess('')
       setError('')
       setSuccess('')
-
-      if (currentRole === 'tecnico_ot') {
-        throw new Error('Un técnico OT no puede cerrar la orden. Debe hacerlo un administrador o supervisor autorizado.')
-      }
 
       if (!estadoCerrada) {
         throw new Error('No se encontró el estado "cerrada" en la base.')
@@ -1115,6 +1091,41 @@ function OTDetalleContent() {
       setCierreError(err instanceof Error ? err.message : 'No se pudo cerrar la OT.')
     } finally {
       setClosingOt(false)
+    }
+  }
+
+  const handleDeleteOt = async () => {
+    try {
+      setDeletingOt(true)
+      setDeleteError('')
+      setCierreError('')
+      setCierreSuccess('')
+
+      if (currentRole !== 'admin') {
+        throw new Error('Solo un administrador puede eliminar la OT.')
+      }
+
+      const confirmar = window.confirm(
+        '¿Seguro que deseas eliminar esta OT? Esta acción no se puede deshacer.'
+      )
+
+      if (!confirmar) return
+
+      const { error } = await supabase
+        .from('ot_ordenes_trabajo')
+        .delete()
+        .eq('id', otId)
+
+      if (error) {
+        throw new Error(`No se pudo eliminar la OT: ${error.message}`)
+      }
+
+      router.push('/ot')
+      router.refresh()
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : 'No se pudo eliminar la OT.')
+    } finally {
+      setDeletingOt(false)
     }
   }
 
@@ -1265,7 +1276,10 @@ function OTDetalleContent() {
           <DetailField label="Área / sector trabajo" value={form.area_trabajo} />
           <DetailField label="Ubicación base" value={resumen.ubicacion_nombre} />
           <DetailField label="Activo base" value={resumen.activo_nombre} />
-          <DetailField label="Técnico actual" value={humanizePerson(resumen.tecnico_nombre)} />
+          <DetailField
+            label="Técnico actual"
+            value={humanizePerson(resumen.tecnico_nombre)}
+          />
           <DetailField label="Supervisor actual" value={supervisorLabel} />
           <DetailField label="Fecha cierre" value={formatDateTime(detalle.fecha_cierre)} />
           <DetailField label="Creado por" value={createdByLabel} />
@@ -2015,10 +2029,7 @@ function OTDetalleContent() {
                 </thead>
                 <tbody>
                   {tiempos.map((item) => (
-                    <tr
-                      key={item.id}
-                      className="border-t border-slate-100 text-slate-700"
-                    >
+                    <tr key={item.id} className="border-t border-slate-100 text-slate-700">
                       <td className="px-4 py-3">{formatDate(item.fecha)}</td>
                       <td className="px-4 py-3">{getUserLabel(item.usuario_id)}</td>
                       <td className="px-4 py-3">
@@ -2138,6 +2149,12 @@ function OTDetalleContent() {
           </div>
         ) : null}
 
+        {deleteError ? (
+          <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {deleteError}
+          </div>
+        ) : null}
+
         <div className="mt-5 flex flex-col gap-3 sm:flex-row">
           <button
             type="button"
@@ -2150,17 +2167,26 @@ function OTDetalleContent() {
           <button
             type="button"
             onClick={handleCerrarOT}
-            disabled={closingOt || isClosed || currentRole === 'tecnico_ot'}
+            disabled={closingOt || isClosed}
             className="inline-flex items-center justify-center rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70"
           >
-            {currentRole === 'tecnico_ot'
-              ? 'Cierre reservado a administración'
-              : isClosed
-                ? 'OT ya cerrada'
-                : closingOt
-                  ? 'Cerrando OT...'
-                  : 'Cerrar OT'}
+            {isClosed
+              ? 'OT ya cerrada'
+              : closingOt
+                ? 'Cerrando OT...'
+                : 'Cerrar OT'}
           </button>
+
+          {currentRole === 'admin' ? (
+            <button
+              type="button"
+              onClick={handleDeleteOt}
+              disabled={deletingOt}
+              className="inline-flex items-center justify-center rounded-xl border border-red-300 bg-red-50 px-5 py-3 text-sm font-semibold text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              {deletingOt ? 'Eliminando OT...' : 'Eliminar OT'}
+            </button>
+          ) : null}
         </div>
       </div>
     </div>
