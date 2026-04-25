@@ -1,0 +1,452 @@
+﻿
+  app\(private)\ingresos\page.tsx:231:
+  app\(private)\ingresos\page.tsx:232:    syncEmpresaActiva()
+  app\(private)\ingresos\page.tsx:233:    
+window.addEventListener('empresa-activa-cambiada', 
+syncEmpresaActiva)
+  app\(private)\ingresos\page.tsx:234:
+  app\(private)\ingresos\page.tsx:235:    return () => {
+> app\(private)\ingresos\page.tsx:236:      
+window.removeEventListener('empresa-activa-cambiada', 
+syncEmpresaActiva)
+  app\(private)\ingresos\page.tsx:237:    }
+  app\(private)\ingresos\page.tsx:238:  }, [])
+  app\(private)\ingresos\page.tsx:239:
+  app\(private)\ingresos\page.tsx:240:  const loadData = 
+useCallback(async () => {
+  app\(private)\ingresos\page.tsx:241:    if (!empresaActivaId) 
+return
+  app\(private)\ingresos\page.tsx:242:
+  app\(private)\ingresos\page.tsx:243:    try {
+  app\(private)\ingresos\page.tsx:244:      setLoading(true)
+  app\(private)\egresos\page.tsx:233:
+  app\(private)\egresos\page.tsx:234:    syncEmpresaActiva()
+  app\(private)\egresos\page.tsx:235:    
+window.addEventListener('empresa-activa-cambiada', 
+syncEmpresaActiva)
+  app\(private)\egresos\page.tsx:236:
+  app\(private)\egresos\page.tsx:237:    return () => {
+> app\(private)\egresos\page.tsx:238:      
+window.removeEventListener('empresa-activa-cambiada', 
+syncEmpresaActiva)
+  app\(private)\egresos\page.tsx:239:    }
+  app\(private)\egresos\page.tsx:240:  }, [])
+  app\(private)\egresos\page.tsx:241:
+  app\(private)\egresos\page.tsx:242:  const loadData = 
+useCallback(async () => {
+  app\(private)\egresos\page.tsx:243:    if (!empresaActivaId) 
+return
+  app\(private)\egresos\page.tsx:244:
+  app\(private)\egresos\page.tsx:245:    try {
+  app\(private)\egresos\page.tsx:246:      setLoading(true)
+  app\(private)\bancos\page.tsx:79:
+  app\(private)\bancos\page.tsx:80:    syncEmpresaActiva()
+  app\(private)\bancos\page.tsx:81:    
+window.addEventListener('empresa-activa-cambiada', 
+syncEmpresaActiva)
+  app\(private)\bancos\page.tsx:82:
+  app\(private)\bancos\page.tsx:83:    return () => {
+> app\(private)\bancos\page.tsx:84:      
+window.removeEventListener('empresa-activa-cambiada', 
+syncEmpresaActiva)
+  app\(private)\bancos\page.tsx:85:    }
+  app\(private)\bancos\page.tsx:86:  }, [])
+  app\(private)\bancos\page.tsx:87:
+  app\(private)\bancos\page.tsx:88:  const fetchData = async () 
+=> {
+  app\(private)\bancos\page.tsx:89:    if (!empresaActivaId) {
+  app\(private)\bancos\page.tsx:90:      setLoading(false)
+  app\(private)\bancos\page.tsx:91:      return
+  app\(private)\bancos\page.tsx:92:    }
+  app\(private)\cobranza\page.tsx:117:
+  app\(private)\cobranza\page.tsx:118:    syncEmpresaActiva()
+  app\(private)\cobranza\page.tsx:119:    
+window.addEventListener('empresa-activa-cambiada', 
+syncEmpresaActiva)
+  app\(private)\cobranza\page.tsx:120:
+  app\(private)\cobranza\page.tsx:121:    return () => {
+> app\(private)\cobranza\page.tsx:122:      
+window.removeEventListener('empresa-activa-cambiada', 
+syncEmpresaActiva)
+  app\(private)\cobranza\page.tsx:123:    }
+  app\(private)\cobranza\page.tsx:124:  }, [])
+  app\(private)\cobranza\page.tsx:125:
+  app\(private)\cobranza\page.tsx:126:  const loadData = 
+useCallback(async () => {
+  app\(private)\cobranza\page.tsx:127:    if (!empresaActivaId) 
+return
+  app\(private)\cobranza\page.tsx:128:
+  app\(private)\cobranza\page.tsx:129:    try {
+  app\(private)\cobranza\page.tsx:130:      setLoading(true)
+  app\(private)\cotizaciones\nueva\page.tsx:100:
+  app\(private)\cotizaciones\nueva\page.tsx:101:    
+syncEmpresaActiva()
+  app\(private)\cotizaciones\nueva\page.tsx:102:    
+window.addEventListener('empresa-activa-cambiada', 
+syncEmpresaActiva)
+  app\(private)\cotizaciones\nueva\page.tsx:103:
+  app\(private)\cotizaciones\nueva\page.tsx:104:    return () => {
+> app\(private)\cotizaciones\nueva\page.tsx:105:      
+window.removeEventListener('empresa-activa-cambiada', 
+syncEmpresaActiva)
+  app\(private)\cotizaciones\nueva\page.tsx:106:    }
+  app\(private)\cotizaciones\nueva\page.tsx:107:  }, [])
+  app\(private)\cotizaciones\nueva\page.tsx:108:
+  app\(private)\cotizaciones\nueva\page.tsx:109:  useEffect(() => 
+{
+  app\(private)\cotizaciones\nueva\page.tsx:110:    const 
+fetchData = async () => {
+  app\(private)\cotizaciones\nueva\page.tsx:111:      if 
+(!empresaActivaId) {
+  app\(private)\cotizaciones\nueva\page.tsx:112:        
+setLoading(false)
+  app\(private)\cotizaciones\nueva\page.tsx:113:        return
+  app\(private)\cotizaciones\[id]\editar\page.tsx:84:
+  app\(private)\cotizaciones\[id]\editar\page.tsx:85:    
+syncEmpresaActiva()
+  app\(private)\cotizaciones\[id]\editar\page.tsx:86:    
+window.addEventListener('empresa-activa-cambiada', 
+syncEmpresaActiva)
+  app\(private)\cotizaciones\[id]\editar\page.tsx:87:
+  app\(private)\cotizaciones\[id]\editar\page.tsx:88:    return 
+() => {
+> app\(private)\cotizaciones\[id]\editar\page.tsx:89:      
+window.removeEventListener('empresa-activa-cambiada', 
+syncEmpresaActiva)
+  app\(private)\cotizaciones\[id]\editar\page.tsx:90:    }
+  app\(private)\cotizaciones\[id]\editar\page.tsx:91:  }, [])
+  app\(private)\cotizaciones\[id]\editar\page.tsx:92:
+  app\(private)\cotizaciones\[id]\editar\page.tsx:93:  
+useEffect(() => {
+  app\(private)\cotizaciones\[id]\editar\page.tsx:94:    const 
+fetchData = async () => {
+  app\(private)\cotizaciones\[id]\editar\page.tsx:95:      if 
+(!empresaActivaId || !cotizacionId) {
+  app\(private)\cotizaciones\[id]\editar\page.tsx:96:        
+setLoading(false)
+  app\(private)\cotizaciones\[id]\editar\page.tsx:97:        
+return
+  app\(private)\cotizaciones\[id]\imprimir\page.tsx:183:
+  app\(private)\cotizaciones\[id]\imprimir\page.tsx:184:    
+syncEmpresaActiva()
+  app\(private)\cotizaciones\[id]\imprimir\page.tsx:185:    
+window.addEventListener('empresa-activa-cambiada', 
+syncEmpresaActiva)
+  app\(private)\cotizaciones\[id]\imprimir\page.tsx:186:
+  app\(private)\cotizaciones\[id]\imprimir\page.tsx:187:    
+return () => {
+> app\(private)\cotizaciones\[id]\imprimir\page.tsx:188:      
+window.removeEventListener('empresa-activa-cambiada', 
+syncEmpresaActiva)
+  app\(private)\cotizaciones\[id]\imprimir\page.tsx:189:    }
+  app\(private)\cotizaciones\[id]\imprimir\page.tsx:190:  }, [])
+  app\(private)\cotizaciones\[id]\imprimir\page.tsx:191:
+  app\(private)\cotizaciones\[id]\imprimir\page.tsx:192:  
+useEffect(() => {
+  app\(private)\cotizaciones\[id]\imprimir\page.tsx:193:    const 
+fetchDetalle = async () => {
+  app\(private)\cotizaciones\[id]\imprimir\page.tsx:194:      if 
+(!empresaActivaId || !cotizacionId) {
+  app\(private)\cotizaciones\[id]\imprimir\page.tsx:195:        
+setLoading(false)
+  app\(private)\cotizaciones\[id]\imprimir\page.tsx:196:        
+return
+  app\(private)\cotizaciones\[id]\page.tsx:182:
+  app\(private)\cotizaciones\[id]\page.tsx:183:    
+syncEmpresaActiva()
+  app\(private)\cotizaciones\[id]\page.tsx:184:    
+window.addEventListener('empresa-activa-cambiada', 
+syncEmpresaActiva)
+  app\(private)\cotizaciones\[id]\page.tsx:185:
+  app\(private)\cotizaciones\[id]\page.tsx:186:    return () => {
+> app\(private)\cotizaciones\[id]\page.tsx:187:      
+window.removeEventListener('empresa-activa-cambiada', 
+syncEmpresaActiva)
+  app\(private)\cotizaciones\[id]\page.tsx:188:    }
+  app\(private)\cotizaciones\[id]\page.tsx:189:  }, [])
+  app\(private)\cotizaciones\[id]\page.tsx:190:
+  app\(private)\cotizaciones\[id]\page.tsx:191:  useEffect(() => {
+  app\(private)\cotizaciones\[id]\page.tsx:192:    const 
+fetchDetalle = async () => {
+  app\(private)\cotizaciones\[id]\page.tsx:193:      if 
+(!empresaActivaId || !cotizacionId) {
+  app\(private)\cotizaciones\[id]\page.tsx:194:        
+setLoading(false)
+  app\(private)\cotizaciones\[id]\page.tsx:195:        return
+  app\(private)\cotizaciones\_components\cotizacion-form.tsx:258:
+  app\(private)\cotizaciones\_components\cotizacion-form.tsx:259: 
+ function addItem() {
+  app\(private)\cotizaciones\_components\cotizacion-form.tsx:260: 
+   setItems((prev) => [...prev, createEmptyItem()]);
+  app\(private)\cotizaciones\_components\cotizacion-form.tsx:261: 
+ }
+  app\(private)\cotizaciones\_components\cotizacion-form.tsx:262:
+> app\(private)\cotizaciones\_components\cotizacion-form.tsx:263: 
+ function removeItem(uid: string) {
+  app\(private)\cotizaciones\_components\cotizacion-form.tsx:264: 
+   setItems((prev) => {
+  app\(private)\cotizaciones\_components\cotizacion-form.tsx:265: 
+     if (prev.length === 1) return prev;
+  app\(private)\cotizaciones\_components\cotizacion-form.tsx:266: 
+     return prev.filter((item) => item.uid !== uid);
+  app\(private)\cotizaciones\_components\cotizacion-form.tsx:267: 
+   });
+  app\(private)\cotizaciones\_components\cotizacion-form.tsx:268: 
+ }
+  app\(private)\cotizaciones\_components\cotizacion-form.tsx:269:
+  app\(private)\cotizaciones\_components\cotizacion-form.tsx:270: 
+ async function handleSubmit(e: React.FormEvent<HTMLFormElement>) 
+{
+  app\(private)\cotizaciones\_components\cotizacion-form.tsx:271: 
+   e.preventDefault();
+  app\(private)\cotizaciones\_components\cotizacion-form.tsx:432: 
+         return;
+  app\(private)\cotizaciones\_components\cotizacion-form.tsx:433: 
+       }
+  app\(private)\cotizaciones\_components\cotizacion-form.tsx:434:
+  app\(private)\cotizaciones\_components\cotizacion-form.tsx:435: 
+       savedId = cotizacionId;
+  app\(private)\cotizaciones\_components\cotizacion-form.tsx:436:
+> app\(private)\cotizaciones\_components\cotizacion-form.tsx:437: 
+       const deleteItemsResp = await fetch(
+  app\(private)\cotizaciones\_components\cotizacion-form.tsx:438: 
+         `${baseUrl}/rest/v1/cotizacion_items?cotizacion_id=eq.${c
+otizacionId}`,
+  app\(private)\cotizaciones\_components\cotizacion-form.tsx:439: 
+         {
+> app\(private)\cotizaciones\_components\cotizacion-form.tsx:440: 
+           method: "DELETE",
+  app\(private)\cotizaciones\_components\cotizacion-form.tsx:441: 
+           headers: {
+  app\(private)\cotizaciones\_components\cotizacion-form.tsx:442: 
+             apikey: apiKey,
+  app\(private)\cotizaciones\_components\cotizacion-form.tsx:443: 
+             Authorization: `Bearer ${accessToken}`,
+  app\(private)\cotizaciones\_components\cotizacion-form.tsx:444: 
+           },
+  app\(private)\cotizaciones\_components\cotizacion-form.tsx:445: 
+         }
+  app\(private)\cotizaciones\_components\cotizacion-form.tsx:446: 
+       );
+  app\(private)\cotizaciones\_components\cotizacion-form.tsx:447:
+> app\(private)\cotizaciones\_components\cotizacion-form.tsx:448: 
+       if (!deleteItemsResp.ok) {
+> app\(private)\cotizaciones\_components\cotizacion-form.tsx:449: 
+         const deleteJson = await deleteItemsResp.json().catch(() 
+=> null);
+  app\(private)\cotizaciones\_components\cotizacion-form.tsx:450: 
+         setError(
+> app\(private)\cotizaciones\_components\cotizacion-form.tsx:451: 
+           deleteJson?.message ||
+> app\(private)\cotizaciones\_components\cotizacion-form.tsx:452: 
+             deleteJson?.error_description ||
+> app\(private)\cotizaciones\_components\cotizacion-form.tsx:453: 
+             deleteJson?.error ||
+  app\(private)\cotizaciones\_components\cotizacion-form.tsx:454: 
+             "No se pudieron reemplazar los ítems."
+  app\(private)\cotizaciones\_components\cotizacion-form.tsx:455: 
+         );
+  app\(private)\cotizaciones\_components\cotizacion-form.tsx:456: 
+         setSaving(false);
+  app\(private)\cotizaciones\_components\cotizacion-form.tsx:457: 
+         return;
+  app\(private)\cotizaciones\_components\cotizacion-form.tsx:458: 
+       }
+  app\(private)\cotizaciones\_components\cotizacion-form.tsx:459: 
+     }
+  app\(private)\cotizaciones\_components\cotizacion-form.tsx:460:
+  app\(private)\cotizaciones\_components\cotizacion-form.tsx:461: 
+     const itemsPayload = validItems.map((item) => ({
+  app\(private)\cotizaciones\_components\cotizacion-form.tsx:488: 
+     const itemsJson = await itemsResp.json();
+  app\(private)\cotizaciones\_components\cotizacion-form.tsx:489:
+  app\(private)\cotizaciones\_components\cotizacion-form.tsx:490: 
+     if (!itemsResp.ok) {
+  app\(private)\cotizaciones\_components\cotizacion-form.tsx:491: 
+       if (!isEdit) {
+  app\(private)\cotizaciones\_components\cotizacion-form.tsx:492: 
+         await 
+fetch(`${baseUrl}/rest/v1/cotizaciones?id=eq.${savedId}`, {
+> app\(private)\cotizaciones\_components\cotizacion-form.tsx:493: 
+           method: "DELETE",
+  app\(private)\cotizaciones\_components\cotizacion-form.tsx:494: 
+           headers: {
+  app\(private)\cotizaciones\_components\cotizacion-form.tsx:495: 
+             apikey: apiKey,
+  app\(private)\cotizaciones\_components\cotizacion-form.tsx:496: 
+             Authorization: `Bearer ${accessToken}`,
+  app\(private)\cotizaciones\_components\cotizacion-form.tsx:497: 
+           },
+  app\(private)\cotizaciones\_components\cotizacion-form.tsx:498: 
+         });
+  app\(private)\cotizaciones\_components\cotizacion-form.tsx:499: 
+       }
+  app\(private)\cotizaciones\_components\cotizacion-form.tsx:500:
+  app\(private)\cotizaciones\_components\cotizacion-form.tsx:501: 
+       setError(
+  app\(private)\cotizaciones\_components\cotizacion-form.tsx:761: 
+                       Ítem {index + 1}
+  app\(private)\cotizaciones\_components\cotizacion-form.tsx:762: 
+                     </h3>
+  app\(private)\cotizaciones\_components\cotizacion-form.tsx:763:
+  app\(private)\cotizaciones\_components\cotizacion-form.tsx:764: 
+                     <button
+  app\(private)\cotizaciones\_components\cotizacion-form.tsx:765: 
+                       type="button"
+> app\(private)\cotizaciones\_components\cotizacion-form.tsx:766: 
+                       onClick={() => removeItem(item.uid)}
+  app\(private)\cotizaciones\_components\cotizacion-form.tsx:767: 
+                       disabled={items.length === 1}
+  app\(private)\cotizaciones\_components\cotizacion-form.tsx:768: 
+                       className="rounded-lg border 
+border-rose-300 px-3 py-1.5 text-xs font-medium text-rose-700 
+disabled:cursor-not-allowed disabled:opacity-50"
+  app\(private)\cotizaciones\_components\cotizacion-form.tsx:769: 
+                     >
+> app\(private)\cotizaciones\_components\cotizacion-form.tsx:770: 
+                       Eliminar
+  app\(private)\cotizaciones\_components\cotizacion-form.tsx:771: 
+                     </button>
+  app\(private)\cotizaciones\_components\cotizacion-form.tsx:772: 
+                   </div>
+  app\(private)\cotizaciones\_components\cotizacion-form.tsx:773:
+  app\(private)\cotizaciones\_components\cotizacion-form.tsx:774: 
+                   <div className="grid gap-4 md:grid-cols-2 
+xl:grid-cols-4">
+  app\(private)\cotizaciones\_components\cotizacion-form.tsx:775: 
+                     <div className="md:col-span-2 xl:col-span-4">
+  app\(private)\cotizaciones\_components\cotizacion-form.tsx:776: 
+                       <label className="mb-2 block text-sm 
+font-medium text-slate-700">
+  app\(private)\cotizaciones\_components\cotizacion-form.tsx:777: 
+                         Descripción
+  app\(private)\cotizaciones\_components\cotizacion-form.tsx:778: 
+                       </label>
+  app\(private)\cotizaciones\actions.ts:229:  }));
+  app\(private)\cotizaciones\actions.ts:230:
+  app\(private)\cotizaciones\actions.ts:231:  const { error: 
+itemsError } = await 
+supabase.from("cotizacion_items").insert(itemsInsert);
+  app\(private)\cotizaciones\actions.ts:232:
+  app\(private)\cotizaciones\actions.ts:233:  if (itemsError) {
+> app\(private)\cotizaciones\actions.ts:234:    await 
+supabase.from("cotizaciones").delete().eq("id", cotizacion.id);
+  app\(private)\cotizaciones\actions.ts:235:    return {
+  app\(private)\cotizaciones\actions.ts:236:      error: 
+itemsError.message ?? "No se pudieron guardar los ítems de la 
+cotización.",
+  app\(private)\cotizaciones\actions.ts:237:    };
+  app\(private)\cotizaciones\actions.ts:238:  }
+  app\(private)\cotizaciones\actions.ts:239:
+  app\(private)\cotizaciones\actions.ts:240:  
+revalidatePath("/cotizaciones");
+  app\(private)\cotizaciones\actions.ts:241:  
+revalidatePath("/cotizaciones/nueva");
+  app\(private)\cotizaciones\actions.ts:242:
+  app\(private)\cotizaciones\page.tsx:140:
+  app\(private)\cotizaciones\page.tsx:141:    syncEmpresaActiva()
+  app\(private)\cotizaciones\page.tsx:142:    
+window.addEventListener('empresa-activa-cambiada', 
+syncEmpresaActiva)
+  app\(private)\cotizaciones\page.tsx:143:
+  app\(private)\cotizaciones\page.tsx:144:    return () => {
+> app\(private)\cotizaciones\page.tsx:145:      
+window.removeEventListener('empresa-activa-cambiada', 
+syncEmpresaActiva)
+  app\(private)\cotizaciones\page.tsx:146:    }
+  app\(private)\cotizaciones\page.tsx:147:  }, [])
+  app\(private)\cotizaciones\page.tsx:148:
+  app\(private)\cotizaciones\page.tsx:149:  useEffect(() => {
+  app\(private)\cotizaciones\page.tsx:150:    const fetchData = 
+async () => {
+  app\(private)\cotizaciones\page.tsx:151:      if 
+(!empresaActivaId) {
+  app\(private)\cotizaciones\page.tsx:152:        
+setCotizaciones([])
+  app\(private)\cotizaciones\page.tsx:153:        
+setClientesMap({})
+  app\(private)\clientes\page.tsx:50:
+  app\(private)\clientes\page.tsx:51:    syncEmpresaActiva()
+  app\(private)\clientes\page.tsx:52:    
+window.addEventListener('empresa-activa-cambiada', 
+syncEmpresaActiva)
+  app\(private)\clientes\page.tsx:53:
+  app\(private)\clientes\page.tsx:54:    return () => {
+> app\(private)\clientes\page.tsx:55:      
+window.removeEventListener('empresa-activa-cambiada', 
+syncEmpresaActiva)
+  app\(private)\clientes\page.tsx:56:    }
+  app\(private)\clientes\page.tsx:57:  }, [])
+  app\(private)\clientes\page.tsx:58:
+  app\(private)\clientes\page.tsx:59:  const resetForm = () => {
+  app\(private)\clientes\page.tsx:60:    setForm({
+  app\(private)\clientes\page.tsx:61:      nombre: '',
+  app\(private)\clientes\page.tsx:62:      rut: '',
+  app\(private)\clientes\page.tsx:63:      contacto: '',
+  app\(private)\proveedores\page.tsx:51:
+  app\(private)\proveedores\page.tsx:52:    syncEmpresaActiva()
+  app\(private)\proveedores\page.tsx:53:    
+window.addEventListener('empresa-activa-cambiada', 
+syncEmpresaActiva)
+  app\(private)\proveedores\page.tsx:54:
+  app\(private)\proveedores\page.tsx:55:    return () => {
+> app\(private)\proveedores\page.tsx:56:      
+window.removeEventListener('empresa-activa-cambiada', 
+syncEmpresaActiva)
+  app\(private)\proveedores\page.tsx:57:    }
+  app\(private)\proveedores\page.tsx:58:  }, [])
+  app\(private)\proveedores\page.tsx:59:
+  app\(private)\proveedores\page.tsx:60:  const resetForm = () => 
+{
+  app\(private)\proveedores\page.tsx:61:    setForm({
+  app\(private)\proveedores\page.tsx:62:      nombre: '',
+  app\(private)\proveedores\page.tsx:63:      rut: '',
+  app\(private)\proveedores\page.tsx:64:      contacto: '',
+  app\(private)\transferencias\page.tsx:61:
+  app\(private)\transferencias\page.tsx:62:    syncEmpresaActiva()
+  app\(private)\transferencias\page.tsx:63:    
+window.addEventListener('empresa-activa-cambiada', 
+syncEmpresaActiva)
+  app\(private)\transferencias\page.tsx:64:
+  app\(private)\transferencias\page.tsx:65:    return () => {
+> app\(private)\transferencias\page.tsx:66:      
+window.removeEventListener('empresa-activa-cambiada', 
+syncEmpresaActiva)
+  app\(private)\transferencias\page.tsx:67:    }
+  app\(private)\transferencias\page.tsx:68:  }, [])
+  app\(private)\transferencias\page.tsx:69:
+  app\(private)\transferencias\page.tsx:70:  const resetForm = () 
+=> {
+  app\(private)\transferencias\page.tsx:71:    setForm({
+  app\(private)\transferencias\page.tsx:72:      fecha: '',
+  app\(private)\transferencias\page.tsx:73:      
+cuenta_origen_id: '',
+  app\(private)\transferencias\page.tsx:74:      
+cuenta_destino_id: '',
+  app\(private)\remuneraciones\page.tsx:102:
+  app\(private)\remuneraciones\page.tsx:103:    
+syncEmpresaActiva()
+  app\(private)\remuneraciones\page.tsx:104:    
+window.addEventListener('empresa-activa-cambiada', 
+syncEmpresaActiva)
+  app\(private)\remuneraciones\page.tsx:105:
+  app\(private)\remuneraciones\page.tsx:106:    return () => {
+> app\(private)\remuneraciones\page.tsx:107:      
+window.removeEventListener('empresa-activa-cambiada', 
+syncEmpresaActiva)
+  app\(private)\remuneraciones\page.tsx:108:    }
+  app\(private)\remuneraciones\page.tsx:109:  }, [])
+  app\(private)\remuneraciones\page.tsx:110:
+  app\(private)\remuneraciones\page.tsx:111:  const calculos = 
+useMemo(() => {
+  app\(private)\remuneraciones\page.tsx:112:    const sueldoBase 
+= Number(form.sueldo_base || 0)
+  app\(private)\remuneraciones\page.tsx:113:    const 
+gratificacion = Number(form.gratificacion || 0)
+  app\(private)\remuneraciones\page.tsx:114:    const horasExtra 
+= Number(form.horas_extra || 0)
+  app\(private)\remuneraciones\page.tsx:115:    const 
+otrosHaberesImponibles = Number(form.otros_haberes_imponibles || 
+0)
+
+

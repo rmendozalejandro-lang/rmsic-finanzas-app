@@ -1,0 +1,33 @@
+﻿
+  app\(private)\cotizaciones\actions.ts:226:    descuento_tipo: 
+item.descuento_tipo,
+  app\(private)\cotizaciones\actions.ts:227:    descuento_valor: 
+round2(item.descuento_valor),
+  app\(private)\cotizaciones\actions.ts:228:    afecto_iva: 
+item.afecto_iva,
+  app\(private)\cotizaciones\actions.ts:229:  }));
+  app\(private)\cotizaciones\actions.ts:230:
+  app\(private)\cotizaciones\actions.ts:231:  const { error: 
+itemsError } = await 
+supabase.from("cotizacion_items").insert(itemsInsert);
+  app\(private)\cotizaciones\actions.ts:232:
+  app\(private)\cotizaciones\actions.ts:233:  if (itemsError) {
+> app\(private)\cotizaciones\actions.ts:234:    await 
+supabase.from("cotizaciones").delete().eq("id", cotizacion.id);
+  app\(private)\cotizaciones\actions.ts:235:    return {
+  app\(private)\cotizaciones\actions.ts:236:      error: 
+itemsError.message ?? "No se pudieron guardar los ítems de la 
+cotización.",
+  app\(private)\cotizaciones\actions.ts:237:    };
+  app\(private)\cotizaciones\actions.ts:238:  }
+  app\(private)\cotizaciones\actions.ts:239:
+  app\(private)\cotizaciones\actions.ts:240:  
+revalidatePath("/cotizaciones");
+  app\(private)\cotizaciones\actions.ts:241:  
+revalidatePath("/cotizaciones/nueva");
+  app\(private)\cotizaciones\actions.ts:242:
+  app\(private)\cotizaciones\actions.ts:243:  
+redirect("/cotizaciones");
+  app\(private)\cotizaciones\actions.ts:244:}
+
+

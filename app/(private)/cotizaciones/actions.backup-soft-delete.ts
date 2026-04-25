@@ -230,29 +230,12 @@ export async function createCotizacionAction(
 
   const { error: itemsError } = await supabase.from("cotizacion_items").insert(itemsInsert);
 
- if (itemsError) {
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  const deletedAt = new Date().toISOString();
-
-  await supabase
-    .from("cotizaciones")
-    .update({
-      activo: false,
-      deleted_at: deletedAt,
-      deleted_by: user?.id ?? null,
-      updated_by: user?.id ?? null,
-      updated_at: deletedAt,
-    })
-    .eq("id", cotizacion.id);
-
-  return {
-    error:
-      itemsError.message ?? "No se pudieron guardar los ítems de la cotización.",
-  };
-}
+  if (itemsError) {
+    await supabase.from("cotizaciones").delete().eq("id", cotizacion.id);
+    return {
+      error: itemsError.message ?? "No se pudieron guardar los ítems de la cotización.",
+    };
+  }
 
   revalidatePath("/cotizaciones");
   revalidatePath("/cotizaciones/nueva");
