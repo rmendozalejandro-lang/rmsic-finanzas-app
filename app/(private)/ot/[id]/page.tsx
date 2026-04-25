@@ -416,8 +416,16 @@ function OTDetalleContent() {
   }, [tiempos])
 
   const requiresChecklistForClose = useMemo(() => {
-    return form.requiere_checklist || form.tipo_servicio_id === tipoPreventivaId
-  }, [form.requiere_checklist, form.tipo_servicio_id, tipoPreventivaId])
+  const requierePorTipo =
+    form.requiere_checklist || form.tipo_servicio_id === tipoPreventivaId
+
+  return requierePorTipo && !!detalle?.plantilla_checklist_id
+}, [
+  form.requiere_checklist,
+  form.tipo_servicio_id,
+  tipoPreventivaId,
+  detalle?.plantilla_checklist_id,
+])
 
   const hasTrabajoRealizado = useMemo(() => {
     if (isAsesoria) {
@@ -818,50 +826,68 @@ function OTDetalleContent() {
       setSuccess('')
 
       const payload = {
-        tipo_servicio_id: form.tipo_servicio_id,
-        estado_id: form.estado_id,
-        fecha_ot: form.fecha_ot,
-        fecha_programada: form.fecha_programada || null,
-        titulo: form.titulo.trim(),
-        descripcion_solicitud: form.descripcion_solicitud.trim() || null,
-        problema_reportado:
-          isUrgenciaOAsistencia || isAsesoria
-            ? form.problema_reportado.trim() || null
-            : null,
-        diagnostico:
-          isUrgenciaOAsistencia || isAsesoria
-            ? form.diagnostico.trim() || null
-            : null,
-        causa_probable: isUrgenciaOAsistencia ? form.causa_probable.trim() || null : null,
-        trabajo_realizado:
-          isPreventiva || isUrgenciaOAsistencia
-            ? form.trabajo_realizado.trim() || null
-            : null,
-        recomendaciones: form.recomendaciones.trim() || null,
-        tecnico_responsable_id: form.tecnico_responsable_id || null,
-        supervisor_id: form.supervisor_id || null,
-        prioridad: form.prioridad,
-        requiere_checklist: form.requiere_checklist,
-        observaciones_cierre: form.observaciones_cierre.trim() || null,
-        contacto_cliente_nombre: form.contacto_cliente_nombre.trim() || null,
-        contacto_cliente_cargo: form.contacto_cliente_cargo.trim() || null,
-        area_trabajo: form.area_trabajo.trim() || null,
-        resultado_servicio:
-          isPreventiva || isUrgenciaOAsistencia
-            ? form.resultado_servicio.trim() || null
-            : null,
-        hallazgos: isPreventiva ? form.hallazgos.trim() || null : null,
-        conclusiones_tecnicas: isAsesoria
-          ? form.conclusiones_tecnicas.trim() || null
-          : null,
-        mostrar_nota_valor_hora: isUrgenciaOAsistencia
-          ? form.mostrar_nota_valor_hora
-          : false,
-        valor_hora_uf:
-          isUrgenciaOAsistencia && form.mostrar_nota_valor_hora
-            ? Number(form.valor_hora_uf)
-            : Number(form.valor_hora_uf || '2.10'),
-      }
+  tipo_servicio_id: form.tipo_servicio_id,
+  estado_id: form.estado_id,
+  fecha_ot: form.fecha_ot,
+  fecha_programada: form.fecha_programada || null,
+  titulo: form.titulo.trim(),
+  descripcion_solicitud: form.descripcion_solicitud.trim() || null,
+
+  problema_reportado:
+    isUrgenciaOAsistencia || isAsesoria
+      ? form.problema_reportado.trim() || null
+      : detalle?.problema_reportado || null,
+
+  diagnostico:
+    isUrgenciaOAsistencia || isAsesoria
+      ? form.diagnostico.trim() || null
+      : detalle?.diagnostico || null,
+
+  causa_probable:
+    isUrgenciaOAsistencia
+      ? form.causa_probable.trim() || null
+      : detalle?.causa_probable || null,
+
+  trabajo_realizado:
+    isPreventiva || isUrgenciaOAsistencia
+      ? form.trabajo_realizado.trim() || null
+      : detalle?.trabajo_realizado || null,
+
+  recomendaciones: form.recomendaciones.trim() || null,
+  tecnico_responsable_id: form.tecnico_responsable_id || null,
+  supervisor_id: form.supervisor_id || null,
+  prioridad: form.prioridad,
+  requiere_checklist: form.requiere_checklist,
+  observaciones_cierre: form.observaciones_cierre.trim() || null,
+  contacto_cliente_nombre: form.contacto_cliente_nombre.trim() || null,
+  contacto_cliente_cargo: form.contacto_cliente_cargo.trim() || null,
+  area_trabajo: form.area_trabajo.trim() || null,
+
+  resultado_servicio:
+    isPreventiva || isUrgenciaOAsistencia
+      ? form.resultado_servicio.trim() || null
+      : detalle?.resultado_servicio || null,
+
+  hallazgos:
+    isPreventiva
+      ? form.hallazgos.trim() || null
+      : detalle?.hallazgos || null,
+
+  conclusiones_tecnicas:
+    isAsesoria
+      ? form.conclusiones_tecnicas.trim() || null
+      : detalle?.conclusiones_tecnicas || null,
+
+  mostrar_nota_valor_hora: isUrgenciaOAsistencia
+    ? form.mostrar_nota_valor_hora
+    : detalle?.mostrar_nota_valor_hora ?? false,
+
+  valor_hora_uf: isUrgenciaOAsistencia
+    ? form.mostrar_nota_valor_hora
+      ? Number(form.valor_hora_uf)
+      : detalle?.valor_hora_uf ?? Number(form.valor_hora_uf || '2.10')
+    : detalle?.valor_hora_uf ?? Number(form.valor_hora_uf || '2.10'),
+}
 
       const { error: updateError } = await supabase
         .from('ot_ordenes_trabajo')
@@ -1048,32 +1074,50 @@ function OTDetalleContent() {
       const horaTermino = orderedEnds[orderedEnds.length - 1]
 
       const payload = {
-        estado_id: estadoCerrada.id,
-        descripcion_solicitud: form.descripcion_solicitud.trim() || null,
-        problema_reportado:
-          isUrgenciaOAsistencia || isAsesoria
-            ? form.problema_reportado.trim() || null
-            : null,
-        diagnostico:
-          isUrgenciaOAsistencia || isAsesoria
-            ? form.diagnostico.trim() || null
-            : null,
-        causa_probable: isUrgenciaOAsistencia ? form.causa_probable.trim() || null : null,
-        trabajo_realizado:
-          isPreventiva || isUrgenciaOAsistencia
-            ? form.trabajo_realizado.trim() || null
-            : null,
-        recomendaciones: form.recomendaciones.trim() || null,
-        observaciones_cierre: form.observaciones_cierre.trim() || null,
-        resultado_servicio:
-          isPreventiva || isUrgenciaOAsistencia
-            ? form.resultado_servicio.trim() || null
-            : null,
-        hallazgos: isPreventiva ? form.hallazgos.trim() || null : null,
-        conclusiones_tecnicas: isAsesoria ? form.conclusiones_tecnicas.trim() || null : null,
-        hora_inicio: horaInicio,
-        hora_termino: horaTermino,
-      }
+  estado_id: estadoCerrada.id,
+  descripcion_solicitud: form.descripcion_solicitud.trim() || null,
+
+  problema_reportado:
+    isUrgenciaOAsistencia || isAsesoria
+      ? form.problema_reportado.trim() || null
+      : detalle?.problema_reportado || null,
+
+  diagnostico:
+    isUrgenciaOAsistencia || isAsesoria
+      ? form.diagnostico.trim() || null
+      : detalle?.diagnostico || null,
+
+  causa_probable:
+    isUrgenciaOAsistencia
+      ? form.causa_probable.trim() || null
+      : detalle?.causa_probable || null,
+
+  trabajo_realizado:
+    isPreventiva || isUrgenciaOAsistencia
+      ? form.trabajo_realizado.trim() || null
+      : detalle?.trabajo_realizado || null,
+
+  recomendaciones: form.recomendaciones.trim() || null,
+  observaciones_cierre: form.observaciones_cierre.trim() || null,
+
+  resultado_servicio:
+    isPreventiva || isUrgenciaOAsistencia
+      ? form.resultado_servicio.trim() || null
+      : detalle?.resultado_servicio || null,
+
+  hallazgos:
+    isPreventiva
+      ? form.hallazgos.trim() || null
+      : detalle?.hallazgos || null,
+
+  conclusiones_tecnicas:
+    isAsesoria
+      ? form.conclusiones_tecnicas.trim() || null
+      : detalle?.conclusiones_tecnicas || null,
+
+  hora_inicio: horaInicio,
+  hora_termino: horaTermino,
+}
 
       const { error: updateError } = await supabase
         .from('ot_ordenes_trabajo')
