@@ -1,0 +1,38 @@
+﻿
+  app\(private)\cobranza\page.tsx:255:      setSaving(true)
+  app\(private)\cobranza\page.tsx:256:      setError('')
+  app\(private)\cobranza\page.tsx:257:      setSuccess('')
+  app\(private)\cobranza\page.tsx:258:
+  app\(private)\cobranza\page.tsx:259:      const [cxcResp, 
+movResp] = await Promise.all([
+  app\(private)\cobranza\page.tsx:260:        supabase
+> app\(private)\cobranza\page.tsx:261:          
+.from('cuentas_por_cobrar')
+  app\(private)\cobranza\page.tsx:262:          .update({
+  app\(private)\cobranza\page.tsx:263:            estado: 
+'pagado',
+  app\(private)\cobranza\page.tsx:264:            
+saldo_pendiente: 0,
+  app\(private)\cobranza\page.tsx:265:          })
+  app\(private)\cobranza\page.tsx:266:          
+.eq('movimiento_id', selectedItem.movimiento_id),
+  app\(private)\cobranza\page.tsx:267:
+  app\(private)\cobranza\page.tsx:268:        supabase
+> app\(private)\cobranza\page.tsx:269:          
+.from('movimientos')
+  app\(private)\cobranza\page.tsx:270:          .update({
+  app\(private)\cobranza\page.tsx:271:            estado: 
+'pagado',
+  app\(private)\cobranza\page.tsx:272:            fecha: 
+paymentForm.fecha_pago,
+  app\(private)\cobranza\page.tsx:273:            
+cuenta_bancaria_id: paymentForm.cuenta_bancaria_id,
+  app\(private)\cobranza\page.tsx:274:          })
+  app\(private)\cobranza\page.tsx:275:          .eq('id', 
+selectedItem.movimiento_id),
+  app\(private)\cobranza\page.tsx:276:      ])
+  app\(private)\cobranza\page.tsx:277:
+  app\(private)\cobranza\page.tsx:278:      if (cxcResp.error) {
+  app\(private)\cobranza\page.tsx:279:        throw new Error(
+
+
