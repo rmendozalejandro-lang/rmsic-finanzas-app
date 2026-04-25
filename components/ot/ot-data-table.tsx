@@ -149,7 +149,7 @@ export function OTDataTable({ data }: Props) {
 
                 <td className="px-4 py-3">
                   <div className="max-w-[180px] whitespace-normal break-words">
-                    {labelOrDash(ot.tecnico_nombre)}
+                    {humanizePerson(ot.tecnico_nombre)}
                   </div>
                 </td>
 

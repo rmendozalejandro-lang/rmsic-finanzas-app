@@ -1265,7 +1265,7 @@ function OTDetalleContent() {
           <DetailField label="Área / sector trabajo" value={form.area_trabajo} />
           <DetailField label="Ubicación base" value={resumen.ubicacion_nombre} />
           <DetailField label="Activo base" value={resumen.activo_nombre} />
-          <DetailField label="Técnico actual" value={resumen.tecnico_nombre} />
+          <DetailField label="Técnico actual" value={humanizePerson(resumen.tecnico_nombre)} />
           <DetailField label="Supervisor actual" value={supervisorLabel} />
           <DetailField label="Fecha cierre" value={formatDateTime(detalle.fecha_cierre)} />
           <DetailField label="Creado por" value={createdByLabel} />
