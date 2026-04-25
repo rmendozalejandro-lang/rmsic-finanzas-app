@@ -87,6 +87,15 @@ type FormData = {
 
 type FiltroEstado = 'todos' | 'pendiente' | 'pagado' | 'anulado'
 
+type Filters = {
+  estado: FiltroEstado
+  fechaDesde: string
+  fechaHasta: string
+  numeroDocumento: string
+  clienteId: string
+  texto: string
+}
+
 const STORAGE_KEY = 'empresa_activa_id'
 const IVA_RATE = 0.19
 
@@ -106,6 +115,15 @@ const buildInitialForm = (): FormData => ({
   categoria_id: '',
   centro_costo_id: '',
   cuenta_bancaria_id: '',
+})
+
+const buildInitialFilters = (): Filters => ({
+  estado: 'todos',
+  fechaDesde: '',
+  fechaHasta: '',
+  numeroDocumento: '',
+  clienteId: '',
+  texto: '',
 })
 
 const formatCLP = (value: number) =>
@@ -146,6 +164,43 @@ const inferTratamientoTributario = (item: Ingreso): TratamientoTributario => {
   return 'afecto_iva'
 }
 
+function FormModal({
+  open,
+  title,
+  subtitle,
+  onClose,
+  children,
+}: {
+  open: boolean
+  title: string
+  subtitle: string
+  onClose: () => void
+  children: React.ReactNode
+}) {
+  if (!open) return null
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
+      <div className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl">
+        <div className="mb-5 flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-2xl font-semibold text-slate-900">{title}</h2>
+            <p className="mt-1 text-sm text-slate-500">{subtitle}</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-xl border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          >
+            Cerrar
+          </button>
+        </div>
+        {children}
+      </div>
+    </div>
+  )
+}
+
 export default function IngresosPage() {
   const router = useRouter()
 
@@ -157,10 +212,11 @@ export default function IngresosPage() {
   const [ingresos, setIngresos] = useState<Ingreso[]>([])
 
   const [formData, setFormData] = useState<FormData>(buildInitialForm())
-  const [filtroEstado, setFiltroEstado] = useState<FiltroEstado>('todos')
+  const [filters, setFilters] = useState<Filters>(buildInitialFilters())
   const [editingId, setEditingId] = useState<string | null>(null)
   const [usuarioRol, setUsuarioRol] = useState('')
   const [isAdmin, setIsAdmin] = useState(false)
+  const [showModal, setShowModal] = useState(false)
 
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -251,27 +307,22 @@ export default function IngresosPage() {
         setError('No se pudieron cargar los clientes.')
         return
       }
-
       if (!cuentasResp.ok) {
         setError('No se pudieron cargar las cuentas bancarias.')
         return
       }
-
       if (!categoriasResp.ok) {
         setError('No se pudieron cargar las categorías.')
         return
       }
-
       if (!centrosResp.ok) {
         setError('No se pudieron cargar los centros de costo.')
         return
       }
-
       if (!ingresosResp.ok) {
         setError('No se pudieron cargar los ingresos.')
         return
       }
-
       if (!rolResp.ok) {
         setError('No se pudo cargar el rol del usuario.')
         return
@@ -289,33 +340,19 @@ export default function IngresosPage() {
       setUsuarioRol(rol)
       setIsAdmin(rol === 'admin')
 
-      const clientesMap = new Map(
-        clientesData.map((item) => [item.id, item.nombre])
-      )
+      const clientesMap = new Map(clientesData.map((item) => [item.id, item.nombre]))
       const cuentasMap = new Map(
         cuentasData.map((item) => [item.id, `${item.banco} · ${item.nombre_cuenta}`])
       )
-      const categoriasMap = new Map(
-        categoriasData.map((item) => [item.id, item.nombre])
-      )
-      const centrosMap = new Map(
-        centrosData.map((item) => [item.id, item.nombre])
-      )
+      const categoriasMap = new Map(categoriasData.map((item) => [item.id, item.nombre]))
+      const centrosMap = new Map(centrosData.map((item) => [item.id, item.nombre]))
 
       const ingresosEnriquecidos = ingresosBase.map((item) => ({
         ...item,
-        cliente_nombre: item.cliente_id
-          ? clientesMap.get(item.cliente_id) || '-'
-          : '-',
-        categoria_nombre: item.categoria_id
-          ? categoriasMap.get(item.categoria_id) || '-'
-          : '-',
-        centro_costo_nombre: item.centro_costo_id
-          ? centrosMap.get(item.centro_costo_id) || '-'
-          : '-',
-        cuenta_bancaria_nombre: item.cuenta_bancaria_id
-          ? cuentasMap.get(item.cuenta_bancaria_id) || '-'
-          : '-',
+        cliente_nombre: item.cliente_id ? clientesMap.get(item.cliente_id) || '-' : '-',
+        categoria_nombre: item.categoria_id ? categoriasMap.get(item.categoria_id) || '-' : '-',
+        centro_costo_nombre: item.centro_costo_id ? centrosMap.get(item.centro_costo_id) || '-' : '-',
+        cuenta_bancaria_nombre: item.cuenta_bancaria_id ? cuentasMap.get(item.cuenta_bancaria_id) || '-' : '-',
       }))
 
       setClientes(clientesData)
@@ -363,33 +400,37 @@ export default function IngresosPage() {
       if (prev.monto_iva === nextIva && prev.monto_total === nextTotal) {
         return prev
       }
-
       return {
         ...prev,
         monto_iva: nextIva,
         monto_total: nextTotal,
       }
     })
-  }, [
-    formData.tratamiento_tributario,
-    formData.monto_neto,
-    formData.monto_exento,
-  ])
+  }, [formData.tratamiento_tributario, formData.monto_neto, formData.monto_exento])
 
   const handleChange = (
     e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
   ) => {
     const { name, value } = e.target
-
-    setFormData((prev) => ({
-      ...prev,
-      [name]: value,
-    }))
+    setFormData((prev) => ({ ...prev, [name]: value }))
   }
 
   const resetForm = () => {
     setFormData(buildInitialForm())
     setEditingId(null)
+  }
+
+  const openNewModal = () => {
+    if (!isAdmin) return
+    resetForm()
+    setError('')
+    setSuccess('')
+    setShowModal(true)
+  }
+
+  const closeModal = () => {
+    setShowModal(false)
+    resetForm()
   }
 
   const handleEdit = (item: Ingreso) => {
@@ -417,14 +458,7 @@ export default function IngresosPage() {
       centro_costo_id: item.centro_costo_id || '',
       cuenta_bancaria_id: item.cuenta_bancaria_id || '',
     })
-
-    window.scrollTo({ top: 0, behavior: 'smooth' })
-  }
-
-  const handleCancelEdit = () => {
-    resetForm()
-    setError('')
-    setSuccess('')
+    setShowModal(true)
   }
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
@@ -434,12 +468,10 @@ export default function IngresosPage() {
       setError('Solo el administrador puede registrar o modificar ingresos.')
       return
     }
-
     if (!empresaActivaId) {
       setError('No hay empresa activa seleccionada.')
       return
     }
-
     if (!formData.fecha || !formData.descripcion) {
       setError('Complete los campos obligatorios del ingreso.')
       return
@@ -454,24 +486,20 @@ export default function IngresosPage() {
       setError('Debes ingresar un monto neto afecto mayor a 0.')
       return
     }
-
     if (formData.tratamiento_tributario === 'exento' && exento <= 0) {
       setError('Debes ingresar un monto exento mayor a 0.')
       return
     }
-
     if (formData.tratamiento_tributario === 'mixto') {
       if (neto <= 0) {
         setError('Debes ingresar un monto neto afecto mayor a 0 para un documento mixto.')
         return
       }
-
       if (exento <= 0) {
         setError('Debes ingresar un monto exento mayor a 0 para un documento mixto.')
         return
       }
     }
-
     if (total <= 0) {
       setError('El monto total debe ser mayor a 0.')
       return
@@ -483,7 +511,6 @@ export default function IngresosPage() {
       setSuccess('')
 
       const { data: sessionData } = await supabase.auth.getSession()
-
       if (!sessionData.session) {
         router.push('/login')
         return
@@ -514,11 +541,9 @@ export default function IngresosPage() {
       }
 
       const isEditing = Boolean(editingId)
-
       const url = isEditing
         ? `${baseUrl}/rest/v1/movimientos?id=eq.${editingId}`
         : `${baseUrl}/rest/v1/movimientos`
-
       const method = isEditing ? 'PATCH' : 'POST'
 
       const resp = await fetch(url, {
@@ -536,20 +561,12 @@ export default function IngresosPage() {
 
       if (!resp.ok) {
         console.error(json)
-        setError(
-          isEditing
-            ? 'No se pudo actualizar el ingreso.'
-            : 'No se pudo registrar el ingreso.'
-        )
+        setError(isEditing ? 'No se pudo actualizar el ingreso.' : 'No se pudo registrar el ingreso.')
         return
       }
 
-      setSuccess(
-        isEditing
-          ? 'Ingreso actualizado correctamente.'
-          : 'Ingreso registrado correctamente.'
-      )
-      resetForm()
+      setSuccess(isEditing ? 'Ingreso actualizado correctamente.' : 'Ingreso registrado correctamente.')
+      closeModal()
       await loadData()
     } catch (err) {
       if (err instanceof Error) {
@@ -567,13 +584,9 @@ export default function IngresosPage() {
       setError('Solo el administrador puede anular ingresos.')
       return
     }
-
     if (item.estado?.toLowerCase() === 'anulado') return
 
-    const confirmacion = window.confirm(
-      `¿Desea anular el ingreso "${item.descripcion}"?`
-    )
-
+    const confirmacion = window.confirm(`¿Desea anular el ingreso "${item.descripcion}"?`)
     if (!confirmacion) return
 
     try {
@@ -581,7 +594,6 @@ export default function IngresosPage() {
       setSuccess('')
 
       const { data: sessionData } = await supabase.auth.getSession()
-
       if (!sessionData.session) {
         router.push('/login')
         return
@@ -591,31 +603,25 @@ export default function IngresosPage() {
       const apiKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
       const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
 
-      const resp = await fetch(
-        `${baseUrl}/rest/v1/movimientos?id=eq.${item.id}`,
-        {
-          method: 'PATCH',
-          headers: {
-            apikey: apiKey,
-            Authorization: `Bearer ${accessToken}`,
-            'Content-Type': 'application/json',
-            Prefer: 'return=representation',
-          },
-          body: JSON.stringify({ estado: 'anulado' }),
-        }
-      )
+      const resp = await fetch(`${baseUrl}/rest/v1/movimientos?id=eq.${item.id}`, {
+        method: 'PATCH',
+        headers: {
+          apikey: apiKey,
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+          Prefer: 'return=representation',
+        },
+        body: JSON.stringify({ estado: 'anulado' }),
+      })
 
       const json = await resp.json()
-
       if (!resp.ok) {
         console.error(json)
         setError('No se pudo anular el ingreso.')
         return
       }
 
-      if (editingId === item.id) {
-        resetForm()
-      }
+      if (editingId === item.id) closeModal()
 
       setSuccess('Ingreso anulado correctamente.')
       await loadData()
@@ -629,36 +635,48 @@ export default function IngresosPage() {
   }
 
   const ingresosFiltrados = useMemo(() => {
-    if (filtroEstado === 'todos') return ingresos
-    return ingresos.filter(
-      (item) => (item.estado || '').toLowerCase() === filtroEstado
-    )
-  }, [ingresos, filtroEstado])
+    return ingresos.filter((item) => {
+      const estado = (item.estado || '').toLowerCase()
+      const numeroDocumento = (item.numero_documento || '').toLowerCase()
+      const descripcion = (item.descripcion || '').toLowerCase()
+      const clienteId = item.cliente_id || ''
+      const fecha = item.fecha || ''
+      const search = filters.text.trim().toLowerCase()
+
+      const matchesEstado = filters.estado === 'todos' || estado === filters.estado
+      const matchesDesde = !filters.fechaDesde || fecha >= filters.fechaDesde
+      const matchesHasta = !filters.fechaHasta || fecha <= filters.fechaHasta
+      const matchesNumero = !filters.numeroDocumento || numeroDocumento.includes(filters.numeroDocumento.toLowerCase())
+      const matchesCliente = !filters.clienteId || clienteId === filters.clienteId
+      const matchesTexto =
+        !search ||
+        descripcion.includes(search) ||
+        numeroDocumento.includes(search) ||
+        (item.cliente_nombre || '').toLowerCase().includes(search) ||
+        (item.categoria_nombre || '').toLowerCase().includes(search)
+
+      return matchesEstado && matchesDesde && matchesHasta && matchesNumero && matchesCliente && matchesTexto
+    })
+  }, [ingresos, filters])
 
   const totalIngresos = useMemo(
-    () => ingresos.reduce((acc, item) => acc + Number(item.monto_total || 0), 0),
-    [ingresos]
+    () => ingresosFiltrados.reduce((acc, item) => acc + Number(item.monto_total || 0), 0),
+    [ingresosFiltrados]
   )
 
   const ingresosPendientes = useMemo(
-    () =>
-      ingresos.filter((item) => (item.estado || '').toLowerCase() === 'pendiente')
-        .length,
-    [ingresos]
+    () => ingresosFiltrados.filter((item) => (item.estado || '').toLowerCase() === 'pendiente').length,
+    [ingresosFiltrados]
   )
 
   const ingresosPagados = useMemo(
-    () =>
-      ingresos.filter((item) => (item.estado || '').toLowerCase() === 'pagado')
-        .length,
-    [ingresos]
+    () => ingresosFiltrados.filter((item) => (item.estado || '').toLowerCase() === 'pagado').length,
+    [ingresosFiltrados]
   )
 
   const ingresosAnulados = useMemo(
-    () =>
-      ingresos.filter((item) => (item.estado || '').toLowerCase() === 'anulado')
-        .length,
-    [ingresos]
+    () => ingresosFiltrados.filter((item) => (item.estado || '').toLowerCase() === 'anulado').length,
+    [ingresosFiltrados]
   )
 
   return (
@@ -672,12 +690,24 @@ export default function IngresosPage() {
             </p>
           </div>
 
-          <Link
-            href="/reportes"
-            className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-          >
-            Ver reporte de ingresos
-          </Link>
+          <div className="flex flex-wrap gap-3">
+            {isAdmin ? (
+              <button
+                type="button"
+                onClick={openNewModal}
+                className="rounded-xl bg-[#163A5F] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#245C90]"
+              >
+                Nuevo ingreso
+              </button>
+            ) : null}
+
+            <Link
+              href="/reportes"
+              className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+            >
+              Ver reporte de ingresos
+            </Link>
+          </div>
         </div>
 
         <EmpresaActivaBanner
@@ -694,496 +724,425 @@ export default function IngresosPage() {
         ) : null}
 
         <section className="rounded-2xl border-2 border-[#163A5F] bg-white p-4 shadow-sm">
-          <div className="mb-3">
-            <h2 className="text-lg font-semibold text-slate-900">
-              Filtros de ingresos
-            </h2>
+          <div className="mb-4 flex flex-col gap-1">
+            <h2 className="text-lg font-semibold text-slate-900">Filtros de ingresos</h2>
             <p className="text-sm text-slate-500">
-              Filtre el listado por estado del ingreso.
+              Busca por fecha, documento, cliente o descripción.
             </p>
           </div>
 
-          <div className="flex flex-wrap gap-2">
-            <button
-              onClick={() => setFiltroEstado('todos')}
-              className={`rounded-xl px-4 py-2 text-sm font-medium transition ${
-                filtroEstado === 'todos'
-                  ? 'bg-[#163A5F] text-white'
-                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-              }`}
-            >
-              Todos
-            </button>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-6">
+            <div className="xl:col-span-1">
+              <label className="mb-1 block text-sm font-medium text-slate-700">Estado</label>
+              <select
+                value={filters.estado}
+                onChange={(e) => setFilters((prev) => ({ ...prev, estado: e.target.value as FiltroEstado }))}
+                className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
+              >
+                <option value="todos">Todos</option>
+                <option value="pendiente">Pendiente</option>
+                <option value="pagado">Pagado</option>
+                <option value="anulado">Anulado</option>
+              </select>
+            </div>
 
-            <button
-              onClick={() => setFiltroEstado('pendiente')}
-              className={`rounded-xl px-4 py-2 text-sm font-medium transition ${
-                filtroEstado === 'pendiente'
-                  ? 'bg-[#163A5F] text-white'
-                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-              }`}
-            >
-              Pendientes
-            </button>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Desde</label>
+              <input
+                type="date"
+                value={filters.fechaDesde}
+                onChange={(e) => setFilters((prev) => ({ ...prev, fechaDesde: e.target.value }))}
+                className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
+              />
+            </div>
 
-            <button
-              onClick={() => setFiltroEstado('pagado')}
-              className={`rounded-xl px-4 py-2 text-sm font-medium transition ${
-                filtroEstado === 'pagado'
-                  ? 'bg-[#163A5F] text-white'
-                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-              }`}
-            >
-              Pagados
-            </button>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Hasta</label>
+              <input
+                type="date"
+                value={filters.fechaHasta}
+                onChange={(e) => setFilters((prev) => ({ ...prev, fechaHasta: e.target.value }))}
+                className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
+              />
+            </div>
 
-            <button
-              onClick={() => setFiltroEstado('anulado')}
-              className={`rounded-xl px-4 py-2 text-sm font-medium transition ${
-                filtroEstado === 'anulado'
-                  ? 'bg-[#163A5F] text-white'
-                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-              }`}
-            >
-              Anulados
-            </button>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">N° documento</label>
+              <input
+                type="text"
+                value={filters.numeroDocumento}
+                onChange={(e) => setFilters((prev) => ({ ...prev, numeroDocumento: e.target.value }))}
+                placeholder="Ej: 12345"
+                className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
+              />
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Cliente</label>
+              <select
+                value={filters.clienteId}
+                onChange={(e) => setFilters((prev) => ({ ...prev, clienteId: e.target.value }))}
+                className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
+              >
+                <option value="">Todos</option>
+                {clientes.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.nombre}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Buscar</label>
+              <input
+                type="text"
+                value={filters.text}
+                onChange={(e) => setFilters((prev) => ({ ...prev, text: e.target.value }))}
+                placeholder="Descripción, cliente o categoría"
+                className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
+              />
+            </div>
           </div>
         </section>
 
-        {!loading && !error && (
+        {!loading && !error ? (
           <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
             <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <p className="text-sm text-slate-500">Total ingresos</p>
-              <h2 className="mt-2 text-3xl font-semibold text-slate-900">
-                {formatCLP(totalIngresos)}
-              </h2>
+              <p className="text-sm text-slate-500">Total ingresos filtrados</p>
+              <h2 className="mt-2 text-3xl font-semibold text-slate-900">{formatCLP(totalIngresos)}</h2>
             </article>
-
             <article className="rounded-2xl border border-amber-200 bg-amber-50 p-5 shadow-sm">
               <p className="text-sm text-amber-700">Pendientes</p>
-              <h2 className="mt-2 text-3xl font-semibold text-amber-900">
-                {ingresosPendientes}
-              </h2>
+              <h2 className="mt-2 text-3xl font-semibold text-amber-900">{ingresosPendientes}</h2>
             </article>
-
             <article className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 shadow-sm">
               <p className="text-sm text-emerald-700">Pagados</p>
-              <h2 className="mt-2 text-3xl font-semibold text-emerald-900">
-                {ingresosPagados}
-              </h2>
+              <h2 className="mt-2 text-3xl font-semibold text-emerald-900">{ingresosPagados}</h2>
             </article>
-
             <article className="rounded-2xl border border-slate-300 bg-slate-50 p-5 shadow-sm">
               <p className="text-sm text-slate-600">Anulados</p>
-              <h2 className="mt-2 text-3xl font-semibold text-slate-900">
-                {ingresosAnulados}
-              </h2>
+              <h2 className="mt-2 text-3xl font-semibold text-slate-900">{ingresosAnulados}</h2>
             </article>
           </section>
-        )}
+        ) : null}
 
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-          {isAdmin ? (
-            <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm xl:col-span-1">
-              <div className="mb-5 flex items-start justify-between gap-3">
-                <div>
-                  <h2 className="text-2xl font-semibold text-slate-900">
-                    {editingId ? 'Editar ingreso' : 'Nuevo ingreso'}
-                  </h2>
-                  <p className="mt-1 text-sm text-slate-500">
-                    {editingId
-                      ? 'Modifique los datos del ingreso seleccionado.'
-                      : 'Registre un nuevo movimiento de ingreso para la empresa activa.'}
-                  </p>
-                </div>
+        {error ? (
+          <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {error}
+          </div>
+        ) : null}
 
-                {editingId ? (
-                  <button
-                    type="button"
-                    onClick={handleCancelEdit}
-                    className="rounded-xl border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-                  >
-                    Cancelar
-                  </button>
-                ) : null}
-              </div>
+        {success ? (
+          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+            {success}
+          </div>
+        ) : null}
 
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">
-                    Fecha
-                  </label>
-                  <input
-                    type="date"
-                    name="fecha"
-                    value={formData.fecha}
-                    onChange={handleChange}
-                    className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">
-                    Tipo documento
-                  </label>
-                  <select
-                    name="tipo_documento"
-                    value={formData.tipo_documento}
-                    onChange={handleChange}
-                    className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
-                  >
-                    <option value="factura">Factura</option>
-                    <option value="boleta">Boleta</option>
-                    <option value="recibo">Recibo</option>
-                    <option value="otro">Otro</option>
-                    <option value="nota_credito">Nota de crédito</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">
-                    Número documento
-                  </label>
-                  <input
-                    type="text"
-                    name="numero_documento"
-                    value={formData.numero_documento}
-                    onChange={handleChange}
-                    className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
-                    placeholder="Ej: 12345"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">
-                    Descripción
-                  </label>
-                  <textarea
-                    name="descripcion"
-                    value={formData.descripcion}
-                    onChange={handleChange}
-                    className="min-h-[100px] w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
-                    placeholder="Detalle del ingreso"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">
-                    Tratamiento tributario
-                  </label>
-                  <select
-                    name="tratamiento_tributario"
-                    value={formData.tratamiento_tributario}
-                    onChange={handleChange}
-                    className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
-                  >
-                    <option value="afecto_iva">Con IVA</option>
-                    <option value="exento">Exento de IVA</option>
-                    <option value="mixto">Con IVA + Exento IVA</option>
-                  </select>
-                </div>
-
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                  <div>
-                    <label className="mb-1 block text-sm font-medium text-slate-700">
-                      Neto afecto
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      step="1"
-                      name="monto_neto"
-                      value={formData.monto_neto}
-                      onChange={handleChange}
-                      disabled={formData.tratamiento_tributario === 'exento'}
-                      className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm disabled:bg-slate-50 disabled:text-slate-400"
-                      placeholder="0"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="mb-1 block text-sm font-medium text-slate-700">
-                      Monto exento
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      step="1"
-                      name="monto_exento"
-                      value={formData.monto_exento}
-                      onChange={handleChange}
-                      disabled={formData.tratamiento_tributario === 'afecto_iva'}
-                      className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm disabled:bg-slate-50 disabled:text-slate-400"
-                      placeholder="0"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                  <div>
-                    <label className="mb-1 block text-sm font-medium text-slate-700">
-                      IVA
-                    </label>
-                    <input
-                      type="number"
-                      name="monto_iva"
-                      value={formData.monto_iva}
-                      readOnly
-                      className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-2.5 text-sm"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="mb-1 block text-sm font-medium text-slate-700">
-                      Total
-                    </label>
-                    <input
-                      type="number"
-                      name="monto_total"
-                      value={formData.monto_total}
-                      readOnly
-                      className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-2.5 text-sm font-medium"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">
-                    Estado
-                  </label>
-                  <select
-                    name="estado"
-                    value={formData.estado}
-                    onChange={handleChange}
-                    className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
-                  >
-                    <option value="pendiente">Pendiente</option>
-                    <option value="pagado">Pagado</option>
-                    <option value="anulado">Anulado</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">
-                    Cliente
-                  </label>
-                  <select
-                    name="cliente_id"
-                    value={formData.cliente_id}
-                    onChange={handleChange}
-                    className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
-                  >
-                    <option value="">Seleccionar cliente</option>
-                    {clientes.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.nombre}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">
-                    Categoría
-                  </label>
-                  <select
-                    name="categoria_id"
-                    value={formData.categoria_id}
-                    onChange={handleChange}
-                    className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
-                  >
-                    <option value="">Seleccionar categoría</option>
-                    {categorias.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.nombre}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">
-                    Centro de costo
-                  </label>
-                  <select
-                    name="centro_costo_id"
-                    value={formData.centro_costo_id}
-                    onChange={handleChange}
-                    className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
-                  >
-                    <option value="">Seleccionar centro de costo</option>
-                    {centrosCosto.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.nombre}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">
-                    Cuenta bancaria
-                  </label>
-                  <select
-                    name="cuenta_bancaria_id"
-                    value={formData.cuenta_bancaria_id}
-                    onChange={handleChange}
-                    className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
-                  >
-                    <option value="">Seleccionar cuenta</option>
-                    {cuentas.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.banco} · {item.nombre_cuenta}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {error ? (
-                  <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                    {error}
-                  </div>
-                ) : null}
-
-                {success ? (
-                  <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-                    {success}
-                  </div>
-                ) : null}
-
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="w-full rounded-xl bg-[#163A5F] px-4 py-2.5 text-sm font-medium text-white transition hover:bg-[#245C90] disabled:opacity-70"
-                >
-                  {saving
-                    ? editingId
-                      ? 'Actualizando...'
-                      : 'Guardando...'
-                    : editingId
-                      ? 'Actualizar ingreso'
-                      : 'Registrar ingreso'}
-                </button>
-              </form>
-            </section>
-          ) : (
-            <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm xl:col-span-1">
-              <h2 className="text-2xl font-semibold text-slate-900">
-                Acciones restringidas
-              </h2>
-              <p className="mt-2 text-sm text-slate-500">
-                Este módulo permite visualizar y filtrar ingresos, pero solo el administrador puede registrar, editar o anular.
-              </p>
-            </section>
-          )}
-
-          <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm xl:col-span-2">
-            <div className="mb-4">
-              <h2 className="text-2xl font-semibold text-slate-900">
-                Listado de ingresos
-              </h2>
+        <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-2xl font-semibold text-slate-900">Listado de ingresos</h2>
               <p className="mt-1 text-sm text-slate-500">
-                Historial de ingresos registrados para la empresa activa.
+                Historial filtrado de ingresos registrados para la empresa activa.
               </p>
             </div>
+            <div className="text-sm text-slate-500">
+              {ingresosFiltrados.length} registro(s)
+            </div>
+          </div>
 
-            {loading && <div className="text-slate-500">Cargando ingresos...</div>}
-
-            {!loading && error && (
-              <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                {error}
-              </div>
-            )}
-
-            {!loading && !error && ingresosFiltrados.length === 0 && (
-              <div className="text-sm text-slate-500">
-                No hay ingresos para el filtro seleccionado.
-              </div>
-            )}
-
-            {!loading && !error && ingresosFiltrados.length > 0 && (
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[1520px] text-sm">
-                  <thead>
-                    <tr className="border-b border-slate-200 text-left text-slate-500">
-                      <th className="py-3 pr-4">Fecha</th>
-                      <th className="py-3 pr-4">Documento</th>
-                      <th className="py-3 pr-4">Descripción</th>
-                      <th className="py-3 pr-4">Cliente</th>
-                      <th className="py-3 pr-4">Tratamiento</th>
-                      <th className="py-3 pr-4">Neto</th>
-                      <th className="py-3 pr-4">Exento</th>
-                      <th className="py-3 pr-4">IVA</th>
-                      <th className="py-3 pr-4">Total</th>
-                      <th className="py-3 pr-4">Estado</th>
-                      {isAdmin ? <th className="py-3 pr-4">Acciones</th> : null}
+          {loading ? (
+            <p className="text-sm text-slate-500">Cargando ingresos...</p>
+          ) : ingresosFiltrados.length === 0 ? (
+            <p className="text-sm text-slate-500">No hay ingresos para los filtros seleccionados.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-[1280px] w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-200 text-left text-slate-500">
+                    <th className="py-3 pr-4">Fecha</th>
+                    <th className="py-3 pr-4">Documento</th>
+                    <th className="py-3 pr-4">Descripción</th>
+                    <th className="py-3 pr-4">Cliente</th>
+                    <th className="py-3 pr-4">Categoría</th>
+                    <th className="py-3 pr-4">Centro costo</th>
+                    <th className="py-3 pr-4">Cuenta bancaria</th>
+                    <th className="py-3 pr-4">Tratamiento</th>
+                    <th className="py-3 pr-4 text-right">Monto</th>
+                    <th className="py-3 pr-4">Estado</th>
+                    {isAdmin ? <th className="py-3 pr-4 text-right">Acciones</th> : null}
+                  </tr>
+                </thead>
+                <tbody>
+                  {ingresosFiltrados.map((item) => (
+                    <tr key={item.id} className="border-b border-slate-100 align-top">
+                      <td className="py-3 pr-4 whitespace-nowrap">{formatDate(item.fecha)}</td>
+                      <td className="py-3 pr-4 whitespace-nowrap">
+                        <div className="font-medium text-slate-800">{item.tipo_documento || '-'}</div>
+                        <div className="text-slate-500">{item.numero_documento || '-'}</div>
+                      </td>
+                      <td className="py-3 pr-4 min-w-[260px]">{item.descripcion}</td>
+                      <td className="py-3 pr-4 whitespace-nowrap">{item.cliente_nombre || '-'}</td>
+                      <td className="py-3 pr-4 whitespace-nowrap">{item.categoria_nombre || '-'}</td>
+                      <td className="py-3 pr-4 whitespace-nowrap">{item.centro_costo_nombre || '-'}</td>
+                      <td className="py-3 pr-4 whitespace-nowrap">{item.cuenta_bancaria_nombre || '-'}</td>
+                      <td className="py-3 pr-4 whitespace-nowrap">{formatTratamientoTributario(item.tratamiento_tributario)}</td>
+                      <td className="py-3 pr-4 text-right font-medium">{formatCLP(item.monto_total)}</td>
+                      <td className="py-3 pr-4"><StatusBadge status={item.estado} /></td>
+                      {isAdmin ? (
+                        <td className="py-3 pr-4 text-right">
+                          <div className="flex justify-end gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleEdit(item)}
+                              className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                            >
+                              Editar
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void handleAnular(item)}
+                              className="rounded-xl border border-red-300 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50"
+                            >
+                              Anular
+                            </button>
+                          </div>
+                        </td>
+                      ) : null}
                     </tr>
-                  </thead>
-                  <tbody>
-                    {ingresosFiltrados.map((item) => {
-                      const isAnulado = (item.estado || '').toLowerCase() === 'anulado'
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
 
-                      return (
-                        <tr key={item.id} className="border-b border-slate-100">
-                          <td className="py-3 pr-4">{formatDate(item.fecha)}</td>
-                          <td className="py-3 pr-4">
-                            {item.tipo_documento || '-'} {item.numero_documento || ''}
-                          </td>
-                          <td className="py-3 pr-4">{item.descripcion}</td>
-                          <td className="py-3 pr-4">{item.cliente_nombre || '-'}</td>
-                          <td className="py-3 pr-4">
-                            {formatTratamientoTributario(item.tratamiento_tributario)}
-                          </td>
-                          <td className="py-3 pr-4 font-medium">
-                            {formatCLP(Number(item.monto_neto || 0))}
-                          </td>
-                          <td className="py-3 pr-4 font-medium">
-                            {formatCLP(Number(item.monto_exento || 0))}
-                          </td>
-                          <td className="py-3 pr-4 font-medium">
-                            {formatCLP(Number(item.monto_iva || 0))}
-                          </td>
-                          <td className="py-3 pr-4 font-medium">
-                            {formatCLP(Number(item.monto_total || 0))}
-                          </td>
-                          <td className="py-3 pr-4">
-                            <StatusBadge status={item.estado} />
-                          </td>
-
-                          {isAdmin ? (
-                            <td className="py-3 pr-4">
-                              <div className="flex flex-wrap gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() => handleEdit(item)}
-                                  disabled={isAnulado}
-                                  className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                                >
-                                  Editar
-                                </button>
-
-                                <button
-                                  type="button"
-                                  onClick={() => void handleAnular(item)}
-                                  disabled={isAnulado}
-                                  className="rounded-lg border border-red-300 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
-                                >
-                                  Anular
-                                </button>
-                              </div>
-                            </td>
-                          ) : null}
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
+        <FormModal
+          open={showModal}
+          onClose={closeModal}
+          title={editingId ? 'Editar ingreso' : 'Nuevo ingreso'}
+          subtitle={editingId ? 'Modifique los datos del ingreso seleccionado.' : 'Registre un nuevo movimiento de ingreso para la empresa activa.'}
+        >
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700">Fecha</label>
+                <input
+                  type="date"
+                  name="fecha"
+                  value={formData.fecha}
+                  onChange={handleChange}
+                  className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
+                  required
+                />
               </div>
-            )}
-          </section>
-        </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700">Tipo documento</label>
+                <select
+                  name="tipo_documento"
+                  value={formData.tipo_documento}
+                  onChange={handleChange}
+                  className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
+                >
+                  <option value="factura">Factura</option>
+                  <option value="boleta">Boleta</option>
+                  <option value="recibo">Recibo</option>
+                  <option value="otro">Otro</option>
+                  <option value="nota_credito">Nota de crédito</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700">Número documento</label>
+                <input
+                  type="text"
+                  name="numero_documento"
+                  value={formData.numero_documento}
+                  onChange={handleChange}
+                  className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
+                  placeholder="Ej: 12345"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700">Estado</label>
+                <select
+                  name="estado"
+                  value={formData.estado}
+                  onChange={handleChange}
+                  className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
+                >
+                  <option value="pendiente">Pendiente</option>
+                  <option value="pagado">Pagado</option>
+                  <option value="anulado">Anulado</option>
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Descripción</label>
+              <textarea
+                name="descripcion"
+                value={formData.descripcion}
+                onChange={handleChange}
+                className="min-h-[100px] w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
+                placeholder="Detalle del ingreso"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Tratamiento tributario</label>
+              <select
+                name="tratamiento_tributario"
+                value={formData.tratamiento_tributario}
+                onChange={handleChange}
+                className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
+              >
+                <option value="afecto_iva">Con IVA</option>
+                <option value="exento">Exento de IVA</option>
+                <option value="mixto">Con IVA + Exento IVA</option>
+              </select>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700">Neto afecto</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  name="monto_neto"
+                  value={formData.monto_neto}
+                  onChange={handleChange}
+                  disabled={formData.tratamiento_tributario === 'exento'}
+                  className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm disabled:bg-slate-50 disabled:text-slate-400"
+                  placeholder="0"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700">Monto exento</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  name="monto_exento"
+                  value={formData.monto_exento}
+                  onChange={handleChange}
+                  disabled={formData.tratamiento_tributario === 'afecto_iva'}
+                  className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm disabled:bg-slate-50 disabled:text-slate-400"
+                  placeholder="0"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700">IVA</label>
+                <input
+                  type="number"
+                  name="monto_iva"
+                  value={formData.monto_iva}
+                  readOnly
+                  className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-2.5 text-sm"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700">Total</label>
+                <input
+                  type="number"
+                  name="monto_total"
+                  value={formData.monto_total}
+                  readOnly
+                  className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-2.5 text-sm font-medium"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700">Cliente</label>
+                <select
+                  name="cliente_id"
+                  value={formData.cliente_id}
+                  onChange={handleChange}
+                  className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
+                >
+                  <option value="">Seleccionar cliente</option>
+                  {clientes.map((item) => (
+                    <option key={item.id} value={item.id}>{item.nombre}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700">Categoría</label>
+                <select
+                  name="categoria_id"
+                  value={formData.categoria_id}
+                  onChange={handleChange}
+                  className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
+                >
+                  <option value="">Seleccionar categoría</option>
+                  {categorias.map((item) => (
+                    <option key={item.id} value={item.id}>{item.nombre}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700">Centro de costo</label>
+                <select
+                  name="centro_costo_id"
+                  value={formData.centro_costo_id}
+                  onChange={handleChange}
+                  className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
+                >
+                  <option value="">Seleccionar centro de costo</option>
+                  {centrosCosto.map((item) => (
+                    <option key={item.id} value={item.id}>{item.nombre}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700">Cuenta bancaria</label>
+                <select
+                  name="cuenta_bancaria_id"
+                  value={formData.cuenta_bancaria_id}
+                  onChange={handleChange}
+                  className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
+                >
+                  <option value="">Seleccionar cuenta</option>
+                  {cuentas.map((item) => (
+                    <option key={item.id} value={item.id}>{item.banco} · {item.nombre_cuenta}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={closeModal}
+                className="rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={saving}
+                className="rounded-xl bg-[#163A5F] px-4 py-2.5 text-sm font-medium text-white transition hover:bg-[#245C90] disabled:opacity-70"
+              >
+                {saving ? (editingId ? 'Actualizando...' : 'Guardando...') : editingId ? 'Actualizar ingreso' : 'Registrar ingreso'}
+              </button>
+            </div>
+          </form>
+        </FormModal>
       </main>
     </ProtectedModuleRoute>
   )

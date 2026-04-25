@@ -41,11 +41,7 @@ type CentroCosto = {
   nombre: string
 }
 
-type TratamientoTributario =
-  | 'afecto_iva'
-  | 'exento'
-  | 'mixto'
-  | 'combustible'
+type TratamientoTributario = 'afecto_iva' | 'exento' | 'mixto' | 'combustible'
 
 type Egreso = {
   id: string
@@ -91,6 +87,15 @@ type FormData = {
 
 type FiltroEstado = 'todos' | 'pendiente' | 'pagado' | 'anulado'
 
+type Filters = {
+  estado: FiltroEstado
+  fechaDesde: string
+  fechaHasta: string
+  numeroDocumento: string
+  proveedorId: string
+  texto: string
+}
+
 const STORAGE_KEY = 'empresa_activa_id'
 const IVA_RATE = 0.19
 
@@ -112,15 +117,21 @@ const buildInitialForm = (): FormData => ({
   cuenta_bancaria_id: '',
 })
 
-const formatCLP = (value: number) =>
-  `$${Number(value || 0).toLocaleString('es-CL')}`
+const buildInitialFilters = (): Filters => ({
+  estado: 'todos',
+  fechaDesde: '',
+  fechaHasta: '',
+  numeroDocumento: '',
+  proveedorId: '',
+  texto: '',
+})
+
+const formatCLP = (value: number) => `$${Number(value || 0).toLocaleString('es-CL')}`
 
 const formatDate = (value: string | null) => {
   if (!value) return '-'
-
   const date = new Date(`${value}T00:00:00`)
   if (Number.isNaN(date.getTime())) return value
-
   return date.toLocaleDateString('es-CL')
 }
 
@@ -155,6 +166,43 @@ const inferTratamientoTributario = (item: Egreso): TratamientoTributario => {
   return 'afecto_iva'
 }
 
+function FormModal({
+  open,
+  title,
+  subtitle,
+  onClose,
+  children,
+}: {
+  open: boolean
+  title: string
+  subtitle: string
+  onClose: () => void
+  children: React.ReactNode
+}) {
+  if (!open) return null
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
+      <div className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl">
+        <div className="mb-5 flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-2xl font-semibold text-slate-900">{title}</h2>
+            <p className="mt-1 text-sm text-slate-500">{subtitle}</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-xl border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          >
+            Cerrar
+          </button>
+        </div>
+        {children}
+      </div>
+    </div>
+  )
+}
+
 export default function EgresosPage() {
   const router = useRouter()
 
@@ -166,10 +214,11 @@ export default function EgresosPage() {
   const [egresos, setEgresos] = useState<Egreso[]>([])
 
   const [formData, setFormData] = useState<FormData>(buildInitialForm())
-  const [filtroEstado, setFiltroEstado] = useState<FiltroEstado>('todos')
+  const [filters, setFilters] = useState<Filters>(buildInitialFilters())
   const [editingId, setEditingId] = useState<string | null>(null)
   const [usuarioRol, setUsuarioRol] = useState('')
   const [isAdmin, setIsAdmin] = useState(false)
+  const [showModal, setShowModal] = useState(false)
 
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -260,27 +309,22 @@ export default function EgresosPage() {
         setError('No se pudieron cargar los proveedores.')
         return
       }
-
       if (!cuentasResp.ok) {
         setError('No se pudieron cargar las cuentas bancarias.')
         return
       }
-
       if (!categoriasResp.ok) {
         setError('No se pudieron cargar las categorías.')
         return
       }
-
       if (!centrosResp.ok) {
         setError('No se pudieron cargar los centros de costo.')
         return
       }
-
       if (!egresosResp.ok) {
         setError('No se pudieron cargar los egresos.')
         return
       }
-
       if (!rolResp.ok) {
         setError('No se pudo cargar el rol del usuario.')
         return
@@ -298,33 +342,19 @@ export default function EgresosPage() {
       setUsuarioRol(rol)
       setIsAdmin(rol === 'admin')
 
-      const proveedoresMap = new Map(
-        proveedoresData.map((item) => [item.id, item.nombre])
-      )
+      const proveedoresMap = new Map(proveedoresData.map((item) => [item.id, item.nombre]))
       const cuentasMap = new Map(
         cuentasData.map((item) => [item.id, `${item.banco} · ${item.nombre_cuenta}`])
       )
-      const categoriasMap = new Map(
-        categoriasData.map((item) => [item.id, item.nombre])
-      )
-      const centrosMap = new Map(
-        centrosData.map((item) => [item.id, item.nombre])
-      )
+      const categoriasMap = new Map(categoriasData.map((item) => [item.id, item.nombre]))
+      const centrosMap = new Map(centrosData.map((item) => [item.id, item.nombre]))
 
       const egresosEnriquecidos = egresosBase.map((item) => ({
         ...item,
-        proveedor_nombre: item.proveedor_id
-          ? proveedoresMap.get(item.proveedor_id) || '-'
-          : '-',
-        categoria_nombre: item.categoria_id
-          ? categoriasMap.get(item.categoria_id) || '-'
-          : '-',
-        centro_costo_nombre: item.centro_costo_id
-          ? centrosMap.get(item.centro_costo_id) || '-'
-          : '-',
-        cuenta_bancaria_nombre: item.cuenta_bancaria_id
-          ? cuentasMap.get(item.cuenta_bancaria_id) || '-'
-          : '-',
+        proveedor_nombre: item.proveedor_id ? proveedoresMap.get(item.proveedor_id) || '-' : '-',
+        categoria_nombre: item.categoria_id ? categoriasMap.get(item.categoria_id) || '-' : '-',
+        centro_costo_nombre: item.centro_costo_id ? centrosMap.get(item.centro_costo_id) || '-' : '-',
+        cuenta_bancaria_nombre: item.cuenta_bancaria_id ? cuentasMap.get(item.cuenta_bancaria_id) || '-' : '-',
       }))
 
       setProveedores(proveedoresData)
@@ -376,34 +406,37 @@ export default function EgresosPage() {
       if (prev.monto_iva === nextIva && prev.monto_total === nextTotal) {
         return prev
       }
-
       return {
         ...prev,
         monto_iva: nextIva,
         monto_total: nextTotal,
       }
     })
-  }, [
-    formData.tratamiento_tributario,
-    formData.monto_neto,
-    formData.monto_exento,
-    formData.impuesto_especifico,
-  ])
+  }, [formData.tratamiento_tributario, formData.monto_neto, formData.monto_exento, formData.impuesto_especifico])
 
   const handleChange = (
     e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
   ) => {
     const { name, value } = e.target
-
-    setFormData((prev) => ({
-      ...prev,
-      [name]: value,
-    }))
+    setFormData((prev) => ({ ...prev, [name]: value }))
   }
 
   const resetForm = () => {
     setFormData(buildInitialForm())
     setEditingId(null)
+  }
+
+  const openNewModal = () => {
+    if (!isAdmin) return
+    resetForm()
+    setError('')
+    setSuccess('')
+    setShowModal(true)
+  }
+
+  const closeModal = () => {
+    setShowModal(false)
+    resetForm()
   }
 
   const handleEdit = (item: Egreso) => {
@@ -431,14 +464,7 @@ export default function EgresosPage() {
       centro_costo_id: item.centro_costo_id || '',
       cuenta_bancaria_id: item.cuenta_bancaria_id || '',
     })
-
-    window.scrollTo({ top: 0, behavior: 'smooth' })
-  }
-
-  const handleCancelEdit = () => {
-    resetForm()
-    setError('')
-    setSuccess('')
+    setShowModal(true)
   }
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
@@ -448,12 +474,10 @@ export default function EgresosPage() {
       setError('Solo el administrador puede registrar o modificar egresos.')
       return
     }
-
     if (!empresaActivaId) {
       setError('No hay empresa activa seleccionada.')
       return
     }
-
     if (!formData.fecha || !formData.descripcion) {
       setError('Complete los campos obligatorios del egreso.')
       return
@@ -469,36 +493,30 @@ export default function EgresosPage() {
       setError('Debes ingresar un monto neto afecto mayor a 0.')
       return
     }
-
     if (formData.tratamiento_tributario === 'exento' && exento <= 0) {
       setError('Debes ingresar un monto exento mayor a 0.')
       return
     }
-
     if (formData.tratamiento_tributario === 'mixto') {
       if (neto <= 0) {
         setError('Debes ingresar un monto neto afecto mayor a 0 para un documento mixto.')
         return
       }
-
       if (exento <= 0) {
         setError('Debes ingresar un monto exento mayor a 0 para un documento mixto.')
         return
       }
     }
-
     if (formData.tratamiento_tributario === 'combustible') {
       if (neto <= 0) {
         setError('Debes ingresar un monto neto afecto mayor a 0 para combustible.')
         return
       }
-
       if (impuestoEspecifico < 0) {
         setError('El impuesto específico no puede ser negativo.')
         return
       }
     }
-
     if (total <= 0) {
       setError('El monto total debe ser mayor a 0.')
       return
@@ -510,7 +528,6 @@ export default function EgresosPage() {
       setSuccess('')
 
       const { data: sessionData } = await supabase.auth.getSession()
-
       if (!sessionData.session) {
         router.push('/login')
         return
@@ -528,8 +545,7 @@ export default function EgresosPage() {
         numero_documento: formData.numero_documento || null,
         descripcion: formData.descripcion,
         tratamiento_tributario: formData.tratamiento_tributario,
-        monto_neto:
-          formData.tratamiento_tributario === 'exento' ? 0 : neto,
+        monto_neto: formData.tratamiento_tributario === 'exento' ? 0 : neto,
         monto_exento:
           formData.tratamiento_tributario === 'afecto_iva' ||
           formData.tratamiento_tributario === 'combustible'
@@ -537,9 +553,7 @@ export default function EgresosPage() {
             : exento,
         monto_iva: iva,
         impuesto_especifico:
-          formData.tratamiento_tributario === 'combustible'
-            ? impuestoEspecifico
-            : 0,
+          formData.tratamiento_tributario === 'combustible' ? impuestoEspecifico : 0,
         monto_total: total,
         estado: formData.estado,
         proveedor_id: formData.proveedor_id || null,
@@ -549,11 +563,9 @@ export default function EgresosPage() {
       }
 
       const isEditing = Boolean(editingId)
-
       const url = isEditing
         ? `${baseUrl}/rest/v1/movimientos?id=eq.${editingId}`
         : `${baseUrl}/rest/v1/movimientos`
-
       const method = isEditing ? 'PATCH' : 'POST'
 
       const resp = await fetch(url, {
@@ -571,20 +583,12 @@ export default function EgresosPage() {
 
       if (!resp.ok) {
         console.error(json)
-        setError(
-          isEditing
-            ? 'No se pudo actualizar el egreso.'
-            : 'No se pudo registrar el egreso.'
-        )
+        setError(isEditing ? 'No se pudo actualizar el egreso.' : 'No se pudo registrar el egreso.')
         return
       }
 
-      setSuccess(
-        isEditing
-          ? 'Egreso actualizado correctamente.'
-          : 'Egreso registrado correctamente.'
-      )
-      resetForm()
+      setSuccess(isEditing ? 'Egreso actualizado correctamente.' : 'Egreso registrado correctamente.')
+      closeModal()
       await loadData()
     } catch (err) {
       if (err instanceof Error) {
@@ -602,13 +606,9 @@ export default function EgresosPage() {
       setError('Solo el administrador puede anular egresos.')
       return
     }
-
     if (item.estado?.toLowerCase() === 'anulado') return
 
-    const confirmacion = window.confirm(
-      `¿Desea anular el egreso "${item.descripcion}"?`
-    )
-
+    const confirmacion = window.confirm(`¿Desea anular el egreso "${item.descripcion}"?`)
     if (!confirmacion) return
 
     try {
@@ -616,7 +616,6 @@ export default function EgresosPage() {
       setSuccess('')
 
       const { data: sessionData } = await supabase.auth.getSession()
-
       if (!sessionData.session) {
         router.push('/login')
         return
@@ -626,31 +625,25 @@ export default function EgresosPage() {
       const apiKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
       const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
 
-      const resp = await fetch(
-        `${baseUrl}/rest/v1/movimientos?id=eq.${item.id}`,
-        {
-          method: 'PATCH',
-          headers: {
-            apikey: apiKey,
-            Authorization: `Bearer ${accessToken}`,
-            'Content-Type': 'application/json',
-            Prefer: 'return=representation',
-          },
-          body: JSON.stringify({ estado: 'anulado' }),
-        }
-      )
+      const resp = await fetch(`${baseUrl}/rest/v1/movimientos?id=eq.${item.id}`, {
+        method: 'PATCH',
+        headers: {
+          apikey: apiKey,
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+          Prefer: 'return=representation',
+        },
+        body: JSON.stringify({ estado: 'anulado' }),
+      })
 
       const json = await resp.json()
-
       if (!resp.ok) {
         console.error(json)
         setError('No se pudo anular el egreso.')
         return
       }
 
-      if (editingId === item.id) {
-        resetForm()
-      }
+      if (editingId === item.id) closeModal()
 
       setSuccess('Egreso anulado correctamente.')
       await loadData()
@@ -664,36 +657,48 @@ export default function EgresosPage() {
   }
 
   const egresosFiltrados = useMemo(() => {
-    if (filtroEstado === 'todos') return egresos
-    return egresos.filter(
-      (item) => (item.estado || '').toLowerCase() === filtroEstado
-    )
-  }, [egresos, filtroEstado])
+    return egresos.filter((item) => {
+      const estado = (item.estado || '').toLowerCase()
+      const numeroDocumento = (item.numero_documento || '').toLowerCase()
+      const descripcion = (item.descripcion || '').toLowerCase()
+      const proveedorId = item.proveedor_id || ''
+      const fecha = item.fecha || ''
+      const search = filters.text.trim().toLowerCase()
+
+      const matchesEstado = filters.estado === 'todos' || estado === filters.estado
+      const matchesDesde = !filters.fechaDesde || fecha >= filters.fechaDesde
+      const matchesHasta = !filters.fechaHasta || fecha <= filters.fechaHasta
+      const matchesNumero = !filters.numeroDocumento || numeroDocumento.includes(filters.numeroDocumento.toLowerCase())
+      const matchesProveedor = !filters.proveedorId || proveedorId === filters.proveedorId
+      const matchesTexto =
+        !search ||
+        descripcion.includes(search) ||
+        numeroDocumento.includes(search) ||
+        (item.proveedor_nombre || '').toLowerCase().includes(search) ||
+        (item.categoria_nombre || '').toLowerCase().includes(search)
+
+      return matchesEstado && matchesDesde && matchesHasta && matchesNumero && matchesProveedor && matchesTexto
+    })
+  }, [egresos, filters])
 
   const totalEgresos = useMemo(
-    () => egresos.reduce((acc, item) => acc + Number(item.monto_total || 0), 0),
-    [egresos]
+    () => egresosFiltrados.reduce((acc, item) => acc + Number(item.monto_total || 0), 0),
+    [egresosFiltrados]
   )
 
   const egresosPendientes = useMemo(
-    () =>
-      egresos.filter((item) => (item.estado || '').toLowerCase() === 'pendiente')
-        .length,
-    [egresos]
+    () => egresosFiltrados.filter((item) => (item.estado || '').toLowerCase() === 'pendiente').length,
+    [egresosFiltrados]
   )
 
   const egresosPagados = useMemo(
-    () =>
-      egresos.filter((item) => (item.estado || '').toLowerCase() === 'pagado')
-        .length,
-    [egresos]
+    () => egresosFiltrados.filter((item) => (item.estado || '').toLowerCase() === 'pagado').length,
+    [egresosFiltrados]
   )
 
   const egresosAnulados = useMemo(
-    () =>
-      egresos.filter((item) => (item.estado || '').toLowerCase() === 'anulado')
-        .length,
-    [egresos]
+    () => egresosFiltrados.filter((item) => (item.estado || '').toLowerCase() === 'anulado').length,
+    [egresosFiltrados]
   )
 
   return (
@@ -707,12 +712,24 @@ export default function EgresosPage() {
             </p>
           </div>
 
-          <Link
-            href="/reportes"
-            className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-          >
-            Ver reporte de egresos
-          </Link>
+          <div className="flex flex-wrap gap-3">
+            {isAdmin ? (
+              <button
+                type="button"
+                onClick={openNewModal}
+                className="rounded-xl bg-[#163A5F] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#245C90]"
+              >
+                Nuevo egreso
+              </button>
+            ) : null}
+
+            <Link
+              href="/reportes"
+              className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+            >
+              Ver reporte de egresos
+            </Link>
+          </div>
         </div>
 
         <EmpresaActivaBanner
@@ -729,520 +746,434 @@ export default function EgresosPage() {
         ) : null}
 
         <section className="rounded-2xl border-2 border-[#163A5F] bg-white p-4 shadow-sm">
-          <div className="mb-3">
-            <h2 className="text-lg font-semibold text-slate-900">
-              Filtros de egresos
-            </h2>
+          <div className="mb-4 flex flex-col gap-1">
+            <h2 className="text-lg font-semibold text-slate-900">Filtros de egresos</h2>
             <p className="text-sm text-slate-500">
-              Filtre el listado por estado del egreso.
+              Busca por fecha, documento, proveedor o descripción.
             </p>
           </div>
 
-          <div className="flex flex-wrap gap-2">
-            <button
-              onClick={() => setFiltroEstado('todos')}
-              className={`rounded-xl px-4 py-2 text-sm font-medium transition ${
-                filtroEstado === 'todos'
-                  ? 'bg-[#163A5F] text-white'
-                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-              }`}
-            >
-              Todos
-            </button>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-6">
+            <div className="xl:col-span-1">
+              <label className="mb-1 block text-sm font-medium text-slate-700">Estado</label>
+              <select
+                value={filters.estado}
+                onChange={(e) => setFilters((prev) => ({ ...prev, estado: e.target.value as FiltroEstado }))}
+                className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
+              >
+                <option value="todos">Todos</option>
+                <option value="pendiente">Pendiente</option>
+                <option value="pagado">Pagado</option>
+                <option value="anulado">Anulado</option>
+              </select>
+            </div>
 
-            <button
-              onClick={() => setFiltroEstado('pendiente')}
-              className={`rounded-xl px-4 py-2 text-sm font-medium transition ${
-                filtroEstado === 'pendiente'
-                  ? 'bg-[#163A5F] text-white'
-                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-              }`}
-            >
-              Pendientes
-            </button>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Desde</label>
+              <input
+                type="date"
+                value={filters.fechaDesde}
+                onChange={(e) => setFilters((prev) => ({ ...prev, fechaDesde: e.target.value }))}
+                className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
+              />
+            </div>
 
-            <button
-              onClick={() => setFiltroEstado('pagado')}
-              className={`rounded-xl px-4 py-2 text-sm font-medium transition ${
-                filtroEstado === 'pagado'
-                  ? 'bg-[#163A5F] text-white'
-                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-              }`}
-            >
-              Pagados
-            </button>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Hasta</label>
+              <input
+                type="date"
+                value={filters.fechaHasta}
+                onChange={(e) => setFilters((prev) => ({ ...prev, fechaHasta: e.target.value }))}
+                className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
+              />
+            </div>
 
-            <button
-              onClick={() => setFiltroEstado('anulado')}
-              className={`rounded-xl px-4 py-2 text-sm font-medium transition ${
-                filtroEstado === 'anulado'
-                  ? 'bg-[#163A5F] text-white'
-                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-              }`}
-            >
-              Anulados
-            </button>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">N° documento</label>
+              <input
+                type="text"
+                value={filters.numeroDocumento}
+                onChange={(e) => setFilters((prev) => ({ ...prev, numeroDocumento: e.target.value }))}
+                placeholder="Ej: 12345"
+                className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
+              />
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Proveedor</label>
+              <select
+                value={filters.proveedorId}
+                onChange={(e) => setFilters((prev) => ({ ...prev, proveedorId: e.target.value }))}
+                className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
+              >
+                <option value="">Todos</option>
+                {proveedores.map((item) => (
+                  <option key={item.id} value={item.id}>{item.nombre}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Buscar</label>
+              <input
+                type="text"
+                value={filters.text}
+                onChange={(e) => setFilters((prev) => ({ ...prev, text: e.target.value }))}
+                placeholder="Descripción, proveedor o categoría"
+                className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
+              />
+            </div>
           </div>
         </section>
 
-        {!loading && !error && (
+        {!loading && !error ? (
           <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
             <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <p className="text-sm text-slate-500">Total egresos</p>
-              <h2 className="mt-2 text-3xl font-semibold text-slate-900">
-                {formatCLP(totalEgresos)}
-              </h2>
+              <p className="text-sm text-slate-500">Total egresos filtrados</p>
+              <h2 className="mt-2 text-3xl font-semibold text-slate-900">{formatCLP(totalEgresos)}</h2>
             </article>
-
             <article className="rounded-2xl border border-amber-200 bg-amber-50 p-5 shadow-sm">
               <p className="text-sm text-amber-700">Pendientes</p>
-              <h2 className="mt-2 text-3xl font-semibold text-amber-900">
-                {egresosPendientes}
-              </h2>
+              <h2 className="mt-2 text-3xl font-semibold text-amber-900">{egresosPendientes}</h2>
             </article>
-
             <article className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 shadow-sm">
               <p className="text-sm text-emerald-700">Pagados</p>
-              <h2 className="mt-2 text-3xl font-semibold text-emerald-900">
-                {egresosPagados}
-              </h2>
+              <h2 className="mt-2 text-3xl font-semibold text-emerald-900">{egresosPagados}</h2>
             </article>
-
             <article className="rounded-2xl border border-slate-300 bg-slate-50 p-5 shadow-sm">
               <p className="text-sm text-slate-600">Anulados</p>
-              <h2 className="mt-2 text-3xl font-semibold text-slate-900">
-                {egresosAnulados}
-              </h2>
+              <h2 className="mt-2 text-3xl font-semibold text-slate-900">{egresosAnulados}</h2>
             </article>
           </section>
-        )}
+        ) : null}
 
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-          {isAdmin ? (
-            <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm xl:col-span-1">
-              <div className="mb-5 flex items-start justify-between gap-3">
-                <div>
-                  <h2 className="text-2xl font-semibold text-slate-900">
-                    {editingId ? 'Editar egreso' : 'Nuevo egreso'}
-                  </h2>
-                  <p className="mt-1 text-sm text-slate-500">
-                    {editingId
-                      ? 'Modifique los datos del egreso seleccionado.'
-                      : 'Registre un nuevo movimiento de egreso para la empresa activa.'}
-                  </p>
-                </div>
+        {error ? (
+          <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {error}
+          </div>
+        ) : null}
 
-                {editingId ? (
-                  <button
-                    type="button"
-                    onClick={handleCancelEdit}
-                    className="rounded-xl border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-                  >
-                    Cancelar
-                  </button>
-                ) : null}
-              </div>
+        {success ? (
+          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+            {success}
+          </div>
+        ) : null}
 
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">
-                    Fecha
-                  </label>
-                  <input
-                    type="date"
-                    name="fecha"
-                    value={formData.fecha}
-                    onChange={handleChange}
-                    className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">
-                    Tipo documento
-                  </label>
-                  <select
-                    name="tipo_documento"
-                    value={formData.tipo_documento}
-                    onChange={handleChange}
-                    className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
-                  >
-                    <option value="factura">Factura</option>
-                    <option value="boleta">Boleta</option>
-                    <option value="recibo">Recibo</option>
-                    <option value="otro">Otro</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">
-                    Número documento
-                  </label>
-                  <input
-                    type="text"
-                    name="numero_documento"
-                    value={formData.numero_documento}
-                    onChange={handleChange}
-                    className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
-                    placeholder="Ej: 12345"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">
-                    Descripción
-                  </label>
-                  <textarea
-                    name="descripcion"
-                    value={formData.descripcion}
-                    onChange={handleChange}
-                    className="min-h-[100px] w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
-                    placeholder="Detalle del egreso"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">
-                    Tratamiento tributario
-                  </label>
-                  <select
-                    name="tratamiento_tributario"
-                    value={formData.tratamiento_tributario}
-                    onChange={handleChange}
-                    className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
-                  >
-                    <option value="afecto_iva">Con IVA</option>
-                    <option value="exento">Exento de IVA</option>
-                    <option value="mixto">Con IVA + Exento IVA</option>
-                    <option value="combustible">IVA + Impuesto específico</option>
-                  </select>
-                </div>
-
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                  <div>
-                    <label className="mb-1 block text-sm font-medium text-slate-700">
-                      Neto afecto
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      step="1"
-                      name="monto_neto"
-                      value={formData.monto_neto}
-                      onChange={handleChange}
-                      disabled={formData.tratamiento_tributario === 'exento'}
-                      className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm disabled:bg-slate-50 disabled:text-slate-400"
-                      placeholder="0"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="mb-1 block text-sm font-medium text-slate-700">
-                      Monto exento
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      step="1"
-                      name="monto_exento"
-                      value={formData.monto_exento}
-                      onChange={handleChange}
-                      disabled={
-                        formData.tratamiento_tributario === 'afecto_iva' ||
-                        formData.tratamiento_tributario === 'combustible'
-                      }
-                      className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm disabled:bg-slate-50 disabled:text-slate-400"
-                      placeholder="0"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                  <div>
-                    <label className="mb-1 block text-sm font-medium text-slate-700">
-                      IVA
-                    </label>
-                    <input
-                      type="number"
-                      name="monto_iva"
-                      value={formData.monto_iva}
-                      readOnly
-                      className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-2.5 text-sm"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="mb-1 block text-sm font-medium text-slate-700">
-                      Impuesto específico
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      step="1"
-                      name="impuesto_especifico"
-                      value={formData.impuesto_especifico}
-                      onChange={handleChange}
-                      disabled={formData.tratamiento_tributario !== 'combustible'}
-                      className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm disabled:bg-slate-50 disabled:text-slate-400"
-                      placeholder="0"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">
-                    Total
-                  </label>
-                  <input
-                    type="number"
-                    name="monto_total"
-                    value={formData.monto_total}
-                    readOnly
-                    className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-2.5 text-sm font-medium"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">
-                    Estado
-                  </label>
-                  <select
-                    name="estado"
-                    value={formData.estado}
-                    onChange={handleChange}
-                    className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
-                  >
-                    <option value="pendiente">Pendiente</option>
-                    <option value="pagado">Pagado</option>
-                    <option value="anulado">Anulado</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">
-                    Proveedor
-                  </label>
-                  <select
-                    name="proveedor_id"
-                    value={formData.proveedor_id}
-                    onChange={handleChange}
-                    className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
-                  >
-                    <option value="">Seleccionar proveedor</option>
-                    {proveedores.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.nombre}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">
-                    Categoría
-                  </label>
-                  <select
-                    name="categoria_id"
-                    value={formData.categoria_id}
-                    onChange={handleChange}
-                    className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
-                  >
-                    <option value="">Seleccionar categoría</option>
-                    {categorias.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.nombre}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">
-                    Centro de costo
-                  </label>
-                  <select
-                    name="centro_costo_id"
-                    value={formData.centro_costo_id}
-                    onChange={handleChange}
-                    className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
-                  >
-                    <option value="">Seleccionar centro de costo</option>
-                    {centrosCosto.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.nombre}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">
-                    Cuenta bancaria
-                  </label>
-                  <select
-                    name="cuenta_bancaria_id"
-                    value={formData.cuenta_bancaria_id}
-                    onChange={handleChange}
-                    className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
-                  >
-                    <option value="">Seleccionar cuenta</option>
-                    {cuentas.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.banco} · {item.nombre_cuenta}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {error ? (
-                  <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                    {error}
-                  </div>
-                ) : null}
-
-                {success ? (
-                  <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-                    {success}
-                  </div>
-                ) : null}
-
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="w-full rounded-xl bg-[#163A5F] px-4 py-2.5 text-sm font-medium text-white transition hover:bg-[#245C90] disabled:opacity-70"
-                >
-                  {saving
-                    ? editingId
-                      ? 'Actualizando...'
-                      : 'Guardando...'
-                    : editingId
-                      ? 'Actualizar egreso'
-                      : 'Registrar egreso'}
-                </button>
-              </form>
-            </section>
-          ) : (
-            <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm xl:col-span-1">
-              <h2 className="text-2xl font-semibold text-slate-900">
-                Acciones restringidas
-              </h2>
-              <p className="mt-2 text-sm text-slate-500">
-                Este módulo permite visualizar y filtrar egresos, pero solo el administrador puede registrar, editar o anular.
-              </p>
-            </section>
-          )}
-
-          <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm xl:col-span-2">
-            <div className="mb-4">
-              <h2 className="text-2xl font-semibold text-slate-900">
-                Listado de egresos
-              </h2>
+        <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-2xl font-semibold text-slate-900">Listado de egresos</h2>
               <p className="mt-1 text-sm text-slate-500">
-                Historial de egresos registrados para la empresa activa.
+                Historial filtrado de egresos registrados para la empresa activa.
               </p>
             </div>
+            <div className="text-sm text-slate-500">{egresosFiltrados.length} registro(s)</div>
+          </div>
 
-            {loading && <div className="text-slate-500">Cargando egresos...</div>}
-
-            {!loading && error && (
-              <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                {error}
-              </div>
-            )}
-
-            {!loading && !error && egresosFiltrados.length === 0 && (
-              <div className="text-sm text-slate-500">
-                No hay egresos para el filtro seleccionado.
-              </div>
-            )}
-
-            {!loading && !error && egresosFiltrados.length > 0 && (
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[1600px] text-sm">
-                  <thead>
-                    <tr className="border-b border-slate-200 text-left text-slate-500">
-                      <th className="py-3 pr-4">Fecha</th>
-                      <th className="py-3 pr-4">Documento</th>
-                      <th className="py-3 pr-4">Descripción</th>
-                      <th className="py-3 pr-4">Proveedor</th>
-                      <th className="py-3 pr-4">Tratamiento</th>
-                      <th className="py-3 pr-4">Neto</th>
-                      <th className="py-3 pr-4">Exento</th>
-                      <th className="py-3 pr-4">IVA</th>
-                      <th className="py-3 pr-4">Imp. específico</th>
-                      <th className="py-3 pr-4">Total</th>
-                      <th className="py-3 pr-4">Estado</th>
-                      {isAdmin ? <th className="py-3 pr-4">Acciones</th> : null}
+          {loading ? (
+            <p className="text-sm text-slate-500">Cargando egresos...</p>
+          ) : egresosFiltrados.length === 0 ? (
+            <p className="text-sm text-slate-500">No hay egresos para los filtros seleccionados.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-[1320px] w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-200 text-left text-slate-500">
+                    <th className="py-3 pr-4">Fecha</th>
+                    <th className="py-3 pr-4">Documento</th>
+                    <th className="py-3 pr-4">Descripción</th>
+                    <th className="py-3 pr-4">Proveedor</th>
+                    <th className="py-3 pr-4">Categoría</th>
+                    <th className="py-3 pr-4">Centro costo</th>
+                    <th className="py-3 pr-4">Cuenta bancaria</th>
+                    <th className="py-3 pr-4">Tratamiento</th>
+                    <th className="py-3 pr-4 text-right">Monto</th>
+                    <th className="py-3 pr-4">Estado</th>
+                    {isAdmin ? <th className="py-3 pr-4 text-right">Acciones</th> : null}
+                  </tr>
+                </thead>
+                <tbody>
+                  {egresosFiltrados.map((item) => (
+                    <tr key={item.id} className="border-b border-slate-100 align-top">
+                      <td className="py-3 pr-4 whitespace-nowrap">{formatDate(item.fecha)}</td>
+                      <td className="py-3 pr-4 whitespace-nowrap">
+                        <div className="font-medium text-slate-800">{item.tipo_documento || '-'}</div>
+                        <div className="text-slate-500">{item.numero_documento || '-'}</div>
+                      </td>
+                      <td className="py-3 pr-4 min-w-[260px]">{item.descripcion}</td>
+                      <td className="py-3 pr-4 whitespace-nowrap">{item.proveedor_nombre || '-'}</td>
+                      <td className="py-3 pr-4 whitespace-nowrap">{item.categoria_nombre || '-'}</td>
+                      <td className="py-3 pr-4 whitespace-nowrap">{item.centro_costo_nombre || '-'}</td>
+                      <td className="py-3 pr-4 whitespace-nowrap">{item.cuenta_bancaria_nombre || '-'}</td>
+                      <td className="py-3 pr-4 whitespace-nowrap">{formatTratamientoTributario(item.tratamiento_tributario)}</td>
+                      <td className="py-3 pr-4 text-right font-medium">{formatCLP(item.monto_total)}</td>
+                      <td className="py-3 pr-4"><StatusBadge status={item.estado} /></td>
+                      {isAdmin ? (
+                        <td className="py-3 pr-4 text-right">
+                          <div className="flex justify-end gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleEdit(item)}
+                              className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                            >
+                              Editar
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void handleAnular(item)}
+                              className="rounded-xl border border-red-300 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50"
+                            >
+                              Anular
+                            </button>
+                          </div>
+                        </td>
+                      ) : null}
                     </tr>
-                  </thead>
-                  <tbody>
-                    {egresosFiltrados.map((item) => {
-                      const isAnulado = (item.estado || '').toLowerCase() === 'anulado'
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
 
-                      return (
-                        <tr key={item.id} className="border-b border-slate-100">
-                          <td className="py-3 pr-4">{formatDate(item.fecha)}</td>
-                          <td className="py-3 pr-4">
-                            {item.tipo_documento || '-'} {item.numero_documento || ''}
-                          </td>
-                          <td className="py-3 pr-4">{item.descripcion}</td>
-                          <td className="py-3 pr-4">{item.proveedor_nombre || '-'}</td>
-                          <td className="py-3 pr-4">
-                            {formatTratamientoTributario(item.tratamiento_tributario)}
-                          </td>
-                          <td className="py-3 pr-4 font-medium">
-                            {formatCLP(Number(item.monto_neto || 0))}
-                          </td>
-                          <td className="py-3 pr-4 font-medium">
-                            {formatCLP(Number(item.monto_exento || 0))}
-                          </td>
-                          <td className="py-3 pr-4 font-medium">
-                            {formatCLP(Number(item.monto_iva || 0))}
-                          </td>
-                          <td className="py-3 pr-4 font-medium">
-                            {formatCLP(Number(item.impuesto_especifico || 0))}
-                          </td>
-                          <td className="py-3 pr-4 font-medium">
-                            {formatCLP(Number(item.monto_total || 0))}
-                          </td>
-                          <td className="py-3 pr-4">
-                            <StatusBadge status={item.estado} />
-                          </td>
-
-                          {isAdmin ? (
-                            <td className="py-3 pr-4">
-                              <div className="flex flex-wrap gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() => handleEdit(item)}
-                                  disabled={isAnulado}
-                                  className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                                >
-                                  Editar
-                                </button>
-
-                                <button
-                                  type="button"
-                                  onClick={() => void handleAnular(item)}
-                                  disabled={isAnulado}
-                                  className="rounded-lg border border-red-300 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
-                                >
-                                  Anular
-                                </button>
-                              </div>
-                            </td>
-                          ) : null}
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
+        <FormModal
+          open={showModal}
+          onClose={closeModal}
+          title={editingId ? 'Editar egreso' : 'Nuevo egreso'}
+          subtitle={editingId ? 'Modifique los datos del egreso seleccionado.' : 'Registre un nuevo movimiento de egreso para la empresa activa.'}
+        >
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700">Fecha</label>
+                <input
+                  type="date"
+                  name="fecha"
+                  value={formData.fecha}
+                  onChange={handleChange}
+                  className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
+                  required
+                />
               </div>
-            )}
-          </section>
-        </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700">Tipo documento</label>
+                <select
+                  name="tipo_documento"
+                  value={formData.tipo_documento}
+                  onChange={handleChange}
+                  className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
+                >
+                  <option value="factura">Factura</option>
+                  <option value="boleta">Boleta</option>
+                  <option value="recibo">Recibo</option>
+                  <option value="otro">Otro</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700">Número documento</label>
+                <input
+                  type="text"
+                  name="numero_documento"
+                  value={formData.numero_documento}
+                  onChange={handleChange}
+                  className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
+                  placeholder="Ej: 12345"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700">Estado</label>
+                <select
+                  name="estado"
+                  value={formData.estado}
+                  onChange={handleChange}
+                  className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
+                >
+                  <option value="pendiente">Pendiente</option>
+                  <option value="pagado">Pagado</option>
+                  <option value="anulado">Anulado</option>
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Descripción</label>
+              <textarea
+                name="descripcion"
+                value={formData.descripcion}
+                onChange={handleChange}
+                className="min-h-[100px] w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
+                placeholder="Detalle del egreso"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Tratamiento tributario</label>
+              <select
+                name="tratamiento_tributario"
+                value={formData.tratamiento_tributario}
+                onChange={handleChange}
+                className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
+              >
+                <option value="afecto_iva">Con IVA</option>
+                <option value="exento">Exento de IVA</option>
+                <option value="mixto">Con IVA + Exento IVA</option>
+                <option value="combustible">IVA + Impuesto específico</option>
+              </select>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700">Neto afecto</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  name="monto_neto"
+                  value={formData.monto_neto}
+                  onChange={handleChange}
+                  disabled={formData.tratamiento_tributario === 'exento'}
+                  className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm disabled:bg-slate-50 disabled:text-slate-400"
+                  placeholder="0"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700">Monto exento</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  name="monto_exento"
+                  value={formData.monto_exento}
+                  onChange={handleChange}
+                  disabled={formData.tratamiento_tributario === 'afecto_iva' || formData.tratamiento_tributario === 'combustible'}
+                  className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm disabled:bg-slate-50 disabled:text-slate-400"
+                  placeholder="0"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700">IVA</label>
+                <input
+                  type="number"
+                  name="monto_iva"
+                  value={formData.monto_iva}
+                  readOnly
+                  className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-2.5 text-sm"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700">Impuesto específico</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  name="impuesto_especifico"
+                  value={formData.impuesto_especifico}
+                  onChange={handleChange}
+                  disabled={formData.tratamiento_tributario !== 'combustible'}
+                  className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm disabled:bg-slate-50 disabled:text-slate-400"
+                  placeholder="0"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Total</label>
+              <input
+                type="number"
+                name="monto_total"
+                value={formData.monto_total}
+                readOnly
+                className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-2.5 text-sm font-medium"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700">Proveedor</label>
+                <select
+                  name="proveedor_id"
+                  value={formData.proveedor_id}
+                  onChange={handleChange}
+                  className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
+                >
+                  <option value="">Seleccionar proveedor</option>
+                  {proveedores.map((item) => (
+                    <option key={item.id} value={item.id}>{item.nombre}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700">Categoría</label>
+                <select
+                  name="categoria_id"
+                  value={formData.categoria_id}
+                  onChange={handleChange}
+                  className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
+                >
+                  <option value="">Seleccionar categoría</option>
+                  {categorias.map((item) => (
+                    <option key={item.id} value={item.id}>{item.nombre}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700">Centro de costo</label>
+                <select
+                  name="centro_costo_id"
+                  value={formData.centro_costo_id}
+                  onChange={handleChange}
+                  className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
+                >
+                  <option value="">Seleccionar centro de costo</option>
+                  {centrosCosto.map((item) => (
+                    <option key={item.id} value={item.id}>{item.nombre}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700">Cuenta bancaria</label>
+                <select
+                  name="cuenta_bancaria_id"
+                  value={formData.cuenta_bancaria_id}
+                  onChange={handleChange}
+                  className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
+                >
+                  <option value="">Seleccionar cuenta</option>
+                  {cuentas.map((item) => (
+                    <option key={item.id} value={item.id}>{item.banco} · {item.nombre_cuenta}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={closeModal}
+                className="rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={saving}
+                className="rounded-xl bg-[#163A5F] px-4 py-2.5 text-sm font-medium text-white transition hover:bg-[#245C90] disabled:opacity-70"
+              >
+                {saving ? (editingId ? 'Actualizando...' : 'Guardando...') : editingId ? 'Actualizar egreso' : 'Registrar egreso'}
+              </button>
+            </div>
+          </form>
+        </FormModal>
       </main>
     </ProtectedModuleRoute>
   )
