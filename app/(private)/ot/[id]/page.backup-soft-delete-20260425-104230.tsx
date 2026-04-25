@@ -1,4 +1,4 @@
-﻿'use client'
+'use client'
 
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
@@ -192,16 +192,16 @@ function humanizePerson(value: string | null | undefined) {
   const lower = raw.toLowerCase()
 
   const knownMap: Record<string, string> = {
-    'rmendoza@rmsic.cl': 'RaÃºl Mendoza',
+    'rmendoza@rmsic.cl': 'Raúl Mendoza',
     'dallendes@rmsic.cl': 'David Allendes',
-    'rmendozaalejandro@gmail.com': 'RaÃºl Mendoza',
-    'raul mendoza': 'RaÃºl Mendoza',
-    'raÃºl mendoza': 'RaÃºl Mendoza',
-    'raul mendoza c.': 'RaÃºl Mendoza',
-    'raÃºl mendoza c.': 'RaÃºl Mendoza',
+    'rmendozaalejandro@gmail.com': 'Raúl Mendoza',
+    'raul mendoza': 'Raúl Mendoza',
+    'raúl mendoza': 'Raúl Mendoza',
+    'raul mendoza c.': 'Raúl Mendoza',
+    'raúl mendoza c.': 'Raúl Mendoza',
     'david allendes': 'David Allendes',
     'david allendes a.': 'David Allendes',
-    'rmendoza': 'RaÃºl Mendoza',
+    'rmendoza': 'Raúl Mendoza',
     'dallendes': 'David Allendes',
   }
 
@@ -210,9 +210,9 @@ function humanizePerson(value: string | null | undefined) {
   if (
     lower.includes('rmendoza') ||
     (lower.includes('raul') && lower.includes('mendoza')) ||
-    (lower.includes('raÃºl') && lower.includes('mendoza'))
+    (lower.includes('raúl') && lower.includes('mendoza'))
   ) {
-    return 'RaÃºl Mendoza'
+    return 'Raúl Mendoza'
   }
 
   if (
@@ -470,7 +470,7 @@ function OTDetalleContent() {
         setDeleteError('')
 
         if (!otId) {
-          throw new Error('No se recibiÃ³ el identificador de la OT.')
+          throw new Error('No se recibió el identificador de la OT.')
         }
 
         const {
@@ -571,8 +571,6 @@ function OTDetalleContent() {
               `
             )
             .eq('id', otId)
-            .eq('activo', true)
-            .is('deleted_at', null)
             .single(),
           supabase
             .from('ot_estados')
@@ -602,8 +600,6 @@ function OTDetalleContent() {
               `
             )
             .eq('ot_id', otId)
-            .eq('activo', true)
-            .is('deleted_at', null)
             .order('created_at', { ascending: false }),
           supabase
             .from('ot_firmas')
@@ -667,7 +663,7 @@ function OTDetalleContent() {
         let nextMap: Record<string, string> = {}
 
         if (perfilesResp.error) {
-          perfilesWarning = 'No se pudo cargar la lista de tÃ©cnicos OT.'
+          perfilesWarning = 'No se pudo cargar la lista de técnicos OT.'
         } else {
           const tecnicosRaw =
             (perfilesResp.data ?? []) as Array<{
@@ -782,13 +778,13 @@ function OTDetalleContent() {
   const validateForm = () => {
     if (!form.tipo_servicio_id) return 'Debes seleccionar un tipo de servicio.'
     if (!form.estado_id) return 'Debes seleccionar un estado.'
-    if (!form.titulo.trim()) return 'Debes ingresar un tÃ­tulo.'
+    if (!form.titulo.trim()) return 'Debes ingresar un título.'
     if (!form.fecha_ot) return 'Debes indicar la fecha OT.'
 
     if (isUrgenciaOAsistencia && form.mostrar_nota_valor_hora) {
       const valor = Number(form.valor_hora_uf)
       if (Number.isNaN(valor) || valor <= 0) {
-        return 'Debes ingresar un valor hora UF vÃ¡lido.'
+        return 'Debes ingresar un valor hora UF válido.'
       }
     }
 
@@ -799,17 +795,17 @@ function OTDetalleContent() {
     if (!tiempoForm.usuario_id) return 'Debes seleccionar un usuario para el tiempo.'
     if (!tiempoForm.fecha) return 'Debes indicar la fecha del registro.'
     if (!tiempoForm.hora_inicio) return 'Debes indicar la hora de inicio.'
-    if (!tiempoForm.hora_termino) return 'Debes indicar la hora de tÃ©rmino.'
+    if (!tiempoForm.hora_termino) return 'Debes indicar la hora de término.'
 
     const inicio = new Date(`${tiempoForm.fecha}T${tiempoForm.hora_inicio}`)
     const termino = new Date(`${tiempoForm.fecha}T${tiempoForm.hora_termino}`)
 
     if (Number.isNaN(inicio.getTime()) || Number.isNaN(termino.getTime())) {
-      return 'Las horas ingresadas no son vÃ¡lidas.'
+      return 'Las horas ingresadas no son válidas.'
     }
 
     if (termino <= inicio) {
-      return 'La hora de tÃ©rmino debe ser mayor que la hora de inicio.'
+      return 'La hora de término debe ser mayor que la hora de inicio.'
     }
 
     return ''
@@ -897,8 +893,6 @@ function OTDetalleContent() {
         .from('ot_ordenes_trabajo')
         .update(payload)
         .eq('id', otId)
-        .eq('activo', true)
-        .is('deleted_at', null)
 
       if (updateError) {
         throw new Error(`No se pudo guardar la OT: ${updateError.message}`)
@@ -973,37 +967,24 @@ function OTDetalleContent() {
       setTiempoError('')
       setTiempoSuccess('')
 
-      const confirmar = window.confirm('¿Deseas archivar este registro de tiempo? No se borrará de la base.')
+      const confirmar = window.confirm('¿Deseas eliminar este registro de tiempo?')
       if (!confirmar) return
-
-      const {
-        data: { user: currentUser },
-      } = await supabase.auth.getUser()
-
-      const deletedAt = new Date().toISOString()
 
       const { error } = await supabase
         .from('ot_tiempos_trabajo')
-        .update({
-          activo: false,
-          deleted_at: deletedAt,
-          deleted_by: currentUser?.id ?? null,
-          updated_by: currentUser?.id ?? null,
-          updated_at: deletedAt,
-        })
+        .delete()
         .eq('id', tiempoId)
-        .eq('ot_id', otId)
 
       if (error) {
-        throw new Error(`No se pudo archivar el tiempo: ${error.message}`)
+        throw new Error(`No se pudo eliminar el tiempo: ${error.message}`)
       }
 
       await loadData(false)
-      setTiempoSuccess('Tiempo archivado correctamente.')
+      setTiempoSuccess('Tiempo eliminado correctamente.')
       router.refresh()
     } catch (err) {
       setTiempoError(
-        err instanceof Error ? err.message : 'No se pudo archivar el tiempo.'
+        err instanceof Error ? err.message : 'No se pudo eliminar el tiempo.'
       )
     }
   }
@@ -1017,13 +998,13 @@ function OTDetalleContent() {
       setSuccess('')
 
       if (!estadoCerrada) {
-        throw new Error('No se encontrÃ³ el estado "cerrada" en la base.')
+        throw new Error('No se encontró el estado "cerrada" en la base.')
       }
 
       if (isAsesoria) {
         if (!form.diagnostico.trim() && !form.conclusiones_tecnicas.trim()) {
           throw new Error(
-            'Debes completar al menos el anÃ¡lisis tÃ©cnico o las conclusiones tÃ©cnicas antes de cerrar la OT.'
+            'Debes completar al menos el análisis técnico o las conclusiones técnicas antes de cerrar la OT.'
           )
         }
       } else if (!form.trabajo_realizado.trim()) {
@@ -1034,9 +1015,7 @@ function OTDetalleContent() {
         supabase
           .from('ot_tiempos_trabajo')
           .select('id, hora_inicio, hora_termino')
-          .eq('ot_id', otId)
-          .eq('activo', true)
-          .is('deleted_at', null),
+          .eq('ot_id', otId),
         supabase
           .from('ot_firmas')
           .select('id, tipo_firma')
@@ -1072,7 +1051,7 @@ function OTDetalleContent() {
       )
 
       if (tiemposValidos.length === 0) {
-        throw new Error('Los tiempos registrados no tienen hora de inicio y tÃ©rmino vÃ¡lidas.')
+        throw new Error('Los tiempos registrados no tienen hora de inicio y término válidas.')
       }
 
       if (firmasActuales.length === 0) {
@@ -1080,7 +1059,7 @@ function OTDetalleContent() {
       }
 
       if (requiresChecklistForClose && checklistActual.length === 0) {
-        throw new Error('Esta OT requiere checklist y aÃºn no tiene respuestas registradas.')
+        throw new Error('Esta OT requiere checklist y aún no tiene respuestas registradas.')
       }
 
       const orderedStarts = tiemposValidos
@@ -1144,8 +1123,6 @@ function OTDetalleContent() {
         .from('ot_ordenes_trabajo')
         .update(payload)
         .eq('id', otId)
-        .eq('activo', true)
-        .is('deleted_at', null)
 
       if (updateError) {
         throw new Error(`No se pudo cerrar la OT: ${updateError.message}`)
@@ -1169,42 +1146,28 @@ function OTDetalleContent() {
       setCierreSuccess('')
 
       if (currentRole !== 'admin') {
-        throw new Error('Solo un administrador puede archivar la OT.')
+        throw new Error('Solo un administrador puede eliminar la OT.')
       }
 
       const confirmar = window.confirm(
-        '¿Seguro que deseas archivar esta OT? No se borrará la información histórica.'
+        '¿Seguro que deseas eliminar esta OT? Esta acción no se puede deshacer.'
       )
 
       if (!confirmar) return
 
-      const {
-        data: { user: currentUser },
-      } = await supabase.auth.getUser()
-
-      const deletedAt = new Date().toISOString()
-
       const { error } = await supabase
         .from('ot_ordenes_trabajo')
-        .update({
-          activo: false,
-          deleted_at: deletedAt,
-          deleted_by: currentUser?.id ?? null,
-          updated_by: currentUser?.id ?? null,
-          updated_at: deletedAt,
-        })
+        .delete()
         .eq('id', otId)
-        .eq('activo', true)
-        .is('deleted_at', null)
 
       if (error) {
-        throw new Error(`No se pudo archivar la OT: ${error.message}`)
+        throw new Error(`No se pudo eliminar la OT: ${error.message}`)
       }
 
       router.push('/ot')
       router.refresh()
     } catch (err) {
-      setDeleteError(err instanceof Error ? err.message : 'No se pudo archivar la OT.')
+      setDeleteError(err instanceof Error ? err.message : 'No se pudo eliminar la OT.')
     } finally {
       setDeletingOt(false)
     }
@@ -1247,7 +1210,7 @@ function OTDetalleContent() {
     return (
       <div className="space-y-4">
         <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-sm text-red-700 shadow-sm">
-          No se encontrÃ³ la orden de trabajo.
+          No se encontró la orden de trabajo.
         </div>
 
         <Link
@@ -1328,7 +1291,7 @@ function OTDetalleContent() {
         </div>
 
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-sm text-slate-500">DuraciÃ³n OT (cierre)</p>
+          <p className="text-sm text-slate-500">Duración OT (cierre)</p>
           <p className="mt-2 text-lg font-semibold text-slate-900">
             {formatDuration(detalle.duracion_minutos)}
           </p>
@@ -1345,7 +1308,7 @@ function OTDetalleContent() {
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <SectionTitle
           title="Resumen general"
-          subtitle="InformaciÃ³n principal de la orden de trabajo."
+          subtitle="Información principal de la orden de trabajo."
         />
 
         <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -1354,11 +1317,11 @@ function OTDetalleContent() {
           <DetailField label="Folio" value={detalle.folio} />
           <DetailField label="Contacto cliente" value={form.contacto_cliente_nombre} />
           <DetailField label="Cargo contacto" value={form.contacto_cliente_cargo} />
-          <DetailField label="Ãrea / sector trabajo" value={form.area_trabajo} />
-          <DetailField label="UbicaciÃ³n base" value={resumen.ubicacion_nombre} />
+          <DetailField label="Área / sector trabajo" value={form.area_trabajo} />
+          <DetailField label="Ubicación base" value={resumen.ubicacion_nombre} />
           <DetailField label="Activo base" value={resumen.activo_nombre} />
           <DetailField
-            label="TÃ©cnico actual"
+            label="Técnico actual"
             value={humanizePerson(resumen.tecnico_nombre)}
           />
           <DetailField label="Supervisor actual" value={supervisorLabel} />
@@ -1437,7 +1400,7 @@ function OTDetalleContent() {
 
             <div>
               <label className="mb-2 block text-sm font-medium text-slate-700">
-                TÃ­tulo *
+                Título *
               </label>
               <input
                 type="text"
@@ -1461,7 +1424,7 @@ function OTDetalleContent() {
                 <option value="baja">Baja</option>
                 <option value="media">Media</option>
                 <option value="alta">Alta</option>
-                <option value="critica">CrÃ­tica</option>
+                <option value="critica">Crítica</option>
               </select>
             </div>
           </div>
@@ -1493,7 +1456,7 @@ function OTDetalleContent() {
 
             <div>
               <label className="mb-2 block text-sm font-medium text-slate-700">
-                Ãrea / sector de trabajo
+                Área / sector de trabajo
               </label>
               <input
                 type="text"
@@ -1505,12 +1468,12 @@ function OTDetalleContent() {
           </div>
 
           <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-            <h3 className="text-base font-semibold text-slate-900">AsignaciÃ³n</h3>
+            <h3 className="text-base font-semibold text-slate-900">Asignación</h3>
 
             <div className="mt-5 grid gap-4 md:grid-cols-2">
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-700">
-                  TÃ©cnico responsable
+                  Técnico responsable
                 </label>
                 <select
                   value={form.tecnico_responsable_id}
@@ -1560,7 +1523,7 @@ function OTDetalleContent() {
 
           {isPreventiva ? (
             <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
-              En mantenimiento preventivo el checklist queda marcado automÃ¡ticamente.
+              En mantenimiento preventivo el checklist queda marcado automáticamente.
             </div>
           ) : null}
         </div>
@@ -1569,7 +1532,7 @@ function OTDetalleContent() {
           <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
             <SectionTitle
               title="Contenido OT: mantenimiento preventivo"
-              subtitle="Estructura enfocada en control, ejecuciÃ³n, hallazgos y recomendaciones."
+              subtitle="Estructura enfocada en control, ejecución, hallazgos y recomendaciones."
             />
 
             <div className="mt-5 grid gap-4">
@@ -1639,8 +1602,8 @@ function OTDetalleContent() {
         {isUrgenciaOAsistencia ? (
           <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
             <SectionTitle
-              title="Contenido OT: urgencia / asistencia tÃ©cnica"
-              subtitle="Estructura correctiva y operativa para atenciÃ³n inmediata o soporte tÃ©cnico."
+              title="Contenido OT: urgencia / asistencia técnica"
+              subtitle="Estructura correctiva y operativa para atención inmediata o soporte técnico."
             />
 
             <div className="mt-5 grid gap-4">
@@ -1670,7 +1633,7 @@ function OTDetalleContent() {
 
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-700">
-                  DiagnÃ³stico
+                  Diagnóstico
                 </label>
                 <textarea
                   value={form.diagnostico}
@@ -1756,7 +1719,7 @@ function OTDetalleContent() {
                   </div>
 
                   <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                    Esta nota quedarÃ¡ disponible para el PDF cliente solo cuando la actives.
+                    Esta nota quedará disponible para el PDF cliente solo cuando la actives.
                   </div>
                 </div>
               ) : null}
@@ -1767,14 +1730,14 @@ function OTDetalleContent() {
         {isAsesoria ? (
           <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
             <SectionTitle
-              title="Contenido OT: consultorÃ­a / asesorÃ­a tÃ©cnica"
-              subtitle="Estructura enfocada en anÃ¡lisis, conclusiones y recomendaciones."
+              title="Contenido OT: consultoría / asesoría técnica"
+              subtitle="Estructura enfocada en análisis, conclusiones y recomendaciones."
             />
 
             <div className="mt-5 grid gap-4">
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-700">
-                  Objetivo de la asesorÃ­a
+                  Objetivo de la asesoría
                 </label>
                 <textarea
                   value={form.descripcion_solicitud}
@@ -1798,7 +1761,7 @@ function OTDetalleContent() {
 
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-700">
-                  AnÃ¡lisis tÃ©cnico
+                  Análisis técnico
                 </label>
                 <textarea
                   value={form.diagnostico}
@@ -1810,7 +1773,7 @@ function OTDetalleContent() {
 
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-700">
-                  Conclusiones tÃ©cnicas
+                  Conclusiones técnicas
                 </label>
                 <textarea
                   value={form.conclusiones_tecnicas}
@@ -1839,13 +1802,13 @@ function OTDetalleContent() {
           <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
             <SectionTitle
               title="Contenido general"
-              subtitle="Modo de respaldo para tipos no clasificados todavÃ­a."
+              subtitle="Modo de respaldo para tipos no clasificados todavía."
             />
 
             <div className="mt-5 grid gap-4">
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-700">
-                  DescripciÃ³n de la solicitud
+                  Descripción de la solicitud
                 </label>
                 <textarea
                   value={form.descripcion_solicitud}
@@ -1869,7 +1832,7 @@ function OTDetalleContent() {
 
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-700">
-                  DiagnÃ³stico
+                  Diagnóstico
                 </label>
                 <textarea
                   value={form.diagnostico}
@@ -1964,7 +1927,7 @@ function OTDetalleContent() {
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <SectionTitle
           title="Registrar tiempo de trabajo"
-          subtitle="Agrega bloques de tiempo para trabajo, traslado, espera o supervisiÃ³n."
+          subtitle="Agrega bloques de tiempo para trabajo, traslado, espera o supervisión."
         />
 
         <form onSubmit={handleAddTiempo} className="mt-5 space-y-5">
@@ -2016,7 +1979,7 @@ function OTDetalleContent() {
                 <option value="trabajo">Trabajo</option>
                 <option value="traslado">Traslado</option>
                 <option value="espera">Espera</option>
-                <option value="supervision">SupervisiÃ³n</option>
+                <option value="supervision">Supervisión</option>
               </select>
             </div>
 
@@ -2034,7 +1997,7 @@ function OTDetalleContent() {
 
             <div>
               <label className="mb-2 block text-sm font-medium text-slate-700">
-                Hora tÃ©rmino *
+                Hora término *
               </label>
               <input
                 type="time"
@@ -2047,13 +2010,13 @@ function OTDetalleContent() {
 
           <div>
             <label className="mb-2 block text-sm font-medium text-slate-700">
-              ObservaciÃ³n
+              Observación
             </label>
             <textarea
               value={tiempoForm.observacion}
               onChange={(e) => handleTiempoChange('observacion', e.target.value)}
               rows={3}
-              placeholder="Ejemplo: intervenciÃ³n en tablero principal, visita en terreno, traslado a planta, etc."
+              placeholder="Ejemplo: intervención en tablero principal, visita en terreno, traslado a planta, etc."
               className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-500"
             />
           </div>
@@ -2090,7 +2053,7 @@ function OTDetalleContent() {
 
         {tiempos.length === 0 ? (
           <div className="mt-5 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-600">
-            AÃºn no hay tiempos registrados para esta OT.
+            Aún no hay tiempos registrados para esta OT.
           </div>
         ) : (
           <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200">
@@ -2102,9 +2065,9 @@ function OTDetalleContent() {
                     <th className="px-4 py-3 font-semibold">Usuario</th>
                     <th className="px-4 py-3 font-semibold">Tipo</th>
                     <th className="px-4 py-3 font-semibold">Inicio</th>
-                    <th className="px-4 py-3 font-semibold">TÃ©rmino</th>
-                    <th className="px-4 py-3 font-semibold">DuraciÃ³n</th>
-                    <th className="px-4 py-3 font-semibold">ObservaciÃ³n</th>
+                    <th className="px-4 py-3 font-semibold">Término</th>
+                    <th className="px-4 py-3 font-semibold">Duración</th>
+                    <th className="px-4 py-3 font-semibold">Observación</th>
                     <th className="px-4 py-3 font-semibold text-right">Acciones</th>
                   </tr>
                 </thead>
@@ -2130,7 +2093,7 @@ function OTDetalleContent() {
                           onClick={() => void handleDeleteTiempo(item.id)}
                           className="inline-flex rounded-lg border border-red-300 px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50"
                         >
-                          Archivar
+                          Eliminar
                         </button>
                       </td>
                     </tr>
@@ -2157,7 +2120,7 @@ function OTDetalleContent() {
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <SectionTitle
           title="Cierre OT guiado"
-          subtitle="Valida lo mÃ­nimo necesario antes de cerrar la orden."
+          subtitle="Valida lo mínimo necesario antes de cerrar la orden."
         />
 
         <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -2167,11 +2130,11 @@ function OTDetalleContent() {
             detail={
               isAsesoria
                 ? hasTrabajoRealizado
-                  ? 'El anÃ¡lisis tÃ©cnico o las conclusiones ya estÃ¡n completas.'
-                  : 'Debes completar el anÃ¡lisis tÃ©cnico o las conclusiones antes de cerrar.'
+                  ? 'El análisis técnico o las conclusiones ya están completas.'
+                  : 'Debes completar el análisis técnico o las conclusiones antes de cerrar.'
                 : hasTrabajoRealizado
-                  ? 'El campo principal de ejecuciÃ³n ya estÃ¡ completo.'
-                  : 'Debes completar el campo principal de ejecuciÃ³n antes de cerrar.'
+                  ? 'El campo principal de ejecución ya está completo.'
+                  : 'Debes completar el campo principal de ejecución antes de cerrar.'
             }
           />
 
@@ -2190,7 +2153,7 @@ function OTDetalleContent() {
             ok={hasAnyFirma}
             detail={
               hasAnyFirma
-                ? `Firmas guardadas: ${firmas.length}. TÃ©cnico: ${hasFirmaTecnico ? 'sÃ­' : 'no'}. Cliente: ${hasFirmaCliente ? 'sÃ­' : 'no'}.`
+                ? `Firmas guardadas: ${firmas.length}. Técnico: ${hasFirmaTecnico ? 'sí' : 'no'}. Cliente: ${hasFirmaCliente ? 'sí' : 'no'}.`
                 : 'Debes guardar al menos una firma antes de cerrar.'
             }
           />
@@ -2202,7 +2165,7 @@ function OTDetalleContent() {
               requiresChecklistForClose
                 ? hasChecklistResponses
                   ? `Checklist respondido: ${checklistResponsesCount} registro(s).`
-                  : 'Esta OT requiere checklist y aÃºn no tiene respuestas.'
+                  : 'Esta OT requiere checklist y aún no tiene respuestas.'
                 : 'Esta OT no exige checklist para cierre.'
             }
           />
@@ -2213,7 +2176,7 @@ function OTDetalleContent() {
             detail={
               isClosed
                 ? 'La OT ya se encuentra cerrada.'
-                : 'La OT aÃºn no estÃ¡ cerrada.'
+                : 'La OT aún no está cerrada.'
             }
           />
         </div>
@@ -2242,7 +2205,7 @@ function OTDetalleContent() {
             onClick={() => void loadData(false)}
             className="inline-flex items-center justify-center rounded-xl border border-slate-300 px-5 py-3 text-sm font-medium text-slate-700 hover:bg-slate-100"
           >
-            Actualizar validaciÃ³n
+            Actualizar validación
           </button>
 
           <button
@@ -2265,7 +2228,7 @@ function OTDetalleContent() {
               disabled={deletingOt}
               className="inline-flex items-center justify-center rounded-xl border border-red-300 bg-red-50 px-5 py-3 text-sm font-semibold text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-70"
             >
-              {deletingOt ? 'Archivando OT...' : 'Archivar OT'}
+              {deletingOt ? 'Eliminando OT...' : 'Eliminar OT'}
             </button>
           ) : null}
         </div>

@@ -571,8 +571,6 @@ function OTDetalleContent() {
               `
             )
             .eq('id', otId)
-            .eq('activo', true)
-            .is('deleted_at', null)
             .single(),
           supabase
             .from('ot_estados')
@@ -602,8 +600,6 @@ function OTDetalleContent() {
               `
             )
             .eq('ot_id', otId)
-            .eq('activo', true)
-            .is('deleted_at', null)
             .order('created_at', { ascending: false }),
           supabase
             .from('ot_firmas')
@@ -897,8 +893,6 @@ function OTDetalleContent() {
         .from('ot_ordenes_trabajo')
         .update(payload)
         .eq('id', otId)
-        .eq('activo', true)
-        .is('deleted_at', null)
 
       if (updateError) {
         throw new Error(`No se pudo guardar la OT: ${updateError.message}`)
@@ -973,7 +967,7 @@ function OTDetalleContent() {
       setTiempoError('')
       setTiempoSuccess('')
 
-      const confirmar = window.confirm('¿Deseas archivar este registro de tiempo? No se borrará de la base.')
+      const confirmar = window.confirm('Â¿Deseas eliminar este registro de tiempo?')
       if (!confirmar) return
 
       const {
@@ -995,7 +989,7 @@ function OTDetalleContent() {
         .eq('ot_id', otId)
 
       if (error) {
-        throw new Error(`No se pudo archivar el tiempo: ${error.message}`)
+        throw new Error(`No se pudo eliminar el tiempo: ${error.message}`)
       }
 
       await loadData(false)
@@ -1003,7 +997,7 @@ function OTDetalleContent() {
       router.refresh()
     } catch (err) {
       setTiempoError(
-        err instanceof Error ? err.message : 'No se pudo archivar el tiempo.'
+        err instanceof Error ? err.message : 'No se pudo eliminar el tiempo.'
       )
     }
   }
@@ -1034,9 +1028,7 @@ function OTDetalleContent() {
         supabase
           .from('ot_tiempos_trabajo')
           .select('id, hora_inicio, hora_termino')
-          .eq('ot_id', otId)
-          .eq('activo', true)
-          .is('deleted_at', null),
+          .eq('ot_id', otId),
         supabase
           .from('ot_firmas')
           .select('id, tipo_firma')
@@ -1144,8 +1136,6 @@ function OTDetalleContent() {
         .from('ot_ordenes_trabajo')
         .update(payload)
         .eq('id', otId)
-        .eq('activo', true)
-        .is('deleted_at', null)
 
       if (updateError) {
         throw new Error(`No se pudo cerrar la OT: ${updateError.message}`)
@@ -1169,11 +1159,11 @@ function OTDetalleContent() {
       setCierreSuccess('')
 
       if (currentRole !== 'admin') {
-        throw new Error('Solo un administrador puede archivar la OT.')
+        throw new Error('Solo un administrador puede eliminar la OT.')
       }
 
       const confirmar = window.confirm(
-        '¿Seguro que deseas archivar esta OT? No se borrará la información histórica.'
+        'Â¿Seguro que deseas eliminar esta OT? Esta acciÃ³n no se puede deshacer.'
       )
 
       if (!confirmar) return
@@ -1194,8 +1184,6 @@ function OTDetalleContent() {
           updated_at: deletedAt,
         })
         .eq('id', otId)
-        .eq('activo', true)
-        .is('deleted_at', null)
 
       if (error) {
         throw new Error(`No se pudo archivar la OT: ${error.message}`)
@@ -2130,7 +2118,7 @@ function OTDetalleContent() {
                           onClick={() => void handleDeleteTiempo(item.id)}
                           className="inline-flex rounded-lg border border-red-300 px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50"
                         >
-                          Archivar
+                          Eliminar
                         </button>
                       </td>
                     </tr>
@@ -2265,7 +2253,7 @@ function OTDetalleContent() {
               disabled={deletingOt}
               className="inline-flex items-center justify-center rounded-xl border border-red-300 bg-red-50 px-5 py-3 text-sm font-semibold text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-70"
             >
-              {deletingOt ? 'Archivando OT...' : 'Archivar OT'}
+              {deletingOt ? 'Eliminando OT...' : 'Eliminar OT'}
             </button>
           ) : null}
         </div>

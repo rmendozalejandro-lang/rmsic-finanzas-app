@@ -1,0 +1,9 @@
+﻿
+Path                                                              
+----                                                              
+C:\Users\PC\rmsic-finanzas-app\app\(private)\cotizaciones\actio...
+C:\Users\PC\rmsic-finanzas-app\app\(private)\ot\tecnicos\page.tsx 
+C:\Users\PC\rmsic-finanzas-app\app\(private)\ot\[id]\page.tsx     
+C:\Users\PC\rmsic-finanzas-app\app\(private)\ot\[id]\page.tsx     
+
+

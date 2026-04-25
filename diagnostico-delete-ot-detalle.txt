@@ -1,0 +1,57 @@
+﻿
+  app\(private)\ot\[id]\page.tsx:967:      setTiempoError('')
+  app\(private)\ot\[id]\page.tsx:968:      setTiempoSuccess('')
+  app\(private)\ot\[id]\page.tsx:969:
+  app\(private)\ot\[id]\page.tsx:970:      const confirmar = 
+window.confirm('¿Deseas eliminar este registro de tiempo?')
+  app\(private)\ot\[id]\page.tsx:971:      if (!confirmar) return
+  app\(private)\ot\[id]\page.tsx:972:
+  app\(private)\ot\[id]\page.tsx:973:      const { error } = 
+await supabase
+  app\(private)\ot\[id]\page.tsx:974:        
+.from('ot_tiempos_trabajo')
+> app\(private)\ot\[id]\page.tsx:975:        .delete()
+  app\(private)\ot\[id]\page.tsx:976:        .eq('id', tiempoId)
+  app\(private)\ot\[id]\page.tsx:977:
+  app\(private)\ot\[id]\page.tsx:978:      if (error) {
+  app\(private)\ot\[id]\page.tsx:979:        throw new Error(`No 
+se pudo eliminar el tiempo: ${error.message}`)
+  app\(private)\ot\[id]\page.tsx:980:      }
+  app\(private)\ot\[id]\page.tsx:981:
+  app\(private)\ot\[id]\page.tsx:982:      await loadData(false)
+  app\(private)\ot\[id]\page.tsx:983:      
+setTiempoSuccess('Tiempo eliminado correctamente.')
+  app\(private)\ot\[id]\page.tsx:984:      router.refresh()
+  app\(private)\ot\[id]\page.tsx:985:    } catch (err) {
+  app\(private)\ot\[id]\page.tsx:986:      setTiempoError(
+  app\(private)\ot\[id]\page.tsx:987:        err instanceof Error 
+? err.message : 'No se pudo eliminar el tiempo.'
+  app\(private)\ot\[id]\page.tsx:1152:      const confirmar = 
+window.confirm(
+  app\(private)\ot\[id]\page.tsx:1153:        '¿Seguro que deseas 
+eliminar esta OT? Esta acción no se puede deshacer.'
+  app\(private)\ot\[id]\page.tsx:1154:      )
+  app\(private)\ot\[id]\page.tsx:1155:
+  app\(private)\ot\[id]\page.tsx:1156:      if (!confirmar) return
+  app\(private)\ot\[id]\page.tsx:1157:
+  app\(private)\ot\[id]\page.tsx:1158:      const { error } = 
+await supabase
+  app\(private)\ot\[id]\page.tsx:1159:        
+.from('ot_ordenes_trabajo')
+> app\(private)\ot\[id]\page.tsx:1160:        .delete()
+  app\(private)\ot\[id]\page.tsx:1161:        .eq('id', otId)
+  app\(private)\ot\[id]\page.tsx:1162:
+  app\(private)\ot\[id]\page.tsx:1163:      if (error) {
+  app\(private)\ot\[id]\page.tsx:1164:        throw new Error(`No 
+se pudo eliminar la OT: ${error.message}`)
+  app\(private)\ot\[id]\page.tsx:1165:      }
+  app\(private)\ot\[id]\page.tsx:1166:
+  app\(private)\ot\[id]\page.tsx:1167:      router.push('/ot')
+  app\(private)\ot\[id]\page.tsx:1168:      router.refresh()
+  app\(private)\ot\[id]\page.tsx:1169:    } catch (err) {
+  app\(private)\ot\[id]\page.tsx:1170:      setDeleteError(err 
+instanceof Error ? err.message : 'No se pudo eliminar la OT.')
+  app\(private)\ot\[id]\page.tsx:1171:    } finally {
+  app\(private)\ot\[id]\page.tsx:1172:      setDeletingOt(false)
+
+
