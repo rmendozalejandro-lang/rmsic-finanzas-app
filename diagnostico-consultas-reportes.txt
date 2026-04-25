@@ -1,0 +1,97 @@
+﻿
+  app\(private)\reportes\bancos\page.tsx:85:        const headers 
+= {
+  app\(private)\reportes\bancos\page.tsx:86:          apikey: 
+apiKey,
+  app\(private)\reportes\bancos\page.tsx:87:          
+Authorization: `Bearer ${accessToken}`,
+  app\(private)\reportes\bancos\page.tsx:88:        }
+  app\(private)\reportes\bancos\page.tsx:89:
+  app\(private)\reportes\bancos\page.tsx:90:        const 
+response = await fetch(
+> app\(private)\reportes\bancos\page.tsx:91:          `${baseUrl}/
+rest/v1/v_saldos_bancarios?empresa_id=eq.${empresaActivaId}&select
+=*`,
+  app\(private)\reportes\bancos\page.tsx:92:          { headers }
+  app\(private)\reportes\bancos\page.tsx:93:        )
+  app\(private)\reportes\bancos\page.tsx:94:
+  app\(private)\reportes\bancos\page.tsx:95:        const data = 
+await response.json()
+  app\(private)\reportes\bancos\page.tsx:96:
+  app\(private)\reportes\bancos\page.tsx:97:        if 
+(!response.ok) {
+  app\(private)\reportes\bancos\page.tsx:98:          
+setError('No se pudo cargar el resumen bancario.')
+  app\(private)\reportes\bancos\page.tsx:99:          return
+  app\(private)\reportes\bancos\page.tsx:100:        }
+  app\(private)\reportes\bancos\page.tsx:101:
+  app\(private)\reportes\resumen-financiero\page.tsx:343:        
+] = await Promise.all([
+  app\(private)\reportes\resumen-financiero\page.tsx:344:         
+ fetch(
+  app\(private)\reportes\resumen-financiero\page.tsx:345:         
+   `${baseUrl}/rest/v1/v_cobranza_pendiente?empresa_id=eq.${empres
+aActivaId}&select=saldo_pendiente`,
+  app\(private)\reportes\resumen-financiero\page.tsx:346:         
+   { headers }
+  app\(private)\reportes\resumen-financiero\page.tsx:347:         
+ ),
+  app\(private)\reportes\resumen-financiero\page.tsx:348:         
+ fetch(
+> app\(private)\reportes\resumen-financiero\page.tsx:349:         
+   `${baseUrl}/rest/v1/v_saldos_bancarios?empresa_id=eq.${empresaA
+ctivaId}&select=saldo_calculado`,
+  app\(private)\reportes\resumen-financiero\page.tsx:350:         
+   { headers }
+  app\(private)\reportes\resumen-financiero\page.tsx:351:         
+ ),
+  app\(private)\reportes\resumen-financiero\page.tsx:352:         
+ fetch(
+  app\(private)\reportes\resumen-financiero\page.tsx:353:         
+   `${baseUrl}/rest/v1/movimientos?select=fecha,monto_total,tipo_d
+ocumento,tipo_movimiento&empresa_id=eq.${empresaActivaId}&tipo_mov
+imiento=eq.ingreso&fecha=gte.${desde}&fecha=lte.${hasta}`,
+  app\(private)\reportes\resumen-financiero\page.tsx:354:         
+   { headers }
+  app\(private)\reportes\resumen-financiero\page.tsx:355:         
+ ),
+  app\(private)\reportes\resumen-financiero\page.tsx:356:         
+ fetch(
+  app\(private)\reportes\resumen-financiero\page.tsx:357:         
+   `${baseUrl}/rest/v1/movimientos?select=fecha,monto_total&empres
+a_id=eq.${empresaActivaId}&tipo_movimiento=eq.egreso&fecha=gte.${d
+esde}&fecha=lte.${hasta}`,
+  app\(private)\reportes\resumen-financiero\page.tsx:358:         
+   { headers }
+  app\(private)\reportes\resumen-financiero\page.tsx:359:         
+ ),
+  app\(private)\reportes\[tipo]\page.tsx:221:
+  app\(private)\reportes\[tipo]\page.tsx:222:        const 
+requests: Promise<Response>[] = []
+  app\(private)\reportes\[tipo]\page.tsx:223:
+  app\(private)\reportes\[tipo]\page.tsx:224:        if (tipo === 
+'bancos' || tipo === 'flujo-caja') {
+  app\(private)\reportes\[tipo]\page.tsx:225:          
+requests.push(
+  app\(private)\reportes\[tipo]\page.tsx:226:            fetch(
+> app\(private)\reportes\[tipo]\page.tsx:227:              `${base
+Url}/rest/v1/v_saldos_bancarios?empresa_id=eq.${empresaActivaId}&s
+elect=*`,
+  app\(private)\reportes\[tipo]\page.tsx:228:              { 
+headers }
+  app\(private)\reportes\[tipo]\page.tsx:229:            )
+  app\(private)\reportes\[tipo]\page.tsx:230:          )
+  app\(private)\reportes\[tipo]\page.tsx:231:        }
+  app\(private)\reportes\[tipo]\page.tsx:232:
+  app\(private)\reportes\[tipo]\page.tsx:233:        if (tipo === 
+'cobranza') {
+  app\(private)\reportes\[tipo]\page.tsx:234:          
+requests.push(
+  app\(private)\reportes\[tipo]\page.tsx:235:            fetch(
+  app\(private)\reportes\[tipo]\page.tsx:236:              `${base
+Url}/rest/v1/v_cobranza_pendiente?empresa_id=eq.${empresaActivaId}
+&select=*&order=fecha_vencimiento.asc.nullslast`,
+  app\(private)\reportes\[tipo]\page.tsx:237:              { 
+headers }
+
+

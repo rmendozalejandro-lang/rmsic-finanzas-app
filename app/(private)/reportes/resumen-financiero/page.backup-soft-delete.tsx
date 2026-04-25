@@ -350,27 +350,27 @@ export default function ResumenFinancieroPage() {
             { headers }
           ),
           fetch(
-            `${baseUrl}/rest/v1/movimientos?select=fecha,monto_total,tipo_documento,tipo_movimiento&empresa_id=eq.${empresaActivaId}&tipo_movimiento=eq.ingreso&fecha=gte.${desde}&fecha=lte.${hasta}&activo=eq.true&deleted_at=is.null`,
+            `${baseUrl}/rest/v1/movimientos?select=fecha,monto_total,tipo_documento,tipo_movimiento&empresa_id=eq.${empresaActivaId}&tipo_movimiento=eq.ingreso&fecha=gte.${desde}&fecha=lte.${hasta}`,
             { headers }
           ),
           fetch(
-            `${baseUrl}/rest/v1/movimientos?select=fecha,monto_total&empresa_id=eq.${empresaActivaId}&tipo_movimiento=eq.egreso&fecha=gte.${desde}&fecha=lte.${hasta}&activo=eq.true&deleted_at=is.null`,
+            `${baseUrl}/rest/v1/movimientos?select=fecha,monto_total&empresa_id=eq.${empresaActivaId}&tipo_movimiento=eq.egreso&fecha=gte.${desde}&fecha=lte.${hasta}`,
             { headers }
           ),
           fetch(
-            `${baseUrl}/rest/v1/movimientos?select=fecha,monto_total,tipo_documento,tipo_movimiento&empresa_id=eq.${empresaActivaId}&tipo_movimiento=eq.ingreso&fecha=gte.${rangoAnterior.desde}&fecha=lte.${rangoAnterior.hasta}&activo=eq.true&deleted_at=is.null`,
+            `${baseUrl}/rest/v1/movimientos?select=fecha,monto_total,tipo_documento,tipo_movimiento&empresa_id=eq.${empresaActivaId}&tipo_movimiento=eq.ingreso&fecha=gte.${rangoAnterior.desde}&fecha=lte.${rangoAnterior.hasta}`,
             { headers }
           ),
           fetch(
-            `${baseUrl}/rest/v1/movimientos?select=fecha,monto_total&empresa_id=eq.${empresaActivaId}&tipo_movimiento=eq.egreso&fecha=gte.${rangoAnterior.desde}&fecha=lte.${rangoAnterior.hasta}&activo=eq.true&deleted_at=is.null`,
+            `${baseUrl}/rest/v1/movimientos?select=fecha,monto_total&empresa_id=eq.${empresaActivaId}&tipo_movimiento=eq.egreso&fecha=gte.${rangoAnterior.desde}&fecha=lte.${rangoAnterior.hasta}`,
             { headers }
           ),
           fetch(
-            `${baseUrl}/rest/v1/movimientos?select=fecha,monto_total,tipo_documento,tipo_movimiento&empresa_id=eq.${empresaActivaId}&tipo_movimiento=eq.ingreso&fecha=gte.${desdeGrafico}&fecha=lte.${hasta}&activo=eq.true&deleted_at=is.null`,
+            `${baseUrl}/rest/v1/movimientos?select=fecha,monto_total,tipo_documento,tipo_movimiento&empresa_id=eq.${empresaActivaId}&tipo_movimiento=eq.ingreso&fecha=gte.${desdeGrafico}&fecha=lte.${hasta}`,
             { headers }
           ),
           fetch(
-            `${baseUrl}/rest/v1/movimientos?select=fecha,monto_total&empresa_id=eq.${empresaActivaId}&tipo_movimiento=eq.egreso&fecha=gte.${desdeGrafico}&fecha=lte.${hasta}&activo=eq.true&deleted_at=is.null`,
+            `${baseUrl}/rest/v1/movimientos?select=fecha,monto_total&empresa_id=eq.${empresaActivaId}&tipo_movimiento=eq.egreso&fecha=gte.${desdeGrafico}&fecha=lte.${hasta}`,
             { headers }
           ),
         ])
