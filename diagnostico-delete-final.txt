@@ -1,0 +1,25 @@
+﻿
+  app\(private)\ot\tecnicos\page.tsx:89:  const [editingUserId, 
+setEditingUserId] = useState<string | null>(null)
+  app\(private)\ot\tecnicos\page.tsx:90:  const [form, setForm] = 
+useState<TecnicoForm>(emptyForm())
+  app\(private)\ot\tecnicos\page.tsx:91:
+  app\(private)\ot\tecnicos\page.tsx:92:  const 
+perfilesDisponibles = useMemo(() => {
+  app\(private)\ot\tecnicos\page.tsx:93:    const usados = new 
+Set(tecnicos.map((item) => item.user_id))
+> app\(private)\ot\tecnicos\page.tsx:94:    if (editingUserId) 
+usados.delete(editingUserId)
+  app\(private)\ot\tecnicos\page.tsx:95:
+  app\(private)\ot\tecnicos\page.tsx:96:    return 
+perfiles.filter((item) => !usados.has(item.id))
+  app\(private)\ot\tecnicos\page.tsx:97:  }, [perfiles, tecnicos, 
+editingUserId])
+  app\(private)\ot\tecnicos\page.tsx:98:
+  app\(private)\ot\tecnicos\page.tsx:99:  useEffect(() => {
+  app\(private)\ot\tecnicos\page.tsx:100:    let active = true
+  app\(private)\ot\tecnicos\page.tsx:101:
+  app\(private)\ot\tecnicos\page.tsx:102:    const 
+validateManagementAccess = async () => {
+
+
