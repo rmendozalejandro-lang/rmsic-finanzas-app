@@ -638,13 +638,6 @@ export default function PlanCuentasPage() {
               Categorías contables
             </Link>
 
-            <Link
-              href="/plan-cuentas/movimientos"
-              className="rounded-2xl border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
-            >
-              Movimientos contables
-            </Link>
-
             {canManage && (
               <button
                 type="button"
