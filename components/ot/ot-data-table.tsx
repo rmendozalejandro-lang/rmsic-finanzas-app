@@ -37,6 +37,60 @@ function labelOrDash(value: string | null | undefined) {
   return value
 }
 
+function toTitleCase(text: string) {
+  return text
+    .split(' ')
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ')
+}
+
+function humanizePerson(value: string | null | undefined) {
+  if (!value || !value.trim()) return '-'
+
+  const raw = value.trim()
+  const lower = raw.toLowerCase()
+
+  const knownMap: Record<string, string> = {
+    'rmendoza@rmsic.cl': 'Raúl Mendoza',
+    'dallendes@rmsic.cl': 'David Allendes',
+    'rmendozaalejandro@gmail.com': 'Raúl Mendoza',
+    'raul mendoza': 'Raúl Mendoza',
+    'raúl mendoza': 'Raúl Mendoza',
+    'raul mendoza c.': 'Raúl Mendoza',
+    'raúl mendoza c.': 'Raúl Mendoza',
+    'david allendes': 'David Allendes',
+    'david allendes a.': 'David Allendes',
+    'rmendoza': 'Raúl Mendoza',
+    'dallendes': 'David Allendes',
+  }
+
+  if (knownMap[lower]) return knownMap[lower]
+
+  if (
+    lower.includes('rmendoza') ||
+    (lower.includes('raul') && lower.includes('mendoza')) ||
+    (lower.includes('raúl') && lower.includes('mendoza'))
+  ) {
+    return 'Raúl Mendoza'
+  }
+
+  if (lower.includes('dallendes') || (lower.includes('david') && lower.includes('allendes'))) {
+    return 'David Allendes'
+  }
+
+  if (raw.includes('@')) {
+    const localPart = raw.split('@')[0].toLowerCase().trim()
+
+    if (knownMap[localPart]) return knownMap[localPart]
+
+    const cleaned = localPart.replace(/[._-]+/g, ' ').replace(/\s+/g, ' ').trim()
+    return toTitleCase(cleaned)
+  }
+
+  return raw
+}
+
 function priorityBadgeClass(priority: string | null | undefined) {
   switch ((priority || '').toLowerCase()) {
     case 'critica':
