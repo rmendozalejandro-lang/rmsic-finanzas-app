@@ -652,13 +652,6 @@ export default function PlanCuentasPage() {
               Libro Mayor
             </Link>
 
-            <Link
-              href="/plan-cuentas/estado-resultados"
-              className="rounded-2xl border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
-            >
-              Estado de Resultados
-            </Link>
-
             {canManage && (
               <button
                 type="button"
