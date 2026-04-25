@@ -666,6 +666,13 @@ export default function PlanCuentasPage() {
               Balance General
             </Link>
 
+            <Link
+              href="/plan-cuentas/asientos"
+              className="rounded-2xl border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+            >
+              Asientos Contables
+            </Link>
+
             {canManage && (
               <button
                 type="button"
