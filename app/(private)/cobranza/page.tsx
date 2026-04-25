@@ -1,101 +1,113 @@
 'use client'
 
-import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import ProtectedModuleRoute from '../../../components/ProtectedModuleRoute'
 import { supabase } from '../../../lib/supabase/client'
-import StatusBadge from '../../../components/StatusBadge'
-import EmpresaActivaBanner from '../../../components/EmpresaActivaBanner'
-import ProtectedModuleRoute from '@/components/ProtectedModuleRoute'
 
 type CobranzaItem = {
-  fecha_emision: string
+  empresa_id: string
+  movimiento_id: string
+  cliente_id: string | null
+  cuenta_bancaria_id: string | null
+  fecha_emision: string | null
   fecha_vencimiento: string | null
-  cliente: string
-  numero_factura: string
-  descripcion: string
+  cliente: string | null
+  numero_factura: string | null
+  descripcion: string | null
   monto_total: number
   saldo_pendiente: number
-  estado: string
-  empresa_id?: string
+  estado: 'pendiente' | 'parcial' | 'vencido' | 'pagado'
+  monto_total_clp: string | null
+  saldo_pendiente_clp: string | null
 }
 
-type FiltroEstado = 'todos' | 'pendiente' | 'parcial' | 'vencido'
+type CuentaBancaria = {
+  id: string
+  empresa_id: string
+  banco: string
+  nombre_cuenta: string
+  tipo_cuenta: string | null
+  moneda: string | null
+  saldo_inicial: number | null
+  activa: boolean
+}
+
+type PaymentFormState = {
+  fecha_pago: string
+  cuenta_bancaria_id: string
+}
 
 const STORAGE_KEY = 'empresa_activa_id'
 
-const formatCLP = (value: number) =>
-  `$${Number(value || 0).toLocaleString('es-CL')}`
+function todayLocalDate() {
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
 
-const formatDate = (value: string | null) => {
+function formatDate(value: string | null | undefined) {
   if (!value) return '-'
 
-  const date = new Date(`${value}T00:00:00`)
+  const date = new Date(value)
   if (Number.isNaN(date.getTime())) return value
 
-  return date.toLocaleDateString('es-CL')
+  return new Intl.DateTimeFormat('es-CL', {
+    day: '2-digit',
+    month: '2-digit',
+    year: '2-digit',
+  }).format(date)
 }
 
-const getEstadoVisual = (estado: string, fechaVencimiento: string | null) => {
-  const base = (estado || '').toLowerCase()
+function formatCLP(value: number | null | undefined) {
+  if (value == null) return '$0'
 
-  if (base === 'vencido') return 'vencido'
-  if (!fechaVencimiento) return estado
-  if (base === 'pagado') return estado
+  return new Intl.NumberFormat('es-CL', {
+    style: 'currency',
+    currency: 'CLP',
+    maximumFractionDigits: 0,
+  }).format(value)
+}
 
-  const hoy = new Date()
-  const vencimiento = new Date(`${fechaVencimiento}T23:59:59`)
-
-  if ((base === 'pendiente' || base === 'parcial') && vencimiento < hoy) {
-    return 'vencido'
+function estadoBadgeClass(estado: string | null | undefined) {
+  switch ((estado || '').toLowerCase()) {
+    case 'vencido':
+      return 'border-red-200 bg-red-50 text-red-700'
+    case 'parcial':
+      return 'border-amber-200 bg-amber-50 text-amber-700'
+    case 'pendiente':
+      return 'border-blue-200 bg-blue-50 text-blue-700'
+    case 'pagado':
+      return 'border-emerald-200 bg-emerald-50 text-emerald-700'
+    default:
+      return 'border-slate-200 bg-slate-50 text-slate-700'
   }
-
-  return estado
 }
 
-const isVencida = (estado: string, fechaVencimiento: string | null) => {
-  const base = (estado || '').toLowerCase()
-
-  if (base === 'vencido') return true
-  if (!fechaVencimiento) return false
-  if (base === 'pagado') return false
-
-  const hoy = new Date()
-  const vencimiento = new Date(`${fechaVencimiento}T23:59:59`)
-
-  return (base === 'pendiente' || base === 'parcial') && vencimiento < hoy
-}
-
-const isPorVencerEstaSemana = (estado: string, fechaVencimiento: string | null) => {
-  if (!fechaVencimiento) return false
-
-  const base = (estado || '').toLowerCase()
-  if (base === 'pagado' || base === 'vencido') return false
-
-  const hoy = new Date()
-  const inicioHoy = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate())
-  const finSemana = new Date(inicioHoy)
-  finSemana.setDate(finSemana.getDate() + 7)
-
-  const vencimiento = new Date(`${fechaVencimiento}T00:00:00`)
-
-  return (
-    (base === 'pendiente' || base === 'parcial') &&
-    vencimiento >= inicioHoy &&
-    vencimiento <= finSemana
-  )
-}
-
-export default function CobranzaPage() {
-  const router = useRouter()
-
+function CobranzaPageContent() {
   const [empresaActivaId, setEmpresaActivaId] = useState('')
-  const [cobranza, setCobranza] = useState<CobranzaItem[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-  const [filtroEstado, setFiltroEstado] = useState<FiltroEstado>('todos')
+  const [items, setItems] = useState<CobranzaItem[]>([])
+  const [cuentas, setCuentas] = useState<CuentaBancaria[]>([])
   const [usuarioRol, setUsuarioRol] = useState('')
   const [isAdmin, setIsAdmin] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [success, setSuccess] = useState('')
+
+  const [selectedItem, setSelectedItem] = useState<CobranzaItem | null>(null)
+  const [showPaymentModal, setShowPaymentModal] = useState(false)
+  const [paymentForm, setPaymentForm] = useState<PaymentFormState>({
+    fecha_pago: todayLocalDate(),
+    cuenta_bancaria_id: '',
+  })
+
+  const canManagePayments = useMemo(() => {
+    return ['admin', 'administracion_financiera', 'cobranzas', 'cobranza'].includes(
+      usuarioRol
+    )
+  }, [usuarioRol])
 
   useEffect(() => {
     const syncEmpresaActiva = () => {
@@ -117,385 +129,449 @@ export default function CobranzaPage() {
     try {
       setLoading(true)
       setError('')
+      setSuccess('')
 
-      const { data: sessionData } = await supabase.auth.getSession()
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
 
-      if (!sessionData.session) {
-        router.push('/login')
+      if (!session) {
+        setError('No hay sesión activa.')
         return
       }
 
-      const accessToken = sessionData.session.access_token
-      const userId = sessionData.session.user.id
-      const apiKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-      const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+      const userId = session.user.id
 
-      const headers = {
-        apikey: apiKey,
-        Authorization: `Bearer ${accessToken}`,
-      }
+      const [cobranzaResp, cuentasResp, rolResp] = await Promise.all([
+        supabase
+          .from('v_cobranza_pendiente')
+          .select('*')
+          .eq('empresa_id', empresaActivaId)
+          .order('fecha_vencimiento', { ascending: true })
+          .order('fecha_emision', { ascending: true }),
 
-      const [cobranzaResp, rolResp] = await Promise.all([
-        fetch(
-          `${baseUrl}/rest/v1/v_cobranza_pendiente?empresa_id=eq.${empresaActivaId}&select=*&order=fecha_vencimiento.asc.nullslast`,
-          { headers }
-        ),
-        fetch(
-          `${baseUrl}/rest/v1/usuario_empresas?select=rol&usuario_id=eq.${userId}&empresa_id=eq.${empresaActivaId}&activo=eq.true`,
-          { headers }
-        ),
+        supabase
+          .from('cuentas_bancarias')
+          .select(
+            'id, empresa_id, banco, nombre_cuenta, tipo_cuenta, moneda, saldo_inicial, activa'
+          )
+          .eq('empresa_id', empresaActivaId)
+          .eq('activa', true)
+          .order('banco', { ascending: true })
+          .order('nombre_cuenta', { ascending: true }),
+
+        supabase
+          .from('usuario_empresas')
+          .select('rol')
+          .eq('usuario_id', userId)
+          .eq('empresa_id', empresaActivaId)
+          .eq('activo', true)
+          .maybeSingle(),
       ])
 
-      const cobranzaJson = await cobranzaResp.json()
-      const rolJson = await rolResp.json()
-
-      if (!cobranzaResp.ok) {
-        setError('No se pudo cargar la cobranza pendiente.')
-        return
+      if (cobranzaResp.error) {
+        throw new Error(`No se pudo cargar cobranza: ${cobranzaResp.error.message}`)
       }
 
-      if (!rolResp.ok) {
-        setError('No se pudo cargar el rol del usuario.')
-        return
+      if (cuentasResp.error) {
+        throw new Error(
+          `No se pudieron cargar las cuentas bancarias: ${cuentasResp.error.message}`
+        )
       }
 
-      const rol =
-        Array.isArray(rolJson) && rolJson.length > 0 ? rolJson[0].rol || '' : ''
+      if (rolResp.error) {
+        throw new Error(`No se pudo resolver el rol del usuario: ${rolResp.error.message}`)
+      }
 
-      setUsuarioRol(rol)
-      setIsAdmin(rol === 'admin')
-      setCobranza(cobranzaJson ?? [])
+      setItems((cobranzaResp.data ?? []) as CobranzaItem[])
+      setCuentas((cuentasResp.data ?? []) as CuentaBancaria[])
+      setUsuarioRol(rolResp.data?.rol || '')
+      setIsAdmin((rolResp.data?.rol || '') === 'admin')
     } catch (err) {
-      if (err instanceof Error) {
-        setError(err.message)
-      } else {
-        setError('Error desconocido al cargar cobranza.')
-      }
+      setError(err instanceof Error ? err.message : 'No se pudo cargar cobranza.')
     } finally {
       setLoading(false)
     }
-  }, [empresaActivaId, router])
+  }, [empresaActivaId])
 
   useEffect(() => {
     void loadData()
   }, [loadData])
 
-  const cobranzaConEstadoVisual = useMemo(
-    () =>
-      cobranza.map((item) => ({
-        ...item,
-        estado_visual: getEstadoVisual(item.estado, item.fecha_vencimiento),
-      })),
-    [cobranza]
-  )
-
   const totalPendiente = useMemo(
-    () =>
-      cobranzaConEstadoVisual.reduce(
-        (acc, item) => acc + Number(item.saldo_pendiente || 0),
-        0
-      ),
-    [cobranzaConEstadoVisual]
+    () => items.reduce((acc, item) => acc + (item.saldo_pendiente ?? 0), 0),
+    [items]
   )
 
-  const vencidas = useMemo(
-    () =>
-      cobranzaConEstadoVisual.filter((item) =>
-        isVencida(item.estado, item.fecha_vencimiento)
-      ),
-    [cobranzaConEstadoVisual]
+  const totalVencidas = useMemo(
+    () => items.filter((item) => item.estado === 'vencido').length,
+    [items]
   )
 
-  const porVencer = useMemo(
+  const totalPendientes = useMemo(
     () =>
-      cobranzaConEstadoVisual.filter((item) =>
-        isPorVencerEstaSemana(item.estado, item.fecha_vencimiento)
-      ),
-    [cobranzaConEstadoVisual]
+      items.filter((item) => item.estado === 'pendiente' || item.estado === 'parcial')
+        .length,
+    [items]
   )
 
-  const montoVencido = useMemo(
-    () =>
-      vencidas.reduce(
-        (acc, item) => acc + Number(item.saldo_pendiente || 0),
-        0
-      ),
-    [vencidas]
-  )
+  const openPaymentModal = (item: CobranzaItem) => {
+    setSelectedItem(item)
+    setPaymentForm({
+      fecha_pago: todayLocalDate(),
+      cuenta_bancaria_id: item.cuenta_bancaria_id || '',
+    })
+    setShowPaymentModal(true)
+    setError('')
+    setSuccess('')
+  }
 
-  const cobranzasParciales = useMemo(
-    () =>
-      cobranzaConEstadoVisual.filter(
-        (item) => (item.estado || '').toLowerCase() === 'parcial'
-      ),
-    [cobranzaConEstadoVisual]
-  )
+  const closePaymentModal = () => {
+    setSelectedItem(null)
+    setShowPaymentModal(false)
+    setPaymentForm({
+      fecha_pago: todayLocalDate(),
+      cuenta_bancaria_id: '',
+    })
+  }
 
-  const datosFiltrados = useMemo(() => {
-    if (filtroEstado === 'todos') return cobranzaConEstadoVisual
-
-    if (filtroEstado === 'vencido') {
-      return cobranzaConEstadoVisual.filter(
-        (item) => item.estado_visual.toLowerCase() === 'vencido'
-      )
+  const handleRegistrarPago = async () => {
+    if (!selectedItem) {
+      setError('No se seleccionó ninguna factura.')
+      return
     }
 
-    return cobranzaConEstadoVisual.filter(
-      (item) => (item.estado || '').toLowerCase() === filtroEstado
-    )
-  }, [cobranzaConEstadoVisual, filtroEstado])
+    if (!paymentForm.fecha_pago) {
+      setError('Debes indicar la fecha de pago.')
+      return
+    }
+
+    if (!paymentForm.cuenta_bancaria_id) {
+      setError('Debes seleccionar la cuenta bancaria que recibió el pago.')
+      return
+    }
+
+    try {
+      setSaving(true)
+      setError('')
+      setSuccess('')
+
+      const [cxcResp, movResp] = await Promise.all([
+        supabase
+          .from('cuentas_por_cobrar')
+          .update({
+            estado: 'pagado',
+            saldo_pendiente: 0,
+          })
+          .eq('movimiento_id', selectedItem.movimiento_id),
+
+        supabase
+          .from('movimientos')
+          .update({
+            estado: 'pagado',
+            fecha: paymentForm.fecha_pago,
+            cuenta_bancaria_id: paymentForm.cuenta_bancaria_id,
+          })
+          .eq('id', selectedItem.movimiento_id),
+      ])
+
+      if (cxcResp.error) {
+        throw new Error(
+          `No se pudo actualizar cuentas por cobrar: ${cxcResp.error.message}`
+        )
+      }
+
+      if (movResp.error) {
+        throw new Error(`No se pudo actualizar el ingreso: ${movResp.error.message}`)
+      }
+
+      closePaymentModal()
+      setSuccess('Pago registrado correctamente. Ya debería reflejarse en Ingresos y Bancos.')
+      await loadData()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudo registrar el pago.')
+    } finally {
+      setSaving(false)
+    }
+  }
 
   return (
-    <ProtectedModuleRoute moduleKey="cobranza">
-      <main className="space-y-6">
-        <div className="flex flex-wrap items-start justify-between gap-4">
+    <main className="space-y-6">
+      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
           <div>
-            <h1 className="text-4xl font-semibold text-slate-900">Cobranza</h1>
-            <p className="mt-2 text-slate-600">
-              Seguimiento de facturas pendientes y documentos por cobrar de la empresa activa.
+            <h1 className="text-3xl font-semibold text-slate-900">Cobranza</h1>
+            <p className="mt-1 text-sm text-slate-500">
+              Facturas pendientes, vencidas o parciales de la empresa activa.
             </p>
           </div>
 
-          <Link
-            href="/reportes"
-            className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-          >
-            Ver reportes
-          </Link>
+          <div className="text-sm text-slate-500">
+            {isAdmin ? 'Perfil administrador' : `Rol: ${usuarioRol || 'sin rol'}`}
+          </div>
         </div>
+      </div>
 
-        <EmpresaActivaBanner
-          modulo="Cobranza"
-          descripcion="Todos los documentos visibles corresponden únicamente a la empresa activa seleccionada."
-        />
+      {loading ? (
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          Cargando cobranza...
+        </div>
+      ) : null}
 
-        {!isAdmin && !loading ? (
-          <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-            El usuario actual tiene rol <span className="font-semibold">{usuarioRol || 'sin rol asignado'}</span>. En cobranza solo el administrador tendrá disponibles acciones sensibles.
-          </div>
-        ) : null}
+      {error ? (
+        <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-red-700 shadow-sm">
+          {error}
+        </div>
+      ) : null}
 
-        <section className="rounded-2xl border-2 border-[#163A5F] bg-white p-4 shadow-sm">
-          <div className="mb-3">
-            <h2 className="text-lg font-semibold text-slate-900">
-              Filtros de cobranza
-            </h2>
-            <p className="text-sm text-slate-500">
-              Filtre los documentos por estado del seguimiento.
-            </p>
-          </div>
+      {success ? (
+        <div className="rounded-2xl border border-green-200 bg-green-50 p-6 text-green-700 shadow-sm">
+          {success}
+        </div>
+      ) : null}
 
-          <div className="flex flex-wrap gap-2">
-            <button
-              onClick={() => setFiltroEstado('todos')}
-              className={`rounded-xl px-4 py-2 text-sm font-medium transition ${
-                filtroEstado === 'todos'
-                  ? 'bg-[#163A5F] text-white'
-                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-              }`}
-            >
-              Todos
-            </button>
-
-            <button
-              onClick={() => setFiltroEstado('pendiente')}
-              className={`rounded-xl px-4 py-2 text-sm font-medium transition ${
-                filtroEstado === 'pendiente'
-                  ? 'bg-[#163A5F] text-white'
-                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-              }`}
-            >
-              Pendientes
-            </button>
-
-            <button
-              onClick={() => setFiltroEstado('parcial')}
-              className={`rounded-xl px-4 py-2 text-sm font-medium transition ${
-                filtroEstado === 'parcial'
-                  ? 'bg-[#163A5F] text-white'
-                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-              }`}
-            >
-              Parciales
-            </button>
-
-            <button
-              onClick={() => setFiltroEstado('vencido')}
-              className={`rounded-xl px-4 py-2 text-sm font-medium transition ${
-                filtroEstado === 'vencido'
-                  ? 'bg-[#163A5F] text-white'
-                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-              }`}
-            >
-              Vencidos
-            </button>
-          </div>
-        </section>
-
-        {!loading && !error && (
-          <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <p className="text-sm text-slate-500">Total por cobrar</p>
-              <h2 className="mt-2 text-3xl font-semibold text-slate-900">
+      {!loading && !error ? (
+        <>
+          <section className="grid gap-4 md:grid-cols-3">
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <p className="text-sm text-slate-500">Monto pendiente</p>
+              <p className="mt-2 text-2xl font-bold text-slate-900">
                 {formatCLP(totalPendiente)}
-              </h2>
-            </article>
-
-            <article className="rounded-2xl border border-red-200 bg-red-50 p-5 shadow-sm">
-              <p className="text-sm text-red-700">Facturas vencidas</p>
-              <h2 className="mt-2 text-3xl font-semibold text-red-900">
-                {vencidas.length}
-              </h2>
-            </article>
-
-            <article className="rounded-2xl border border-amber-200 bg-amber-50 p-5 shadow-sm">
-              <p className="text-sm text-amber-700">Monto vencido</p>
-              <h2 className="mt-2 text-3xl font-semibold text-amber-900">
-                {formatCLP(montoVencido)}
-              </h2>
-            </article>
-
-            <article className="rounded-2xl border border-blue-200 bg-blue-50 p-5 shadow-sm">
-              <p className="text-sm text-blue-700">Por vencer esta semana</p>
-              <h2 className="mt-2 text-3xl font-semibold text-blue-900">
-                {porVencer.length}
-              </h2>
-            </article>
-          </section>
-        )}
-
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-          <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm xl:col-span-2">
-            <div className="mb-4">
-              <h2 className="text-2xl font-semibold text-slate-900">
-                Listado de cobranza
-              </h2>
-              <p className="mt-1 text-sm text-slate-500">
-                Facturas y saldos pendientes obtenidos desde la vista de cobranza.
               </p>
             </div>
 
-            {loading && <div className="text-slate-500">Cargando cobranza...</div>}
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <p className="text-sm text-slate-500">Documentos pendientes / parciales</p>
+              <p className="mt-2 text-2xl font-bold text-slate-900">{totalPendientes}</p>
+            </div>
 
-            {!loading && error && (
-              <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                {error}
-              </div>
-            )}
-
-            {!loading && !error && datosFiltrados.length === 0 && (
-              <div className="text-sm text-slate-500">
-                No hay documentos para el filtro seleccionado.
-              </div>
-            )}
-
-            {!loading && !error && datosFiltrados.length > 0 && (
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[980px] text-sm">
-                  <thead>
-                    <tr className="border-b border-slate-200 text-left text-slate-500">
-                      <th className="py-3 pr-4">Cliente</th>
-                      <th className="py-3 pr-4">Factura</th>
-                      <th className="py-3 pr-4">Emisión</th>
-                      <th className="py-3 pr-4">Vencimiento</th>
-                      <th className="py-3 pr-4">Descripción</th>
-                      <th className="py-3 pr-4">Monto total</th>
-                      <th className="py-3 pr-4">Saldo pendiente</th>
-                      <th className="py-3 pr-4">Estado</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {datosFiltrados.map((item, index) => (
-                      <tr
-                        key={`${item.numero_factura}-${index}`}
-                        className="border-b border-slate-100"
-                      >
-                        <td className="py-3 pr-4">{item.cliente}</td>
-                        <td className="py-3 pr-4">{item.numero_factura}</td>
-                        <td className="py-3 pr-4">{formatDate(item.fecha_emision)}</td>
-                        <td className="py-3 pr-4">{formatDate(item.fecha_vencimiento)}</td>
-                        <td className="py-3 pr-4">{item.descripcion}</td>
-                        <td className="py-3 pr-4">
-                          {formatCLP(Number(item.monto_total))}
-                        </td>
-                        <td className="py-3 pr-4 font-medium">
-                          {formatCLP(Number(item.saldo_pendiente))}
-                        </td>
-                        <td className="py-3 pr-4">
-                          <StatusBadge status={item.estado_visual} />
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </section>
-
-          <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm xl:col-span-1">
-            <h2 className="text-2xl font-semibold text-slate-900">
-              Resumen de cobranza
-            </h2>
-            <p className="mb-4 mt-1 text-sm text-slate-500">
-              Indicadores rápidos de seguimiento.
-            </p>
-
-            <div className="space-y-4">
-              <article className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-sm text-slate-500">Documentos pendientes</p>
-                <p className="mt-2 text-2xl font-semibold text-slate-900">
-                  {
-                    cobranzaConEstadoVisual.filter(
-                      (item) => (item.estado || '').toLowerCase() === 'pendiente'
-                    ).length
-                  }
-                </p>
-              </article>
-
-              <article className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-sm text-slate-500">Documentos parciales</p>
-                <p className="mt-2 text-2xl font-semibold text-slate-900">
-                  {cobranzasParciales.length}
-                </p>
-              </article>
-
-              <article className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-sm text-slate-500">Vencidas</p>
-                <p className="mt-2 text-2xl font-semibold text-slate-900">
-                  {vencidas.length}
-                </p>
-              </article>
-
-              <article className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-sm text-slate-500">Por vencer esta semana</p>
-                <p className="mt-2 text-2xl font-semibold text-slate-900">
-                  {porVencer.length}
-                </p>
-              </article>
-
-              {isAdmin ? (
-                <article className="rounded-xl border border-[#163A5F] bg-slate-50 p-4">
-                  <p className="text-sm font-medium text-slate-700">
-                    Acciones sensibles reservadas
-                  </p>
-                  <p className="mt-2 text-sm text-slate-500">
-                    Este bloque queda reservado para futuras acciones de gestión de cobranza exclusivas para administrador.
-                  </p>
-                </article>
-              ) : (
-                <article className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                  <p className="text-sm font-medium text-slate-700">
-                    Acciones restringidas
-                  </p>
-                  <p className="mt-2 text-sm text-slate-500">
-                    El usuario actual puede visualizar y filtrar, pero no tendrá acciones sensibles habilitadas.
-                  </p>
-                </article>
-              )}
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <p className="text-sm text-slate-500">Documentos vencidos</p>
+              <p className="mt-2 text-2xl font-bold text-slate-900">{totalVencidas}</p>
             </div>
           </section>
+
+          <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+              <div>
+                <h2 className="text-2xl font-semibold text-slate-900">
+                  Cuentas por cobrar activas
+                </h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  Registra aquí el pago de una factura para actualizar ingresos y bancos.
+                </p>
+              </div>
+
+              {!canManagePayments ? (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
+                  Tu rol puede visualizar, pero no registrar pagos.
+                </div>
+              ) : null}
+            </div>
+
+            {items.length === 0 ? (
+              <div className="mt-6 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-600">
+                No hay facturas pendientes para la empresa activa.
+              </div>
+            ) : (
+              <div className="mt-6 overflow-hidden rounded-2xl border border-slate-200">
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-sm">
+                    <thead className="bg-slate-50">
+                      <tr className="text-left text-slate-600">
+                        <th className="px-4 py-3 font-semibold">Cliente</th>
+                        <th className="px-4 py-3 font-semibold">Factura</th>
+                        <th className="px-4 py-3 font-semibold">Emisión</th>
+                        <th className="px-4 py-3 font-semibold">Vencimiento</th>
+                        <th className="px-4 py-3 font-semibold">Descripción</th>
+                        <th className="px-4 py-3 font-semibold">Monto total</th>
+                        <th className="px-4 py-3 font-semibold">Saldo pendiente</th>
+                        <th className="px-4 py-3 font-semibold">Estado</th>
+                        <th className="px-4 py-3 text-right font-semibold">Acciones</th>
+                      </tr>
+                    </thead>
+
+                    <tbody>
+                      {items.map((item) => (
+                        <tr
+                          key={item.movimiento_id}
+                          className="border-t border-slate-100 text-slate-700"
+                        >
+                          <td className="px-4 py-3">{item.cliente || '-'}</td>
+                          <td className="px-4 py-3 font-medium text-slate-900">
+                            {item.numero_factura || '-'}
+                          </td>
+                          <td className="px-4 py-3">{formatDate(item.fecha_emision)}</td>
+                          <td className="px-4 py-3">{formatDate(item.fecha_vencimiento)}</td>
+                          <td className="px-4 py-3">
+                            <div className="max-w-[260px] whitespace-normal break-words">
+                              {item.descripcion || '-'}
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">{item.monto_total_clp || formatCLP(item.monto_total)}</td>
+                          <td className="px-4 py-3">
+                            {item.saldo_pendiente_clp || formatCLP(item.saldo_pendiente)}
+                          </td>
+                          <td className="px-4 py-3">
+                            <span
+                              className={`inline-flex rounded-full border px-3 py-1 text-xs font-medium ${estadoBadgeClass(
+                                item.estado
+                              )}`}
+                            >
+                              {item.estado}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            {canManagePayments ? (
+                              <button
+                                type="button"
+                                onClick={() => openPaymentModal(item)}
+                                className="inline-flex items-center justify-center rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-100"
+                              >
+                                Registrar pago
+                              </button>
+                            ) : (
+                              <span className="text-xs text-slate-400">Sin acciones</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </section>
+        </>
+      ) : null}
+
+      {showPaymentModal && selectedItem ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
+          <div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white p-6 shadow-xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-xl font-semibold text-slate-900">
+                  Registrar pago de factura
+                </h3>
+                <p className="mt-1 text-sm text-slate-500">
+                  Al confirmar, la factura se marcará como pagada y se reflejará en ingresos y
+                  bancos.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={closePaymentModal}
+                className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-100"
+              >
+                Cerrar
+              </button>
+            </div>
+
+            <div className="mt-6 grid gap-4 md:grid-cols-2">
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                  Cliente
+                </p>
+                <p className="mt-1 text-sm text-slate-900">{selectedItem.cliente || '-'}</p>
+              </div>
+
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                  Factura
+                </p>
+                <p className="mt-1 text-sm text-slate-900">
+                  {selectedItem.numero_factura || '-'}
+                </p>
+              </div>
+
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                  Monto total
+                </p>
+                <p className="mt-1 text-sm text-slate-900">
+                  {selectedItem.monto_total_clp || formatCLP(selectedItem.monto_total)}
+                </p>
+              </div>
+
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                  Saldo pendiente
+                </p>
+                <p className="mt-1 text-sm text-slate-900">
+                  {selectedItem.saldo_pendiente_clp || formatCLP(selectedItem.saldo_pendiente)}
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-6 grid gap-4 md:grid-cols-2">
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  Fecha de pago *
+                </label>
+                <input
+                  type="date"
+                  value={paymentForm.fecha_pago}
+                  onChange={(e) =>
+                    setPaymentForm((prev) => ({ ...prev, fecha_pago: e.target.value }))
+                  }
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  Cuenta bancaria *
+                </label>
+                <select
+                  value={paymentForm.cuenta_bancaria_id}
+                  onChange={(e) =>
+                    setPaymentForm((prev) => ({
+                      ...prev,
+                      cuenta_bancaria_id: e.target.value,
+                    }))
+                  }
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
+                >
+                  <option value="">Selecciona una cuenta</option>
+                  {cuentas.map((cuenta) => (
+                    <option key={cuenta.id} value={cuenta.id}>
+                      {cuenta.banco} - {cuenta.nombre_cuenta}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={closePaymentModal}
+                className="inline-flex items-center justify-center rounded-xl border border-slate-300 px-5 py-3 text-sm font-medium text-slate-700 hover:bg-slate-100"
+              >
+                Cancelar
+              </button>
+
+              <button
+                type="button"
+                onClick={handleRegistrarPago}
+                disabled={saving}
+                className="inline-flex items-center justify-center rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70"
+              >
+                {saving ? 'Registrando pago...' : 'Confirmar pago'}
+              </button>
+            </div>
+          </div>
         </div>
-      </main>
+      ) : null}
+    </main>
+  )
+}
+
+export default function CobranzaPage() {
+  return (
+    <ProtectedModuleRoute moduleKey="cobranza">
+      <CobranzaPageContent />
     </ProtectedModuleRoute>
   )
 }
