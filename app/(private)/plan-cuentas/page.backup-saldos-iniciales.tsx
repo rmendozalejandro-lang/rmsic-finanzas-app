@@ -694,20 +694,6 @@ export default function PlanCuentasPage() {
               KPIs Financieros
             </Link>
 
-            <Link
-              href="/plan-cuentas/saldos-iniciales"
-              className="rounded-2xl border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
-            >
-              Saldos Iniciales
-            </Link>
-
-            <Link
-              href="/plan-cuentas/balance-formal"
-              className="rounded-2xl border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
-            >
-              Balance Formal
-            </Link>
-
             {canManage && (
               <button
                 type="button"
