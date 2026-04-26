@@ -673,6 +673,27 @@ export default function PlanCuentasPage() {
               Asientos Contables
             </Link>
 
+            <Link
+              href="/plan-cuentas/dashboard-contable"
+              className="rounded-2xl border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+            >
+              Dashboard Contable
+            </Link>
+
+            <Link
+              href="/plan-cuentas/exportar-reportes"
+              className="rounded-2xl border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+            >
+              Exportar Reportes
+            </Link>
+
+            <Link
+              href="/plan-cuentas/kpis-financieros"
+              className="rounded-2xl border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+            >
+              KPIs Financieros
+            </Link>
+
             {canManage && (
               <button
                 type="button"
