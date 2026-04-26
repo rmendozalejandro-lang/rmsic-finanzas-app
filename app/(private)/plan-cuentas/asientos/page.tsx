@@ -779,6 +779,15 @@ export default function AsientosContablesPage() {
                             Ver detalle
                           </button>
 
+                          {canManage && asiento.estado === 'borrador' && (
+                            <Link
+                              href={`/plan-cuentas/asientos/${asiento.id}/editar`}
+                              className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                            >
+                              Editar
+                            </Link>
+                          )}
+
                           {canManage && asiento.estado === 'borrador' && asiento.cuadrado && (
                             <button
                               type="button"
