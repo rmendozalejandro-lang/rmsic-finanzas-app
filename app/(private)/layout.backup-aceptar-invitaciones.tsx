@@ -292,7 +292,6 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
 
   return (
     <div className="min-h-screen bg-[#F6F8FB] text-slate-900 print:bg-white">
-      <AceptarInvitacionesPendientes />
       <div className="grid min-h-screen lg:grid-cols-[280px_minmax(0,1fr)]">
         <aside className="hidden border-r border-slate-200 bg-white print:hidden lg:flex lg:flex-col">
           <div className="px-5 py-5">

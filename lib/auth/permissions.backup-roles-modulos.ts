@@ -23,16 +23,6 @@ export type ModuleKey =
   | 'plan_cuentas'
   | 'ot'
 
-/**
- * Permisos por rol dentro de una empresa.
- *
- * Importante:
- * - super_admin NO se controla aquí. Ese rol global se valida con roles_sistema/es_super_admin().
- * - Estos permisos aplican a usuario_empresas.rol.
- * - tecnico_ot queda limitado exclusivamente al módulo OT.
- * - cobranzas/cobranza queda limitado a cobranza y módulos relacionados, sin acceso a bancos,
- *   egresos, remuneraciones, transferencias ni contabilidad.
- */
 const ROLE_MODULES: Record<RolEmpresa, ModuleKey[]> = {
   admin: [
     'dashboard',
@@ -49,7 +39,6 @@ const ROLE_MODULES: Record<RolEmpresa, ModuleKey[]> = {
     'plan_cuentas',
     'ot',
   ],
-
   administracion_financiera: [
     'dashboard',
     'clientes',
@@ -59,18 +48,10 @@ const ROLE_MODULES: Record<RolEmpresa, ModuleKey[]> = {
     'egresos',
     'cobranza',
     'bancos',
-    'transferencias',
-    'remuneraciones',
     'reportes',
     'plan_cuentas',
+    'ot',
   ],
-
-  /**
-   * Roles heredados/compatibilidad.
-   * La restricción actual de usuario_empresas permite:
-   * admin, administracion_financiera, cobranzas, comercial, tecnico_ot.
-   * Se mantienen finanzas y gerencia por seguridad ante registros antiguos o código existente.
-   */
   finanzas: [
     'dashboard',
     'clientes',
@@ -82,8 +63,8 @@ const ROLE_MODULES: Record<RolEmpresa, ModuleKey[]> = {
     'bancos',
     'reportes',
     'plan_cuentas',
+    'ot',
   ],
-
   gerencia: [
     'dashboard',
     'clientes',
@@ -99,39 +80,25 @@ const ROLE_MODULES: Record<RolEmpresa, ModuleKey[]> = {
     'plan_cuentas',
     'ot',
   ],
-
-  /**
-   * Cobranzas:
-   * Acceso a cobranza, clientes e ingresos porque son módulos directamente relacionados
-   * con facturación, seguimiento y pagos de clientes.
-   * No tiene acceso a bancos, egresos, remuneraciones, transferencias ni plan de cuentas.
-   */
   cobranzas: [
     'dashboard',
     'clientes',
-    'ingresos',
     'cobranza',
+    'bancos',
     'reportes',
   ],
-
   cobranza: [
     'dashboard',
     'clientes',
-    'ingresos',
     'cobranza',
+    'bancos',
     'reportes',
   ],
-
   comercial: [
     'dashboard',
     'clientes',
     'cotizaciones',
   ],
-
-  /**
-   * Técnico OT:
-   * Acceso exclusivo a Ordenes de Trabajo.
-   */
   tecnico_ot: ['ot'],
 }
 
