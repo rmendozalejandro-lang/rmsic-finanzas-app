@@ -1,4 +1,4 @@
-export type RolEmpresa =
+﻿export type RolEmpresa =
   | 'admin'
   | 'administracion_financiera'
   | 'cobranzas'
@@ -7,6 +7,14 @@ export type RolEmpresa =
   | 'finanzas'
   | 'gerencia'
   | 'tecnico_ot'
+
+export type ModuloPrincipal =
+  | 'comercial'
+  | 'financiero'
+  | 'contable'
+  | 'operacional'
+  | 'rrhh'
+  | 'administracion'
 
 export type ModuleKey =
   | 'dashboard'
@@ -23,15 +31,62 @@ export type ModuleKey =
   | 'plan_cuentas'
   | 'ot'
 
+export const MODULOS_PRINCIPALES: ModuloPrincipal[] = [
+  'comercial',
+  'financiero',
+  'contable',
+  'operacional',
+  'rrhh',
+  'administracion',
+]
+
+export const MODULO_PRINCIPAL_LABELS: Record<ModuloPrincipal, string> = {
+  comercial: 'Comercial',
+  financiero: 'Financiero',
+  contable: 'Contable',
+  operacional: 'Operacional',
+  rrhh: 'Recursos Humanos',
+  administracion: 'Administración',
+}
+
+/**
+ * Relación entre submódulos/rutas actuales y módulos principales.
+ *
+ * Importante:
+ * - dashboard queda sin módulo principal porque debe funcionar como entrada general.
+ * - reportes queda asociado a contable por ahora.
+ * - OT queda asociado a operacional.
+ */
+const MODULE_TO_PRINCIPAL: Record<ModuleKey, ModuloPrincipal | null> = {
+  dashboard: null,
+
+  clientes: 'comercial',
+  cotizaciones: 'comercial',
+  ingresos: 'comercial',
+  cobranza: 'comercial',
+
+  proveedores: 'financiero',
+  egresos: 'financiero',
+  bancos: 'financiero',
+  transferencias: 'financiero',
+
+  plan_cuentas: 'contable',
+  reportes: 'contable',
+
+  ot: 'operacional',
+
+  remuneraciones: 'rrhh',
+}
+
 /**
  * Permisos por rol dentro de una empresa.
  *
  * Importante:
- * - super_admin NO se controla aquí. Ese rol global se valida con roles_sistema/es_super_admin().
+ * - super_admin no se controla aquí.
+ * - super_admin se valida con roles_sistema/es_super_admin().
  * - Estos permisos aplican a usuario_empresas.rol.
  * - tecnico_ot queda limitado exclusivamente al módulo OT.
- * - cobranzas/cobranza queda limitado a cobranza y módulos relacionados, sin acceso a bancos,
- *   egresos, remuneraciones, transferencias ni contabilidad.
+ * - cobranzas/cobranza queda limitado a cobranza y módulos relacionados.
  */
 const ROLE_MODULES: Record<RolEmpresa, ModuleKey[]> = {
   admin: [
@@ -65,12 +120,6 @@ const ROLE_MODULES: Record<RolEmpresa, ModuleKey[]> = {
     'plan_cuentas',
   ],
 
-  /**
-   * Roles heredados/compatibilidad.
-   * La restricción actual de usuario_empresas permite:
-   * admin, administracion_financiera, cobranzas, comercial, tecnico_ot.
-   * Se mantienen finanzas y gerencia por seguridad ante registros antiguos o código existente.
-   */
   finanzas: [
     'dashboard',
     'clientes',
@@ -100,12 +149,6 @@ const ROLE_MODULES: Record<RolEmpresa, ModuleKey[]> = {
     'ot',
   ],
 
-  /**
-   * Cobranzas:
-   * Acceso a cobranza, clientes e ingresos porque son módulos directamente relacionados
-   * con facturación, seguimiento y pagos de clientes.
-   * No tiene acceso a bancos, egresos, remuneraciones, transferencias ni plan de cuentas.
-   */
   cobranzas: [
     'dashboard',
     'clientes',
@@ -128,11 +171,13 @@ const ROLE_MODULES: Record<RolEmpresa, ModuleKey[]> = {
     'cotizaciones',
   ],
 
-  /**
-   * Técnico OT:
-   * Acceso exclusivo a Ordenes de Trabajo.
-   */
   tecnico_ot: ['ot'],
+}
+
+export function getModuloPrincipal(
+  moduleKey: ModuleKey
+): ModuloPrincipal | null {
+  return MODULE_TO_PRINCIPAL[moduleKey]
 }
 
 export function canAccessModule(
@@ -156,4 +201,27 @@ export function getModulesForRole(
 
   const normalizedRol = rol as RolEmpresa
   return ROLE_MODULES[normalizedRol] ?? []
+}
+
+export function isEmpresaModuloHabilitado(
+  moduleKey: ModuleKey,
+  modulosHabilitados: Array<ModuloPrincipal | string> | null | undefined
+) {
+  const moduloPrincipal = getModuloPrincipal(moduleKey)
+
+  if (!moduloPrincipal) return true
+  if (!modulosHabilitados?.length) return false
+
+  return modulosHabilitados.includes(moduloPrincipal)
+}
+
+export function canAccessModuleByRoleAndCompany(
+  rol: RolEmpresa | string | null | undefined,
+  moduleKey: ModuleKey,
+  modulosHabilitados: Array<ModuloPrincipal | string> | null | undefined
+) {
+  return (
+    canAccessModule(rol, moduleKey) &&
+    isEmpresaModuloHabilitado(moduleKey, modulosHabilitados)
+  )
 }
