@@ -502,11 +502,22 @@ export default function HomePage() {
 
   useEffect(() => {
     const fetchDashboard = async () => {
-      if (!empresaActivaId) return
+      if (!empresaActivaId) {
+  setResumen(null)
+  setCobranza([])
+  setMovimientosPeriodo([])
+  setUltimosMovimientos([])
+  setLoading(false)
+  return
+}
 
       try {
         setLoading(true)
-        setError('')
+setError('')
+setResumen(null)
+setCobranza([])
+setMovimientosPeriodo([])
+setUltimosMovimientos([])
 
         const { data: sessionData } = await supabase.auth.getSession()
 
