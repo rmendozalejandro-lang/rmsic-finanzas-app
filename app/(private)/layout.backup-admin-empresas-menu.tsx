@@ -64,7 +64,6 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
   const [usuarioEmail, setUsuarioEmail] = useState('')
   const [usuarioRol, setUsuarioRol] = useState('')
   const [rolResuelto, setRolResuelto] = useState(false)
-  const [isSuperAdmin, setIsSuperAdmin] = useState(false)
 
   const fetchUsuarioContexto = async (
     empresaId: string,
@@ -153,7 +152,6 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
         const { data } = await supabase.auth.getSession()
 
         if (!data.session) {
-          setIsSuperAdmin(false)
           setCheckingSession(false)
           router.push('/login')
           return
@@ -163,9 +161,6 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
         const userId = data.session.user.id || ''
 
         setUsuarioEmail(email)
-
-        const superAdminResp = await supabase.rpc('es_super_admin')
-        setIsSuperAdmin(!superAdminResp.error && Boolean(superAdminResp.data))
 
         const empresasResp = await supabase
           .from('empresas')
@@ -339,20 +334,6 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
                 </Link>
               )
             })}
-
-            {isSuperAdmin && (
-              <Link
-                href="/admin/empresas"
-                style={isActiveRoute('/admin/empresas') ? { color: '#ffffff' } : undefined}
-                className={`flex items-center rounded-2xl px-3 py-3 text-sm font-medium no-underline transition ${
-                  isActiveRoute('/admin/empresas')
-                    ? 'bg-[#163A5F] !text-white shadow-sm'
-                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-                }`}
-              >
-                Admin Empresas
-              </Link>
-            )}
           </nav>
         </aside>
 
@@ -434,20 +415,6 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
                     </Link>
                   )
                 })}
-
-                {isSuperAdmin && (
-                  <Link
-                    href="/admin/empresas"
-                    style={isActiveRoute('/admin/empresas') ? { color: '#ffffff' } : undefined}
-                    className={`rounded-2xl px-4 py-2 text-sm font-medium no-underline transition ${
-                      isActiveRoute('/admin/empresas')
-                        ? 'bg-[#163A5F] !text-white'
-                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200 hover:text-slate-900'
-                    }`}
-                  >
-                    Admin Empresas
-                  </Link>
-                )}
               </nav>
             </div>
           </header>

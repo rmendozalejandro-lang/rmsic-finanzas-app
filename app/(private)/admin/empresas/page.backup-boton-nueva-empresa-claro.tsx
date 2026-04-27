@@ -193,7 +193,7 @@ export default function AdminEmpresasPage() {
 
           <Link
             href="/admin/empresas/nueva"
-            className="rounded-2xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+            className="rounded-2xl bg-[#163A5F] px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#245C90]"
           >
             Nueva empresa
           </Link>
