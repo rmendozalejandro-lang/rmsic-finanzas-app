@@ -42,26 +42,63 @@ export default function RegistroPage() {
       const emailNormalizado = email.trim().toLowerCase()
       const nombre = nombreCompleto.trim()
 
-      const { error: signUpError } = await supabase.auth.signUp({
+      const redirectTo = `${window.location.origin}/login`
+
+      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
         email: emailNormalizado,
         password,
         options: {
+          emailRedirectTo: redirectTo,
           data: {
             full_name: nombre,
             name: nombre,
+            nombre_completo: nombre,
           },
         },
       })
 
       if (signUpError) throw new Error(signUpError.message)
 
+      /*
+       * Si Supabase tiene confirmación de correo desactivada,
+       * puede devolver sesión inmediatamente.
+       * En ese caso aceptamos invitaciones altiro.
+       */
+      if (signUpData.session?.user) {
+        const { error: invitacionError } = await supabase.rpc(
+          'aceptar_mis_invitaciones_empresa'
+        )
+
+        if (invitacionError) {
+          console.warn(
+            'Cuenta creada, pero no se pudieron aceptar invitaciones:',
+            invitacionError.message
+          )
+        }
+
+        window.localStorage.removeItem('empresa_activa_id')
+        window.localStorage.removeItem('empresa_activa_nombre')
+
+        setSuccess('Cuenta creada correctamente. Redirigiendo a la plataforma...')
+
+        setTimeout(() => {
+          router.push('/')
+        }, 1000)
+
+        return
+      }
+
+      /*
+       * Si Supabase exige confirmación de correo,
+       * el usuario debe confirmar primero y luego iniciar sesión.
+       */
       setSuccess(
-        'Cuenta creada correctamente. Si el sistema solicita confirmar el correo, revisa tu bandeja. Luego inicia sesión con este mismo email.'
+        'Cuenta creada correctamente. Revisa tu correo y confirma tu cuenta. Luego inicia sesión con este mismo email.'
       )
 
       setTimeout(() => {
-        router.push('/')
-      }, 1800)
+        router.push('/login')
+      }, 2500)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo crear la cuenta.')
     } finally {
@@ -159,7 +196,7 @@ export default function RegistroPage() {
 
         <div className="mt-6 text-center text-sm text-slate-600">
           ¿Ya tienes cuenta?{' '}
-          <Link href="/" className="font-semibold text-[#163A5F] hover:underline">
+          <Link href="/login" className="font-semibold text-[#163A5F] hover:underline">
             Iniciar sesión
           </Link>
         </div>
