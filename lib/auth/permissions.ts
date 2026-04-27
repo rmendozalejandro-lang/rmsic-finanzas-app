@@ -1,4 +1,4 @@
-﻿export type RolEmpresa =
+export type RolEmpresa =
   | 'admin'
   | 'administracion_financiera'
   | 'cobranzas'
@@ -30,6 +30,7 @@ export type ModuleKey =
   | 'reportes'
   | 'plan_cuentas'
   | 'ot'
+  | 'configuracion_usuarios'
 
 export const MODULOS_PRINCIPALES: ModuloPrincipal[] = [
   'comercial',
@@ -76,6 +77,8 @@ const MODULE_TO_PRINCIPAL: Record<ModuleKey, ModuloPrincipal | null> = {
   ot: 'operacional',
 
   remuneraciones: 'rrhh',
+
+  configuracion_usuarios: 'administracion',
 }
 
 /**
@@ -103,6 +106,7 @@ const ROLE_MODULES: Record<RolEmpresa, ModuleKey[]> = {
     'reportes',
     'plan_cuentas',
     'ot',
+    'configuracion_usuarios',
   ],
 
   administracion_financiera: [
@@ -147,6 +151,7 @@ const ROLE_MODULES: Record<RolEmpresa, ModuleKey[]> = {
     'reportes',
     'plan_cuentas',
     'ot',
+    'configuracion_usuarios',
   ],
 
   cobranzas: [

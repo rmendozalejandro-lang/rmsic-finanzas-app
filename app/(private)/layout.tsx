@@ -64,6 +64,12 @@ const menuItems: MenuItem[] = [
   { href: '/ot', label: 'OT', moduleKey: 'ot' },
 
   { href: '/remuneraciones', label: 'Remuneraciones', moduleKey: 'remuneraciones' },
+
+  {
+    href: '/configuracion/usuarios',
+    label: 'Usuarios de mi empresa',
+    moduleKey: 'configuracion_usuarios',
+  },
 ]
 
 const STORAGE_ID_KEY = 'empresa_activa_id'
@@ -76,6 +82,7 @@ const MENU_GROUP_ORDER: Array<ModuloPrincipal | 'general'> = [
   'contable',
   'operacional',
   'rrhh',
+  'administracion',
 ]
 
 const MENU_GROUP_LABELS: Record<ModuloPrincipal | 'general', string> = {
