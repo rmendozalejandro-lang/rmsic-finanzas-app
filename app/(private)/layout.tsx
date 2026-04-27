@@ -70,6 +70,11 @@ const menuItems: MenuItem[] = [
     label: 'Usuarios de mi empresa',
     moduleKey: 'configuracion_usuarios',
   },
+  {
+    href: '/configuracion/auditoria',
+    label: 'Auditoría',
+    moduleKey: 'configuracion_auditoria',
+  },
 ]
 
 const STORAGE_ID_KEY = 'empresa_activa_id'
