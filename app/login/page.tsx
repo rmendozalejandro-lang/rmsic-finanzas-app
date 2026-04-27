@@ -431,6 +431,13 @@ export default function LoginPage() {
                 >
                   {loading ? 'Ingresando...' : 'Ingresar a Auren'}
                 </button>
+
+                <div className="text-center text-sm text-slate-500">
+                  ¿No tienes cuenta?{' '}
+                  <Link href="/registro" className="font-semibold text-[#155CFF] hover:underline">
+                    Crear cuenta
+                  </Link>
+                </div>
               </form>
 
               <div className="mt-8 border-t border-slate-200 pt-6 text-center">
