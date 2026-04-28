@@ -110,7 +110,6 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
   const [usuarioRol, setUsuarioRol] = useState('')
   const [rolResuelto, setRolResuelto] = useState(false)
   const [isSuperAdmin, setIsSuperAdmin] = useState(false)
-  const [collapsedMenuGroups, setCollapsedMenuGroups] = useState<Record<string, boolean>>({})
 
   const fetchEmpresaModulos = async (empresaId: string) => {
     if (!empresaId) {
