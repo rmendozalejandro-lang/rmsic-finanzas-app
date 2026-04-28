@@ -238,40 +238,93 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
 
         setUsuarioEmail(email)
 
-        const superAdminResp = await supabase.rpc('es_super_admin')
-        setIsSuperAdmin(!superAdminResp.error && Boolean(superAdminResp.data))
+// Primero intenta aceptar invitaciones pendientes del usuario autenticado.
+// Esto es clave después de confirmar el correo de Supabase.
+const { data: invitacionesResp, error: invitacionesError } = await supabase.rpc(
+  'aceptar_mis_invitaciones_empresa'
+)
 
-        const empresasResp = await supabase
-          .from('empresas')
-          .select('id, nombre')
-          .order('nombre', { ascending: true })
+if (invitacionesError) {
+  console.warn(
+    'No se pudieron aceptar invitaciones pendientes:',
+    invitacionesError.message
+  )
+}
 
-        if (empresasResp.error) {
-          console.error('No se pudieron cargar empresas:', empresasResp.error.message)
-          setRolResuelto(true)
-          return
-        }
+const superAdminResp = await supabase.rpc('es_super_admin')
+const esSuperAdmin = !superAdminResp.error && Boolean(superAdminResp.data)
 
-        const empresasData = (empresasResp.data ?? []) as Empresa[]
-        setEmpresas(empresasData)
+setIsSuperAdmin(esSuperAdmin)
 
-        const guardada = window.localStorage.getItem(STORAGE_ID_KEY)
+let empresasData: Empresa[] = []
 
-        if (guardada) {
-          const empresaGuardada = empresasData.find((empresa) => empresa.id === guardada)
+if (esSuperAdmin) {
+  const empresasResp = await supabase
+    .from('empresas')
+    .select('id, nombre')
+    .eq('activa', true)
+    .order('nombre', { ascending: true })
 
-          if (empresaGuardada) {
-            await persistEmpresaActiva(empresaGuardada, email, userId)
-          } else if (empresasData.length > 0) {
-            await persistEmpresaActiva(empresasData[0], email, userId)
-          } else {
-            setRolResuelto(true)
-          }
-        } else if (empresasData.length > 0) {
-          await persistEmpresaActiva(empresasData[0], email, userId)
-        } else {
-          setRolResuelto(true)
-        }
+  if (empresasResp.error) {
+    console.error('No se pudieron cargar empresas:', empresasResp.error.message)
+    setRolResuelto(true)
+    return
+  }
+
+  empresasData = (empresasResp.data ?? []) as Empresa[]
+} else {
+  const usuarioEmpresasResp = await supabase
+    .from('usuario_empresas')
+    .select(`
+      empresa_id,
+      rol,
+      activo,
+      empresas:empresa_id (
+        id,
+        nombre
+      )
+    `)
+    .eq('usuario_id', userId)
+    .eq('activo', true)
+
+  if (usuarioEmpresasResp.error) {
+    console.error(
+      'No se pudieron cargar empresas del usuario:',
+      usuarioEmpresasResp.error.message
+    )
+    setRolResuelto(true)
+    return
+  }
+
+  empresasData = (usuarioEmpresasResp.data ?? [])
+    .map((item: any) => item.empresas)
+    .filter(Boolean) as Empresa[]
+}
+
+setEmpresas(empresasData)        
+const guardada = window.localStorage.getItem(STORAGE_ID_KEY)
+
+const empresaGuardadaValida = guardada
+  ? empresasData.find((empresa) => empresa.id === guardada)
+  : null
+
+if (empresaGuardadaValida) {
+  await persistEmpresaActiva(empresaGuardadaValida, email, userId)
+} else if (empresasData.length > 0) {
+  window.localStorage.removeItem(STORAGE_ID_KEY)
+  window.localStorage.removeItem(STORAGE_NAME_KEY)
+
+  await persistEmpresaActiva(empresasData[0], email, userId)
+} else {
+  window.localStorage.removeItem(STORAGE_ID_KEY)
+  window.localStorage.removeItem(STORAGE_NAME_KEY)
+
+  setEmpresaActivaId('')
+  setEmpresaActivaNombreLocal('')
+  setUsuarioRol('')
+  setModulosHabilitados([])
+  setRolResuelto(true)
+}
       } catch (error) {
         console.error('Error cargando empresas:', error)
         setRolResuelto(true)

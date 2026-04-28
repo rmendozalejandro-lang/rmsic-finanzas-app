@@ -10,62 +10,91 @@ type RespuestaInvitaciones = {
 
 export default function AceptarInvitacionesPendientes() {
   const procesandoRef = useRef(false)
-  const usuarioProcesadoRef = useRef<string | null>(null)
+  const recargoRef = useRef(false)
 
   useEffect(() => {
     const aceptarInvitaciones = async () => {
-      if (procesandoRef.current) return
-
-      const { data } = await supabase.auth.getSession()
-      const user = data.session?.user
-
-      if (!user) return
-
-      if (usuarioProcesadoRef.current === user.id) return
+      if (procesandoRef.current || recargoRef.current) return
 
       procesandoRef.current = true
-      usuarioProcesadoRef.current = user.id
 
-      const { data: respuesta, error } = await supabase.rpc(
-        'aceptar_mis_invitaciones_empresa'
-      )
+      try {
+        const { data: sessionData, error: sessionError } =
+          await supabase.auth.getSession()
 
-      procesandoRef.current = false
+        if (sessionError) {
+          console.warn('No se pudo obtener sesión:', sessionError.message)
+          return
+        }
 
-      if (error) {
-        console.warn(
-          'No se pudieron aceptar invitaciones pendientes:',
-          error.message
+        const user = sessionData.session?.user
+
+        if (!user) return
+
+        const { data: respuesta, error } = await supabase.rpc(
+          'aceptar_mis_invitaciones_empresa'
         )
-        return
-      }
 
-      const resultado = Array.isArray(respuesta)
-        ? (respuesta[0] as RespuestaInvitaciones | undefined)
-        : undefined
+        if (error) {
+          console.warn(
+            'No se pudieron aceptar invitaciones pendientes:',
+            error.message
+          )
+          return
+        }
 
-      const invitacionesAceptadas = resultado?.invitaciones_aceptadas ?? 0
-      const empresasAsociadas = resultado?.empresas_asociadas ?? 0
+        const resultado = Array.isArray(respuesta)
+          ? (respuesta[0] as RespuestaInvitaciones | undefined)
+          : undefined
 
-      if (invitacionesAceptadas > 0 || empresasAsociadas > 0) {
-        window.localStorage.removeItem('empresa_activa_id')
-        window.localStorage.removeItem('empresa_activa_nombre')
+        const invitacionesAceptadas = resultado?.invitaciones_aceptadas ?? 0
+        const empresasAsociadas = resultado?.empresas_asociadas ?? 0
 
-        window.dispatchEvent(new Event('empresa-activa-cambiada'))
+        if (invitacionesAceptadas > 0 || empresasAsociadas > 0) {
+          recargoRef.current = true
 
-        window.location.reload()
+          window.localStorage.removeItem('empresa_activa_id')
+          window.localStorage.removeItem('empresa_activa_nombre')
+
+          window.dispatchEvent(new Event('empresa-activa-cambiada'))
+
+          window.setTimeout(() => {
+            window.location.reload()
+          }, 500)
+        }
+      } catch (err) {
+        console.warn('Error inesperado aceptando invitaciones:', err)
+      } finally {
+        procesandoRef.current = false
       }
     }
 
     void aceptarInvitaciones()
 
+    const timeout1 = window.setTimeout(() => {
+      void aceptarInvitaciones()
+    }, 1000)
+
+    const timeout2 = window.setTimeout(() => {
+      void aceptarInvitaciones()
+    }, 3000)
+
+    const timeout3 = window.setTimeout(() => {
+      void aceptarInvitaciones()
+    }, 6000)
+
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(() => {
-      void aceptarInvitaciones()
+      window.setTimeout(() => {
+        void aceptarInvitaciones()
+      }, 500)
     })
 
     return () => {
+      window.clearTimeout(timeout1)
+      window.clearTimeout(timeout2)
+      window.clearTimeout(timeout3)
       subscription.unsubscribe()
     }
   }, [])

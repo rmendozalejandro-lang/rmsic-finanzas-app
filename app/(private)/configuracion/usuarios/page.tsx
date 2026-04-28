@@ -210,10 +210,47 @@ export default function ConfiguracionUsuariosPage() {
 
       const result = Array.isArray(data) ? data[0] : data
 
-      setSuccess(result?.mensaje || 'Usuario o invitación procesada correctamente.')
-      setEmail('')
-      setRol('administracion_financiera')
-      await loadData(empresaId)
+     const mensajeBase = result?.mensaje || 'Usuario o invitación procesada correctamente.'
+
+let mensajeFinal = mensajeBase
+
+try {
+  const { data: sessionData } = await supabase.auth.getSession()
+  const token = sessionData.session?.access_token
+
+  if (token) {
+    const emailResp = await fetch('/api/invitaciones/enviar-email', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        empresaId,
+        email: email.trim().toLowerCase(),
+        rol,
+      }),
+    })
+
+    const emailJson = await emailResp.json()
+
+    if (!emailResp.ok) {
+      mensajeFinal = `${mensajeBase} Pero no se pudo enviar el correo: ${
+        emailJson.error || 'error desconocido'
+      }`
+    } else {
+      mensajeFinal = `${mensajeBase} Correo de invitación enviado.`
+    }
+  }
+} catch (emailError) {
+  mensajeFinal = `${mensajeBase} Pero no se pudo enviar el correo de invitación.`
+  console.warn(emailError)
+}
+
+setSuccess(mensajeFinal)
+setEmail('')
+setRol('administracion_financiera')
+await loadData(empresaId)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo agregar o invitar el usuario.')
     } finally {
