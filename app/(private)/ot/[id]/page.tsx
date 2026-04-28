@@ -1,4 +1,4 @@
-﻿'use client'
+'use client'
 
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
@@ -1017,128 +1017,112 @@ function OTDetalleContent() {
       setSuccess('')
 
       if (!estadoCerrada) {
-        throw new Error('No se encontrÃ³ el estado "cerrada" en la base.')
+        throw new Error('No se encontró el estado "cerrada" en la base.')
       }
 
+      const trabajoPrincipal = form.trabajo_realizado.trim()
+      const analisisAsesoria = form.diagnostico.trim()
+      const conclusionesAsesoria = form.conclusiones_tecnicas.trim()
+
       if (isAsesoria) {
-        if (!form.diagnostico.trim() && !form.conclusiones_tecnicas.trim()) {
+        if (!analisisAsesoria && !conclusionesAsesoria) {
           throw new Error(
-            'Debes completar al menos el anÃ¡lisis tÃ©cnico o las conclusiones tÃ©cnicas antes de cerrar la OT.'
+            'Debes completar al menos el análisis técnico o las conclusiones técnicas antes de cerrar la OT.'
           )
         }
-      } else if (!form.trabajo_realizado.trim()) {
+      } else if (!trabajoPrincipal) {
         throw new Error('Debes completar "Trabajo realizado" antes de cerrar la OT.')
       }
 
-      const [tiemposResp, firmasResp, checklistResp] = await Promise.all([
-        supabase
-          .from('ot_tiempos_trabajo')
-          .select('id, hora_inicio, hora_termino')
-          .eq('ot_id', otId)
-          .eq('activo', true)
-          .is('deleted_at', null),
-        supabase
-          .from('ot_firmas')
-          .select('id, tipo_firma')
-          .eq('ot_id', otId),
-        supabase
+      if (requiresChecklistForClose) {
+        const { data: checklistActual, error: checklistError } = await supabase
           .from('ot_respuestas_checklist')
           .select('id')
-          .eq('ot_id', otId),
-      ])
+          .eq('ot_id', otId)
 
-      if (tiemposResp.error) {
-        throw new Error(`No se pudieron validar los tiempos: ${tiemposResp.error.message}`)
+        if (checklistError) {
+          throw new Error(`No se pudo validar el checklist: ${checklistError.message}`)
+        }
+
+        if ((checklistActual ?? []).length === 0) {
+          throw new Error('Esta OT requiere checklist y aún no tiene respuestas registradas.')
+        }
       }
 
-      if (firmasResp.error) {
-        throw new Error(`No se pudieron validar las firmas: ${firmasResp.error.message}`)
+      type TiempoCierreRow = {
+        id: string
+        hora_inicio: string | null
+        hora_termino: string | null
       }
 
-      if (checklistResp.error) {
-        throw new Error(`No se pudo validar el checklist: ${checklistResp.error.message}`)
+      const { data: tiemposActuales, error: tiemposError } = await supabase
+        .from('ot_tiempos_trabajo')
+        .select('id, hora_inicio, hora_termino')
+        .eq('ot_id', otId)
+        .eq('activo', true)
+        .is('deleted_at', null)
+
+      if (tiemposError) {
+        throw new Error(`No se pudieron revisar los tiempos: ${tiemposError.message}`)
       }
 
-      const tiemposActuales = tiemposResp.data ?? []
-      const firmasActuales = firmasResp.data ?? []
-      const checklistActual = checklistResp.data ?? []
-
-      if (tiemposActuales.length === 0) {
-        throw new Error('Debes registrar al menos un bloque de tiempo antes de cerrar la OT.')
-      }
-
-      const tiemposValidos = tiemposActuales.filter(
+      const tiemposValidos = ((tiemposActuales ?? []) as TiempoCierreRow[]).filter(
         (item) => item.hora_inicio && item.hora_termino
       )
 
-      if (tiemposValidos.length === 0) {
-        throw new Error('Los tiempos registrados no tienen hora de inicio y tÃ©rmino vÃ¡lidas.')
+      const nowIso = new Date().toISOString()
+
+      let horaInicio = detalle?.hora_inicio || nowIso
+      let horaTermino = nowIso
+
+      if (tiemposValidos.length > 0) {
+        const orderedStarts = tiemposValidos
+          .map((item) => item.hora_inicio as string)
+          .sort((a, b) => new Date(a).getTime() - new Date(b).getTime())
+
+        const orderedEnds = tiemposValidos
+          .map((item) => item.hora_termino as string)
+          .sort((a, b) => new Date(a).getTime() - new Date(b).getTime())
+
+        horaInicio = orderedStarts[0]
+        horaTermino = orderedEnds[orderedEnds.length - 1]
       }
 
-      if (firmasActuales.length === 0) {
-        throw new Error('Debes guardar al menos una firma antes de cerrar la OT.')
-      }
+      const inicioMs = new Date(horaInicio).getTime()
+      const terminoMs = new Date(horaTermino).getTime()
 
-      if (requiresChecklistForClose && checklistActual.length === 0) {
-        throw new Error('Esta OT requiere checklist y aÃºn no tiene respuestas registradas.')
-      }
-
-      const orderedStarts = tiemposValidos
-        .map((item) => item.hora_inicio as string)
-        .sort((a, b) => new Date(a).getTime() - new Date(b).getTime())
-
-      const orderedEnds = tiemposValidos
-        .map((item) => item.hora_termino as string)
-        .sort((a, b) => new Date(a).getTime() - new Date(b).getTime())
-
-      const horaInicio = orderedStarts[0]
-      const horaTermino = orderedEnds[orderedEnds.length - 1]
+      const duracionMinutos =
+        Number.isFinite(inicioMs) && Number.isFinite(terminoMs)
+          ? Math.max(0, Math.round((terminoMs - inicioMs) / 60000))
+          : null
 
       const payload = {
-  estado_id: estadoCerrada.id,
-  descripcion_solicitud: form.descripcion_solicitud.trim() || null,
+        estado_id: estadoCerrada.id,
+        fecha_cierre: nowIso,
 
-  problema_reportado:
-    isUrgenciaOAsistencia || isAsesoria
-      ? form.problema_reportado.trim() || null
-      : detalle?.problema_reportado || null,
+        descripcion_solicitud: form.descripcion_solicitud.trim() || null,
+        problema_reportado:
+          form.problema_reportado.trim() || detalle?.problema_reportado || null,
+        diagnostico: form.diagnostico.trim() || detalle?.diagnostico || null,
+        causa_probable:
+          form.causa_probable.trim() || detalle?.causa_probable || null,
+        trabajo_realizado:
+          form.trabajo_realizado.trim() || detalle?.trabajo_realizado || null,
+        recomendaciones:
+          form.recomendaciones.trim() || detalle?.recomendaciones || null,
+        observaciones_cierre:
+          form.observaciones_cierre.trim() || detalle?.observaciones_cierre || null,
 
-  diagnostico:
-    isUrgenciaOAsistencia || isAsesoria
-      ? form.diagnostico.trim() || null
-      : detalle?.diagnostico || null,
+        resultado_servicio:
+          form.resultado_servicio.trim() || detalle?.resultado_servicio || null,
+        hallazgos: form.hallazgos.trim() || detalle?.hallazgos || null,
+        conclusiones_tecnicas:
+          form.conclusiones_tecnicas.trim() || detalle?.conclusiones_tecnicas || null,
 
-  causa_probable:
-    isUrgenciaOAsistencia
-      ? form.causa_probable.trim() || null
-      : detalle?.causa_probable || null,
-
-  trabajo_realizado:
-    isPreventiva || isUrgenciaOAsistencia
-      ? form.trabajo_realizado.trim() || null
-      : detalle?.trabajo_realizado || null,
-
-  recomendaciones: form.recomendaciones.trim() || null,
-  observaciones_cierre: form.observaciones_cierre.trim() || null,
-
-  resultado_servicio:
-    isPreventiva || isUrgenciaOAsistencia
-      ? form.resultado_servicio.trim() || null
-      : detalle?.resultado_servicio || null,
-
-  hallazgos:
-    isPreventiva
-      ? form.hallazgos.trim() || null
-      : detalle?.hallazgos || null,
-
-  conclusiones_tecnicas:
-    isAsesoria
-      ? form.conclusiones_tecnicas.trim() || null
-      : detalle?.conclusiones_tecnicas || null,
-
-  hora_inicio: horaInicio,
-  hora_termino: horaTermino,
-}
+        hora_inicio: horaInicio,
+        hora_termino: horaTermino,
+        duracion_minutos: duracionMinutos,
+      }
 
       const { error: updateError } = await supabase
         .from('ot_ordenes_trabajo')
@@ -1152,7 +1136,7 @@ function OTDetalleContent() {
       }
 
       await loadData(false)
-      setCierreSuccess('OT cerrada correctamente.')
+      setCierreSuccess('OT cerrada correctamente mediante cierre rápido.')
       router.refresh()
     } catch (err) {
       setCierreError(err instanceof Error ? err.message : 'No se pudo cerrar la OT.')
@@ -2156,7 +2140,7 @@ function OTDetalleContent() {
 
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <SectionTitle
-          title="Cierre OT guiado"
+          title="Cierre rápido de OT"
           subtitle="Valida lo mÃ­nimo necesario antes de cerrar la orden."
         />
 
@@ -2176,22 +2160,22 @@ function OTDetalleContent() {
           />
 
           <CierreStatusItem
-            label="Tiempos registrados"
-            ok={hasTiempos}
+            label="Tiempos registrados (opcional)"
+            ok={true}
             detail={
               hasTiempos
                 ? `Hay ${tiempos.length} registro(s) de tiempo en la OT.`
-                : 'Debes registrar al menos un bloque de tiempo.'
+                : 'Opcional: puedes registrar tiempos para calcular duración exacta. Si no hay tiempos, se usará la hora actual como cierre.'
             }
           />
 
           <CierreStatusItem
-            label="Firmas"
-            ok={hasAnyFirma}
+            label="Firmas (opcional)"
+            ok={true}
             detail={
               hasAnyFirma
                 ? `Firmas guardadas: ${firmas.length}. TÃ©cnico: ${hasFirmaTecnico ? 'sÃ­' : 'no'}. Cliente: ${hasFirmaCliente ? 'sÃ­' : 'no'}.`
-                : 'Debes guardar al menos una firma antes de cerrar.'
+                : 'Opcional: puedes guardar firma del cliente o técnico, pero no bloquea el cierre rápido.'
             }
           />
 
