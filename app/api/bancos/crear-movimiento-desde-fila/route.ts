@@ -55,7 +55,9 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
+
     const filaId = String(body.filaId || '')
+
     const descripcionEditadaBody =
       typeof body.descripcionEditada === 'string'
         ? body.descripcionEditada.trim()
@@ -188,16 +190,11 @@ export async function POST(request: NextRequest) {
         409
       )
     }
+
     const descripcionMovimiento =
       descripcionEditadaBody ||
       String(fila.descripcion_editada || '').trim() ||
       fila.descripcion_original
-
-    const categoriaIdMovimiento =
-      categoriaIdBody || fila.categoria_id || null
-
-    const centroCostoIdMovimiento =
-      centroCostoIdBody || fila.centro_costo_id || null
 
     const categoriaIdMovimiento =
       categoriaIdBody || fila.categoria_id || null
@@ -258,6 +255,44 @@ export async function POST(request: NextRequest) {
     }
 
     const movimientoId = movimientoResp.data.id as string
+
+    if (tipoMovimiento === 'egreso') {
+      const cuentaPagarResp = await adminClient
+        .from('cuentas_por_pagar')
+        .update({
+          estado: 'pagado',
+          monto_pagado: montoTotal,
+          saldo_pendiente: 0,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('movimiento_id', movimientoId)
+
+      if (cuentaPagarResp.error) {
+        return jsonError(
+          `El movimiento fue creado, pero no se pudo marcar la cuenta por pagar como pagada: ${cuentaPagarResp.error.message}`,
+          500
+        )
+      }
+    }
+
+    if (tipoMovimiento === 'ingreso') {
+      const cuentaCobrarResp = await adminClient
+        .from('cuentas_por_cobrar')
+        .update({
+          estado: 'pagado',
+          monto_pagado: montoTotal,
+          saldo_pendiente: 0,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('movimiento_id', movimientoId)
+
+      if (cuentaCobrarResp.error) {
+        return jsonError(
+          `El movimiento fue creado, pero no se pudo marcar la cuenta por cobrar como pagada: ${cuentaCobrarResp.error.message}`,
+          500
+        )
+      }
+    }
 
     const updateFilaResp = await adminClient
       .from('banco_importacion_filas')
