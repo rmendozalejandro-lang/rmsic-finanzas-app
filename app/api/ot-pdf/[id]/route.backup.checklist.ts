@@ -289,114 +289,6 @@ const supabaseServiceRoleKeySafe = supabaseServiceRoleKey as string
 
     const resumen = resumenResp.data as OTResumen
     const detalle = detalleResp.data as OTDetalle
-
-    const checklistResp = await adminClient
-      .from('ot_respuestas_checklist')
-      .select('id, plantilla_item_id, respuesta_texto, observacion')
-      .eq('ot_id', otId)
-
-    if (checklistResp.error) {
-      return jsonError(
-        `No se pudieron cargar las respuestas del checklist: ${checklistResp.error.message}`,
-        500
-      )
-    }
-
-    const checklistRaw = (checklistResp.data ?? []) as Array<{
-      id: string
-      plantilla_item_id: string
-      respuesta_texto: string | null
-      observacion: string | null
-    }>
-
-    let checklistTextoPdf = ''
-
-    if (checklistRaw.length > 0) {
-      const checklistItemIds = Array.from(
-        new Set(
-          checklistRaw
-            .map((item) => item.plantilla_item_id)
-            .filter(Boolean)
-        )
-      )
-
-      if (checklistItemIds.length > 0) {
-        const checklistItemsResp = await adminClient
-          .from('ot_plantillas_checklist_items')
-          .select('id, zona, categoria, actividad, frecuencia_horas, tipo_item, orden')
-          .in('id', checklistItemIds)
-
-        if (checklistItemsResp.error) {
-          return jsonError(
-            `No se pudieron cargar los ítems del checklist: ${checklistItemsResp.error.message}`,
-            500
-          )
-        }
-
-        const checklistItemsMap = ((checklistItemsResp.data ?? []) as Array<{
-          id: string
-          zona: string
-          categoria: string | null
-          actividad: string
-          frecuencia_horas: number | null
-          tipo_item: string | null
-          orden: number
-        }>).reduce<Record<string, {
-          id: string
-          zona: string
-          categoria: string | null
-          actividad: string
-          frecuencia_horas: number | null
-          tipo_item: string | null
-          orden: number
-        }>>((acc, item) => {
-          acc[item.id] = item
-          return acc
-        }, {})
-
-        const estadoLabel = (value: string | null) => {
-          if (value === 'ok') return 'OK'
-          if (value === 'no_ok') return 'No OK'
-          if (value === 'na') return 'N/A'
-          return 'Sin respuesta'
-        }
-
-        checklistTextoPdf = checklistRaw
-          .map((respuesta) => {
-            const item = checklistItemsMap[respuesta.plantilla_item_id]
-            if (!item) return null
-
-            return {
-              orden: item.orden,
-              texto: [
-                item.zona || 'General',
-                item.frecuencia_horas ? `${item.frecuencia_horas} hrs` : '',
-                item.actividad,
-                estadoLabel(respuesta.respuesta_texto),
-                respuesta.observacion ? `Obs: ${respuesta.observacion}` : '',
-              ]
-                .filter(Boolean)
-                .join(' | '),
-            }
-          })
-          .filter((item): item is { orden: number; texto: string } => item !== null)
-          .sort((a, b) => a.orden - b.orden)
-          .map((item) => item.texto)
-          .join('\n')
-      }
-    }
-
-    const detallePdf: OTDetalle = {
-      ...detalle,
-      observaciones_cierre: [
-        detalle.observaciones_cierre,
-        checklistTextoPdf
-          ? `CHECKLIST DE MANTENIMIENTO\n${checklistTextoPdf}`
-          : '',
-      ]
-        .filter((value) => value && value.trim())
-        .join('\n\n'),
-    }
     const evidencias = (evidenciasResp.data ?? []) as Evidencia[]
     const firmas = (firmasResp.data ?? []) as Firma[]
     const tiposServicio = (tiposResp.data ?? []) as TipoServicioOption[]
@@ -404,7 +296,7 @@ const supabaseServiceRoleKeySafe = supabaseServiceRoleKey as string
 
  const pdfElement = React.createElement(OTPdfDocument, {
   resumen,
-  detalle: detallePdf,
+  detalle,
   evidencias,
   firmas,
   perfilesMap,
