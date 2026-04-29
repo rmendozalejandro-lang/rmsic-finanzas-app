@@ -37,12 +37,6 @@ type PaymentFormState = {
   cuenta_bancaria_id: string
 }
 
-type RecordatorioResumen = {
-  total: number
-  ultimo: string | null
-  ultimoEstado: string | null
-}
-
 const STORAGE_KEY = 'empresa_activa_id'
 
 function todayLocalDate() {
@@ -63,21 +57,6 @@ function formatDate(value: string | null | undefined) {
     day: '2-digit',
     month: '2-digit',
     year: '2-digit',
-  }).format(date)
-}
-
-function formatDateTime(value: string | null | undefined) {
-  if (!value) return '-'
-
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return '-'
-
-  return new Intl.DateTimeFormat('es-CL', {
-    day: '2-digit',
-    month: '2-digit',
-    year: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
   }).format(date)
 }
 
@@ -109,7 +88,6 @@ function estadoBadgeClass(estado: string | null | undefined) {
 function CobranzaPageContent() {
   const [empresaActivaId, setEmpresaActivaId] = useState('')
   const [items, setItems] = useState<CobranzaItem[]>([])
-  const [recordatoriosMap, setRecordatoriosMap] = useState<Record<string, RecordatorioResumen>>({})
   const [cuentas, setCuentas] = useState<CuentaBancaria[]>([])
   const [usuarioRol, setUsuarioRol] = useState('')
   const [isAdmin, setIsAdmin] = useState(false)
@@ -165,7 +143,7 @@ function CobranzaPageContent() {
 
       const userId = session.user.id
 
-      const [cobranzaResp, cuentasResp, rolResp, recordatoriosResp] = await Promise.all([
+      const [cobranzaResp, cuentasResp, rolResp] = await Promise.all([
         supabase
           .from('v_cobranza_pendiente')
           .select('*')
@@ -191,12 +169,6 @@ function CobranzaPageContent() {
           .eq('empresa_id', empresaActivaId)
           .eq('activo', true)
           .maybeSingle(),
-
-        supabase
-          .from('cobranza_recordatorios')
-          .select('movimiento_id, created_at, estado')
-          .eq('empresa_id', empresaActivaId)
-          .order('created_at', { ascending: false }),
       ])
 
       if (cobranzaResp.error) {
@@ -213,42 +185,7 @@ function CobranzaPageContent() {
         throw new Error(`No se pudo resolver el rol del usuario: ${rolResp.error.message}`)
       }
 
-      const resumenRecordatorios: Record<string, RecordatorioResumen> = {}
-
-      if (recordatoriosResp.error) {
-        console.error('No se pudo cargar historial de recordatorios:', recordatoriosResp.error.message)
-      }
-
-      for (const recordatorio of (recordatoriosResp.data ?? []) as {
-        movimiento_id: string | null
-        created_at: string | null
-        estado: string | null
-      }[]) {
-        if (!recordatorio.movimiento_id) continue
-
-        const actual = resumenRecordatorios[recordatorio.movimiento_id] || {
-          total: 0,
-          ultimo: null,
-          ultimoEstado: null,
-        }
-
-        actual.total += 1
-
-        if (
-          recordatorio.created_at &&
-          (!actual.ultimo ||
-            new Date(recordatorio.created_at).getTime() >
-              new Date(actual.ultimo).getTime())
-        ) {
-          actual.ultimo = recordatorio.created_at
-          actual.ultimoEstado = recordatorio.estado
-        }
-
-        resumenRecordatorios[recordatorio.movimiento_id] = actual
-      }
-
       setItems((cobranzaResp.data ?? []) as CobranzaItem[])
-      setRecordatoriosMap(resumenRecordatorios)
       setCuentas((cuentasResp.data ?? []) as CuentaBancaria[])
       setUsuarioRol(rolResp.data?.rol || '')
       setIsAdmin((rolResp.data?.rol || '') === 'admin')
@@ -519,7 +456,6 @@ El correo se enviará inmediatamente.`
                         <th className="px-4 py-3 font-semibold">Descripción</th>
                         <th className="px-4 py-3 font-semibold">Monto total</th>
                         <th className="px-4 py-3 font-semibold">Saldo pendiente</th>
-                        <th className="px-4 py-3 font-semibold">Recordatorios</th>
                         <th className="px-4 py-3 font-semibold">Estado</th>
                         <th className="px-4 py-3 text-right font-semibold">Acciones</th>
                       </tr>
@@ -547,21 +483,6 @@ El correo se enviará inmediatamente.`
                             {item.saldo_pendiente_clp || formatCLP(item.saldo_pendiente)}
                           </td>
                           <td className="px-4 py-3">
-                            {recordatoriosMap[item.movimiento_id]?.total ? (
-                              <div className="text-xs">
-                                <div className="font-semibold text-slate-800">
-                                  {recordatoriosMap[item.movimiento_id].total} enviado
-                                  {recordatoriosMap[item.movimiento_id].total === 1 ? '' : 's'}
-                                </div>
-                                <div className="mt-0.5 text-slate-500">
-                                  Último: {formatDateTime(recordatoriosMap[item.movimiento_id].ultimo)}
-                                </div>
-                              </div>
-                            ) : (
-                              <span className="text-xs text-slate-400">Sin recordatorios</span>
-                            )}
-                          </td>
-                          <td className="px-4 py-3">
                             <span
                               className={`inline-flex rounded-full border px-3 py-1 text-xs font-medium ${estadoBadgeClass(
                                 item.estado
@@ -585,9 +506,7 @@ El correo se enviará inmediatamente.`
                                 >
                                   {sendingRecordatorioId === item.movimiento_id
                                     ? 'Enviando...'
-                                    : recordatoriosMap[item.movimiento_id]?.total
-                                      ? 'Enviar nuevo recordatorio'
-                                      : 'Enviar recordatorio'}
+                                    : 'Enviar recordatorio'}
                                 </button>
 
                                 <button

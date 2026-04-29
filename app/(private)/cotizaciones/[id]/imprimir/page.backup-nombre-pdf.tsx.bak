@@ -131,24 +131,6 @@ function formatFolioNumber(value: number | null | undefined) {
   return String(n).padStart(4, '0')
 }
 
-
-function formatFolioPdfName(value: number | null | undefined) {
-  const n = Math.trunc(toNumber(value))
-  if (!n) return '000'
-  return String(n).padStart(3, '0')
-}
-
-function limpiarNombreArchivo(value: string) {
-  const clean = value
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[\\/:*?"<>|]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 80)
-
-  return clean || 'Cliente'
-}
 function getClienteDisplayName(cliente: Cliente | null) {
   if (!cliente) return 'Sin cliente'
 
@@ -342,18 +324,6 @@ export default function CotizacionImprimirPage() {
     })
   }, [cotizacion, empresaActivaNombre])
 
-  const pdfSuggestedTitle = useMemo(() => {
-    const folio = formatFolioPdfName(cotizacion?.folio)
-    const clienteNombre = limpiarNombreArchivo(getClienteDisplayName(cliente))
-
-    return `Cot. N° ${folio} - ${clienteNombre}`
-  }, [cotizacion, cliente])
-
-  useEffect(() => {
-    if (!cotizacion) return
-
-    document.title = pdfSuggestedTitle
-  }, [cotizacion, pdfSuggestedTitle])
   if (!empresaActivaId && !loading) {
     return (
       <ProtectedCotizacionesRoute>
@@ -469,10 +439,7 @@ export default function CotizacionImprimirPage() {
 
                 <button
                   type="button"
-                  onClick={() => {
-                    document.title = pdfSuggestedTitle
-                    window.print()
-                  }}
+                  onClick={() => window.print()}
                   className="inline-flex items-center rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
                 >
                   Imprimir / Guardar PDF

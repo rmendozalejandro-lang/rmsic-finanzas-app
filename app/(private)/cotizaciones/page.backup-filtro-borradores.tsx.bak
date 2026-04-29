@@ -125,7 +125,7 @@ export default function CotizacionesPage() {
   const [error, setError] = useState('')
 
   const [q, setQ] = useState('')
-  const [estado, setEstado] = useState('comerciales')
+  const [estado, setEstado] = useState('')
   const [usuarioRol, setUsuarioRol] = useState('')
   const [isAdmin, setIsAdmin] = useState(false)
 
@@ -280,12 +280,7 @@ export default function CotizacionesPage() {
       const cliente = row.cliente_id ? clientesMap[row.cliente_id] : undefined
       const clienteNombre = getClienteDisplayName(cliente).toLowerCase()
 
-      const matchesEstado =
-        estado === 'comerciales'
-          ? row.estado !== 'borrador'
-          : estado
-            ? row.estado === estado
-            : true
+      const matchesEstado = estado ? row.estado === estado : true
       const matchesQ = term
         ? [
             row.codigo || '',
@@ -472,7 +467,7 @@ export default function CotizacionesPage() {
                 type="button"
                 onClick={() => {
                   setQ('')
-                  setEstado('comerciales')
+                  setEstado('')
                 }}
                 className="w-full rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
               >
