@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../../../lib/supabase/client'
@@ -33,6 +34,7 @@ type SaldoBancario = {
   activa?: boolean | null
   deleted_at?: string | null
 }
+
 type MovimientoBanco = {
   id: string
   fecha: string
@@ -67,6 +69,7 @@ const formatTipoMovimiento = (value: string) => {
       return value || '-'
   }
 }
+
 export default function BancosPage() {
   const router = useRouter()
 
@@ -215,11 +218,29 @@ export default function BancosPage() {
 
   return (
     <main className="space-y-6">
-      <div>
-        <h1 className="text-4xl font-semibold text-slate-900">Bancos</h1>
-        <p className="mt-2 text-slate-600">
-          Cuentas, saldos y movimientos bancarios de la empresa activa.
-        </p>
+      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+        <div>
+          <h1 className="text-4xl font-semibold text-slate-900">Bancos</h1>
+          <p className="mt-2 text-slate-600">
+            Cuentas, saldos y movimientos bancarios de la empresa activa.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap gap-3">
+          <Link
+            href="/bancos/importar"
+            className="inline-flex items-center justify-center rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+          >
+            Importar cartola
+          </Link>
+
+          <Link
+            href="/bancos/importaciones"
+            className="inline-flex items-center justify-center rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+          >
+            Ver importaciones
+          </Link>
+        </div>
       </div>
 
       <EmpresaActivaBanner
@@ -312,43 +333,48 @@ export default function BancosPage() {
                     </h3>
 
                     <div className="mt-4 grid grid-cols-2 gap-4 text-sm">
-  <div>
-    <p className="text-slate-500">Saldo inicial</p>
-    <p className="mt-1 font-medium">
-      {formatCLP(item.saldo_inicial)}
-    </p>
-  </div>
-  <div>
-    <p className="text-slate-500">Saldo calculado</p>
-    <p className="mt-1 font-medium">
-      {formatCLP(item.saldo_calculado)}
-    </p>
-  </div>
-  <div>
-    <p className="text-slate-500">Ingresos pagados</p>
-    <p className="mt-1 font-medium">
-      {formatCLP(item.ingresos_pagados)}
-    </p>
-  </div>
-  <div>
-    <p className="text-slate-500">Egresos pagados</p>
-    <p className="mt-1 font-medium">
-      {formatCLP(item.egresos_pagados)}
-    </p>
-  </div>
-  <div>
-    <p className="text-slate-500">Transferencias entrantes</p>
-    <p className="mt-1 font-medium">
-      {formatCLP(item.transferencias_entrantes)}
-    </p>
-  </div>
-  <div>
-    <p className="text-slate-500">Transferencias salientes</p>
-    <p className="mt-1 font-medium">
-      {formatCLP(item.transferencias_salientes)}
-    </p>
-  </div>
-</div>
+                      <div>
+                        <p className="text-slate-500">Saldo inicial</p>
+                        <p className="mt-1 font-medium">
+                          {formatCLP(item.saldo_inicial)}
+                        </p>
+                      </div>
+
+                      <div>
+                        <p className="text-slate-500">Saldo calculado</p>
+                        <p className="mt-1 font-medium">
+                          {formatCLP(item.saldo_calculado)}
+                        </p>
+                      </div>
+
+                      <div>
+                        <p className="text-slate-500">Ingresos pagados</p>
+                        <p className="mt-1 font-medium">
+                          {formatCLP(item.ingresos_pagados)}
+                        </p>
+                      </div>
+
+                      <div>
+                        <p className="text-slate-500">Egresos pagados</p>
+                        <p className="mt-1 font-medium">
+                          {formatCLP(item.egresos_pagados)}
+                        </p>
+                      </div>
+
+                      <div>
+                        <p className="text-slate-500">Transferencias entrantes</p>
+                        <p className="mt-1 font-medium">
+                          {formatCLP(item.transferencias_entrantes)}
+                        </p>
+                      </div>
+
+                      <div>
+                        <p className="text-slate-500">Transferencias salientes</p>
+                        <p className="mt-1 font-medium">
+                          {formatCLP(item.transferencias_salientes)}
+                        </p>
+                      </div>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -388,7 +414,9 @@ export default function BancosPage() {
                         <td className="py-3 pr-4">
                           {formatTipoMovimiento(item.tipo_movimiento)}
                         </td>
-                        <td className="py-3 pr-4">{item.numero_documento ?? '-'}</td>
+                        <td className="py-3 pr-4">
+                          {item.numero_documento ?? '-'}
+                        </td>
                         <td className="py-3 pr-4">{item.descripcion}</td>
                         <td className="py-3 pr-4">
                           {item.cuenta_bancaria_id
