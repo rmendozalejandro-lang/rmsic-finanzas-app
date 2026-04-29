@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
@@ -19,18 +19,6 @@ type CentroCosto = {
   codigo: string | null
 }
 
-type Cliente = {
-  id: string
-  nombre: string
-  rut: string | null
-}
-
-type Proveedor = {
-  id: string
-  nombre: string
-  rut: string | null
-}
-
 type FilaImportada = {
   id: string
   fecha: string | null
@@ -38,8 +26,6 @@ type FilaImportada = {
   descripcion_editada: string | null
   categoria_id: string | null
   centro_costo_id: string | null
-  cliente_id: string | null
-  proveedor_id: string | null
   rut_detectado: string | null
   cargo: number
   abono: number
@@ -80,31 +66,16 @@ function formatDate(value: string | null) {
   }).format(date)
 }
 
-function normalizarRut(value: string | null | undefined) {
-  return String(value ?? '')
-    .replace(/\./g, '')
-    .replace(/\s/g, '')
-    .toUpperCase()
-    .trim()
-}
-
 function BancosImportacionesContent() {
   const [empresaId, setEmpresaId] = useState('')
   const [filas, setFilas] = useState<FilaImportada[]>([])
   const [loading, setLoading] = useState(true)
   const [procesandoId, setProcesandoId] = useState('')
   const [descripcionesEditadas, setDescripcionesEditadas] = useState<Record<string, string>>({})
-
   const [categorias, setCategorias] = useState<Categoria[]>([])
   const [centrosCosto, setCentrosCosto] = useState<CentroCosto[]>([])
-  const [clientes, setClientes] = useState<Cliente[]>([])
-  const [proveedores, setProveedores] = useState<Proveedor[]>([])
-
   const [categoriasPorFila, setCategoriasPorFila] = useState<Record<string, string>>({})
   const [centrosPorFila, setCentrosPorFila] = useState<Record<string, string>>({})
-  const [clientesPorFila, setClientesPorFila] = useState<Record<string, string>>({})
-  const [proveedoresPorFila, setProveedoresPorFila] = useState<Record<string, string>>({})
-
   const [filtroEstado, setFiltroEstado] = useState('pendiente')
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
@@ -135,8 +106,6 @@ function BancosImportacionesContent() {
             descripcion_editada,
             categoria_id,
             centro_costo_id,
-            cliente_id,
-            proveedor_id,
             rut_detectado,
             cargo,
             abono,
@@ -164,59 +133,43 @@ function BancosImportacionesContent() {
         query = query.eq('estado', filtroEstado)
       }
 
-      const [filasResp, categoriasResp, centrosResp, clientesResp, proveedoresResp] =
-        await Promise.all([
-          query,
-          supabase
-            .from('categorias')
-            .select('id, nombre, tipo, requiere_centro_costo')
-            .eq('empresa_id', empresaId)
-            .eq('activa', true)
-            .is('deleted_at', null)
-            .order('tipo', { ascending: true })
-            .order('orden', { ascending: true })
-            .order('nombre', { ascending: true }),
-          supabase
-            .from('centros_costo')
-            .select('id, nombre, codigo')
-            .eq('empresa_id', empresaId)
-            .eq('activo', true)
-            .is('deleted_at', null)
-            .order('orden', { ascending: true })
-            .order('nombre', { ascending: true }),
-          supabase
-            .from('clientes')
-            .select('id, nombre, rut')
-            .eq('empresa_id', empresaId)
-            .eq('activo', true)
-            .is('deleted_at', null)
-            .order('nombre', { ascending: true }),
-          supabase
-            .from('proveedores')
-            .select('id, nombre, rut')
-            .eq('empresa_id', empresaId)
-            .eq('activo', true)
-            .is('deleted_at', null)
-            .order('nombre', { ascending: true }),
-        ])
+      const [filasResp, categoriasResp, centrosResp] = await Promise.all([
+        query,
+        supabase
+          .from('categorias')
+          .select('id, nombre, tipo, requiere_centro_costo')
+          .eq('empresa_id', empresaId)
+          .eq('activa', true)
+          .is('deleted_at', null)
+          .order('tipo', { ascending: true })
+          .order('orden', { ascending: true })
+          .order('nombre', { ascending: true }),
+        supabase
+          .from('centros_costo')
+          .select('id, nombre, codigo')
+          .eq('empresa_id', empresaId)
+          .eq('activo', true)
+          .is('deleted_at', null)
+          .order('orden', { ascending: true })
+          .order('nombre', { ascending: true }),
+      ])
 
-      if (filasResp.error) throw new Error(filasResp.error.message)
-      if (categoriasResp.error) throw new Error(categoriasResp.error.message)
-      if (centrosResp.error) throw new Error(centrosResp.error.message)
-      if (clientesResp.error) throw new Error(clientesResp.error.message)
-      if (proveedoresResp.error) throw new Error(proveedoresResp.error.message)
+      if (filasResp.error) {
+        throw new Error(filasResp.error.message)
+      }
+
+      if (categoriasResp.error) {
+        throw new Error(categoriasResp.error.message)
+      }
+
+      if (centrosResp.error) {
+        throw new Error(centrosResp.error.message)
+      }
 
       const rows = (filasResp.data ?? []) as unknown as FilaImportada[]
-      const categoriasData = (categoriasResp.data ?? []) as Categoria[]
-      const centrosData = (centrosResp.data ?? []) as CentroCosto[]
-      const clientesData = (clientesResp.data ?? []) as Cliente[]
-      const proveedoresData = (proveedoresResp.data ?? []) as Proveedor[]
-
       setFilas(rows)
-      setCategorias(categoriasData)
-      setCentrosCosto(centrosData)
-      setClientes(clientesData)
-      setProveedores(proveedoresData)
+      setCategorias((categoriasResp.data ?? []) as Categoria[])
+      setCentrosCosto((centrosResp.data ?? []) as CentroCosto[])
 
       setDescripcionesEditadas((prev) => {
         const next = { ...prev }
@@ -254,55 +207,25 @@ function BancosImportacionesContent() {
         return next
       })
 
-      setClientesPorFila((prev) => {
+      setCategoriasPorFila((prev) => {
         const next = { ...prev }
 
         rows.forEach((fila) => {
-          if (fila.id in next) return
-
-          if (fila.cliente_id) {
-            next[fila.id] = fila.cliente_id
-            return
+          if (!(fila.id in next)) {
+            next[fila.id] = fila.categoria_id || ''
           }
-
-          if (fila.tipo_sugerido !== 'ingreso') {
-            next[fila.id] = ''
-            return
-          }
-
-          const rutFila = normalizarRut(fila.rut_detectado)
-          const match = clientesData.find(
-            (cliente) => normalizarRut(cliente.rut) === rutFila && rutFila
-          )
-
-          next[fila.id] = match?.id || ''
         })
 
         return next
       })
 
-      setProveedoresPorFila((prev) => {
+      setCentrosPorFila((prev) => {
         const next = { ...prev }
 
         rows.forEach((fila) => {
-          if (fila.id in next) return
-
-          if (fila.proveedor_id) {
-            next[fila.id] = fila.proveedor_id
-            return
+          if (!(fila.id in next)) {
+            next[fila.id] = fila.centro_costo_id || ''
           }
-
-          if (fila.tipo_sugerido !== 'egreso') {
-            next[fila.id] = ''
-            return
-          }
-
-          const rutFila = normalizarRut(fila.rut_detectado)
-          const match = proveedoresData.find(
-            (proveedor) => normalizarRut(proveedor.rut) === rutFila && rutFila
-          )
-
-          next[fila.id] = match?.id || ''
         })
 
         return next
@@ -341,7 +264,7 @@ function BancosImportacionesContent() {
       const token = sessionData.session?.access_token
 
       if (!token) {
-        throw new Error('No hay sesión activa.')
+        throw new Error('No hay sesiÃ³n activa.')
       }
 
       const response = await fetch('/api/bancos/crear-movimiento-desde-fila', {
@@ -355,8 +278,6 @@ function BancosImportacionesContent() {
           descripcionEditada: descripcionesEditadas[filaId] || '',
           categoriaId: categoriasPorFila[filaId] || '',
           centroCostoId: centrosPorFila[filaId] || '',
-          clienteId: clientesPorFila[filaId] || '',
-          proveedorId: proveedoresPorFila[filaId] || '',
         }),
       })
 
@@ -388,7 +309,7 @@ function BancosImportacionesContent() {
             </h1>
             <p className="mt-2 text-sm text-slate-500">
               Revisa las filas importadas desde cartolas y crea movimientos
-              bancarios pagados.
+              bancarios pendientes.
             </p>
           </div>
 
@@ -453,7 +374,6 @@ function BancosImportacionesContent() {
           >
             <option value="pendiente">Pendientes</option>
             <option value="importada">Importadas</option>
-            <option value="omitida">Omitidas</option>
             <option value="todos">Todos</option>
           </select>
         </div>
@@ -465,7 +385,7 @@ function BancosImportacionesContent() {
             Filas importadas
           </h2>
           <p className="mt-1 text-sm text-slate-500">
-            Edita la descripción, selecciona categoría, centro de costo y tercero antes de crear el movimiento.
+            Crea movimientos uno a uno desde cada fila revisada.
           </p>
         </div>
 
@@ -485,7 +405,7 @@ function BancosImportacionesContent() {
                   <tr className="text-left text-slate-600">
                     <th className="px-4 py-3 font-semibold">Fecha</th>
                     <th className="px-4 py-3 font-semibold">Cuenta</th>
-                    <th className="px-4 py-3 font-semibold">Descripción</th>
+                    <th className="px-4 py-3 font-semibold">DescripciÃ³n</th>
                     <th className="px-4 py-3 font-semibold">RUT</th>
                     <th className="px-4 py-3 font-semibold text-right">Cargo</th>
                     <th className="px-4 py-3 font-semibold text-right">Abono</th>
@@ -497,8 +417,6 @@ function BancosImportacionesContent() {
                 <tbody>
                   {filas.map((fila) => {
                     const cuenta = fila.banco_importaciones?.cuentas_bancarias
-                    const esIngreso = fila.tipo_sugerido === 'ingreso'
-                    const esEgreso = fila.tipo_sugerido === 'egreso'
 
                     return (
                       <tr key={fila.id} className="border-t border-slate-100 text-slate-700">
@@ -516,7 +434,7 @@ function BancosImportacionesContent() {
                           </div>
                         </td>
 
-                        <td className="min-w-[420px] px-4 py-3">
+                        <td className="min-w-[360px] px-4 py-3">
                           <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">
                             Glosa banco
                           </div>
@@ -526,7 +444,7 @@ function BancosImportacionesContent() {
                           </div>
 
                           <textarea
-                            value={descripcionesEditadas[fila.id] || ''}
+                            value={descripcionesEditadas[fila.id] || ""}
                             onChange={(event) =>
                               setDescripcionesEditadas((prev) => ({
                                 ...prev,
@@ -535,17 +453,17 @@ function BancosImportacionesContent() {
                             }
                             rows={2}
                             disabled={Boolean(fila.movimiento_id)}
-                            placeholder="Descripción clara para el movimiento"
+                            placeholder="DescripciÃ³n clara para el movimiento"
                             className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-[#163A5F] disabled:bg-slate-50 disabled:text-slate-500"
                           />
 
                           <div className="mt-3 grid gap-2 md:grid-cols-2">
                             <div>
                               <label className="mb-1 block text-xs font-semibold text-slate-500">
-                                Categoría
+                                CategorÃ­a
                               </label>
                               <select
-                                value={categoriasPorFila[fila.id] || ''}
+                                value={categoriasPorFila[fila.id] || ""}
                                 onChange={(event) =>
                                   setCategoriasPorFila((prev) => ({
                                     ...prev,
@@ -555,7 +473,7 @@ function BancosImportacionesContent() {
                                 disabled={Boolean(fila.movimiento_id)}
                                 className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 outline-none focus:border-[#163A5F] disabled:bg-slate-50 disabled:text-slate-500"
                               >
-                                <option value="">Sin categoría</option>
+                                <option value="">Sin categorÃ­a</option>
                                 {categorias
                                   .filter((categoria) => {
                                     if (!fila.tipo_sugerido) return true
@@ -574,7 +492,7 @@ function BancosImportacionesContent() {
                                 Centro de costo
                               </label>
                               <select
-                                value={centrosPorFila[fila.id] || ''}
+                                value={centrosPorFila[fila.id] || ""}
                                 onChange={(event) =>
                                   setCentrosPorFila((prev) => ({
                                     ...prev,
@@ -587,7 +505,7 @@ function BancosImportacionesContent() {
                                 <option value="">Sin centro</option>
                                 {centrosCosto.map((centro) => (
                                   <option key={centro.id} value={centro.id}>
-                                    {centro.codigo ? `${centro.codigo} - ` : ''}
+                                    {centro.codigo ? `${centro.codigo} - ` : ""}
                                     {centro.nombre}
                                   </option>
                                 ))}
@@ -595,70 +513,8 @@ function BancosImportacionesContent() {
                             </div>
                           </div>
 
-                          <div className="mt-3 grid gap-2 md:grid-cols-2">
-                            <div>
-                              <label className="mb-1 block text-xs font-semibold text-slate-500">
-                                Cliente
-                              </label>
-                              <select
-                                value={clientesPorFila[fila.id] || ''}
-                                onChange={(event) =>
-                                  setClientesPorFila((prev) => ({
-                                    ...prev,
-                                    [fila.id]: event.target.value,
-                                  }))
-                                }
-                                disabled={Boolean(fila.movimiento_id) || esEgreso}
-                                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 outline-none focus:border-[#163A5F] disabled:bg-slate-50 disabled:text-slate-500"
-                              >
-                                <option value="">
-                                  {esEgreso ? 'No aplica para egreso' : 'Sin cliente'}
-                                </option>
-                                {clientes.map((cliente) => (
-                                  <option key={cliente.id} value={cliente.id}>
-                                    {cliente.rut ? `${cliente.rut} - ` : ''}
-                                    {cliente.nombre}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-
-                            <div>
-                              <label className="mb-1 block text-xs font-semibold text-slate-500">
-                                Proveedor
-                              </label>
-                              <select
-                                value={proveedoresPorFila[fila.id] || ''}
-                                onChange={(event) =>
-                                  setProveedoresPorFila((prev) => ({
-                                    ...prev,
-                                    [fila.id]: event.target.value,
-                                  }))
-                                }
-                                disabled={Boolean(fila.movimiento_id) || esIngreso}
-                                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 outline-none focus:border-[#163A5F] disabled:bg-slate-50 disabled:text-slate-500"
-                              >
-                                <option value="">
-                                  {esIngreso ? 'No aplica para ingreso' : 'Sin proveedor'}
-                                </option>
-                                {proveedores.map((proveedor) => (
-                                  <option key={proveedor.id} value={proveedor.id}>
-                                    {proveedor.rut ? `${proveedor.rut} - ` : ''}
-                                    {proveedor.nombre}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-                          </div>
-
-                          {fila.rut_detectado ? (
-                            <div className="mt-2 rounded-xl bg-blue-50 px-3 py-2 text-xs text-blue-700">
-                              RUT detectado en cartola: {fila.rut_detectado}
-                            </div>
-                          ) : null}
-
                           <div className="mt-1 text-xs text-slate-500">
-                            Archivo: {fila.banco_importaciones?.nombre_archivo || '-'}
+                            Archivo: {fila.banco_importaciones?.nombre_archivo || "-"}
                           </div>
                         </td>
 
@@ -679,9 +535,7 @@ function BancosImportacionesContent() {
                             className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
                               fila.estado === 'importada'
                                 ? 'bg-green-50 text-green-700'
-                                : fila.estado === 'omitida'
-                                  ? 'bg-amber-50 text-amber-700'
-                                  : 'bg-blue-50 text-blue-700'
+                                : 'bg-blue-50 text-blue-700'
                             }`}
                           >
                             {fila.estado}
@@ -698,7 +552,7 @@ function BancosImportacionesContent() {
                               type="button"
                               onClick={() => crearMovimiento(fila.id)}
                               disabled={procesandoId === fila.id}
-                              className="rounded-xl border border-[#163A5F] bg-white px-3 py-2 text-xs font-semibold text-[#163A5F] hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-70"
+                              className="rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70"
                             >
                               {procesandoId === fila.id
                                 ? 'Creando...'
