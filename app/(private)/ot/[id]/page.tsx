@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import ProtectedModuleRoute from '../../../../components/ProtectedModuleRoute'
 import { OTEvidenciasPanel } from '../../../../components/ot/ot-evidencias-panel'
 import { OTFirmasPanel } from '../../../../components/ot/ot-firmas-panel'
+import { OTChecklistPanel } from '../../../../components/ot/ot-checklist-panel'
 import { supabase } from '../../../../lib/supabase/client'
 import type { OTResumen } from '../../../../lib/ot/types'
 
@@ -2125,6 +2126,15 @@ function OTDetalleContent() {
           </div>
         )}
       </div>
+
+      <OTChecklistPanel
+        otId={otId}
+        empresaId={detalle.empresa_id}
+        currentUserId={currentUserId}
+        initialPlantillaId={detalle.plantilla_checklist_id}
+        requiereChecklist={form.requiere_checklist || isPreventiva}
+        onChanged={() => void loadData(false)}
+      />
 
       <OTEvidenciasPanel
         otId={otId}
