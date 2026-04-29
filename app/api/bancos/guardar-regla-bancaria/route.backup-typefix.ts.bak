@@ -1,0 +1,227 @@
+import { NextRequest } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
+
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+
+function jsonResponse(data: unknown, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  })
+}
+
+function jsonError(message: string, status = 500) {
+  return jsonResponse({ error: message }, status)
+}
+
+function limpiarTextoRegla(value: string) {
+  return value
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 80)
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const supabaseAnonKey =
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+      process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+    if (!supabaseUrl || !supabaseAnonKey || !serviceRoleKey) {
+      return jsonError('Faltan variables de entorno Supabase.', 500)
+    }
+
+    const authHeader = request.headers.get('authorization') || ''
+    const token = authHeader.startsWith('Bearer ')
+      ? authHeader.slice(7).trim()
+      : ''
+
+    if (!token) {
+      return jsonError('No autorizado.', 401)
+    }
+
+    const authClient = createClient(supabaseUrl, supabaseAnonKey, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+    })
+
+    const {
+      data: { user },
+      error: userError,
+    } = await authClient.auth.getUser(token)
+
+    if (userError || !user) {
+      return jsonError('Sesión no válida.', 401)
+    }
+
+    const body = await request.json()
+
+    const filaId = String(body.filaId || '')
+    const descripcionSugerida = String(body.descripcionSugerida || '').trim()
+    const categoriaId = String(body.categoriaId || '').trim() || null
+    const centroCostoId = String(body.centroCostoId || '').trim() || null
+    const clienteId = String(body.clienteId || '').trim() || null
+    const proveedorId = String(body.proveedorId || '').trim() || null
+
+    if (!filaId) {
+      return jsonError('Debes indicar la fila bancaria.', 400)
+    }
+
+    const adminClient = createClient(supabaseUrl, serviceRoleKey, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+    })
+
+    const filaResp = await adminClient
+      .from('banco_importacion_filas')
+      .select(
+        `
+          id,
+          empresa_id,
+          cuenta_bancaria_id,
+          descripcion_original,
+          rut_detectado,
+          tipo_sugerido,
+          cargo,
+          abono,
+          banco_importaciones (
+            banco
+          )
+        `
+      )
+      .eq('id', filaId)
+      .maybeSingle()
+
+    if (filaResp.error) {
+      return jsonError(`No se pudo cargar la fila: ${filaResp.error.message}`, 500)
+    }
+
+    if (!filaResp.data) {
+      return jsonError('No se encontró la fila bancaria.', 404)
+    }
+
+    const fila = filaResp.data as {
+      id: string
+      empresa_id: string
+      cuenta_bancaria_id: string
+      descripcion_original: string
+      rut_detectado: string | null
+      tipo_sugerido: string | null
+      cargo: number | null
+      abono: number | null
+      banco_importaciones: { banco: string | null } | null
+    }
+
+    const permisoResp = await adminClient
+      .from('usuario_empresas')
+      .select('id')
+      .eq('usuario_id', user.id)
+      .eq('empresa_id', fila.empresa_id)
+      .eq('activo', true)
+      .maybeSingle()
+
+    if (permisoResp.error || !permisoResp.data) {
+      return jsonError('No tienes permisos para crear reglas en esta empresa.', 403)
+    }
+
+    const textoBusqueda = limpiarTextoRegla(fila.descripcion_original)
+    const rutDetectado = fila.rut_detectado || null
+    const tipoMovimiento =
+      Number(fila.abono || 0) > 0 ? 'ingreso' : 'egreso'
+
+    const terceroTipo = clienteId
+      ? 'cliente'
+      : proveedorId
+        ? 'proveedor'
+        : null
+
+    const nombre =
+      rutDetectado
+        ? `Regla bancaria RUT ${rutDetectado}`
+        : `Regla bancaria ${textoBusqueda.slice(0, 40)}`
+
+    const reglaPayload = {
+      empresa_id: fila.empresa_id,
+      banco: fila.banco_importaciones?.banco || null,
+      cuenta_bancaria_id: fila.cuenta_bancaria_id,
+      nombre,
+      texto_busqueda: textoBusqueda,
+      rut_detectado: rutDetectado,
+      tipo_movimiento: tipoMovimiento,
+      tercero_tipo: terceroTipo,
+      cliente_id: clienteId,
+      proveedor_id: proveedorId,
+      categoria_id: categoriaId,
+      centro_costo_id: centroCostoId,
+      descripcion_sugerida: descripcionSugerida || null,
+      activa: true,
+      created_by: user.id,
+      updated_at: new Date().toISOString(),
+    }
+
+    const reglaExistenteResp = await adminClient
+      .from('reglas_bancarias')
+      .select('id')
+      .eq('empresa_id', fila.empresa_id)
+      .eq('cuenta_bancaria_id', fila.cuenta_bancaria_id)
+      .eq('rut_detectado', rutDetectado)
+      .eq('texto_busqueda', textoBusqueda)
+      .maybeSingle()
+
+    if (reglaExistenteResp.error) {
+      return jsonError(
+        `No se pudo validar regla existente: ${reglaExistenteResp.error.message}`,
+        500
+      )
+    }
+
+    if (reglaExistenteResp.data?.id) {
+      const updateResp = await adminClient
+        .from('reglas_bancarias')
+        .update(reglaPayload)
+        .eq('id', reglaExistenteResp.data.id)
+        .select('id')
+        .single()
+
+      if (updateResp.error) {
+        return jsonError(`No se pudo actualizar la regla: ${updateResp.error.message}`, 500)
+      }
+
+      return jsonResponse({
+        reglaId: updateResp.data.id,
+        accion: 'actualizada',
+      })
+    }
+
+    const insertResp = await adminClient
+      .from('reglas_bancarias')
+      .insert(reglaPayload)
+      .select('id')
+      .single()
+
+    if (insertResp.error) {
+      return jsonError(`No se pudo guardar la regla: ${insertResp.error.message}`, 500)
+    }
+
+    return jsonResponse({
+      reglaId: insertResp.data.id,
+      accion: 'creada',
+    })
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : 'No se pudo guardar la regla bancaria.'
+
+    return jsonError(message, 500)
+  }
+}

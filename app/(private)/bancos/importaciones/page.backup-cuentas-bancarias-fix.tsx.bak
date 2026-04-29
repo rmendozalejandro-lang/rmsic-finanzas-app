@@ -19,13 +19,6 @@ type CentroCosto = {
   codigo: string | null
 }
 
-type CuentaBancaria = {
-  id: string
-  banco: string
-  nombre_cuenta: string
-  numero_cuenta: string | null
-}
-
 type Cliente = {
   id: string
   nombre: string
@@ -156,7 +149,6 @@ function BancosImportacionesContent() {
   const [centrosCosto, setCentrosCosto] = useState<CentroCosto[]>([])
   const [clientes, setClientes] = useState<Cliente[]>([])
   const [proveedores, setProveedores] = useState<Proveedor[]>([])
-  const [cuentasBancarias, setCuentasBancarias] = useState<CuentaBancaria[]>([])
   const [reglas, setReglas] = useState<ReglaBancaria[]>([])
 
   const [categoriasPorFila, setCategoriasPorFila] = useState<Record<string, string>>({})
@@ -179,34 +171,6 @@ function BancosImportacionesContent() {
     setEmpresaId(activeEmpresa)
   }, [])
 
-
-  useEffect(() => {
-    const loadCuentasBancarias = async () => {
-      if (!empresaId) {
-        setCuentasBancarias([])
-        return
-      }
-
-      const { data, error: cuentasError } = await supabase
-        .from('cuentas_bancarias')
-        .select('id, banco, nombre_cuenta, numero_cuenta')
-        .eq('empresa_id', empresaId)
-        .eq('activa', true)
-        .is('deleted_at', null)
-        .order('banco', { ascending: true })
-        .order('nombre_cuenta', { ascending: true })
-
-      if (cuentasError) {
-        console.error(cuentasError)
-        setCuentasBancarias([])
-        return
-      }
-
-      setCuentasBancarias((data ?? []) as CuentaBancaria[])
-    }
-
-    void loadCuentasBancarias()
-  }, [empresaId])
   const loadFilas = async () => {
     try {
       setLoading(true)
@@ -253,7 +217,7 @@ function BancosImportacionesContent() {
         query = query.eq('estado', filtroEstado)
       }
 
-      const [filasResp, categoriasResp, centrosResp, clientesResp, proveedoresResp, reglasResp] =
+      const [filasResp, categoriasResp, centrosResp, clientesResp, proveedoresResp, cuentasResp, reglasResp] =
         await Promise.all([
           query,
           supabase
