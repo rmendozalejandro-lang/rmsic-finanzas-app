@@ -336,7 +336,7 @@ function BancosImportarContent() {
             type="button"
             onClick={handlePreview}
             disabled={procesando}
-            className="inline-flex items-center justify-center rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70"
+            className="inline-flex items-center justify-center rounded-xl bg-[#3B82F6] px-5 py-3 text-sm font-semibold text-white hover:bg-[#2563EB] disabled:cursor-not-allowed disabled:opacity-70"
           >
             {procesando ? 'Leyendo cartola...' : 'Leer cartola y previsualizar'}
           </button>
@@ -487,7 +487,7 @@ function BancosImportarContent() {
                 type="button"
                 onClick={handleConfirmarImportacion}
                 disabled={confirmando || Boolean(importacionId)}
-                className="inline-flex items-center justify-center rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70"
+                className="inline-flex items-center justify-center rounded-xl bg-[#3B82F6] px-5 py-3 text-sm font-semibold text-white hover:bg-[#2563EB] disabled:cursor-not-allowed disabled:opacity-70"
               >
                 {importacionId
                   ? "Importación guardada"

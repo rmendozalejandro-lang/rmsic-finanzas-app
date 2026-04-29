@@ -229,7 +229,7 @@ export default function BancosPage() {
         <div className="flex flex-wrap gap-3">
           <Link
             href="/bancos/importar"
-            className="inline-flex items-center justify-center rounded-xl bg-[#163A5F] px-4 py-2 text-sm font-semibold text-white hover:bg-[#245C90]"
+            className="inline-flex items-center justify-center rounded-xl border border-[#163A5F] bg-white px-4 py-2 text-sm font-semibold text-[#163A5F] hover:bg-blue-50"
           >
             Importar cartola
           </Link>
