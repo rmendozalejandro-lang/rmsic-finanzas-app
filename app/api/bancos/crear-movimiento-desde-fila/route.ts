@@ -56,6 +56,30 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json()
     const filaId = String(body.filaId || '')
+    const descripcionEditadaBody =
+      typeof body.descripcionEditada === 'string'
+        ? body.descripcionEditada.trim()
+        : ''
+
+    const categoriaIdBody =
+      typeof body.categoriaId === 'string' && body.categoriaId.trim()
+        ? body.categoriaId.trim()
+        : null
+
+    const centroCostoIdBody =
+      typeof body.centroCostoId === 'string' && body.centroCostoId.trim()
+        ? body.centroCostoId.trim()
+        : null
+
+    const categoriaIdBody =
+      typeof body.categoriaId === 'string' && body.categoriaId.trim()
+        ? body.categoriaId.trim()
+        : null
+
+    const centroCostoIdBody =
+      typeof body.centroCostoId === 'string' && body.centroCostoId.trim()
+        ? body.centroCostoId.trim()
+        : null
 
     if (!filaId) {
       return jsonError('Debes indicar la fila bancaria a convertir.', 400)
@@ -78,6 +102,9 @@ export async function POST(request: NextRequest) {
           fecha,
           numero_documento,
           descripcion_original,
+          descripcion_editada,
+          categoria_id,
+          centro_costo_id,
           cargo,
           abono,
           tipo_sugerido,
@@ -127,6 +154,73 @@ export async function POST(request: NextRequest) {
       return jsonError('La fila no tiene fecha o monto válido.', 400)
     }
 
+    const duplicadosManualResp = await adminClient
+      .from('movimientos')
+      .select(
+        `
+          id,
+          tipo_movimiento,
+          fecha,
+          numero_documento,
+          descripcion,
+          monto_total,
+          estado,
+          cuenta_bancaria_id,
+          created_at
+        `
+      )
+      .eq('empresa_id', fila.empresa_id)
+      .eq('cuenta_bancaria_id', fila.cuenta_bancaria_id)
+      .eq('fecha', fila.fecha)
+      .eq('tipo_movimiento', tipoMovimiento)
+      .eq('monto_total', montoTotal)
+      .eq('activo', true)
+      .is('deleted_at', null)
+      .limit(5)
+
+    if (duplicadosManualResp.error) {
+      return jsonError(
+        `No se pudo validar duplicados manuales: ${duplicadosManualResp.error.message}`,
+        500
+      )
+    }
+
+    const posiblesDuplicadosManual = duplicadosManualResp.data ?? []
+
+    if (posiblesDuplicadosManual.length > 0) {
+      return jsonResponse(
+        {
+          error:
+            'Posible duplicado manual detectado. Ya existe un movimiento con la misma fecha, cuenta bancaria, tipo y monto. Revisa antes de crear uno nuevo.',
+          posibleDuplicadoManual: true,
+          movimientos: posiblesDuplicadosManual,
+        },
+        409
+      )
+    }
+    const descripcionMovimiento =
+      descripcionEditadaBody ||
+      String(fila.descripcion_editada || '').trim() ||
+      fila.descripcion_original
+
+    const categoriaIdMovimiento =
+      categoriaIdBody || fila.categoria_id || null
+
+    const centroCostoIdMovimiento =
+      centroCostoIdBody || fila.centro_costo_id || null
+
+    const categoriaIdMovimiento =
+      categoriaIdBody || fila.categoria_id || null
+
+    const centroCostoIdMovimiento =
+      centroCostoIdBody || fila.centro_costo_id || null
+
+    const observacionesMovimiento =
+      descripcionMovimiento !== fila.descripcion_original
+        ? 'Movimiento creado desde importación de cartola bancaria. Origen: cartola Excel importada. Glosa original banco: ' +
+          fila.descripcion_original
+        : 'Movimiento creado desde importación de cartola bancaria. Origen: cartola Excel importada.'
+
     const movimientoResp = await adminClient
       .from('movimientos')
       .insert({
@@ -138,23 +232,23 @@ export async function POST(request: NextRequest) {
         tercero_tipo: null,
         cliente_id: null,
         proveedor_id: null,
-        categoria_id: null,
-        centro_costo_id: null,
+        categoria_id: categoriaIdMovimiento,
+        centro_costo_id: centroCostoIdMovimiento,
         cuenta_contable_id: null,
         cuenta_bancaria_id: fila.cuenta_bancaria_id,
 
         tipo_documento: null,
         numero_documento: fila.numero_documento,
-        descripcion: fila.descripcion_original,
+        descripcion: descripcionMovimiento,
 
         monto_neto: 0,
         monto_iva: 0,
         monto_exento: montoTotal,
         monto_total: montoTotal,
 
-        estado: 'pendiente',
+        estado: 'pagado',
         medio_pago: 'transferencia',
-        observaciones: 'Movimiento creado desde importación de cartola bancaria. Origen: cartola Excel importada.',
+        observaciones: observacionesMovimiento,
 
         impuesto_especifico: 0,
         tratamiento_tributario: 'exento',
@@ -179,6 +273,9 @@ export async function POST(request: NextRequest) {
       .from('banco_importacion_filas')
       .update({
         movimiento_id: movimientoId,
+        descripcion_editada: descripcionMovimiento,
+        categoria_id: categoriaIdMovimiento,
+        centro_costo_id: centroCostoIdMovimiento,
         estado: 'importada',
         updated_at: new Date().toISOString(),
       })

@@ -513,6 +513,62 @@ function BancosImportacionesContent() {
                             </div>
                           </div>
 
+                          <div className="mt-3 grid gap-2 md:grid-cols-2">
+                            <div>
+                              <label className="mb-1 block text-xs font-semibold text-slate-500">
+                                Categoría
+                              </label>
+                              <select
+                                value={categoriasPorFila[fila.id] || ""}
+                                onChange={(event) =>
+                                  setCategoriasPorFila((prev) => ({
+                                    ...prev,
+                                    [fila.id]: event.target.value,
+                                  }))
+                                }
+                                disabled={Boolean(fila.movimiento_id)}
+                                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 outline-none focus:border-[#163A5F] disabled:bg-slate-50 disabled:text-slate-500"
+                              >
+                                <option value="">Sin categoría</option>
+                                {categorias
+                                  .filter((categoria) => {
+                                    if (!fila.tipo_sugerido) return true
+                                    return categoria.tipo === fila.tipo_sugerido
+                                  })
+                                  .map((categoria) => (
+                                    <option key={categoria.id} value={categoria.id}>
+                                      {categoria.nombre}
+                                    </option>
+                                  ))}
+                              </select>
+                            </div>
+
+                            <div>
+                              <label className="mb-1 block text-xs font-semibold text-slate-500">
+                                Centro de costo
+                              </label>
+                              <select
+                                value={centrosPorFila[fila.id] || ""}
+                                onChange={(event) =>
+                                  setCentrosPorFila((prev) => ({
+                                    ...prev,
+                                    [fila.id]: event.target.value,
+                                  }))
+                                }
+                                disabled={Boolean(fila.movimiento_id)}
+                                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 outline-none focus:border-[#163A5F] disabled:bg-slate-50 disabled:text-slate-500"
+                              >
+                                <option value="">Sin centro</option>
+                                {centrosCosto.map((centro) => (
+                                  <option key={centro.id} value={centro.id}>
+                                    {centro.codigo ? `${centro.codigo} - ` : ""}
+                                    {centro.nombre}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
+
                           <div className="mt-1 text-xs text-slate-500">
                             Archivo: {fila.banco_importaciones?.nombre_archivo || "-"}
                           </div>
