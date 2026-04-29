@@ -71,6 +71,16 @@ export async function POST(request: NextRequest) {
         ? body.centroCostoId.trim()
         : null
 
+    const categoriaIdBody =
+      typeof body.categoriaId === 'string' && body.categoriaId.trim()
+        ? body.categoriaId.trim()
+        : null
+
+    const centroCostoIdBody =
+      typeof body.centroCostoId === 'string' && body.centroCostoId.trim()
+        ? body.centroCostoId.trim()
+        : null
+
     if (!filaId) {
       return jsonError('Debes indicar la fila bancaria a convertir.', 400)
     }
