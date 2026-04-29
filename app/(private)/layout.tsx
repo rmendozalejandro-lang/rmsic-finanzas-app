@@ -70,6 +70,11 @@ const menuItems: MenuItem[] = [
     label: 'Usuarios de mi empresa',
     moduleKey: 'configuracion_usuarios',
   },
+{
+    href: '/configuracion/correos',
+    label: 'Correos y notificaciones',
+    moduleKey: 'configuracion_usuarios',
+  },
   {
     href: '/configuracion/auditoria',
     label: 'Auditoría',
