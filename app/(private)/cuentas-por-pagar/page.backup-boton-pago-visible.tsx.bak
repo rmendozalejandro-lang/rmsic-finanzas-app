@@ -251,18 +251,6 @@ function CuentasPorPagarContent() {
       }
 
       setItems((data ?? []) as CuentaPorPagar[])
-
-      const { data: cuentasData, error: cuentasError } = await supabase
-        .from('cuentas_bancarias')
-        .select('id, banco, nombre_cuenta')
-        .eq('empresa_id', empresaId)
-        .eq('activa', true)
-        .order('banco', { ascending: true })
-        .order('nombre_cuenta', { ascending: true })
-
-      if (!cuentasError) {
-        setCuentasBancarias((cuentasData ?? []) as CuentaBancariaBasica[])
-      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudieron cargar las cuentas por pagar.')
     } finally {

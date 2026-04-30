@@ -215,9 +215,6 @@ function getAccionClass(accion: string) {
 
 function getAccionVisualLabel(doc: SiiDocumento) {
   if (doc.estado === 'convertido') {
-    if (doc.accion_sugerida === 'ajuste_negativo') return 'Ajuste negativo creado'
-    if (doc.accion_sugerida === 'ajuste_positivo') return 'Ajuste positivo creado'
-
     return doc.tipo_registro === 'ventas' ? 'Ingreso creado' : 'Egreso creado'
   }
 
@@ -726,32 +723,6 @@ function getSignedAmountForDoc(doc: SiiDocumento, value: number | string | null 
   const factor = doc.accion_sugerida === 'ajuste_negativo' ? -1 : 1
 
   return amount * factor
-}
-
-function getAjusteSiiInfo(doc: SiiDocumento) {
-  if (doc.tipo_doc_codigo === 61) {
-    return {
-      title: 'Nota de crédito',
-      message:
-        doc.tipo_registro === 'ventas'
-          ? 'Este documento rebajará un ingreso o cuenta por cobrar. Se creará como ajuste negativo de ingreso.'
-          : 'Este documento rebajará un egreso o cuenta por pagar. Se creará como ajuste negativo de egreso.',
-      className: 'border-rose-200 bg-rose-50 text-rose-800',
-    }
-  }
-
-  if (doc.tipo_doc_codigo === 56) {
-    return {
-      title: 'Nota de débito',
-      message:
-        doc.tipo_registro === 'ventas'
-          ? 'Este documento aumentará un ingreso o cuenta por cobrar. Se creará como ajuste positivo de ingreso.'
-          : 'Este documento aumentará un egreso o cuenta por pagar. Se creará como ajuste positivo de egreso.',
-      className: 'border-amber-200 bg-amber-50 text-amber-800',
-    }
-  }
-
-  return null
 }
 function DocumentosSiiPageContent() {
   const [empresaId, setEmpresaId] = useState('')
@@ -2592,21 +2563,6 @@ function DocumentosSiiPageContent() {
                     </table>
                   </div>
                 ) : null}
-              </div>
-            ) : null}
-
-            {getAjusteSiiInfo(selectedDocumento) ? (
-              <div
-                className={`mt-6 rounded-2xl border p-4 text-sm ${
-                  getAjusteSiiInfo(selectedDocumento)?.className
-                }`}
-              >
-                <p className="font-semibold">
-                  {getAjusteSiiInfo(selectedDocumento)?.title}
-                </p>
-                <p className="mt-1">
-                  {getAjusteSiiInfo(selectedDocumento)?.message}
-                </p>
               </div>
             ) : null}
             <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-5">

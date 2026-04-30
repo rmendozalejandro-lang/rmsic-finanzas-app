@@ -23,28 +23,6 @@ type MovimientoRelacionado = {
   monto_total: number | string | null
 }
 
-
-type CuentaBancariaBasica = {
-  id: string
-  banco: string
-  nombre_cuenta: string
-}
-
-type PaymentFormState = {
-  fecha_pago: string
-  monto: string
-  cuenta_bancaria_id: string
-  observaciones: string
-}
-
-function todayLocalDate() {
-  const now = new Date()
-  const year = now.getFullYear()
-  const month = String(now.getMonth() + 1).padStart(2, '0')
-  const day = String(now.getDate()).padStart(2, '0')
-
-  return `${year}-${month}-${day}`
-}
 type CuentaPorPagar = {
   id: string
   empresa_id: string
@@ -167,21 +145,9 @@ function CuentasPorPagarContent() {
   const [empresaId, setEmpresaId] = useState('')
   const [empresaNombre, setEmpresaNombre] = useState('')
   const [items, setItems] = useState<CuentaPorPagar[]>([])
-  const [cuentasBancarias, setCuentasBancarias] = useState<CuentaBancariaBasica[]>([])
-
-  const [selectedPaymentItem, setSelectedPaymentItem] = useState<CuentaPorPagar | null>(null)
-  const [showPaymentModal, setShowPaymentModal] = useState(false)
-  const [savingPayment, setSavingPayment] = useState(false)
-  const [paymentForm, setPaymentForm] = useState<PaymentFormState>({
-    fecha_pago: todayLocalDate(),
-    monto: '',
-    cuenta_bancaria_id: '',
-    observaciones: '',
-  })
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [success, setSuccess] = useState('')
 
   const [q, setQ] = useState('')
   const [estado, setEstado] = useState('pendiente')
@@ -251,18 +217,6 @@ function CuentasPorPagarContent() {
       }
 
       setItems((data ?? []) as CuentaPorPagar[])
-
-      const { data: cuentasData, error: cuentasError } = await supabase
-        .from('cuentas_bancarias')
-        .select('id, banco, nombre_cuenta')
-        .eq('empresa_id', empresaId)
-        .eq('activa', true)
-        .order('banco', { ascending: true })
-        .order('nombre_cuenta', { ascending: true })
-
-      if (!cuentasError) {
-        setCuentasBancarias((cuentasData ?? []) as CuentaBancariaBasica[])
-      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudieron cargar las cuentas por pagar.')
     } finally {
@@ -338,133 +292,6 @@ function CuentasPorPagarContent() {
     )
   }, [filtered])
 
-
-  const openPaymentModal = (item: CuentaPorPagar) => {
-    setSelectedPaymentItem(item)
-    setPaymentForm({
-      fecha_pago: todayLocalDate(),
-      monto: String(toNumber(item.saldo_pendiente)),
-      cuenta_bancaria_id: '',
-      observaciones: '',
-    })
-    setError('')
-    setSuccess('')
-    setShowPaymentModal(true)
-  }
-
-  const closePaymentModal = () => {
-    setSelectedPaymentItem(null)
-    setShowPaymentModal(false)
-    setPaymentForm({
-      fecha_pago: todayLocalDate(),
-      monto: '',
-      cuenta_bancaria_id: '',
-      observaciones: '',
-    })
-  }
-
-  const registrarPago = async () => {
-    if (!selectedPaymentItem) return
-
-    try {
-      setSavingPayment(true)
-      setError('')
-      setSuccess('')
-
-      const montoPago = toNumber(paymentForm.monto)
-      const saldoActual = toNumber(selectedPaymentItem.saldo_pendiente)
-      const montoPagadoActual = toNumber(selectedPaymentItem.monto_pagado)
-      const montoTotal = toNumber(selectedPaymentItem.monto_total)
-
-      if (!paymentForm.fecha_pago) {
-        throw new Error('Debes indicar la fecha de pago.')
-      }
-
-      if (!paymentForm.cuenta_bancaria_id) {
-        throw new Error('Debes seleccionar la cuenta bancaria.')
-      }
-
-      if (montoPago <= 0) {
-        throw new Error('El monto pagado debe ser mayor a cero.')
-      }
-
-      if (montoPago > saldoActual) {
-        throw new Error('El monto pagado no puede superar el saldo pendiente.')
-      }
-
-      const { data: userData } = await supabase.auth.getUser()
-      const userId = userData.user?.id || null
-
-      const { error: pagoError } = await supabase
-        .from('cuentas_por_pagar_pagos')
-        .insert({
-          empresa_id: empresaId,
-          cuenta_por_pagar_id: selectedPaymentItem.id,
-          movimiento_id: selectedPaymentItem.movimiento_id,
-          proveedor_id: selectedPaymentItem.proveedor_id,
-          cuenta_bancaria_id: paymentForm.cuenta_bancaria_id,
-          fecha_pago: paymentForm.fecha_pago,
-          monto: montoPago,
-          observaciones: paymentForm.observaciones.trim() || null,
-          created_by: userId,
-        })
-
-      if (pagoError) {
-        throw new Error(`No se pudo registrar el pago: ${pagoError.message}`)
-      }
-
-      const nuevoMontoPagado = montoPagadoActual + montoPago
-      const nuevoSaldo = Math.max(montoTotal - nuevoMontoPagado, 0)
-      const nuevoEstado = nuevoSaldo <= 0 ? 'pagado' : 'parcial'
-
-      const { error: updateCxpError } = await supabase
-        .from('cuentas_por_pagar')
-        .update({
-          monto_pagado: nuevoMontoPagado,
-          saldo_pendiente: nuevoSaldo,
-          estado: nuevoEstado,
-          updated_by: userId,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', selectedPaymentItem.id)
-        .eq('empresa_id', empresaId)
-
-      if (updateCxpError) {
-        throw new Error(`El pago fue registrado, pero no se pudo actualizar la cuenta por pagar: ${updateCxpError.message}`)
-      }
-
-      if (nuevoEstado === 'pagado') {
-        const { error: updateMovimientoError } = await supabase
-          .from('movimientos')
-          .update({
-            estado: 'pagado',
-            cuenta_bancaria_id: paymentForm.cuenta_bancaria_id,
-            medio_pago: 'transferencia',
-            updated_by: userId,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', selectedPaymentItem.movimiento_id)
-          .eq('empresa_id', empresaId)
-
-        if (updateMovimientoError) {
-          throw new Error(`La cuenta por pagar fue actualizada, pero no se pudo actualizar el egreso: ${updateMovimientoError.message}`)
-        }
-      }
-
-      setSuccess(
-        nuevoEstado === 'pagado'
-          ? 'Pago registrado correctamente. La cuenta por pagar quedó pagada.'
-          : 'Pago parcial registrado correctamente.'
-      )
-
-      closePaymentModal()
-      await loadData()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'No se pudo registrar el pago.')
-    } finally {
-      setSavingPayment(false)
-    }
-  }
   const limpiarFiltros = () => {
     setQ('')
     setEstado('pendiente')
@@ -512,12 +339,6 @@ function CuentasPorPagarContent() {
       {error ? (
         <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
           {error}
-        </div>
-      ) : null}
-
-      {success ? (
-        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700">
-          {success}
         </div>
       ) : null}
 
@@ -650,7 +471,6 @@ function CuentasPorPagarContent() {
                   <th className="px-4 py-3 text-right font-semibold">Pagado</th>
                   <th className="px-4 py-3 text-right font-semibold">Saldo</th>
                   <th className="px-4 py-3 font-semibold">Estado</th>
-                  <th className="px-4 py-3 text-right font-semibold">Acciones</th>
                 </tr>
               </thead>
 
@@ -720,173 +540,6 @@ function CuentasPorPagarContent() {
           </div>
         )}
       </section>
-
-      {showPaymentModal && selectedPaymentItem ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
-          <div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white p-6 shadow-xl">
-            <div className="flex items-start justify-between gap-4 border-b border-slate-200 pb-4">
-              <div>
-                <p className="text-sm font-medium text-slate-500">
-                  Cuentas por pagar
-                </p>
-                <h3 className="mt-1 text-2xl font-semibold text-slate-900">
-                  Registrar pago a proveedor
-                </h3>
-                <p className="mt-1 text-sm text-slate-600">
-                  Registra un pago total o parcial de la factura pendiente.
-                </p>
-              </div>
-
-              <button
-                type="button"
-                onClick={closePaymentModal}
-                className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
-              >
-                Cerrar
-              </button>
-            </div>
-
-            <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm">
-              <div className="grid gap-3 md:grid-cols-2">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Proveedor
-                  </p>
-                  <p className="mt-1 font-medium text-slate-900">
-                    {firstOrNull(selectedPaymentItem.proveedores)?.nombre || 'Proveedor no asignado'}
-                  </p>
-                </div>
-
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Documento
-                  </p>
-                  <p className="mt-1 font-medium text-slate-900">
-                    {firstOrNull(selectedPaymentItem.movimientos)?.tipo_documento || 'Documento'} N°{' '}
-                    {firstOrNull(selectedPaymentItem.movimientos)?.numero_documento || '-'}
-                  </p>
-                </div>
-
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Monto total
-                  </p>
-                  <p className="mt-1 font-medium text-slate-900">
-                    {formatCurrency(selectedPaymentItem.monto_total)}
-                  </p>
-                </div>
-
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Saldo pendiente
-                  </p>
-                  <p className="mt-1 font-medium text-slate-900">
-                    {formatCurrency(selectedPaymentItem.saldo_pendiente)}
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-5 grid gap-4 md:grid-cols-2">
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700">
-                  Fecha de pago
-                </label>
-                <input
-                  type="date"
-                  value={paymentForm.fecha_pago}
-                  onChange={(event) =>
-                    setPaymentForm((prev) => ({
-                      ...prev,
-                      fecha_pago: event.target.value,
-                    }))
-                  }
-                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-[#163A5F]"
-                />
-              </div>
-
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700">
-                  Monto pagado
-                </label>
-                <input
-                  type="number"
-                  min="1"
-                  step="1"
-                  value={paymentForm.monto}
-                  onChange={(event) =>
-                    setPaymentForm((prev) => ({
-                      ...prev,
-                      monto: event.target.value,
-                    }))
-                  }
-                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-[#163A5F]"
-                />
-              </div>
-
-              <div className="md:col-span-2">
-                <label className="mb-2 block text-sm font-medium text-slate-700">
-                  Cuenta bancaria
-                </label>
-                <select
-                  value={paymentForm.cuenta_bancaria_id}
-                  onChange={(event) =>
-                    setPaymentForm((prev) => ({
-                      ...prev,
-                      cuenta_bancaria_id: event.target.value,
-                    }))
-                  }
-                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-[#163A5F]"
-                >
-                  <option value="">Seleccionar cuenta bancaria</option>
-                  {cuentasBancarias.map((cuenta) => (
-                    <option key={cuenta.id} value={cuenta.id}>
-                      {cuenta.banco} - {cuenta.nombre_cuenta}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="md:col-span-2">
-                <label className="mb-2 block text-sm font-medium text-slate-700">
-                  Observaciones
-                </label>
-                <textarea
-                  value={paymentForm.observaciones}
-                  onChange={(event) =>
-                    setPaymentForm((prev) => ({
-                      ...prev,
-                      observaciones: event.target.value,
-                    }))
-                  }
-                  rows={3}
-                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-[#163A5F]"
-                  placeholder="Ejemplo: Pago por transferencia, comprobante, observación interna..."
-                />
-              </div>
-            </div>
-
-            <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-end">
-              <button
-                type="button"
-                onClick={closePaymentModal}
-                className="rounded-xl border border-slate-300 px-5 py-3 text-sm font-medium text-slate-700 hover:bg-slate-100"
-              >
-                Cancelar
-              </button>
-
-              <button
-                type="button"
-                onClick={() => void registrarPago()}
-                disabled={savingPayment}
-                className="rounded-xl bg-[#163A5F] px-5 py-3 text-sm font-semibold text-white hover:bg-[#245C90] disabled:cursor-not-allowed disabled:opacity-70"
-              >
-                {savingPayment ? 'Guardando...' : 'Registrar pago'}
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
     </main>
   )
 }
