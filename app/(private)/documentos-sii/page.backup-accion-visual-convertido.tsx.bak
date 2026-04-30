@@ -212,34 +212,6 @@ function getAccionClass(accion: string) {
   }
 }
 
-
-function getAccionVisualLabel(doc: SiiDocumento) {
-  if (doc.estado === 'convertido') {
-    return doc.tipo_registro === 'ventas' ? 'Ingreso creado' : 'Egreso creado'
-  }
-
-  if (doc.estado === 'vinculado') {
-    return 'Movimiento vinculado'
-  }
-
-  if (doc.estado === 'solo_documental') {
-    return 'Solo documental'
-  }
-
-  return ACCION_LABELS[doc.accion_sugerida] || doc.accion_sugerida
-}
-
-function getAccionVisualClass(doc: SiiDocumento) {
-  if (doc.estado === 'convertido') {
-    return 'border-emerald-200 bg-emerald-50 text-emerald-700'
-  }
-
-  if (doc.estado === 'vinculado') {
-    return 'border-purple-200 bg-purple-50 text-purple-700'
-  }
-
-  return getAccionClass(doc.accion_sugerida)
-}
 function getTipoDocNombre(codigo: number, nombre: string | null | undefined) {
   return nombre || TIPO_DOC_LABELS[codigo] || `Tipo ${codigo}`
 }
@@ -1556,7 +1528,7 @@ function DocumentosSiiPageContent() {
 
       const { data: siiDocsData, error: siiDocsError } = await supabase
         .from('sii_documentos')
-        .select('id, tipo_registro, tipo_doc_codigo, folio, rut_tercero, monto_total, xml_importado')
+        .select('id, tipo_registro, tipo_doc_codigo, folio, rut_tercero, monto_total')
         .eq('empresa_id', empresaId)
 
       if (siiDocsError) {
@@ -1570,7 +1542,6 @@ function DocumentosSiiPageContent() {
         folio: string
         rut_tercero: string | null
         monto_total: number | string | null
-        xml_importado: boolean | null
       }[]
 
       let actualizados = 0
@@ -1716,73 +1687,6 @@ function DocumentosSiiPageContent() {
       const tipoMovimiento = getMovimientoTipoFromDoc(selectedDocumento)
       const fechaDocumento = selectedDocumento.fecha_docto || todayLocalDate()
       const montoTotal = getSignedAmountForDoc(selectedDocumento, selectedDocumento.monto_total)
-
-      let movimientoExistenteQuery = supabase
-        .from('movimientos')
-        .select('id, monto_total')
-        .eq('empresa_id', empresaId)
-        .eq('tipo_movimiento', tipoMovimiento)
-        .eq('numero_documento', selectedDocumento.folio)
-        .eq('activo', true)
-        .is('deleted_at', null)
-
-      if (selectedDocumento.tipo_registro === 'ventas') {
-        movimientoExistenteQuery = movimientoExistenteQuery.eq('cliente_id', reviewForm.tercero_id)
-      } else {
-        movimientoExistenteQuery = movimientoExistenteQuery.eq('proveedor_id', reviewForm.tercero_id)
-      }
-
-      const { data: movimientosExistentes, error: movimientosExistentesError } =
-        await movimientoExistenteQuery
-
-      if (movimientosExistentesError) {
-        throw new Error(
-          `No se pudo validar si el movimiento ya existe: ${movimientosExistentesError.message}`
-        )
-      }
-
-      const movimientoExistente = ((movimientosExistentes ?? []) as {
-        id: string
-        monto_total: number | string | null
-        xml_importado: boolean | null
-      }[]).find((mov) => amountsAreClose(mov.monto_total, montoTotal))
-
-      if (movimientoExistente) {
-        const { error: vincularError } = await supabase
-          .from('sii_documentos')
-          .update({
-            estado: 'vinculado',
-            accion_sugerida: 'revisar',
-            movimiento_id: movimientoExistente.id,
-            proveedor_id:
-              selectedDocumento.tipo_registro === 'compras' ? reviewForm.tercero_id : null,
-            cliente_id:
-              selectedDocumento.tipo_registro === 'ventas' ? reviewForm.tercero_id : null,
-            categoria_id: reviewForm.categoria_id,
-            centro_costo_id: reviewForm.centro_costo_id || null,
-            observaciones: reviewForm.descripcion.trim(),
-            updated_by: userId,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', selectedDocumento.id)
-          .eq('empresa_id', empresaId)
-
-        if (vincularError) {
-          throw new Error(
-            `Ya existe el movimiento, pero no se pudo vincular el documento SII: ${vincularError.message}`
-          )
-        }
-
-        setSuccess(
-          selectedDocumento.tipo_registro === 'ventas'
-            ? 'Ya existía un ingreso con este folio, cliente y monto. El documento SII fue vinculado.'
-            : 'Ya existía un egreso con este folio, proveedor y monto. El documento SII fue vinculado.'
-        )
-
-        closeReviewModal()
-        await loadDocumentos()
-        return
-      }
 
       const movimientoPayload = {
         empresa_id: empresaId,
@@ -2285,10 +2189,10 @@ function DocumentosSiiPageContent() {
                     <td className="px-4 py-3">
                       <span
                         className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${
-                          getAccionVisualClass(doc)
+                          getAccionClass(doc.accion_sugerida)
                         }`}
                       >
-                        {getAccionVisualLabel(doc)}
+                        {ACCION_LABELS[doc.accion_sugerida] || doc.accion_sugerida}
                       </span>
                     </td>
                     <td className="px-4 py-3">
@@ -2446,10 +2350,11 @@ function DocumentosSiiPageContent() {
                 </p>
                 <span
                   className={`mt-2 inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${
-                    getAccionVisualClass(selectedDocumento)
+                    getAccionClass(selectedDocumento.accion_sugerida)
                   }`}
                 >
-                  {getAccionVisualLabel(selectedDocumento)}
+                  {ACCION_LABELS[selectedDocumento.accion_sugerida] ||
+                    selectedDocumento.accion_sugerida}
                 </span>
               </div>
 

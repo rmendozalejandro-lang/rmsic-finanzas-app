@@ -68,11 +68,6 @@ type SiiDocumento = {
   cliente_id: string | null
   movimiento_id: string | null
   observaciones: string | null
-  xml_importado: boolean | null
-  xml_nombre_archivo: string | null
-  xml_importado_at: string | null
-  descripcion_xml: string | null
-  detalle_items_xml: Array<Record<string, unknown>> | null
   created_at: string
 }
 
@@ -212,34 +207,6 @@ function getAccionClass(accion: string) {
   }
 }
 
-
-function getAccionVisualLabel(doc: SiiDocumento) {
-  if (doc.estado === 'convertido') {
-    return doc.tipo_registro === 'ventas' ? 'Ingreso creado' : 'Egreso creado'
-  }
-
-  if (doc.estado === 'vinculado') {
-    return 'Movimiento vinculado'
-  }
-
-  if (doc.estado === 'solo_documental') {
-    return 'Solo documental'
-  }
-
-  return ACCION_LABELS[doc.accion_sugerida] || doc.accion_sugerida
-}
-
-function getAccionVisualClass(doc: SiiDocumento) {
-  if (doc.estado === 'convertido') {
-    return 'border-emerald-200 bg-emerald-50 text-emerald-700'
-  }
-
-  if (doc.estado === 'vinculado') {
-    return 'border-purple-200 bg-purple-50 text-purple-700'
-  }
-
-  return getAccionClass(doc.accion_sugerida)
-}
 function getTipoDocNombre(codigo: number, nombre: string | null | undefined) {
   return nombre || TIPO_DOC_LABELS[codigo] || `Tipo ${codigo}`
 }
@@ -543,186 +510,11 @@ function amountsAreClose(a: number | string | null | undefined, b: number | stri
 }
 
 function getDescripcionSugerida(doc: SiiDocumento) {
-  if (doc.descripcion_xml?.trim()) {
-    return doc.descripcion_xml.trim()
-  }
-
   const tipo = getTipoDocNombre(doc.tipo_doc_codigo, doc.tipo_doc_nombre)
   const tercero = doc.razon_social || 'Sin tercero'
   const registro = doc.tipo_registro === 'ventas' ? 'venta' : 'compra'
 
   return `${tipo} ${registro} SII N° ${doc.folio} - ${tercero}`
-}
-
-type XmlDteItem = {
-  numero_linea: number
-  nombre_item: string
-  descripcion_item: string
-  cantidad: number | null
-  precio_unitario: number | null
-  monto_item: number
-}
-
-type XmlDteDoc = {
-  tipo_doc_codigo: number
-  folio: string
-  rut_emisor: string
-  rut_receptor: string
-  razon_social_emisor: string
-  razon_social_receptor: string
-  fecha_emision: string | null
-  monto_total: number
-  descripcion_xml: string
-  detalle_items_xml: XmlDteItem[]
-}
-
-function getChildrenByLocalName(node: Element | Document, localName: string) {
-  return Array.from(node.getElementsByTagName('*')).filter(
-    (item) => item.localName === localName
-  ) as Element[]
-}
-
-function getFirstByLocalName(node: Element | Document, localName: string) {
-  return getChildrenByLocalName(node, localName)[0] || null
-}
-
-function getXmlText(node: Element | Document, localName: string) {
-  return getFirstByLocalName(node, localName)?.textContent?.trim() || ''
-}
-
-function parseXmlNumber(value: string | null | undefined) {
-  const clean = String(value ?? '')
-    .trim()
-    .replace(/\./g, '')
-    .replace(/,/g, '.')
-
-  if (!clean) return 0
-
-  const parsed = Number(clean)
-  return Number.isFinite(parsed) ? parsed : 0
-}
-
-function buildDescripcionXml(items: XmlDteItem[]) {
-  const partes = items
-    .map((item) => {
-      const nombre = item.nombre_item?.trim()
-      const descripcion = item.descripcion_item?.trim()
-
-      if (nombre && descripcion && descripcion !== nombre) {
-        return `${nombre} - ${descripcion}`
-      }
-
-      return nombre || descripcion
-    })
-    .filter(Boolean)
-
-  if (partes.length === 0) return ''
-
-  return partes.slice(0, 5).join('; ')
-}
-
-function parseDteXml(text: string): XmlDteDoc[] {
-  const parser = new DOMParser()
-  const xml = parser.parseFromString(text, 'application/xml')
-
-  const parserError = xml.getElementsByTagName('parsererror')[0]
-  if (parserError) {
-    throw new Error('El archivo XML no tiene un formato válido.')
-  }
-
-  const dtes = getChildrenByLocalName(xml, 'DTE')
-
-  return dtes
-    .map((dte) => {
-      const documento = getFirstByLocalName(dte, 'Documento') || dte
-      const encabezado = getFirstByLocalName(documento, 'Encabezado') || documento
-      const idDoc = getFirstByLocalName(encabezado, 'IdDoc') || encabezado
-      const emisor = getFirstByLocalName(encabezado, 'Emisor') || encabezado
-      const receptor = getFirstByLocalName(encabezado, 'Receptor') || encabezado
-      const totales = getFirstByLocalName(encabezado, 'Totales') || encabezado
-
-      const detalles = getChildrenByLocalName(documento, 'Detalle')
-
-      const detalleItems = detalles.map((detalle, index) => ({
-        numero_linea: parseXmlNumber(getXmlText(detalle, 'NroLinDet')) || index + 1,
-        nombre_item: getXmlText(detalle, 'NmbItem'),
-        descripcion_item: getXmlText(detalle, 'DscItem'),
-        cantidad: getXmlText(detalle, 'QtyItem')
-          ? parseXmlNumber(getXmlText(detalle, 'QtyItem'))
-          : null,
-        precio_unitario: getXmlText(detalle, 'PrcItem')
-          ? parseXmlNumber(getXmlText(detalle, 'PrcItem'))
-          : null,
-        monto_item: parseXmlNumber(getXmlText(detalle, 'MontoItem')),
-      }))
-
-      const tipoDoc = Math.trunc(parseXmlNumber(getXmlText(idDoc, 'TipoDTE')))
-      const folio = getXmlText(idDoc, 'Folio')
-
-      return {
-        tipo_doc_codigo: tipoDoc,
-        folio,
-        rut_emisor: getXmlText(emisor, 'RUTEmisor'),
-        rut_receptor: getXmlText(receptor, 'RUTRecep'),
-        razon_social_emisor: getXmlText(emisor, 'RznSoc'),
-        razon_social_receptor: getXmlText(receptor, 'RznSocRecep'),
-        fecha_emision: getXmlText(idDoc, 'FchEmis') || null,
-        monto_total: parseXmlNumber(getXmlText(totales, 'MntTotal')),
-        descripcion_xml: buildDescripcionXml(detalleItems),
-        detalle_items_xml: detalleItems,
-      }
-    })
-    .filter((doc) => doc.tipo_doc_codigo && doc.folio)
-}
-
-
-function todayLocalDate() {
-  const now = new Date()
-  const year = now.getFullYear()
-  const month = String(now.getMonth() + 1).padStart(2, '0')
-  const day = String(now.getDate()).padStart(2, '0')
-
-  return `${year}-${month}-${day}`
-}
-
-function getMovimientoTipoDocumento(codigo: number) {
-  if (codigo === 61) return 'nota_credito'
-  if (codigo === 56) return 'nota_debito'
-  if (codigo === 52) return 'guia_despacho'
-  if (codigo === 34) return 'factura_exenta'
-
-  return 'factura'
-}
-
-function getTratamientoTributarioFromDoc(doc: SiiDocumento) {
-  const iva = Math.abs(toNumber(doc.monto_iva))
-  const neto = Math.abs(toNumber(doc.monto_neto))
-  const exento = Math.abs(toNumber(doc.monto_exento))
-
-  if (iva > 0 || neto > 0) return 'iva'
-  if (exento > 0) return 'exento'
-
-  return 'exento'
-}
-
-function getMovimientoLabelFromDoc(doc: SiiDocumento) {
-  if (doc.accion_sugerida === 'ajuste_negativo') return 'Crear ajuste negativo'
-  if (doc.accion_sugerida === 'ajuste_positivo') return 'Crear ajuste positivo'
-  if (doc.tipo_registro === 'ventas') return 'Crear ingreso'
-  if (doc.tipo_registro === 'compras') return 'Crear egreso'
-
-  return 'Crear movimiento'
-}
-
-function getMovimientoTipoFromDoc(doc: SiiDocumento) {
-  return doc.tipo_registro === 'ventas' ? 'ingreso' : 'egreso'
-}
-
-function getSignedAmountForDoc(doc: SiiDocumento, value: number | string | null | undefined) {
-  const amount = toNumber(value)
-  const factor = doc.accion_sugerida === 'ajuste_negativo' ? -1 : 1
-
-  return amount * factor
 }
 function DocumentosSiiPageContent() {
   const [empresaId, setEmpresaId] = useState('')
@@ -731,8 +523,6 @@ function DocumentosSiiPageContent() {
 
   const [loading, setLoading] = useState(true)
   const [importing, setImporting] = useState(false)
-  const [importingXml, setImportingXml] = useState(false)
-  const [creatingMovimiento, setCreatingMovimiento] = useState(false)
   const [linkingExistingDocs, setLinkingExistingDocs] = useState(false)
   const [linkingExistingIngresos, setLinkingExistingIngresos] = useState(false)
   const [error, setError] = useState('')
@@ -1534,368 +1324,6 @@ function DocumentosSiiPageContent() {
     setReviewForm(EMPTY_REVIEW_FORM)
     setShowReviewModal(false)
   }
-
-  const handleImportXmlDte = async (file: File | null) => {
-    if (!file) return
-
-    try {
-      if (!empresaId) {
-        throw new Error('No hay empresa activa seleccionada.')
-      }
-
-      setImportingXml(true)
-      setError('')
-      setSuccess('')
-
-      const text = await file.text()
-      const documentosXml = parseDteXml(text)
-
-      if (documentosXml.length === 0) {
-        throw new Error('No se encontraron DTE válidos dentro del XML.')
-      }
-
-      const { data: siiDocsData, error: siiDocsError } = await supabase
-        .from('sii_documentos')
-        .select('id, tipo_registro, tipo_doc_codigo, folio, rut_tercero, monto_total, xml_importado')
-        .eq('empresa_id', empresaId)
-
-      if (siiDocsError) {
-        throw new Error(`No se pudieron cargar documentos SII: ${siiDocsError.message}`)
-      }
-
-      const siiDocs = (siiDocsData ?? []) as {
-        id: string
-        tipo_registro: 'compras' | 'ventas'
-        tipo_doc_codigo: number
-        folio: string
-        rut_tercero: string | null
-        monto_total: number | string | null
-        xml_importado: boolean | null
-      }[]
-
-      let actualizados = 0
-      let noEncontrados = 0
-
-      for (const xmlDoc of documentosXml) {
-        const rutEmisor = normalizeRutSii(xmlDoc.rut_emisor)
-        const rutReceptor = normalizeRutSii(xmlDoc.rut_receptor)
-
-        const candidatos = siiDocs.filter((doc) => {
-          if (Number(doc.tipo_doc_codigo) !== Number(xmlDoc.tipo_doc_codigo)) return false
-          if (String(doc.folio || '').trim() !== String(xmlDoc.folio || '').trim()) return false
-
-          const rutTercero = normalizeRutSii(doc.rut_tercero)
-
-          if (doc.tipo_registro === 'ventas' && rutTercero === rutReceptor) return true
-          if (doc.tipo_registro === 'compras' && rutTercero === rutEmisor) return true
-
-          return false
-        })
-
-        const matchPorMonto =
-          candidatos.find((doc) => amountsAreClose(doc.monto_total, xmlDoc.monto_total)) ||
-          null
-
-        const match = matchPorMonto || (candidatos.length === 1 ? candidatos[0] : null)
-
-        if (!match) {
-          noEncontrados += 1
-          continue
-        }
-
-        const { error: updateError } = await supabase
-          .from('sii_documentos')
-          .update({
-            xml_importado: true,
-            xml_nombre_archivo: file.name,
-            xml_importado_at: new Date().toISOString(),
-            descripcion_xml:
-              xmlDoc.descripcion_xml ||
-              `${getSiiTipoDocNombre(xmlDoc.tipo_doc_codigo)} SII N° ${xmlDoc.folio}`,
-            detalle_items_xml: xmlDoc.detalle_items_xml,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', match.id)
-          .eq('empresa_id', empresaId)
-
-        if (updateError) {
-          throw new Error(`No se pudo actualizar DTE folio ${xmlDoc.folio}: ${updateError.message}`)
-        }
-
-        actualizados += 1
-      }
-
-      setSuccess(
-        `XML procesado. DTE leídos: ${documentosXml.length}. Documentos actualizados: ${actualizados}. Sin coincidencia: ${noEncontrados}.`
-      )
-
-      await loadDocumentos()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'No se pudo importar el XML DTE.')
-    } finally {
-      setImportingXml(false)
-    }
-  }
-
-  const handleMarcarDocumental = async () => {
-    if (!selectedDocumento) return
-
-    try {
-      setCreatingMovimiento(true)
-      setError('')
-      setSuccess('')
-
-      const { data: userData } = await supabase.auth.getUser()
-      const userId = userData.user?.id || null
-
-      const { error: updateError } = await supabase
-        .from('sii_documentos')
-        .update({
-          estado: 'solo_documental',
-          accion_sugerida: 'solo_documental',
-          observaciones: reviewForm.descripcion || selectedDocumento.observaciones,
-          updated_by: userId,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', selectedDocumento.id)
-        .eq('empresa_id', empresaId)
-
-      if (updateError) {
-        throw new Error(updateError.message)
-      }
-
-      setSuccess('Documento marcado como solo documental.')
-      closeReviewModal()
-      await loadDocumentos()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'No se pudo marcar como documental.')
-    } finally {
-      setCreatingMovimiento(false)
-    }
-  }
-
-  const handleCrearMovimientoDesdeSii = async () => {
-    if (!selectedDocumento) return
-
-    try {
-      setCreatingMovimiento(true)
-      setError('')
-      setSuccess('')
-
-      if (selectedDocumento.movimiento_id || selectedDocumento.estado === 'convertido') {
-        throw new Error('Este documento ya tiene un movimiento asociado.')
-      }
-
-      if (selectedDocumento.accion_sugerida === 'solo_documental') {
-        throw new Error('Este documento está definido como solo documental.')
-      }
-
-      if (!reviewForm.tercero_id) {
-        throw new Error(
-          selectedDocumento.tipo_registro === 'ventas'
-            ? 'Debes seleccionar el cliente.'
-            : 'Debes seleccionar el proveedor.'
-        )
-      }
-
-      if (!reviewForm.categoria_id) {
-        throw new Error('Debes seleccionar una categoría.')
-      }
-
-      if (reviewForm.estado_pago === 'pagado' && !reviewForm.cuenta_bancaria_id) {
-        throw new Error('Debes seleccionar una cuenta bancaria si el movimiento está pagado.')
-      }
-
-      if (!reviewForm.descripcion.trim()) {
-        throw new Error('Debes indicar una descripción para el movimiento.')
-      }
-
-      const { data: userData } = await supabase.auth.getUser()
-      const userId = userData.user?.id || null
-
-      const tipoMovimiento = getMovimientoTipoFromDoc(selectedDocumento)
-      const fechaDocumento = selectedDocumento.fecha_docto || todayLocalDate()
-      const montoTotal = getSignedAmountForDoc(selectedDocumento, selectedDocumento.monto_total)
-
-      let movimientoExistenteQuery = supabase
-        .from('movimientos')
-        .select('id, monto_total')
-        .eq('empresa_id', empresaId)
-        .eq('tipo_movimiento', tipoMovimiento)
-        .eq('numero_documento', selectedDocumento.folio)
-        .eq('activo', true)
-        .is('deleted_at', null)
-
-      if (selectedDocumento.tipo_registro === 'ventas') {
-        movimientoExistenteQuery = movimientoExistenteQuery.eq('cliente_id', reviewForm.tercero_id)
-      } else {
-        movimientoExistenteQuery = movimientoExistenteQuery.eq('proveedor_id', reviewForm.tercero_id)
-      }
-
-      const { data: movimientosExistentes, error: movimientosExistentesError } =
-        await movimientoExistenteQuery
-
-      if (movimientosExistentesError) {
-        throw new Error(
-          `No se pudo validar si el movimiento ya existe: ${movimientosExistentesError.message}`
-        )
-      }
-
-      const movimientoExistente = ((movimientosExistentes ?? []) as {
-        id: string
-        monto_total: number | string | null
-        xml_importado: boolean | null
-      }[]).find((mov) => amountsAreClose(mov.monto_total, montoTotal))
-
-      if (movimientoExistente) {
-        const { error: vincularError } = await supabase
-          .from('sii_documentos')
-          .update({
-            estado: 'vinculado',
-            accion_sugerida: 'revisar',
-            movimiento_id: movimientoExistente.id,
-            proveedor_id:
-              selectedDocumento.tipo_registro === 'compras' ? reviewForm.tercero_id : null,
-            cliente_id:
-              selectedDocumento.tipo_registro === 'ventas' ? reviewForm.tercero_id : null,
-            categoria_id: reviewForm.categoria_id,
-            centro_costo_id: reviewForm.centro_costo_id || null,
-            observaciones: reviewForm.descripcion.trim(),
-            updated_by: userId,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', selectedDocumento.id)
-          .eq('empresa_id', empresaId)
-
-        if (vincularError) {
-          throw new Error(
-            `Ya existe el movimiento, pero no se pudo vincular el documento SII: ${vincularError.message}`
-          )
-        }
-
-        setSuccess(
-          selectedDocumento.tipo_registro === 'ventas'
-            ? 'Ya existía un ingreso con este folio, cliente y monto. El documento SII fue vinculado.'
-            : 'Ya existía un egreso con este folio, proveedor y monto. El documento SII fue vinculado.'
-        )
-
-        closeReviewModal()
-        await loadDocumentos()
-        return
-      }
-
-      const movimientoPayload = {
-        empresa_id: empresaId,
-        tipo_movimiento: tipoMovimiento,
-        fecha: fechaDocumento,
-        fecha_vencimiento:
-          selectedDocumento.tipo_registro === 'ventas' && reviewForm.fecha_vencimiento
-            ? reviewForm.fecha_vencimiento
-            : null,
-        tercero_tipo: selectedDocumento.tipo_registro === 'ventas' ? 'cliente' : 'proveedor',
-        cliente_id:
-          selectedDocumento.tipo_registro === 'ventas' ? reviewForm.tercero_id : null,
-        proveedor_id:
-          selectedDocumento.tipo_registro === 'compras' ? reviewForm.tercero_id : null,
-        categoria_id: reviewForm.categoria_id,
-        centro_costo_id: reviewForm.centro_costo_id || null,
-        cuenta_contable_id: null,
-        cuenta_bancaria_id:
-          reviewForm.estado_pago === 'pagado' ? reviewForm.cuenta_bancaria_id : null,
-        tipo_documento: getMovimientoTipoDocumento(selectedDocumento.tipo_doc_codigo),
-        numero_documento: selectedDocumento.folio,
-        descripcion: reviewForm.descripcion.trim(),
-        monto_neto: getSignedAmountForDoc(selectedDocumento, selectedDocumento.monto_neto),
-        monto_iva: getSignedAmountForDoc(selectedDocumento, selectedDocumento.monto_iva),
-        monto_exento: getSignedAmountForDoc(selectedDocumento, selectedDocumento.monto_exento),
-        monto_total: montoTotal,
-        estado: reviewForm.estado_pago,
-        medio_pago: reviewForm.estado_pago === 'pagado' ? 'transferencia' : null,
-        observaciones: `Creado desde documento SII ${selectedDocumento.id}`,
-        impuesto_especifico: 0,
-        tratamiento_tributario: getTratamientoTributarioFromDoc(selectedDocumento),
-        activo: true,
-        created_by: userId,
-        updated_by: userId,
-        updated_at: new Date().toISOString(),
-      }
-
-      const { data: movimiento, error: movimientoError } = await supabase
-        .from('movimientos')
-        .insert(movimientoPayload)
-        .select('id')
-        .single()
-
-      if (movimientoError) {
-        throw new Error(`No se pudo crear el movimiento: ${movimientoError.message}`)
-      }
-
-      if (
-        selectedDocumento.tipo_registro === 'ventas' &&
-        reviewForm.estado_pago === 'pendiente' &&
-        selectedDocumento.accion_sugerida !== 'ajuste_negativo' &&
-        montoTotal > 0
-      ) {
-        const { error: cxcError } = await supabase.from('cuentas_por_cobrar').insert({
-          empresa_id: empresaId,
-          movimiento_id: movimiento.id,
-          cliente_id: reviewForm.tercero_id,
-          fecha_emision: fechaDocumento,
-          fecha_vencimiento: reviewForm.fecha_vencimiento || null,
-          monto_total: montoTotal,
-          monto_pagado: 0,
-          saldo_pendiente: montoTotal,
-          estado: 'pendiente',
-          activo: true,
-          created_by: userId,
-          updated_by: userId,
-        })
-
-        if (cxcError) {
-          throw new Error(
-            `El ingreso fue creado, pero no se pudo crear la cuenta por cobrar: ${cxcError.message}`
-          )
-        }
-      }
-
-      const { error: updateDocError } = await supabase
-        .from('sii_documentos')
-        .update({
-          estado: 'convertido',
-          movimiento_id: movimiento.id,
-          proveedor_id:
-            selectedDocumento.tipo_registro === 'compras' ? reviewForm.tercero_id : null,
-          cliente_id:
-            selectedDocumento.tipo_registro === 'ventas' ? reviewForm.tercero_id : null,
-          categoria_id: reviewForm.categoria_id,
-          centro_costo_id: reviewForm.centro_costo_id || null,
-          observaciones: reviewForm.descripcion.trim(),
-          updated_by: userId,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', selectedDocumento.id)
-        .eq('empresa_id', empresaId)
-
-      if (updateDocError) {
-        throw new Error(
-          `El movimiento fue creado, pero no se pudo actualizar el documento SII: ${updateDocError.message}`
-        )
-      }
-
-      setSuccess(
-        selectedDocumento.tipo_registro === 'ventas'
-          ? 'Ingreso creado correctamente desde Documento SII.'
-          : 'Egreso creado correctamente desde Documento SII.'
-      )
-
-      closeReviewModal()
-      await loadDocumentos()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'No se pudo crear el movimiento.')
-    } finally {
-      setCreatingMovimiento(false)
-    }
-  }
   const limpiarFiltros = () => {
     setQ('')
     setTipoRegistro('')
@@ -2047,34 +1475,6 @@ function DocumentosSiiPageContent() {
               onChange={(event) => {
                 const file = event.target.files?.[0] || null
                 void handleImportCsvVentas(file)
-                event.target.value = ''
-              }}
-            />
-          </label>
-        </div>
-      </section>
-
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <h2 className="text-base font-semibold text-slate-900">
-              Importar XML DTE
-            </h2>
-            <p className="mt-1 text-sm text-slate-500">
-              Sube el XML descargado del SII para completar la descripción real e ítems de cada documento ya importado desde CSV.
-            </p>
-          </div>
-
-          <label className="inline-flex cursor-pointer items-center justify-center rounded-xl border border-[#163A5F] bg-white px-4 py-2 text-sm font-semibold text-[#163A5F] hover:bg-blue-50">
-            {importingXml ? 'Importando XML...' : 'Seleccionar XML'}
-            <input
-              type="file"
-              accept=".xml,text/xml,application/xml"
-              disabled={importingXml}
-              className="hidden"
-              onChange={(event) => {
-                const file = event.target.files?.[0] || null
-                void handleImportXmlDte(file)
                 event.target.value = ''
               }}
             />
@@ -2285,10 +1685,10 @@ function DocumentosSiiPageContent() {
                     <td className="px-4 py-3">
                       <span
                         className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${
-                          getAccionVisualClass(doc)
+                          getAccionClass(doc.accion_sugerida)
                         }`}
                       >
-                        {getAccionVisualLabel(doc)}
+                        {ACCION_LABELS[doc.accion_sugerida] || doc.accion_sugerida}
                       </span>
                     </td>
                     <td className="px-4 py-3">
@@ -2446,10 +1846,11 @@ function DocumentosSiiPageContent() {
                 </p>
                 <span
                   className={`mt-2 inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${
-                    getAccionVisualClass(selectedDocumento)
+                    getAccionClass(selectedDocumento.accion_sugerida)
                   }`}
                 >
-                  {getAccionVisualLabel(selectedDocumento)}
+                  {ACCION_LABELS[selectedDocumento.accion_sugerida] ||
+                    selectedDocumento.accion_sugerida}
                 </span>
               </div>
 
@@ -2477,66 +1878,6 @@ function DocumentosSiiPageContent() {
             </div>
 
 
-
-            {selectedDocumento.xml_importado ? (
-              <div className="mt-6 rounded-2xl border border-blue-200 bg-blue-50 p-5">
-                <h4 className="text-base font-semibold text-blue-950">
-                  Detalle obtenido desde XML
-                </h4>
-                <p className="mt-1 text-sm text-blue-800">
-                  Archivo: {selectedDocumento.xml_nombre_archivo || '-'}
-                </p>
-
-                {selectedDocumento.descripcion_xml ? (
-                  <div className="mt-4 rounded-xl border border-blue-100 bg-white p-4">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      Descripción sugerida
-                    </p>
-                    <p className="mt-1 text-sm text-slate-800">
-                      {selectedDocumento.descripcion_xml}
-                    </p>
-                  </div>
-                ) : null}
-
-                {Array.isArray(selectedDocumento.detalle_items_xml) &&
-                selectedDocumento.detalle_items_xml.length > 0 ? (
-                  <div className="mt-4 overflow-hidden rounded-xl border border-blue-100 bg-white">
-                    <table className="min-w-full text-sm">
-                      <thead className="bg-slate-50 text-left text-slate-600">
-                        <tr>
-                          <th className="px-3 py-2 font-semibold">Línea</th>
-                          <th className="px-3 py-2 font-semibold">Ítem</th>
-                          <th className="px-3 py-2 font-semibold">Descripción</th>
-                          <th className="px-3 py-2 text-right font-semibold">Monto</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {selectedDocumento.detalle_items_xml.map((item, index) => (
-                          <tr key={index}>
-                            <td className="px-3 py-2 text-slate-700">
-                              {String(item.numero_linea ?? index + 1)}
-                            </td>
-                            <td className="px-3 py-2 text-slate-700">
-                              {String(item.nombre_item ?? '-')}
-                            </td>
-                            <td className="px-3 py-2 text-slate-700">
-                              {String(item.descripcion_item ?? '-')}
-                            </td>
-                            <td className="px-3 py-2 text-right font-medium text-slate-900">
-                              {formatCurrency(
-                                typeof item.monto_item === 'number'
-                                  ? item.monto_item
-                                  : String(item.monto_item ?? 0)
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
             <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-5">
               <h4 className="text-base font-semibold text-slate-900">
                 Datos para crear movimiento
@@ -2717,7 +2058,7 @@ function DocumentosSiiPageContent() {
               </div>
             </div>
             <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-              Revisa cuidadosamente los datos antes de crear el movimiento. Al confirmar, el documento SII quedará asociado al ingreso, egreso o ajuste creado.
+              Esta primera etapa solo permite revisar el documento. En el siguiente paso agregaremos los campos para categoría, centro de costo, proveedor/cliente y los botones para crear ingreso, egreso o ajuste.
             </div>
 
             <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-end">
@@ -2731,27 +2072,10 @@ function DocumentosSiiPageContent() {
 
               <button
                 type="button"
-                onClick={() => void handleMarcarDocumental()}
-                disabled={creatingMovimiento || selectedDocumento.estado === "convertido"}
-                className="rounded-xl border border-slate-300 px-5 py-3 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                disabled
+                className="rounded-xl bg-slate-300 px-5 py-3 text-sm font-semibold text-white"
               >
-                Marcar documental
-              </button>
-
-              <button
-                type="button"
-                onClick={() => void handleCrearMovimientoDesdeSii()}
-                disabled={
-                  creatingMovimiento ||
-                  selectedDocumento.estado === "convertido" ||
-                  Boolean(selectedDocumento.movimiento_id) ||
-                  selectedDocumento.accion_sugerida === "solo_documental"
-                }
-                className="rounded-xl bg-[#163A5F] px-5 py-3 text-sm font-semibold text-white hover:bg-[#245C90] disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {creatingMovimiento
-                  ? "Creando..."
-                  : getMovimientoLabelFromDoc(selectedDocumento)}
+                Crear movimiento próximamente
               </button>
             </div>
           </div>
