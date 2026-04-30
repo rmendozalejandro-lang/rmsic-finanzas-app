@@ -512,6 +512,10 @@ export default function EgresosPage() {
         setError('Debes ingresar un monto neto afecto mayor a 0 para combustible.')
         return
       }
+      if (impuestoEspecifico < 0) {
+        setError('El impuesto específico no puede ser negativo.')
+        return
+      }
     }
     if (total <= 0) {
       setError('El monto total debe ser mayor a 0.')
