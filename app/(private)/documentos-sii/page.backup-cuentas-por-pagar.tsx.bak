@@ -1858,34 +1858,6 @@ function DocumentosSiiPageContent() {
         }
       }
 
-
-      if (
-        selectedDocumento.tipo_registro === 'compras' &&
-        reviewForm.estado_pago === 'pendiente' &&
-        selectedDocumento.accion_sugerida !== 'ajuste_negativo' &&
-        montoTotal > 0
-      ) {
-        const { error: cxpError } = await supabase.from('cuentas_por_pagar').insert({
-          empresa_id: empresaId,
-          movimiento_id: movimiento.id,
-          proveedor_id: reviewForm.tercero_id,
-          fecha_emision: fechaDocumento,
-          fecha_vencimiento: null,
-          monto_total: montoTotal,
-          monto_pagado: 0,
-          saldo_pendiente: montoTotal,
-          estado: 'pendiente',
-          activo: true,
-          created_by: userId,
-          updated_by: userId,
-        })
-
-        if (cxpError) {
-          throw new Error(
-            `El egreso fue creado, pero no se pudo crear la cuenta por pagar: ${cxpError.message}`
-          )
-        }
-      }
       const { error: updateDocError } = await supabase
         .from('sii_documentos')
         .update({
