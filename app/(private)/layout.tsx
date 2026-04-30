@@ -55,6 +55,7 @@ const menuItems: MenuItem[] = [
 
   { href: '/bancos', label: 'Bancos', moduleKey: 'bancos' },
   { href: '/egresos', label: 'Egresos', moduleKey: 'egresos' },
+  { href: '/documentos-sii', label: 'Documentos SII', moduleKey: 'egresos' },
   { href: '/proveedores', label: 'Proveedores', moduleKey: 'proveedores' },
   { href: '/transferencias', label: 'Transferencias', moduleKey: 'transferencias' },
 

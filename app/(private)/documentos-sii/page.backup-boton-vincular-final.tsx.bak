@@ -1,0 +1,1075 @@
+'use client'
+
+import { useEffect, useMemo, useState } from 'react'
+import ProtectedModuleRoute from '@/components/ProtectedModuleRoute'
+import { supabase } from '@/lib/supabase/client'
+
+const STORAGE_ID_KEY = 'empresa_activa_id'
+const STORAGE_NAME_KEY = 'empresa_activa_nombre'
+
+type TipoRegistro = 'compras' | 'ventas'
+type EstadoDocumento =
+  | 'pendiente'
+  | 'convertido'
+  | 'solo_documental'
+  | 'omitido'
+  | 'vinculado'
+  | 'anulado'
+
+type SiiDocumentoCsv = {
+  tipo_doc_codigo: number
+  tipo_doc_nombre: string
+  tipo_compra_venta: string | null
+  rut_tercero: string | null
+  razon_social: string | null
+  folio: string
+  fecha_docto: string | null
+  fecha_recepcion: string | null
+  fecha_acuse: string | null
+  monto_exento: number
+  monto_neto: number
+  monto_iva_recuperable: number
+  monto_iva_no_recuperable: number
+  monto_iva: number
+  monto_total: number
+  monto_neto_activo_fijo: number
+  iva_activo_fijo: number
+  iva_uso_comun: number
+  impuesto_sin_derecho_credito: number
+  codigo_otro_impuesto: string | null
+  valor_otro_impuesto: number
+  tasa_otro_impuesto: number | null
+  accion_sugerida: string
+  raw_data: Record<string, string>
+}
+
+type SiiDocumento = {
+  id: string
+  empresa_id: string
+  importacion_id: string | null
+  tipo_registro: TipoRegistro
+  tipo_doc_codigo: number
+  tipo_doc_nombre: string
+  tipo_compra_venta: string | null
+  rut_tercero: string | null
+  razon_social: string | null
+  folio: string
+  fecha_docto: string | null
+  fecha_recepcion: string | null
+  monto_exento: number | string | null
+  monto_neto: number | string | null
+  monto_iva_recuperable: number | string | null
+  monto_iva_no_recuperable: number | string | null
+  monto_iva: number | string | null
+  monto_total: number | string | null
+  accion_sugerida: string
+  estado: EstadoDocumento
+  proveedor_id: string | null
+  cliente_id: string | null
+  movimiento_id: string | null
+  observaciones: string | null
+  created_at: string
+}
+
+const TIPO_DOC_LABELS: Record<number, string> = {
+  30: 'Factura',
+  33: 'Factura electrónica',
+  34: 'Factura exenta electrónica',
+  46: 'Factura de compra electrónica',
+  52: 'Guía de despacho electrónica',
+  56: 'Nota de débito electrónica',
+  61: 'Nota de crédito electrónica',
+}
+
+const ESTADO_LABELS: Record<string, string> = {
+  pendiente: 'Pendiente',
+  convertido: 'Convertido',
+  solo_documental: 'Solo documental',
+  omitido: 'Omitido',
+  vinculado: 'Vinculado',
+  anulado: 'Anulado',
+}
+
+const ACCION_LABELS: Record<string, string> = {
+  crear_egreso: 'Crear egreso',
+  crear_ingreso: 'Crear ingreso',
+  ajuste_negativo: 'Ajuste negativo',
+  ajuste_positivo: 'Ajuste positivo',
+  solo_documental: 'Solo documental',
+  revisar: 'Revisar',
+}
+
+function toNumber(value: number | string | null | undefined) {
+  if (typeof value === 'number') return value
+  if (typeof value === 'string') {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : 0
+  }
+  return 0
+}
+
+function formatCurrency(value: number | string | null | undefined) {
+  return new Intl.NumberFormat('es-CL', {
+    style: 'currency',
+    currency: 'CLP',
+    maximumFractionDigits: 0,
+  }).format(toNumber(value))
+}
+
+function formatDate(value: string | null | undefined) {
+  if (!value) return '-'
+
+  const date = new Date(`${value}T00:00:00`)
+  if (Number.isNaN(date.getTime())) return '-'
+
+  return new Intl.DateTimeFormat('es-CL', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).format(date)
+}
+
+function getEstadoClass(estado: string) {
+  switch (estado) {
+    case 'pendiente':
+      return 'border-blue-200 bg-blue-50 text-blue-700'
+    case 'convertido':
+      return 'border-emerald-200 bg-emerald-50 text-emerald-700'
+    case 'solo_documental':
+      return 'border-slate-200 bg-slate-50 text-slate-700'
+    case 'omitido':
+      return 'border-amber-200 bg-amber-50 text-amber-700'
+    case 'vinculado':
+      return 'border-purple-200 bg-purple-50 text-purple-700'
+    case 'anulado':
+      return 'border-rose-200 bg-rose-50 text-rose-700'
+    default:
+      return 'border-slate-200 bg-slate-50 text-slate-700'
+  }
+}
+
+function getAccionClass(accion: string) {
+  switch (accion) {
+    case 'crear_egreso':
+    case 'crear_ingreso':
+      return 'border-emerald-200 bg-emerald-50 text-emerald-700'
+    case 'ajuste_negativo':
+      return 'border-rose-200 bg-rose-50 text-rose-700'
+    case 'ajuste_positivo':
+      return 'border-amber-200 bg-amber-50 text-amber-700'
+    case 'solo_documental':
+      return 'border-slate-200 bg-slate-50 text-slate-700'
+    default:
+      return 'border-blue-200 bg-blue-50 text-blue-700'
+  }
+}
+
+function getTipoDocNombre(codigo: number, nombre: string | null | undefined) {
+  return nombre || TIPO_DOC_LABELS[codigo] || `Tipo ${codigo}`
+}
+
+
+function parseCsvLine(line: string) {
+  const values: string[] = []
+  let current = ''
+  let inQuotes = false
+
+  for (let i = 0; i < line.length; i += 1) {
+    const char = line[i]
+    const nextChar = line[i + 1]
+
+    if (char === '"' && inQuotes && nextChar === '"') {
+      current += '"'
+      i += 1
+      continue
+    }
+
+    if (char === '"') {
+      inQuotes = !inQuotes
+      continue
+    }
+
+    if (char === ';' && !inQuotes) {
+      values.push(current.trim())
+      current = ''
+      continue
+    }
+
+    current += char
+  }
+
+  values.push(current.trim())
+  return values
+}
+
+function parseCsv(text: string) {
+  const cleanText = text.replace(/^\uFEFF/, '')
+  const lines = cleanText
+    .split(/\r?\n/)
+    .map((line) => line.trimEnd())
+    .filter((line) => line.trim().length > 0)
+
+  if (lines.length <= 1) return []
+
+  const headers = parseCsvLine(lines[0]).map((header) => header.trim())
+
+  return lines.slice(1).map((line) => {
+    const values = parseCsvLine(line)
+    const row: Record<string, string> = {}
+
+    headers.forEach((header, index) => {
+      row[header] = values[index]?.trim() || ''
+    })
+
+    return row
+  })
+}
+
+function parseSiiNumber(value: string | number | null | undefined) {
+  if (typeof value === 'number') return value
+
+  const clean = String(value ?? '')
+    .trim()
+    .replace(/\./g, '')
+    .replace(/,/g, '.')
+
+  if (!clean) return 0
+
+  const parsed = Number(clean)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+function parseSiiDate(value: string | null | undefined) {
+  const clean = String(value ?? '').trim()
+  if (!clean) return null
+
+  const [day, month, year] = clean.split('/')
+
+  if (!day || !month || !year) return null
+
+  return `${year.padStart(4, '0')}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`
+}
+
+function parseSiiDateTime(value: string | null | undefined) {
+  const clean = String(value ?? '').trim()
+  if (!clean) return null
+
+  const [datePart, timePart = '00:00:00'] = clean.split(' ')
+  const date = parseSiiDate(datePart)
+
+  if (!date) return null
+
+  return `${date}T${timePart}`
+}
+
+function getSiiTipoDocNombre(codigo: number) {
+  return TIPO_DOC_LABELS[codigo] || `Tipo ${codigo}`
+}
+
+function getAccionSugeridaCompras(tipoDoc: number) {
+  if ([33, 34, 46].includes(tipoDoc)) return 'crear_egreso'
+  if (tipoDoc === 61) return 'ajuste_negativo'
+  if (tipoDoc === 56) return 'ajuste_positivo'
+  if (tipoDoc === 52) return 'solo_documental'
+
+  return 'revisar'
+}
+
+function parseSiiComprasCsv(text: string): SiiDocumentoCsv[] {
+  const rows = parseCsv(text)
+
+  return rows
+    .map((row) => {
+      const tipoDoc = Math.trunc(parseSiiNumber(row['Tipo Doc']))
+      const ivaRecuperable = parseSiiNumber(row['Monto IVA Recuperable'])
+      const ivaNoRecuperable = parseSiiNumber(row['Monto Iva No Recuperable'])
+
+      return {
+        tipo_doc_codigo: tipoDoc,
+        tipo_doc_nombre: getSiiTipoDocNombre(tipoDoc),
+        tipo_compra_venta: row['Tipo Compra'] || null,
+        rut_tercero: row['RUT Proveedor'] || null,
+        razon_social: row['Razon Social'] || null,
+        folio: row['Folio'] || '',
+        fecha_docto: parseSiiDate(row['Fecha Docto']),
+        fecha_recepcion: parseSiiDateTime(row['Fecha Recepcion']),
+        fecha_acuse: parseSiiDateTime(row['Fecha Acuse']),
+        monto_exento: parseSiiNumber(row['Monto Exento']),
+        monto_neto: parseSiiNumber(row['Monto Neto']),
+        monto_iva_recuperable: ivaRecuperable,
+        monto_iva_no_recuperable: ivaNoRecuperable,
+        monto_iva: ivaRecuperable + ivaNoRecuperable,
+        monto_total: parseSiiNumber(row['Monto Total']),
+        monto_neto_activo_fijo: parseSiiNumber(row['Monto Neto Activo Fijo']),
+        iva_activo_fijo: parseSiiNumber(row['IVA Activo Fijo']),
+        iva_uso_comun: parseSiiNumber(row['IVA uso Comun']),
+        impuesto_sin_derecho_credito: parseSiiNumber(row['Impto. Sin Derecho a Credito']),
+        codigo_otro_impuesto: row['Codigo Otro Impuesto'] || null,
+        valor_otro_impuesto: parseSiiNumber(row['Valor Otro Impuesto']),
+        tasa_otro_impuesto: row['Tasa Otro Impuesto']
+          ? parseSiiNumber(row['Tasa Otro Impuesto'])
+          : null,
+        accion_sugerida: getAccionSugeridaCompras(tipoDoc),
+        raw_data: row,
+      }
+    })
+    .filter((row) => row.tipo_doc_codigo && row.folio)
+}
+
+function getPeriodoFromFileName(fileName: string) {
+  const match = fileName.match(/_(\d{6})\.csv$/i)
+  return match?.[1] || null
+}
+
+
+function normalizeRutSii(value: string | null | undefined) {
+  return String(value ?? '')
+    .replace(/\./g, '')
+    .replace(/-/g, '')
+    .replace(/\s+/g, '')
+    .toUpperCase()
+}
+
+function amountsAreClose(a: number | string | null | undefined, b: number | string | null | undefined) {
+  return Math.abs(Math.abs(toNumber(a)) - Math.abs(toNumber(b))) <= 1
+}
+function DocumentosSiiPageContent() {
+  const [empresaId, setEmpresaId] = useState('')
+  const [empresaNombre, setEmpresaNombre] = useState('')
+  const [documentos, setDocumentos] = useState<SiiDocumento[]>([])
+
+  const [loading, setLoading] = useState(true)
+  const [importing, setImporting] = useState(false)
+  const [linkingExistingDocs, setLinkingExistingDocs] = useState(false)
+  const [error, setError] = useState('')
+  const [success, setSuccess] = useState('')
+
+  const [q, setQ] = useState('')
+  const [tipoRegistro, setTipoRegistro] = useState('')
+  const [estado, setEstado] = useState('')
+  const [tipoDoc, setTipoDoc] = useState('')
+
+  useEffect(() => {
+    const syncEmpresa = () => {
+      setEmpresaId(window.localStorage.getItem(STORAGE_ID_KEY) || '')
+      setEmpresaNombre(window.localStorage.getItem(STORAGE_NAME_KEY) || '')
+    }
+
+    syncEmpresa()
+    window.addEventListener('empresa-activa-cambiada', syncEmpresa)
+
+    return () => {
+      window.removeEventListener('empresa-activa-cambiada', syncEmpresa)
+    }
+  }, [])
+
+  const loadDocumentos = async () => {
+    if (!empresaId) {
+      setDocumentos([])
+      setLoading(false)
+      return
+    }
+
+    try {
+      setLoading(true)
+      setError('')
+
+      const { data, error: docsError } = await supabase
+        .from('sii_documentos')
+        .select('*')
+        .eq('empresa_id', empresaId)
+        .order('fecha_docto', { ascending: false })
+        .order('created_at', { ascending: false })
+
+      if (docsError) {
+        throw new Error(docsError.message)
+      }
+
+      setDocumentos((data ?? []) as SiiDocumento[])
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudieron cargar los documentos SII.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    void loadDocumentos()
+  }, [empresaId])
+
+  const filtered = useMemo(() => {
+    const term = q.trim().toLowerCase()
+
+    return documentos.filter((doc) => {
+      const matchesTipoRegistro = tipoRegistro
+        ? doc.tipo_registro === tipoRegistro
+        : true
+
+      const matchesEstado = estado ? doc.estado === estado : true
+
+      const matchesTipoDoc = tipoDoc
+        ? String(doc.tipo_doc_codigo) === tipoDoc
+        : true
+
+      const matchesQ = term
+        ? [
+            doc.rut_tercero || '',
+            doc.razon_social || '',
+            doc.folio || '',
+            doc.tipo_doc_nombre || '',
+            String(doc.tipo_doc_codigo || ''),
+          ]
+            .join(' ')
+            .toLowerCase()
+            .includes(term)
+        : true
+
+      return matchesTipoRegistro && matchesEstado && matchesTipoDoc && matchesQ
+    })
+  }, [documentos, q, tipoRegistro, estado, tipoDoc])
+
+  const resumen = useMemo(() => {
+    return filtered.reduce(
+      (acc, doc) => {
+        acc.total += 1
+        acc.montoTotal += toNumber(doc.monto_total)
+
+        if (doc.tipo_registro === 'compras') acc.compras += 1
+        if (doc.tipo_registro === 'ventas') acc.ventas += 1
+        if (doc.estado === 'pendiente') acc.pendientes += 1
+        if (doc.accion_sugerida === 'solo_documental') acc.documentales += 1
+        if (doc.tipo_doc_codigo === 61) acc.notasCredito += 1
+        if (doc.tipo_doc_codigo === 52) acc.guias += 1
+
+        return acc
+      },
+      {
+        total: 0,
+        compras: 0,
+        ventas: 0,
+        pendientes: 0,
+        documentales: 0,
+        notasCredito: 0,
+        guias: 0,
+        montoTotal: 0,
+      }
+    )
+  }, [filtered])
+
+  const tiposDisponibles = useMemo(() => {
+    const set = new Set<number>()
+
+    documentos.forEach((doc) => {
+      if (doc.tipo_doc_codigo) set.add(doc.tipo_doc_codigo)
+    })
+
+    return Array.from(set).sort((a, b) => a - b)
+  }, [documentos])
+
+  const autoVincularConEgresosExistentes = async (showLoading = false) => {
+    try {
+      if (!empresaId) return 0
+
+      if (showLoading) {
+        setLinkingExistingDocs(true)
+      }
+
+      const { data: documentosData, error: documentosError } = await supabase
+        .from('sii_documentos')
+        .select('id, tipo_doc_codigo, rut_tercero, folio, monto_total, estado, movimiento_id')
+        .eq('empresa_id', empresaId)
+        .eq('tipo_registro', 'compras')
+        .in('estado', ['pendiente', 'solo_documental'])
+        .is('movimiento_id', null)
+
+      if (documentosError) {
+        throw new Error(`No se pudieron cargar documentos SII para vincular: ${documentosError.message}`)
+      }
+
+      const documentosPendientes = ((documentosData ?? []) as {
+        id: string
+        tipo_doc_codigo: number
+        rut_tercero: string | null
+        folio: string
+        monto_total: number | string | null
+        estado: string
+        movimiento_id: string | null
+      }[]).filter((doc) => [33, 34, 46, 56, 61].includes(Number(doc.tipo_doc_codigo)))
+
+      if (documentosPendientes.length === 0) {
+        return 0
+      }
+
+      const { data: proveedoresData, error: proveedoresError } = await supabase
+        .from('proveedores')
+        .select('id, rut')
+        .eq('empresa_id', empresaId)
+        .eq('activo', true)
+        .is('deleted_at', null)
+
+      if (proveedoresError) {
+        throw new Error(`No se pudieron cargar proveedores: ${proveedoresError.message}`)
+      }
+
+      const proveedorPorRut = new Map<string, string>()
+
+      for (const proveedor of (proveedoresData ?? []) as { id: string; rut: string | null }[]) {
+        const rutNormalizado = normalizeRutSii(proveedor.rut)
+
+        if (rutNormalizado) {
+          proveedorPorRut.set(rutNormalizado, proveedor.id)
+        }
+      }
+
+      const documentosConProveedor = documentosPendientes
+        .map((doc) => ({
+          ...doc,
+          proveedor_id: proveedorPorRut.get(normalizeRutSii(doc.rut_tercero)) || null,
+        }))
+        .filter((doc) => doc.proveedor_id)
+
+      if (documentosConProveedor.length === 0) {
+        return 0
+      }
+
+      const proveedorIds = Array.from(
+        new Set(documentosConProveedor.map((doc) => doc.proveedor_id as string))
+      )
+
+      const folios = Array.from(
+        new Set(documentosConProveedor.map((doc) => String(doc.folio || '').trim()).filter(Boolean))
+      )
+
+      if (proveedorIds.length === 0 || folios.length === 0) {
+        return 0
+      }
+
+      const { data: movimientosData, error: movimientosError } = await supabase
+        .from('movimientos')
+        .select('id, proveedor_id, numero_documento, monto_total, tipo_documento')
+        .eq('empresa_id', empresaId)
+        .eq('tipo_movimiento', 'egreso')
+        .eq('activo', true)
+        .is('deleted_at', null)
+        .in('proveedor_id', proveedorIds)
+        .in('numero_documento', folios)
+
+      if (movimientosError) {
+        throw new Error(`No se pudieron cargar egresos existentes: ${movimientosError.message}`)
+      }
+
+      const movimientos = (movimientosData ?? []) as {
+        id: string
+        proveedor_id: string | null
+        numero_documento: string | null
+        monto_total: number | string | null
+        tipo_documento: string | null
+      }[]
+
+      let vinculados = 0
+
+      for (const doc of documentosConProveedor) {
+        const candidatos = movimientos.filter(
+          (mov) =>
+            mov.proveedor_id === doc.proveedor_id &&
+            String(mov.numero_documento || '').trim() === String(doc.folio || '').trim()
+        )
+
+        const matchPorMonto =
+          candidatos.find((mov) => amountsAreClose(mov.monto_total, doc.monto_total)) || null
+
+        const match = matchPorMonto || (candidatos.length === 1 ? candidatos[0] : null)
+
+        if (!match) continue
+
+        const { error: updateError } = await supabase
+          .from('sii_documentos')
+          .update({
+            estado: 'vinculado',
+            accion_sugerida: 'revisar',
+            movimiento_id: match.id,
+            proveedor_id: doc.proveedor_id,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', doc.id)
+          .eq('empresa_id', empresaId)
+
+        if (updateError) {
+          throw new Error(`No se pudo vincular documento SII ${doc.folio}: ${updateError.message}`)
+        }
+
+        vinculados += 1
+      }
+
+      return vinculados
+    } finally {
+      if (showLoading) {
+        setLinkingExistingDocs(false)
+      }
+    }
+  }
+
+  const handleVincularEgresosExistentes = async () => {
+    try {
+      setError('')
+      setSuccess('')
+
+      const vinculados = await autoVincularConEgresosExistentes(true)
+
+      setSuccess(
+        vinculados > 0
+          ? `Se vincularon ${vinculados} documento${vinculados === 1 ? '' : 's'} SII con egresos existentes.`
+          : 'No se encontraron documentos SII pendientes que coincidan con egresos existentes.'
+      )
+
+      await loadDocumentos()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudieron vincular egresos existentes.')
+    }
+  }
+  const handleImportCsv = async (file: File | null) => {
+    if (!file) return
+
+    try {
+      if (!empresaId) {
+        throw new Error('No hay empresa activa seleccionada.')
+      }
+
+      setImporting(true)
+      setError('')
+      setSuccess('')
+
+      const text = await file.text()
+      const documentosCsv = parseSiiComprasCsv(text)
+
+      if (documentosCsv.length === 0) {
+        throw new Error('No se encontraron documentos válidos en el CSV.')
+      }
+
+      const { data: userData } = await supabase.auth.getUser()
+      const userId = userData.user?.id || null
+
+      const { data: existentesData, error: existentesError } = await supabase
+        .from('sii_documentos')
+        .select('tipo_doc_codigo, rut_tercero, folio')
+        .eq('empresa_id', empresaId)
+        .eq('tipo_registro', 'compras')
+
+      if (existentesError) {
+        throw new Error(`No se pudieron validar duplicados: ${existentesError.message}`)
+      }
+
+      const existentes = new Set(
+        ((existentesData ?? []) as {
+          tipo_doc_codigo: number
+          rut_tercero: string | null
+          folio: string
+        }[]).map(
+          (doc) =>
+            `${doc.tipo_doc_codigo}|${doc.rut_tercero || ''}|${doc.folio || ''}`
+        )
+      )
+
+      const documentosNuevos = documentosCsv.filter((doc) => {
+        const key = `${doc.tipo_doc_codigo}|${doc.rut_tercero || ''}|${doc.folio || ''}`
+        return !existentes.has(key)
+      })
+
+      const periodo = getPeriodoFromFileName(file.name)
+
+      const { data: importacion, error: importacionError } = await supabase
+        .from('sii_importaciones')
+        .insert({
+          empresa_id: empresaId,
+          tipo_registro: 'compras',
+          periodo,
+          nombre_archivo: file.name,
+          total_filas: documentosCsv.length,
+          estado: 'procesada',
+          created_by: userId,
+          updated_by: userId,
+        })
+        .select('id')
+        .single()
+
+      if (importacionError) {
+        throw new Error(`No se pudo registrar la importación: ${importacionError.message}`)
+      }
+
+      if (documentosNuevos.length > 0) {
+        const payload = documentosNuevos.map((doc) => ({
+          empresa_id: empresaId,
+          importacion_id: importacion.id,
+          tipo_registro: 'compras',
+          tipo_doc_codigo: doc.tipo_doc_codigo,
+          tipo_doc_nombre: doc.tipo_doc_nombre,
+          tipo_compra_venta: doc.tipo_compra_venta,
+          rut_tercero: doc.rut_tercero,
+          razon_social: doc.razon_social,
+          folio: doc.folio,
+          fecha_docto: doc.fecha_docto,
+          fecha_recepcion: doc.fecha_recepcion,
+          fecha_acuse: doc.fecha_acuse,
+          monto_exento: doc.monto_exento,
+          monto_neto: doc.monto_neto,
+          monto_iva_recuperable: doc.monto_iva_recuperable,
+          monto_iva_no_recuperable: doc.monto_iva_no_recuperable,
+          monto_iva: doc.monto_iva,
+          monto_total: doc.monto_total,
+          monto_neto_activo_fijo: doc.monto_neto_activo_fijo,
+          iva_activo_fijo: doc.iva_activo_fijo,
+          iva_uso_comun: doc.iva_uso_comun,
+          impuesto_sin_derecho_credito: doc.impuesto_sin_derecho_credito,
+          codigo_otro_impuesto: doc.codigo_otro_impuesto,
+          valor_otro_impuesto: doc.valor_otro_impuesto,
+          tasa_otro_impuesto: doc.tasa_otro_impuesto,
+          accion_sugerida: doc.accion_sugerida,
+          estado: doc.accion_sugerida === 'solo_documental'
+            ? 'solo_documental'
+            : 'pendiente',
+          raw_data: doc.raw_data,
+          created_by: userId,
+          updated_by: userId,
+        }))
+
+        const { error: insertError } = await supabase
+          .from('sii_documentos')
+          .insert(payload)
+
+        if (insertError) {
+          throw new Error(`No se pudieron guardar documentos: ${insertError.message}`)
+        }
+      }
+
+      setSuccess(
+        `Importación completada. Documentos leídos: ${documentosCsv.length}. Nuevos: ${documentosNuevos.length}. Duplicados omitidos: ${documentosCsv.length - documentosNuevos.length}.`
+      )
+
+      await loadDocumentos()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudo importar el CSV del SII.')
+    } finally {
+      setImporting(false)
+    }
+  }
+  const limpiarFiltros = () => {
+    setQ('')
+    setTipoRegistro('')
+    setEstado('')
+    setTipoDoc('')
+  }
+
+  if (!empresaId && !loading) {
+    return (
+      <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6 text-amber-800">
+        No hay empresa activa seleccionada.
+      </div>
+    )
+  }
+
+  return (
+    <main className="space-y-6">
+      <header className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <p className="text-sm font-medium text-slate-500">Módulo</p>
+            <h1 className="mt-1 text-3xl font-semibold tracking-tight text-slate-900">
+              Documentos SII
+            </h1>
+            <p className="mt-2 max-w-3xl text-sm text-slate-600">
+              Registro documental de compras, ventas, notas de crédito, notas de débito y guías de despacho importadas desde el SII.
+            </p>
+            <p className="mt-2 text-sm text-slate-500">
+              Empresa activa:{' '}
+              <span className="font-medium text-slate-900">
+                {empresaNombre || empresaId}
+              </span>
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => void loadDocumentos()}
+            className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          >
+            Actualizar
+          </button>
+        </div>
+      </header>
+
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <h2 className="text-base font-semibold text-slate-900">
+              Importar CSV de compras SII
+            </h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Sube el Registro de Compra del SII. Se registrarán facturas, notas de crédito, notas de débito y guías como documentos SII.
+            </p>
+          </div>
+
+          <label className="inline-flex cursor-pointer items-center justify-center rounded-xl border border-[#163A5F] bg-white px-4 py-2 text-sm font-semibold text-[#163A5F] hover:bg-blue-50">
+            {importing ? 'Importando...' : 'Seleccionar CSV'}
+            <input
+              type="file"
+              accept=".csv,text/csv"
+              disabled={importing}
+              className="hidden"
+              onChange={(event) => {
+                const file = event.target.files?.[0] || null
+                void handleImportCsv(file)
+                event.target.value = ''
+              }}
+            />
+          </label>
+        </div>
+      </section>
+      {error ? (
+        <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+          {error}
+        </div>
+      ) : null}
+
+      {success ? (
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700">
+          {success}
+        </div>
+      ) : null}
+
+      <section className="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <p className="text-sm text-slate-500">Documentos</p>
+          <p className="mt-2 text-2xl font-semibold text-slate-900">
+            {resumen.total}
+          </p>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <p className="text-sm text-slate-500">Compras</p>
+          <p className="mt-2 text-2xl font-semibold text-slate-900">
+            {resumen.compras}
+          </p>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <p className="text-sm text-slate-500">Ventas</p>
+          <p className="mt-2 text-2xl font-semibold text-slate-900">
+            {resumen.ventas}
+          </p>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <p className="text-sm text-slate-500">Pendientes</p>
+          <p className="mt-2 text-2xl font-semibold text-slate-900">
+            {resumen.pendientes}
+          </p>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <p className="text-sm text-slate-500">Notas crédito</p>
+          <p className="mt-2 text-2xl font-semibold text-slate-900">
+            {resumen.notasCredito}
+          </p>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <p className="text-sm text-slate-500">Monto total</p>
+          <p className="mt-2 text-lg font-semibold text-slate-900">
+            {formatCurrency(resumen.montoTotal)}
+          </p>
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="grid gap-4 xl:grid-cols-[1fr_180px_180px_220px_140px]">
+          <div>
+            <label className="mb-2 block text-sm font-medium text-slate-700">
+              Buscar
+            </label>
+            <input
+              value={q}
+              onChange={(event) => setQ(event.target.value)}
+              placeholder="RUT, razón social, folio o tipo documento"
+              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-[#163A5F]"
+            />
+          </div>
+
+          <div>
+            <label className="mb-2 block text-sm font-medium text-slate-700">
+              Registro
+            </label>
+            <select
+              value={tipoRegistro}
+              onChange={(event) => setTipoRegistro(event.target.value)}
+              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-[#163A5F]"
+            >
+              <option value="">Todos</option>
+              <option value="compras">Compras</option>
+              <option value="ventas">Ventas</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="mb-2 block text-sm font-medium text-slate-700">
+              Estado
+            </label>
+            <select
+              value={estado}
+              onChange={(event) => setEstado(event.target.value)}
+              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-[#163A5F]"
+            >
+              <option value="">Todos</option>
+              <option value="pendiente">Pendiente</option>
+              <option value="convertido">Convertido</option>
+              <option value="solo_documental">Solo documental</option>
+              <option value="omitido">Omitido</option>
+              <option value="vinculado">Vinculado</option>
+              <option value="anulado">Anulado</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="mb-2 block text-sm font-medium text-slate-700">
+              Tipo documento
+            </label>
+            <select
+              value={tipoDoc}
+              onChange={(event) => setTipoDoc(event.target.value)}
+              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-[#163A5F]"
+            >
+              <option value="">Todos</option>
+              {tiposDisponibles.map((codigo) => (
+                <option key={codigo} value={String(codigo)}>
+                  {codigo} - {TIPO_DOC_LABELS[codigo] || 'Documento SII'}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex items-end">
+            <button
+              type="button"
+              onClick={limpiarFiltros}
+              className="w-full rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            >
+              Limpiar
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="border-b border-slate-200 px-5 py-4">
+          <h2 className="text-base font-semibold text-slate-900">
+            Listado de documentos
+          </h2>
+          <p className="mt-1 text-sm text-slate-500">
+            {filtered.length} resultado{filtered.length === 1 ? '' : 's'}
+          </p>
+        </div>
+
+        {loading ? (
+          <div className="p-6 text-sm text-slate-600">
+            Cargando documentos SII...
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="p-8 text-center text-sm text-slate-600">
+            No hay documentos SII para mostrar.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead className="bg-slate-50 text-left text-slate-600">
+                <tr>
+                  <th className="px-4 py-3 font-semibold">Registro</th>
+                  <th className="px-4 py-3 font-semibold">Tipo doc</th>
+                  <th className="px-4 py-3 font-semibold">Folio</th>
+                  <th className="px-4 py-3 font-semibold">Fecha</th>
+                  <th className="px-4 py-3 font-semibold">RUT</th>
+                  <th className="px-4 py-3 font-semibold">Razón social</th>
+                  <th className="px-4 py-3 text-right font-semibold">Exento</th>
+                  <th className="px-4 py-3 text-right font-semibold">Neto</th>
+                  <th className="px-4 py-3 text-right font-semibold">IVA</th>
+                  <th className="px-4 py-3 text-right font-semibold">Total</th>
+                  <th className="px-4 py-3 font-semibold">Acción</th>
+                  <th className="px-4 py-3 font-semibold">Estado</th>
+                </tr>
+              </thead>
+
+              <tbody className="divide-y divide-slate-200">
+                {filtered.map((doc) => (
+                  <tr key={doc.id} className="align-top hover:bg-slate-50/70">
+                    <td className="px-4 py-3 capitalize text-slate-700">
+                      {doc.tipo_registro}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="font-medium text-slate-900">
+                        {doc.tipo_doc_codigo}
+                      </div>
+                      <div className="text-xs text-slate-500">
+                        {getTipoDocNombre(doc.tipo_doc_codigo, doc.tipo_doc_nombre)}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 font-medium text-slate-900">
+                      {doc.folio}
+                    </td>
+                    <td className="px-4 py-3 text-slate-700">
+                      {formatDate(doc.fecha_docto)}
+                    </td>
+                    <td className="px-4 py-3 text-slate-700">
+                      {doc.rut_tercero || '-'}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="max-w-[260px] whitespace-normal break-words text-slate-700">
+                        {doc.razon_social || '-'}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-right text-slate-700">
+                      {formatCurrency(doc.monto_exento)}
+                    </td>
+                    <td className="px-4 py-3 text-right text-slate-700">
+                      {formatCurrency(doc.monto_neto)}
+                    </td>
+                    <td className="px-4 py-3 text-right text-slate-700">
+                      {formatCurrency(doc.monto_iva)}
+                    </td>
+                    <td className="px-4 py-3 text-right font-medium text-slate-900">
+                      {formatCurrency(doc.monto_total)}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${
+                          getAccionClass(doc.accion_sugerida)
+                        }`}
+                      >
+                        {ACCION_LABELS[doc.accion_sugerida] || doc.accion_sugerida}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${
+                          getEstadoClass(doc.estado)
+                        }`}
+                      >
+                        {ESTADO_LABELS[doc.estado] || doc.estado}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+    </main>
+  )
+}
+
+export default function DocumentosSiiPage() {
+  return (
+    <ProtectedModuleRoute moduleKey="egresos">
+      <DocumentosSiiPageContent />
+    </ProtectedModuleRoute>
+  )
+}
