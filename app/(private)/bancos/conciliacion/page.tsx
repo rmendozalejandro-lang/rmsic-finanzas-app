@@ -449,7 +449,46 @@ export default function ConciliacionBancariaPage() {
     await cargarDatos()
     setProcessing(false)
   }
+const crearMovimientoSimple = async (fila: FilaBanco) => {
+  const monto = Number(fila.cargo ?? 0) > 0 ? fila.cargo : fila.abono
 
+  const confirmar = window.confirm(
+    `¿Crear movimiento simple no afecto por ${formatCLP(
+      monto
+    )}? Esta opción debe usarse solo para comisiones, intereses, cargos bancarios, ajustes o movimientos no tributarios.`
+  )
+
+  if (!confirmar) return
+
+  const descripcion = window.prompt(
+    'Descripción del movimiento:',
+    fila.descripcion_original
+  )
+
+  if (descripcion === null) return
+
+  setProcessing(true)
+  setError('')
+  setSuccess('')
+
+  const { error: rpcError } = await supabase.rpc(
+    'crear_movimiento_simple_desde_fila_bancaria',
+    {
+      p_fila_id: fila.id,
+      p_descripcion: descripcion,
+    }
+  )
+
+  if (rpcError) {
+    setError(rpcError.message)
+    setProcessing(false)
+    return
+  }
+
+  setSuccess('Movimiento simple creado y conciliado correctamente.')
+  await cargarDatos()
+  setProcessing(false)
+}
   return (
     <main className="space-y-6 p-6">
       <section className="flex flex-col gap-3 rounded-2xl border bg-white p-6 shadow-sm md:flex-row md:items-center md:justify-between">
@@ -652,7 +691,7 @@ export default function ConciliacionBancariaPage() {
           </h2>
 
           <div className="mt-5 overflow-hidden rounded-xl border text-sm">
-            <div className="grid grid-cols-5 bg-slate-50 text-xs uppercase text-slate-500">
+            <div className="grid grid-cols-6 bg-slate-50 text-xs uppercase text-slate-500">
               <div className="px-4 py-3 font-semibold">Fecha</div>
               <div className="px-4 py-3 font-semibold">Descripción</div>
               <div className="px-4 py-3 font-semibold">Cuenta</div>
@@ -665,7 +704,7 @@ export default function ConciliacionBancariaPage() {
                 {pendientes.map((fila) => (
                   <div
                     key={fila.id}
-                    className="grid grid-cols-5 items-center"
+                    className="grid grid-cols-6 items-center"
                   >
                     <div className="px-4 py-3">
                       {formatDate(fila.fecha)}
@@ -695,6 +734,16 @@ export default function ConciliacionBancariaPage() {
                         ? formatCLP(fila.abono)
                         : '-'}
                     </div>
+<div className="px-4 py-3">
+  <button
+    type="button"
+    onClick={() => crearMovimientoSimple(fila)}
+    disabled={processing}
+    className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+  >
+    Crear mov. simple
+  </button>
+</div>
                   </div>
                 ))}
               </div>
