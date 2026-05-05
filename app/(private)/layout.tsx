@@ -66,6 +66,7 @@ const menuItems: MenuItem[] = [
   { href: '/ot', label: 'OT', moduleKey: 'ot' },
 
   { href: '/remuneraciones', label: 'Remuneraciones', moduleKey: 'remuneraciones' },
+{ href: '/remuneraciones/prestamos', label: 'Préstamos y anticipos', moduleKey: 'remuneraciones' },
 
   {
     href: '/configuracion/usuarios',
