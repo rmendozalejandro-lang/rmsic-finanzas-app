@@ -60,8 +60,9 @@ const menuItems: MenuItem[] = [
   { href: '/proveedores', label: 'Proveedores', moduleKey: 'proveedores' },
   { href: '/transferencias', label: 'Transferencias', moduleKey: 'transferencias' },
 
-  { href: '/plan-cuentas', label: 'Plan de Cuentas', moduleKey: 'plan_cuentas' },
-  { href: '/reportes', label: 'Reportes', moduleKey: 'reportes' },
+ { href: '/plan-cuentas', label: 'Plan de Cuentas', moduleKey: 'plan_cuentas' },
+{ href: '/asientos', label: 'Asientos contables', moduleKey: 'plan_cuentas' },
+{ href: '/reportes', label: 'Reportes', moduleKey: 'reportes' },
 
   { href: '/ot', label: 'OT', moduleKey: 'ot' },
 
