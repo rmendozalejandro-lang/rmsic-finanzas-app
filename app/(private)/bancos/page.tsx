@@ -233,7 +233,12 @@ export default function BancosPage() {
           >
             Importar cartola
           </Link>
-
+<Link
+  href="/bancos/conciliacion"
+  className="inline-flex items-center justify-center rounded-xl border border-[#163A5F] bg-white px-4 py-2 text-sm font-semibold text-[#163A5F] hover:bg-blue-50"
+>
+  Conciliación bancaria
+</Link>
           <Link
             href="/bancos/importaciones"
             className="inline-flex items-center justify-center rounded-xl border border-[#163A5F] bg-white px-4 py-2 text-sm font-semibold text-[#163A5F] hover:bg-blue-50"
