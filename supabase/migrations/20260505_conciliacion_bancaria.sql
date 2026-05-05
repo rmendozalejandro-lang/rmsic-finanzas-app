@@ -473,6 +473,42 @@ grant execute on function public.conciliar_sugerencias_bancarias_exactas(
 crear_movimiento_simple_desde_fila_bancaria
 validar_centro_costo_empresa()
 crear_movimiento_tributario_desde_fila_bancaria()
+create or replace function public.trg_crear_asiento_borrador_movimiento_tributario_cartola()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if new.observaciones ilike '%Movimiento tributario creado desde línea de cartola%'
+     and new.cuenta_contable_id is not null
+     and new.tipo_documento is not null
+     and coalesce(new.activo, true) = true then
+
+    if not exists (
+      select 1
+      from public.asientos_contables ac
+      where ac.origen_tipo = 'movimiento'
+        and ac.origen_id = new.id
+        and coalesce(ac.activo, true) = true
+        and ac.deleted_at is null
+    ) then
+      perform public.crear_asiento_borrador_desde_movimiento(new.id);
+    end if;
+
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_crear_asiento_borrador_movimiento_tributario_cartola
+on public.movimientos;
+
+create trigger trg_crear_asiento_borrador_movimiento_tributario_cartola
+after insert on public.movimientos
+for each row
+execute function public.trg_crear_asiento_borrador_movimiento_tributario_cartola();
 
 
 
