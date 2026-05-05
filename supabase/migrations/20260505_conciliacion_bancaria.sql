@@ -471,6 +471,8 @@ grant execute on function public.conciliar_sugerencias_bancarias_exactas(
   integer
 ) to authenticated;
 crear_movimiento_simple_desde_fila_bancaria
+validar_centro_costo_empresa()
+crear_movimiento_tributario_desde_fila_bancaria()
 
 
 
