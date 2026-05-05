@@ -29,6 +29,9 @@ type AsientoDetalle = {
   haber: number | string
   cuentas_contables?: CuentaContable | null
 }
+type AsientoDetalleRaw = Omit<AsientoDetalle, 'cuentas_contables'> & {
+  cuentas_contables?: CuentaContable | CuentaContable[] | null
+}
 
 type AsientoResumen = Asiento & {
   total_debe: number
@@ -189,7 +192,14 @@ export default function AsientosContablesPage() {
       return
     }
 
-    const detallesData = (detallesResp.data ?? []) as AsientoDetalle[]
+    const detallesData = ((detallesResp.data ?? []) as AsientoDetalleRaw[]).map(
+  (detalle) => ({
+    ...detalle,
+    cuentas_contables: Array.isArray(detalle.cuentas_contables)
+      ? detalle.cuentas_contables[0] ?? null
+      : detalle.cuentas_contables ?? null,
+  })
+) as AsientoDetalle[]
 
     const resumen = asientosData.map((asiento) => {
       const detalleAsiento = detallesData.filter(
