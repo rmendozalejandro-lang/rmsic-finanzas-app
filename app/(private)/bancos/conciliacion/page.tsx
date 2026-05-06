@@ -60,6 +60,33 @@ type Movimiento = {
   cuenta_bancaria_id: string | null
 }
 
+type RelacionNombre = {
+  nombre: string | null
+  rut?: string | null
+}
+
+type CategoriaMovimiento = {
+  nombre: string | null
+}
+
+type MovimientoManual = {
+  id: string
+  fecha: string | null
+  tipo_movimiento: 'ingreso' | 'egreso' | string
+  tipo_documento: string | null
+  numero_documento: string | null
+  descripcion: string | null
+  monto_neto: number | string | null
+  monto_iva: number | string | null
+  monto_exento: number | string | null
+  impuesto_especifico: number | string | null
+  monto_total: number | string
+  estado: string
+  clientes?: RelacionNombre | RelacionNombre[] | null
+  proveedores?: RelacionNombre | RelacionNombre[] | null
+  categorias?: CategoriaMovimiento | CategoriaMovimiento[] | null
+}
+
 type Cliente = {
   id: string
   nombre: string
@@ -164,6 +191,22 @@ function limpiarMonto(value: string) {
   return value.replace(/[^\d]/g, '')
 }
 
+function getRelacionNombre(
+  value: RelacionNombre | RelacionNombre[] | CategoriaMovimiento | CategoriaMovimiento[] | null | undefined
+) {
+  const item = Array.isArray(value) ? value[0] : value
+
+  return item?.nombre || ''
+}
+
+function getMontoFila(fila: FilaBanco | null) {
+  if (!fila) return 0
+
+  return Number(fila.cargo ?? 0) > 0
+    ? Number(fila.cargo ?? 0)
+    : Number(fila.abono ?? 0)
+}
+
 function getBancoLabel(banco: Banco | undefined) {
   if (!banco) return 'Cuenta no identificada'
 
@@ -201,6 +244,20 @@ export default function ConciliacionBancariaPage() {
   const [tributarioError, setTributarioError] = useState('')
   const [tributarioForm, setTributarioForm] =
     useState<FormTributario>(initialTributarioForm)
+
+  const [showConciliarManualForm, setShowConciliarManualForm] = useState(false)
+  const [manualFila, setManualFila] = useState<FilaBanco | null>(null)
+  const [manualBusqueda, setManualBusqueda] = useState('')
+  const [manualTipo, setManualTipo] = useState<
+    'todos' | 'ingreso' | 'egreso'
+  >('todos')
+  const [manualResultados, setManualResultados] = useState<MovimientoManual[]>(
+    []
+  )
+  const [manualMovimientoId, setManualMovimientoId] = useState('')
+  const [manualLoading, setManualLoading] = useState(false)
+  const [manualSaving, setManualSaving] = useState(false)
+  const [manualError, setManualError] = useState('')
 
   const cargarEmpresaActiva = useCallback(() => {
     const id = window.localStorage.getItem(STORAGE_ID_KEY) || ''
@@ -687,6 +744,199 @@ export default function ConciliacionBancariaPage() {
     setProcessing(false)
   }
 
+  const cargarMovimientosManual = async (
+    fila: FilaBanco | null = manualFila,
+    busqueda: string = manualBusqueda,
+    tipo: 'todos' | 'ingreso' | 'egreso' = manualTipo
+  ) => {
+    if (!empresaActivaId || !fila) return
+
+    setManualLoading(true)
+    setManualError('')
+    setManualMovimientoId('')
+
+    const texto = busqueda.trim().toLowerCase()
+    const montoBuscado = Number(limpiarMonto(busqueda) || 0)
+
+    let query = supabase
+      .from('movimientos')
+      .select(`
+        id,
+        fecha,
+        tipo_movimiento,
+        tipo_documento,
+        numero_documento,
+        descripcion,
+        monto_neto,
+        monto_iva,
+        monto_exento,
+        impuesto_especifico,
+        monto_total,
+        estado,
+        clientes:cliente_id (
+          nombre,
+          rut
+        ),
+        proveedores:proveedor_id (
+          nombre,
+          rut
+        ),
+        categorias:categoria_id (
+          nombre
+        )
+      `)
+      .eq('empresa_id', empresaActivaId)
+      .is('deleted_at', null)
+      .order('fecha', { ascending: false })
+      .limit(montoBuscado > 0 ? 80 : 300)
+
+    if (tipo !== 'todos') {
+      query = query.eq('tipo_movimiento', tipo)
+    }
+
+    if (montoBuscado > 0) {
+      query = query.or(
+        `monto_total.eq.${montoBuscado},monto_neto.eq.${montoBuscado},monto_iva.eq.${montoBuscado},monto_exento.eq.${montoBuscado},impuesto_especifico.eq.${montoBuscado}`
+      )
+    }
+
+    const { data, error: queryError } = await query
+
+    if (queryError) {
+      setManualError(`Error al buscar movimientos: ${queryError.message}`)
+      setManualResultados([])
+      setManualLoading(false)
+      return
+    }
+
+    let resultados = ((data ?? []) as unknown as MovimientoManual[]).filter(
+      (movimiento) => {
+        if (!texto || montoBuscado > 0) return true
+
+        const campos = [
+          movimiento.tipo_movimiento,
+          movimiento.tipo_documento,
+          movimiento.numero_documento,
+          movimiento.descripcion,
+          movimiento.estado,
+          getRelacionNombre(movimiento.clientes),
+          getRelacionNombre(movimiento.proveedores),
+          getRelacionNombre(movimiento.categorias),
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase()
+
+        return campos.includes(texto)
+      }
+    )
+
+    resultados = resultados.sort((a, b) => {
+      const diffA = Math.abs(Number(a.monto_total ?? 0) - getMontoFila(fila))
+      const diffB = Math.abs(Number(b.monto_total ?? 0) - getMontoFila(fila))
+
+      if (diffA !== diffB) return diffA - diffB
+
+      return String(b.fecha || '').localeCompare(String(a.fecha || ''))
+    })
+
+    setManualResultados(resultados)
+    setManualMovimientoId(resultados[0]?.id || '')
+    setManualLoading(false)
+  }
+
+  const abrirConciliacionManual = async (fila: FilaBanco) => {
+    const monto = getMontoFila(fila)
+    const tipo = Number(fila.cargo ?? 0) > 0 ? 'egreso' : 'ingreso'
+
+    setManualFila(fila)
+    setManualBusqueda(String(Math.round(monto)))
+    setManualTipo(tipo)
+    setManualResultados([])
+    setManualMovimientoId('')
+    setManualError('')
+    setShowConciliarManualForm(true)
+
+    await cargarMovimientosManual(fila, String(Math.round(monto)), tipo)
+  }
+
+  const cerrarConciliacionManual = () => {
+    if (manualSaving) return
+
+    setShowConciliarManualForm(false)
+    setManualFila(null)
+    setManualBusqueda('')
+    setManualTipo('todos')
+    setManualResultados([])
+    setManualMovimientoId('')
+    setManualError('')
+  }
+
+  const conciliarManual = async () => {
+    if (!manualFila) {
+      setManualError('No se encontró la línea de cartola seleccionada.')
+      return
+    }
+
+    const movimiento = manualResultados.find(
+      (item) => item.id === manualMovimientoId
+    )
+
+    if (!movimiento) {
+      setManualError('Debes seleccionar un movimiento para conciliar.')
+      return
+    }
+
+    const diferencia = getMontoFila(manualFila) - Number(movimiento.monto_total ?? 0)
+
+    if (Math.abs(diferencia) > 0.49) {
+      setManualError(
+        `El monto seleccionado no coincide con la cartola. Diferencia: ${formatCLP(
+          diferencia
+        )}`
+      )
+      return
+    }
+
+    const confirmar = window.confirm(
+      `¿Conciliar esta línea de cartola por ${formatCLP(
+        getMontoFila(manualFila)
+      )} con el movimiento seleccionado?`
+    )
+
+    if (!confirmar) return
+
+    setManualSaving(true)
+    setManualError('')
+    setError('')
+    setSuccess('')
+
+    const { error: rpcError } = await supabase.rpc(
+      'conciliar_movimiento_bancario',
+      {
+        p_fila_id: manualFila.id,
+        p_movimiento_id: movimiento.id,
+        p_observacion: `Conciliación manual desde app: ${
+          movimiento.tipo_movimiento
+        } ${movimiento.tipo_documento || ''} ${
+          movimiento.numero_documento || ''
+        }`.trim(),
+      }
+    )
+
+    if (rpcError) {
+      setManualError(rpcError.message)
+      setManualSaving(false)
+      return
+    }
+
+    setSuccess('Movimiento conciliado manualmente correctamente.')
+    await cargarDatos()
+
+    setManualSaving(false)
+    cerrarConciliacionManual()
+  }
+
     const abrirFormularioTributario = (fila: FilaBanco) => {
     const esEgreso = Number(fila.cargo ?? 0) > 0
     const montoBanco = esEgreso
@@ -1140,7 +1390,15 @@ export default function ConciliacionBancariaPage() {
                         Crear compra/venta
                       </button>
 
-                                          </div>
+                      <button
+                        type="button"
+                        onClick={() => abrirConciliacionManual(fila)}
+                        disabled={processing}
+                        className="w-full rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-100 disabled:opacity-60"
+                      >
+                        Conciliar manual
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -1221,6 +1479,224 @@ export default function ConciliacionBancariaPage() {
             )}
           </div>
         </section>
+      ) : null}
+
+      {showConciliarManualForm ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+          <div className="max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-3xl bg-white p-6 shadow-xl">
+            <div className="flex flex-col gap-3 border-b pb-4 md:flex-row md:items-start md:justify-between">
+              <div>
+                <p className="text-sm font-medium text-slate-500">
+                  Conciliar línea bancaria
+                </p>
+
+                <h2 className="mt-1 text-xl font-semibold text-slate-900">
+                  Conciliación manual
+                </h2>
+
+                <p className="mt-1 text-sm text-slate-600">
+                  {manualFila?.descripcion_original || 'Sin descripción'} ·{' '}
+                  {formatDate(manualFila?.fecha)} ·{' '}
+                  {formatCLP(getMontoFila(manualFila))}
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={cerrarConciliacionManual}
+                disabled={manualSaving}
+                className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+              >
+                Cerrar
+              </button>
+            </div>
+
+            <div className="mt-5 space-y-5">
+              {manualError ? (
+                <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+                  {manualError}
+                </div>
+              ) : null}
+
+              <div className="grid gap-4 md:grid-cols-[1fr_220px_auto]">
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-slate-700">
+                    Buscar movimiento existente
+                  </label>
+                  <input
+                    type="text"
+                    value={manualBusqueda}
+                    onChange={(event) => setManualBusqueda(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        event.preventDefault()
+                        void cargarMovimientosManual()
+                      }
+                    }}
+                    placeholder="Monto, factura, proveedor/cliente o descripción"
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-900"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-slate-700">
+                    Tipo
+                  </label>
+                  <select
+                    value={manualTipo}
+                    onChange={(event) =>
+                      setManualTipo(
+                        event.target.value as 'todos' | 'ingreso' | 'egreso'
+                      )
+                    }
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-900"
+                  >
+                    <option value="todos">Todos</option>
+                    <option value="ingreso">Ingresos</option>
+                    <option value="egreso">Egresos</option>
+                  </select>
+                </div>
+
+                <div className="flex items-end">
+                  <button
+                    type="button"
+                    onClick={() => cargarMovimientosManual()}
+                    disabled={manualLoading || manualSaving}
+                    className="w-full rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60"
+                  >
+                    {manualLoading ? 'Buscando...' : 'Buscar'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border bg-amber-50 p-4 text-sm text-amber-800">
+                Usa esta opción solo cuando el ingreso o egreso ya existe en
+                Auren y quieres vincularlo con la cartola. No crea documentos
+                nuevos.
+              </div>
+
+              <div className="overflow-hidden rounded-xl border text-sm">
+                <div className="grid grid-cols-7 bg-slate-50 text-xs uppercase text-slate-500">
+                  <div className="px-4 py-3 font-semibold">Sel.</div>
+                  <div className="px-4 py-3 font-semibold">Fecha</div>
+                  <div className="px-4 py-3 font-semibold">Tipo</div>
+                  <div className="px-4 py-3 font-semibold">Documento</div>
+                  <div className="px-4 py-3 font-semibold">Tercero</div>
+                  <div className="px-4 py-3 font-semibold">Descripción</div>
+                  <div className="px-4 py-3 font-semibold">Total</div>
+                </div>
+
+                {manualResultados.length > 0 ? (
+                  <div className="divide-y">
+                    {manualResultados.map((movimiento) => {
+                      const tercero =
+                        getRelacionNombre(movimiento.clientes) ||
+                        getRelacionNombre(movimiento.proveedores) ||
+                        '-'
+                      const categoria = getRelacionNombre(movimiento.categorias)
+                      const diferencia =
+                        getMontoFila(manualFila) - Number(movimiento.monto_total ?? 0)
+
+                      return (
+                        <label
+                          key={movimiento.id}
+                          className={
+                            movimiento.id === manualMovimientoId
+                              ? 'grid cursor-pointer grid-cols-7 items-center bg-emerald-50'
+                              : 'grid cursor-pointer grid-cols-7 items-center hover:bg-slate-50'
+                          }
+                        >
+                          <div className="px-4 py-3">
+                            <input
+                              type="radio"
+                              name="movimiento-manual"
+                              checked={movimiento.id === manualMovimientoId}
+                              onChange={() => setManualMovimientoId(movimiento.id)}
+                            />
+                          </div>
+
+                          <div className="px-4 py-3">
+                            {formatDate(movimiento.fecha)}
+                          </div>
+
+                          <div className="px-4 py-3 capitalize">
+                            {movimiento.tipo_movimiento}
+                            <p className="text-xs text-slate-500">
+                              {movimiento.estado}
+                            </p>
+                          </div>
+
+                          <div className="px-4 py-3">
+                            <p className="font-medium text-slate-900">
+                              {movimiento.tipo_documento || '-'}
+                            </p>
+                            <p className="text-xs text-slate-500">
+                              {movimiento.numero_documento || 'Sin número'}
+                            </p>
+                          </div>
+
+                          <div className="px-4 py-3">
+                            <p className="font-medium text-slate-900">
+                              {tercero}
+                            </p>
+                            {categoria ? (
+                              <p className="text-xs text-slate-500">
+                                {categoria}
+                              </p>
+                            ) : null}
+                          </div>
+
+                          <div className="px-4 py-3 text-slate-700">
+                            {movimiento.descripcion || '-'}
+                            {Math.abs(diferencia) > 0.49 ? (
+                              <p className="mt-1 text-xs font-medium text-red-700">
+                                Diferencia: {formatCLP(diferencia)}
+                              </p>
+                            ) : (
+                              <p className="mt-1 text-xs font-medium text-emerald-700">
+                                Monto coincide
+                              </p>
+                            )}
+                          </div>
+
+                          <div className="px-4 py-3 font-semibold text-slate-900">
+                            {formatCLP(movimiento.monto_total)}
+                          </div>
+                        </label>
+                      )
+                    })}
+                  </div>
+                ) : (
+                  <div className="px-4 py-5 text-center text-slate-500">
+                    No hay movimientos para la búsqueda actual. Prueba con el
+                    monto exacto, número de factura, proveedor/cliente o
+                    descripción.
+                  </div>
+                )}
+              </div>
+
+              <div className="flex flex-col-reverse gap-3 border-t pt-4 sm:flex-row sm:justify-end">
+                <button
+                  type="button"
+                  onClick={cerrarConciliacionManual}
+                  disabled={manualSaving}
+                  className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                >
+                  Cancelar
+                </button>
+
+                <button
+                  type="button"
+                  onClick={conciliarManual}
+                  disabled={manualSaving || !manualMovimientoId}
+                  className="rounded-xl bg-emerald-700 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-800 disabled:opacity-60"
+                >
+                  {manualSaving ? 'Conciliando...' : 'Conciliar seleccionado'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       ) : null}
 
       {showTributarioForm ? (
