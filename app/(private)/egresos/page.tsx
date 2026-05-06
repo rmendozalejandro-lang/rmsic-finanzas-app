@@ -128,6 +128,34 @@ const buildInitialFilters = (): Filters => ({
 
 const formatCLP = (value: number) => `$${Number(value || 0).toLocaleString('es-CL')}`
 
+const normalizarTextoBusqueda = (value: string | number | null | undefined) =>
+  String(value ?? '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+
+const normalizarMontoBusqueda = (value: string | number | null | undefined) =>
+  String(value ?? '').replace(/[^\d-]/g, '')
+
+const coincideMontoBusqueda = (
+  busqueda: string,
+  montos: Array<number | string | null | undefined>
+) => {
+  const montoBuscado = normalizarMontoBusqueda(busqueda)
+
+  if (!montoBuscado) return false
+
+  return montos.some((monto) => {
+    const montoNormalizado = normalizarMontoBusqueda(
+      Math.round(Number(monto ?? 0))
+    )
+
+    return montoNormalizado === montoBuscado || montoNormalizado.includes(montoBuscado)
+  })
+}
+
+
 const formatDate = (value: string | null) => {
   if (!value) return '-'
   const date = new Date(`${value}T00:00:00`)
@@ -682,24 +710,48 @@ export default function EgresosPage() {
 
   const egresosFiltrados = useMemo(() => {
     return egresos.filter((item) => {
-      const estado = (item.estado || '').toLowerCase()
-      const numeroDocumento = (item.numero_documento || '').toLowerCase()
-      const descripcion = (item.descripcion || '').toLowerCase()
+      const estado = normalizarTextoBusqueda(item.estado)
+      const numeroDocumento = normalizarTextoBusqueda(item.numero_documento)
+      const descripcion = normalizarTextoBusqueda(item.descripcion)
       const proveedorId = item.proveedor_id || ''
       const fecha = item.fecha || ''
-      const search = filters.texto.trim().toLowerCase()
+      const search = normalizarTextoBusqueda(filters.texto)
+      const numeroDocumentoFiltro = normalizarTextoBusqueda(filters.numeroDocumento)
+
+      const camposBusqueda = [
+        item.tipo_documento,
+        item.numero_documento,
+        item.descripcion,
+        item.proveedor_nombre,
+        item.categoria_nombre,
+        item.centro_costo_nombre,
+        item.cuenta_bancaria_nombre,
+        item.estado,
+        item.tratamiento_tributario,
+        formatCLP(Number(item.monto_total || 0)),
+        formatCLP(Number(item.monto_neto || 0)),
+        formatCLP(Number(item.monto_iva || 0)),
+        formatCLP(Number(item.monto_exento || 0)),
+        formatCLP(Number(item.impuesto_especifico || 0)),
+      ]
+        .map(normalizarTextoBusqueda)
+        .join(' ')
 
       const matchesEstado = filters.estado === 'todos' || estado === filters.estado
       const matchesDesde = !filters.fechaDesde || fecha >= filters.fechaDesde
       const matchesHasta = !filters.fechaHasta || fecha <= filters.fechaHasta
-      const matchesNumero = !filters.numeroDocumento || numeroDocumento.includes(filters.numeroDocumento.toLowerCase())
+      const matchesNumero = !numeroDocumentoFiltro || numeroDocumento.includes(numeroDocumentoFiltro)
       const matchesProveedor = !filters.proveedorId || proveedorId === filters.proveedorId
       const matchesTexto =
         !search ||
-        descripcion.includes(search) ||
-        numeroDocumento.includes(search) ||
-        (item.proveedor_nombre || '').toLowerCase().includes(search) ||
-        (item.categoria_nombre || '').toLowerCase().includes(search)
+        camposBusqueda.includes(search) ||
+        coincideMontoBusqueda(filters.texto, [
+          item.monto_total,
+          item.monto_neto,
+          item.monto_iva,
+          item.monto_exento,
+          item.impuesto_especifico,
+        ])
 
       return matchesEstado && matchesDesde && matchesHasta && matchesNumero && matchesProveedor && matchesTexto
     })
@@ -773,7 +825,7 @@ export default function EgresosPage() {
           <div className="mb-4 flex flex-col gap-1">
             <h2 className="text-lg font-semibold text-slate-900">Filtros de egresos</h2>
             <p className="text-sm text-slate-500">
-              Busca por fecha, documento, proveedor o descripción.
+              Busca por fecha, documento, proveedor, descripción o monto total/neto.
             </p>
           </div>
 
@@ -843,7 +895,7 @@ export default function EgresosPage() {
                 type="text"
                 value={filters.texto}
                 onChange={(e) => setFilters((prev) => ({ ...prev, texto: e.target.value }))}
-                placeholder="Descripción, proveedor o categoría"
+                placeholder="Descripción, proveedor, categoría o monto"
                 className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
               />
             </div>

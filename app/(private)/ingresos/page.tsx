@@ -30,7 +30,7 @@ type Categoria = {
   id: string
   empresa_id: string
   nombre: string
-  tipo: 'ingreso' | 'egreso'
+  tipo: 'ingreso' | 'ingreso'
   clasificacion_financiera: string | null
   activa: boolean
 }
@@ -65,8 +65,6 @@ type Ingreso = {
   cuenta_bancaria_id: string | null
   cuenta_bancaria_nombre?: string | null
   empresa_id: string
-  activo?: boolean | null
-  deleted_at?: string | null
 }
 
 type FormData = {
@@ -128,15 +126,40 @@ const buildInitialFilters = (): Filters => ({
   texto: '',
 })
 
-const formatCLP = (value: number) =>
-  `$${Number(value || 0).toLocaleString('es-CL')}`
+const formatCLP = (value: number) => `$${Number(value || 0).toLocaleString('es-CL')}`
+
+const normalizarTextoBusqueda = (value: string | number | null | undefined) =>
+  String(value ?? '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+
+const normalizarMontoBusqueda = (value: string | number | null | undefined) =>
+  String(value ?? '').replace(/[^\d-]/g, '')
+
+const coincideMontoBusqueda = (
+  busqueda: string,
+  montos: Array<number | string | null | undefined>
+) => {
+  const montoBuscado = normalizarMontoBusqueda(busqueda)
+
+  if (!montoBuscado) return false
+
+  return montos.some((monto) => {
+    const montoNormalizado = normalizarMontoBusqueda(
+      Math.round(Number(monto ?? 0))
+    )
+
+    return montoNormalizado === montoBuscado || montoNormalizado.includes(montoBuscado)
+  })
+}
+
 
 const formatDate = (value: string | null) => {
   if (!value) return '-'
-
   const date = new Date(`${value}T00:00:00`)
   if (Number.isNaN(date.getTime())) return value
-
   return date.toLocaleDateString('es-CL')
 }
 
@@ -160,7 +183,6 @@ const inferTratamientoTributario = (item: Ingreso): TratamientoTributario => {
 
   const neto = Number(item.monto_neto || 0)
   const exento = Number(item.monto_exento || 0)
-
   if (neto > 0 && exento > 0) return 'mixto'
   if (exento > 0 && neto <= 0) return 'exento'
   return 'afecto_iva'
@@ -522,6 +544,7 @@ export default function IngresosPage() {
       const userId = sessionData.session.user.id
       const apiKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
       const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+
       const updatedAt = new Date().toISOString()
 
       const basePayload = {
@@ -665,24 +688,48 @@ export default function IngresosPage() {
 
   const ingresosFiltrados = useMemo(() => {
     return ingresos.filter((item) => {
-      const estado = (item.estado || '').toLowerCase()
-      const numeroDocumento = (item.numero_documento || '').toLowerCase()
-      const descripcion = (item.descripcion || '').toLowerCase()
+      const estado = normalizarTextoBusqueda(item.estado)
+      const numeroDocumento = normalizarTextoBusqueda(item.numero_documento)
+      const descripcion = normalizarTextoBusqueda(item.descripcion)
       const clienteId = item.cliente_id || ''
       const fecha = item.fecha || ''
-      const search = filters.texto.trim().toLowerCase()
+      const search = normalizarTextoBusqueda(filters.texto)
+      const numeroDocumentoFiltro = normalizarTextoBusqueda(filters.numeroDocumento)
+
+      const camposBusqueda = [
+        item.tipo_documento,
+        item.numero_documento,
+        item.descripcion,
+        item.cliente_nombre,
+        item.categoria_nombre,
+        item.centro_costo_nombre,
+        item.cuenta_bancaria_nombre,
+        item.estado,
+        item.tratamiento_tributario,
+        formatCLP(Number(item.monto_total || 0)),
+        formatCLP(Number(item.monto_neto || 0)),
+        formatCLP(Number(item.monto_iva || 0)),
+        formatCLP(Number(item.monto_exento || 0)),
+        formatCLP(Number(item.impuesto_especifico || 0)),
+      ]
+        .map(normalizarTextoBusqueda)
+        .join(' ')
 
       const matchesEstado = filters.estado === 'todos' || estado === filters.estado
       const matchesDesde = !filters.fechaDesde || fecha >= filters.fechaDesde
       const matchesHasta = !filters.fechaHasta || fecha <= filters.fechaHasta
-      const matchesNumero = !filters.numeroDocumento || numeroDocumento.includes(filters.numeroDocumento.toLowerCase())
+      const matchesNumero = !numeroDocumentoFiltro || numeroDocumento.includes(numeroDocumentoFiltro)
       const matchesCliente = !filters.clienteId || clienteId === filters.clienteId
       const matchesTexto =
         !search ||
-        descripcion.includes(search) ||
-        numeroDocumento.includes(search) ||
-        (item.cliente_nombre || '').toLowerCase().includes(search) ||
-        (item.categoria_nombre || '').toLowerCase().includes(search)
+        camposBusqueda.includes(search) ||
+        coincideMontoBusqueda(filters.texto, [
+          item.monto_total,
+          item.monto_neto,
+          item.monto_iva,
+          item.monto_exento,
+          item.impuesto_especifico,
+        ])
 
       return matchesEstado && matchesDesde && matchesHasta && matchesNumero && matchesCliente && matchesTexto
     })
@@ -748,7 +795,7 @@ export default function IngresosPage() {
           <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
             El usuario actual tiene rol{' '}
             <span className="font-semibold">{usuarioRol || 'sin rol asignado'}</span>.
-            Solo el administrador puede registrar, editar o anular ingresos.
+            Solo el administrador puede registrar, editar o archivar ingresos.
           </div>
         ) : null}
 
@@ -756,7 +803,7 @@ export default function IngresosPage() {
           <div className="mb-4 flex flex-col gap-1">
             <h2 className="text-lg font-semibold text-slate-900">Filtros de ingresos</h2>
             <p className="text-sm text-slate-500">
-              Busca por fecha, documento, cliente o descripción.
+              Busca por fecha, documento, cliente, descripción o monto total/neto.
             </p>
           </div>
 
@@ -815,9 +862,7 @@ export default function IngresosPage() {
               >
                 <option value="">Todos</option>
                 {clientes.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.nombre}
-                  </option>
+                  <option key={item.id} value={item.id}>{item.nombre}</option>
                 ))}
               </select>
             </div>
@@ -828,7 +873,7 @@ export default function IngresosPage() {
                 type="text"
                 value={filters.texto}
                 onChange={(e) => setFilters((prev) => ({ ...prev, texto: e.target.value }))}
-                placeholder="Descripción, cliente o categoría"
+                placeholder="Descripción, cliente, categoría o monto"
                 className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
               />
             </div>
@@ -876,9 +921,7 @@ export default function IngresosPage() {
                 Historial filtrado de ingresos registrados para la empresa activa.
               </p>
             </div>
-            <div className="text-sm text-slate-500">
-              {ingresosFiltrados.length} registro(s)
-            </div>
+            <div className="text-sm text-slate-500">{ingresosFiltrados.length} registro(s)</div>
           </div>
 
           {loading ? (
@@ -887,7 +930,7 @@ export default function IngresosPage() {
             <p className="text-sm text-slate-500">No hay ingresos para los filtros seleccionados.</p>
           ) : (
             <div className="overflow-x-auto">
-              <table className="min-w-[1280px] w-full text-sm">
+              <table className="min-w-[1320px] w-full text-sm">
                 <thead>
                   <tr className="border-b border-slate-200 text-left text-slate-500">
                     <th className="py-3 pr-4">Fecha</th>
@@ -966,7 +1009,6 @@ export default function IngresosPage() {
                   required
                 />
               </div>
-
               <div>
                 <label className="mb-1 block text-sm font-medium text-slate-700">Tipo documento</label>
                 <select
@@ -979,7 +1021,6 @@ export default function IngresosPage() {
                   <option value="boleta">Boleta</option>
                   <option value="recibo">Recibo</option>
                   <option value="otro">Otro</option>
-                  <option value="nota_credito">Nota de crédito</option>
                 </select>
               </div>
             </div>
@@ -996,7 +1037,6 @@ export default function IngresosPage() {
                   placeholder="Ej: 12345"
                 />
               </div>
-
               <div>
                 <label className="mb-1 block text-sm font-medium text-slate-700">Estado</label>
                 <select
@@ -1080,16 +1120,17 @@ export default function IngresosPage() {
                   className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-2.5 text-sm"
                 />
               </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">Total</label>
-                <input
-                  type="number"
-                  name="monto_total"
-                  value={formData.monto_total}
-                  readOnly
-                  className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-2.5 text-sm font-medium"
-                />
-              </div>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Total</label>
+              <input
+                type="number"
+                name="monto_total"
+                value={formData.monto_total}
+                readOnly
+                className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-2.5 text-sm font-medium"
+              />
             </div>
 
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">

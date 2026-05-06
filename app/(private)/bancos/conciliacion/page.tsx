@@ -687,78 +687,7 @@ export default function ConciliacionBancariaPage() {
     setProcessing(false)
   }
 
-  const crearTransferenciaInterna = async (fila: FilaBanco) => {
-    const cuentaCartola = bancosPorId.get(fila.cuenta_bancaria_id)
-    const cuentasContraparte = bancos.filter(
-      (banco) => banco.id !== fila.cuenta_bancaria_id
-    )
-
-    if (cuentasContraparte.length === 0) {
-      setError('No existe otra cuenta bancaria activa para usar como contraparte.')
-      return
-    }
-
-    if (cuentasContraparte.length > 1) {
-      setError(
-        'Hay más de una cuenta bancaria contraparte. Por seguridad, esta versión requiere una sola contraparte automática.'
-      )
-      return
-    }
-
-    const cuentaContraparte = cuentasContraparte[0]
-
-    if (!cuentaContraparte) {
-      setError('No fue posible identificar la cuenta bancaria contraparte.')
-      return
-    }
-
-    const monto = Number(fila.cargo ?? 0) > 0 ? fila.cargo : fila.abono
-
-    const direccion =
-      Number(fila.cargo ?? 0) > 0
-        ? `${getBancoLabel(cuentaCartola)} → ${getBancoLabel(cuentaContraparte)}`
-        : `${getBancoLabel(cuentaContraparte)} → ${getBancoLabel(cuentaCartola)}`
-
-    const confirmar = window.confirm(
-      `¿Crear transferencia interna por ${formatCLP(
-        monto
-      )}?\n\n${direccion}\n\nEsta operación no se registrará como ingreso ni gasto.`
-    )
-
-    if (!confirmar) return
-
-    const descripcion = window.prompt(
-      'Descripción de la transferencia:',
-      'Transferencia interna entre cuentas bancarias'
-    )
-
-    if (descripcion === null) return
-
-    setProcessing(true)
-    setError('')
-    setSuccess('')
-
-    const { error: rpcError } = await supabase.rpc(
-      'crear_transferencia_desde_fila_bancaria',
-      {
-        p_fila_id: fila.id,
-        p_cuenta_contraparte_id: cuentaContraparte.id,
-        p_descripcion: descripcion,
-      }
-    )
-
-    if (rpcError) {
-      setError(rpcError.message)
-      setProcessing(false)
-      return
-    }
-
-    setSuccess('Transferencia interna creada y conciliada correctamente.')
-    await cargarDatos()
-    setProcessing(false)
-  }
-
-  const abrirFormularioTributario = (fila: FilaBanco) => {
+    const abrirFormularioTributario = (fila: FilaBanco) => {
     const esEgreso = Number(fila.cargo ?? 0) > 0
     const montoBanco = esEgreso
       ? Number(fila.cargo ?? 0)
@@ -1211,15 +1140,7 @@ export default function ConciliacionBancariaPage() {
                         Crear compra/venta
                       </button>
 
-                      <button
-                        type="button"
-                        onClick={() => crearTransferenciaInterna(fila)}
-                        disabled={processing}
-                        className="w-full rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-medium text-indigo-700 hover:bg-indigo-100 disabled:opacity-60"
-                      >
-                        Crear transferencia
-                      </button>
-                    </div>
+                                          </div>
                   </div>
                 ))}
               </div>
