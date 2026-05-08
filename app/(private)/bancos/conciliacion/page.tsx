@@ -259,6 +259,23 @@ export default function ConciliacionBancariaPage() {
   const [manualSaving, setManualSaving] = useState(false)
   const [manualError, setManualError] = useState('')
 
+  const [showConciliarMultipleForm, setShowConciliarMultipleForm] =
+    useState(false)
+  const [multipleFila, setMultipleFila] = useState<FilaBanco | null>(null)
+  const [multipleBusqueda, setMultipleBusqueda] = useState('')
+  const [multipleTipo, setMultipleTipo] = useState<
+    'todos' | 'ingreso' | 'egreso'
+  >('todos')
+  const [multipleResultados, setMultipleResultados] = useState<
+    MovimientoManual[]
+  >([])
+  const [multipleMovimientoIds, setMultipleMovimientoIds] = useState<
+    string[]
+  >([])
+  const [multipleLoading, setMultipleLoading] = useState(false)
+  const [multipleSaving, setMultipleSaving] = useState(false)
+  const [multipleError, setMultipleError] = useState('')
+
   const cargarEmpresaActiva = useCallback(() => {
     const id = window.localStorage.getItem(STORAGE_ID_KEY) || ''
     const nombre = window.localStorage.getItem(STORAGE_NAME_KEY) || ''
@@ -887,7 +904,8 @@ export default function ConciliacionBancariaPage() {
       return
     }
 
-    const diferencia = getMontoFila(manualFila) - Number(movimiento.monto_total ?? 0)
+    const diferencia =
+      getMontoFila(manualFila) - Number(movimiento.monto_total ?? 0)
 
     if (Math.abs(diferencia) > 0.49) {
       setManualError(
@@ -937,7 +955,205 @@ export default function ConciliacionBancariaPage() {
     cerrarConciliacionManual()
   }
 
-    const abrirFormularioTributario = (fila: FilaBanco) => {
+  const cargarMovimientosMultiple = async (
+    fila: FilaBanco | null = multipleFila,
+    busqueda: string = multipleBusqueda,
+    tipo: 'todos' | 'ingreso' | 'egreso' = multipleTipo
+  ) => {
+    if (!empresaActivaId || !fila) return
+
+    setMultipleLoading(true)
+    setMultipleError('')
+
+    const texto = busqueda.trim().toLowerCase()
+    const montoBuscado = Number(limpiarMonto(busqueda) || 0)
+
+    let query = supabase
+      .from('movimientos')
+      .select(`
+        id,
+        fecha,
+        tipo_movimiento,
+        tipo_documento,
+        numero_documento,
+        descripcion,
+        monto_neto,
+        monto_iva,
+        monto_exento,
+        impuesto_especifico,
+        monto_total,
+        estado,
+        clientes:cliente_id (
+          nombre,
+          rut
+        ),
+        proveedores:proveedor_id (
+          nombre,
+          rut
+        ),
+        categorias:categoria_id (
+          nombre
+        )
+      `)
+      .eq('empresa_id', empresaActivaId)
+      .is('deleted_at', null)
+      .order('fecha', { ascending: false })
+      .limit(montoBuscado > 0 ? 80 : 300)
+
+    if (tipo !== 'todos') {
+      query = query.eq('tipo_movimiento', tipo)
+    }
+
+    if (montoBuscado > 0) {
+      query = query.or(
+        `monto_total.eq.${montoBuscado},monto_neto.eq.${montoBuscado},monto_iva.eq.${montoBuscado},monto_exento.eq.${montoBuscado},impuesto_especifico.eq.${montoBuscado}`
+      )
+    }
+
+    const { data, error: queryError } = await query
+
+    if (queryError) {
+      setMultipleError(`Error al buscar movimientos: ${queryError.message}`)
+      setMultipleResultados([])
+      setMultipleLoading(false)
+      return
+    }
+
+    let resultados = ((data ?? []) as unknown as MovimientoManual[]).filter(
+      (movimiento) => {
+        if (!texto || montoBuscado > 0) return true
+
+        const campos = [
+          movimiento.tipo_movimiento,
+          movimiento.tipo_documento,
+          movimiento.numero_documento,
+          movimiento.descripcion,
+          movimiento.estado,
+          getRelacionNombre(movimiento.clientes),
+          getRelacionNombre(movimiento.proveedores),
+          getRelacionNombre(movimiento.categorias),
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase()
+
+        return campos.includes(texto)
+      }
+    )
+
+    resultados = resultados.sort((a, b) => {
+      return String(b.fecha || '').localeCompare(String(a.fecha || ''))
+    })
+
+    setMultipleResultados(resultados)
+    setMultipleLoading(false)
+  }
+
+  const abrirConciliacionMultiple = async (fila: FilaBanco) => {
+    const tipo = Number(fila.cargo ?? 0) > 0 ? 'egreso' : 'ingreso'
+
+    setMultipleFila(fila)
+    setMultipleBusqueda('')
+    setMultipleTipo(tipo)
+    setMultipleResultados([])
+    setMultipleMovimientoIds([])
+    setMultipleError('')
+    setShowConciliarMultipleForm(true)
+
+    await cargarMovimientosMultiple(fila, '', tipo)
+  }
+
+  const cerrarConciliacionMultiple = () => {
+    if (multipleSaving) return
+
+    setShowConciliarMultipleForm(false)
+    setMultipleFila(null)
+    setMultipleBusqueda('')
+    setMultipleTipo('todos')
+    setMultipleResultados([])
+    setMultipleMovimientoIds([])
+    setMultipleError('')
+  }
+
+  const toggleMovimientoMultiple = (movimientoId: string) => {
+    setMultipleMovimientoIds((current) =>
+      current.includes(movimientoId)
+        ? current.filter((id) => id !== movimientoId)
+        : [...current, movimientoId]
+    )
+  }
+
+  const getTotalMultipleSeleccionado = () => {
+    return multipleResultados
+      .filter((movimiento) => multipleMovimientoIds.includes(movimiento.id))
+      .reduce(
+        (total, movimiento) => total + Number(movimiento.monto_total ?? 0),
+        0
+      )
+  }
+
+  const conciliarMultiple = async () => {
+    if (!multipleFila) {
+      setMultipleError('No se encontró la línea de cartola seleccionada.')
+      return
+    }
+
+    if (multipleMovimientoIds.length < 2) {
+      setMultipleError(
+        'Selecciona al menos dos movimientos. Para uno solo usa Conciliar manual.'
+      )
+      return
+    }
+
+    const totalSeleccionado = getTotalMultipleSeleccionado()
+    const montoBanco = getMontoFila(multipleFila)
+    const diferencia = totalSeleccionado - montoBanco
+
+    if (Math.abs(diferencia) > 0.49) {
+      setMultipleError(
+        `La suma seleccionada no coincide con la cartola. Diferencia: ${formatCLP(
+          diferencia
+        )}`
+      )
+      return
+    }
+
+    const confirmar = window.confirm(
+      `¿Conciliar esta línea de cartola por ${formatCLP(
+        montoBanco
+      )} con ${multipleMovimientoIds.length} movimientos seleccionados?`
+    )
+
+    if (!confirmar) return
+
+    setMultipleSaving(true)
+    setMultipleError('')
+    setError('')
+    setSuccess('')
+
+    const { error: rpcError } = await supabase.rpc(
+      'conciliar_multiples_movimientos_bancarios',
+      {
+        p_fila_id: multipleFila.id,
+        p_movimiento_ids: multipleMovimientoIds,
+        p_observacion: 'Conciliación múltiple desde app',
+      }
+    )
+
+    if (rpcError) {
+      setMultipleError(rpcError.message)
+      setMultipleSaving(false)
+      return
+    }
+
+    setSuccess('Conciliación múltiple realizada correctamente.')
+    await cargarDatos()
+
+    setMultipleSaving(false)
+    cerrarConciliacionMultiple()
+  }
+
+  const abrirFormularioTributario = (fila: FilaBanco) => {
     const esEgreso = Number(fila.cargo ?? 0) > 0
     const montoBanco = esEgreso
       ? Number(fila.cargo ?? 0)
@@ -1398,6 +1614,15 @@ export default function ConciliacionBancariaPage() {
                       >
                         Conciliar manual
                       </button>
+
+                      <button
+                        type="button"
+                        onClick={() => abrirConciliacionMultiple(fila)}
+                        disabled={processing}
+                        className="w-full rounded-lg border border-purple-200 bg-purple-50 px-3 py-1.5 text-xs font-medium text-purple-700 hover:bg-purple-100 disabled:opacity-60"
+                      >
+                        Conciliar múltiple
+                      </button>
                     </div>
                   </div>
                 ))}
@@ -1692,6 +1917,262 @@ export default function ConciliacionBancariaPage() {
                   className="rounded-xl bg-emerald-700 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-800 disabled:opacity-60"
                 >
                   {manualSaving ? 'Conciliando...' : 'Conciliar seleccionado'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {showConciliarMultipleForm ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+          <div className="max-h-[90vh] w-full max-w-6xl overflow-y-auto rounded-3xl bg-white p-6 shadow-xl">
+            <div className="flex flex-col gap-3 border-b pb-4 md:flex-row md:items-start md:justify-between">
+              <div>
+                <p className="text-sm font-medium text-slate-500">
+                  Conciliar una línea con varios movimientos
+                </p>
+
+                <h2 className="mt-1 text-xl font-semibold text-slate-900">
+                  Conciliación múltiple
+                </h2>
+
+                <p className="mt-1 text-sm text-slate-600">
+                  {multipleFila?.descripcion_original || 'Sin descripción'} ·{' '}
+                  {formatDate(multipleFila?.fecha)} ·{' '}
+                  {formatCLP(getMontoFila(multipleFila))}
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={cerrarConciliacionMultiple}
+                disabled={multipleSaving}
+                className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+              >
+                Cerrar
+              </button>
+            </div>
+
+            <div className="mt-5 space-y-5">
+              {multipleError ? (
+                <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+                  {multipleError}
+                </div>
+              ) : null}
+
+              <div className="grid gap-4 md:grid-cols-[1fr_220px_auto]">
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-slate-700">
+                    Buscar movimientos existentes
+                  </label>
+                  <input
+                    type="text"
+                    value={multipleBusqueda}
+                    onChange={(event) =>
+                      setMultipleBusqueda(event.target.value)
+                    }
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        event.preventDefault()
+                        void cargarMovimientosMultiple()
+                      }
+                    }}
+                    placeholder="Factura, proveedor/cliente, descripción o monto individual"
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-900"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-slate-700">
+                    Tipo
+                  </label>
+                  <select
+                    value={multipleTipo}
+                    onChange={(event) =>
+                      setMultipleTipo(
+                        event.target.value as 'todos' | 'ingreso' | 'egreso'
+                      )
+                    }
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-900"
+                  >
+                    <option value="todos">Todos</option>
+                    <option value="ingreso">Ingresos</option>
+                    <option value="egreso">Egresos</option>
+                  </select>
+                </div>
+
+                <div className="flex items-end">
+                  <button
+                    type="button"
+                    onClick={() => cargarMovimientosMultiple()}
+                    disabled={multipleLoading || multipleSaving}
+                    className="w-full rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60"
+                  >
+                    {multipleLoading ? 'Buscando...' : 'Buscar'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-3">
+                <div className="rounded-2xl border bg-slate-50 p-4">
+                  <p className="text-sm text-slate-500">Monto cartola</p>
+                  <p className="mt-1 text-lg font-semibold text-slate-900">
+                    {formatCLP(getMontoFila(multipleFila))}
+                  </p>
+                </div>
+
+                <div className="rounded-2xl border bg-slate-50 p-4">
+                  <p className="text-sm text-slate-500">Seleccionado</p>
+                  <p className="mt-1 text-lg font-semibold text-slate-900">
+                    {formatCLP(getTotalMultipleSeleccionado())}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {multipleMovimientoIds.length} movimientos
+                  </p>
+                </div>
+
+                <div
+                  className={
+                    Math.abs(
+                      getTotalMultipleSeleccionado() - getMontoFila(multipleFila)
+                    ) <= 0.49
+                      ? 'rounded-2xl border border-emerald-200 bg-emerald-50 p-4'
+                      : 'rounded-2xl border border-red-200 bg-red-50 p-4'
+                  }
+                >
+                  <p className="text-sm text-slate-500">Diferencia</p>
+                  <p className="mt-1 text-lg font-semibold text-slate-900">
+                    {formatCLP(
+                      getTotalMultipleSeleccionado() - getMontoFila(multipleFila)
+                    )}
+                  </p>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border bg-amber-50 p-4 text-sm text-amber-800">
+                Usa esta opción cuando una sola línea bancaria paga varias
+                facturas o movimientos ya creados. La suma seleccionada debe
+                coincidir exactamente con el monto de la cartola.
+              </div>
+
+              <div className="overflow-hidden rounded-xl border text-sm">
+                <div className="grid grid-cols-7 bg-slate-50 text-xs uppercase text-slate-500">
+                  <div className="px-4 py-3 font-semibold">Sel.</div>
+                  <div className="px-4 py-3 font-semibold">Fecha</div>
+                  <div className="px-4 py-3 font-semibold">Tipo</div>
+                  <div className="px-4 py-3 font-semibold">Documento</div>
+                  <div className="px-4 py-3 font-semibold">Tercero</div>
+                  <div className="px-4 py-3 font-semibold">Descripción</div>
+                  <div className="px-4 py-3 font-semibold">Total</div>
+                </div>
+
+                {multipleResultados.length > 0 ? (
+                  <div className="divide-y">
+                    {multipleResultados.map((movimiento) => {
+                      const tercero =
+                        getRelacionNombre(movimiento.clientes) ||
+                        getRelacionNombre(movimiento.proveedores) ||
+                        '-'
+                      const categoria = getRelacionNombre(movimiento.categorias)
+                      const seleccionado = multipleMovimientoIds.includes(
+                        movimiento.id
+                      )
+
+                      return (
+                        <label
+                          key={movimiento.id}
+                          className={
+                            seleccionado
+                              ? 'grid cursor-pointer grid-cols-7 items-center bg-purple-50'
+                              : 'grid cursor-pointer grid-cols-7 items-center hover:bg-slate-50'
+                          }
+                        >
+                          <div className="px-4 py-3">
+                            <input
+                              type="checkbox"
+                              checked={seleccionado}
+                              onChange={() =>
+                                toggleMovimientoMultiple(movimiento.id)
+                              }
+                            />
+                          </div>
+
+                          <div className="px-4 py-3">
+                            {formatDate(movimiento.fecha)}
+                          </div>
+
+                          <div className="px-4 py-3 capitalize">
+                            {movimiento.tipo_movimiento}
+                            <p className="text-xs text-slate-500">
+                              {movimiento.estado}
+                            </p>
+                          </div>
+
+                          <div className="px-4 py-3">
+                            <p className="font-medium text-slate-900">
+                              {movimiento.tipo_documento || '-'}
+                            </p>
+                            <p className="text-xs text-slate-500">
+                              {movimiento.numero_documento || 'Sin número'}
+                            </p>
+                          </div>
+
+                          <div className="px-4 py-3">
+                            <p className="font-medium text-slate-900">
+                              {tercero}
+                            </p>
+                            {categoria ? (
+                              <p className="text-xs text-slate-500">
+                                {categoria}
+                              </p>
+                            ) : null}
+                          </div>
+
+                          <div className="px-4 py-3 text-slate-700">
+                            {movimiento.descripcion || '-'}
+                          </div>
+
+                          <div className="px-4 py-3 font-semibold text-slate-900">
+                            {formatCLP(movimiento.monto_total)}
+                          </div>
+                        </label>
+                      )
+                    })}
+                  </div>
+                ) : (
+                  <div className="px-4 py-5 text-center text-slate-500">
+                    No hay movimientos para la búsqueda actual. Prueba con
+                    proveedor, descripción, número de factura o monto individual.
+                  </div>
+                )}
+              </div>
+
+              <div className="flex flex-col-reverse gap-3 border-t pt-4 sm:flex-row sm:justify-end">
+                <button
+                  type="button"
+                  onClick={cerrarConciliacionMultiple}
+                  disabled={multipleSaving}
+                  className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                >
+                  Cancelar
+                </button>
+
+                <button
+                  type="button"
+                  onClick={conciliarMultiple}
+                  disabled={
+                    multipleSaving ||
+                    multipleMovimientoIds.length < 2 ||
+                    Math.abs(
+                      getTotalMultipleSeleccionado() - getMontoFila(multipleFila)
+                    ) > 0.49
+                  }
+                  className="rounded-xl bg-purple-700 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-purple-800 disabled:opacity-60"
+                >
+                  {multipleSaving
+                    ? 'Conciliando...'
+                    : 'Conciliar seleccionados'}
                 </button>
               </div>
             </div>
