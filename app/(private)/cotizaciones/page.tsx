@@ -1,109 +1,187 @@
-'use client'
+"use client";
 
-import Link from 'next/link'
-import { useEffect, useMemo, useState } from 'react'
-import { supabase } from '@/lib/supabase/client'
-import ProtectedCotizacionesRoute from '@/components/ProtectedCotizacionesRoute'
+import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
+import { supabase } from "@/lib/supabase/client";
+import ProtectedCotizacionesRoute from "@/components/ProtectedCotizacionesRoute";
 
-const STORAGE_ID_KEY = 'empresa_activa_id'
-const STORAGE_NAME_KEY = 'empresa_activa_nombre'
+const STORAGE_ID_KEY = "empresa_activa_id";
+const STORAGE_NAME_KEY = "empresa_activa_nombre";
 
 type EstadoCotizacion =
-  | 'borrador'
-  | 'enviada'
-  | 'aprobada'
-  | 'rechazada'
-  | 'vencida'
+  | "borrador"
+  | "enviada"
+  | "aprobada"
+  | "rechazada"
+  | "vencida";
 
 type CotizacionRow = {
-  id: string
-  empresa_id: string
-  cliente_id: string | null
-  folio: number | null
-  codigo: string | null
-  estado: EstadoCotizacion
-  titulo: string
-  fecha_emision: string | null
-  fecha_vencimiento: string | null
-  moneda: string | null
-  subtotal_neto: number | null
-  subtotal_exento: number | null
-  monto_iva: number | null
-  total: number | null
-  created_at?: string | null
-}
+  id: string;
+  empresa_id: string;
+  cliente_id: string | null;
+  folio: number | null;
+  codigo: string | null;
+  estado: EstadoCotizacion;
+  titulo: string;
+  fecha_emision: string | null;
+  fecha_vencimiento: string | null;
+  moneda: string | null;
+  porcentaje_iva: number | null;
+  descuento_global_tipo: "porcentaje" | "monto" | null;
+  descuento_global_valor: number | null;
+  subtotal_neto: number | null;
+  subtotal_exento: number | null;
+  monto_iva: number | null;
+  total: number | null;
+  created_at?: string | null;
+};
 
 type ClienteRow = {
-  id: string
-  nombre?: string | null
-  razon_social?: string | null
-  nombre_fantasia?: string | null
-  empresa?: string | null
-  cliente?: string | null
-  rut?: string | null
-}
+  id: string;
+  nombre?: string | null;
+  razon_social?: string | null;
+  nombre_fantasia?: string | null;
+  empresa?: string | null;
+  cliente?: string | null;
+  rut?: string | null;
+};
+
+type CotizacionItemRow = {
+  cotizacion_id: string;
+  cantidad: number | string | null;
+  precio_unitario: number | string | null;
+  subtotal: number | string | null;
+  afecto_iva: boolean | null;
+};
 
 function toNumber(value: number | string | null | undefined) {
-  if (typeof value === 'number') return value
-  if (typeof value === 'string') {
-    const parsed = Number(value)
-    return Number.isFinite(parsed) ? parsed : 0
+  if (typeof value === "number") return value;
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
   }
-  return 0
+  return 0;
+}
+
+function roundCurrencyValue(value: number) {
+  return Math.round(Number.isFinite(value) ? value : 0);
+}
+
+function calcularTotalesCotizacion(
+  cotizacion: CotizacionRow,
+  items: CotizacionItemRow[],
+) {
+  if (items.length === 0) {
+    return {
+      subtotalNeto: toNumber(cotizacion.subtotal_neto),
+      subtotalExento: toNumber(cotizacion.subtotal_exento),
+      montoIva: toNumber(cotizacion.monto_iva),
+      total: toNumber(cotizacion.total),
+    };
+  }
+
+  const subtotalItemsNeto = items.reduce((acc, item) => {
+    if (item.afecto_iva !== true) return acc;
+    const subtotal = toNumber(item.subtotal);
+    const calculado = toNumber(item.cantidad) * toNumber(item.precio_unitario);
+    return acc + (subtotal > 0 ? subtotal : calculado);
+  }, 0);
+
+  const subtotalItemsExento = items.reduce((acc, item) => {
+    if (item.afecto_iva === true) return acc;
+    const subtotal = toNumber(item.subtotal);
+    const calculado = toNumber(item.cantidad) * toNumber(item.precio_unitario);
+    return acc + (subtotal > 0 ? subtotal : calculado);
+  }, 0);
+
+  const descuentoTipo = cotizacion.descuento_global_tipo;
+  const descuentoValor = toNumber(cotizacion.descuento_global_valor);
+  const baseTotal = subtotalItemsNeto + subtotalItemsExento;
+
+  let descuentoNeto = 0;
+  let descuentoExento = 0;
+
+  if (descuentoTipo === "porcentaje") {
+    descuentoNeto = roundCurrencyValue(
+      (subtotalItemsNeto * descuentoValor) / 100,
+    );
+    descuentoExento = roundCurrencyValue(
+      (subtotalItemsExento * descuentoValor) / 100,
+    );
+  } else if (descuentoTipo === "monto" && baseTotal > 0) {
+    descuentoNeto = roundCurrencyValue(
+      (descuentoValor * subtotalItemsNeto) / baseTotal,
+    );
+    descuentoExento = roundCurrencyValue(
+      (descuentoValor * subtotalItemsExento) / baseTotal,
+    );
+  }
+
+  const subtotalNeto = Math.max(subtotalItemsNeto - descuentoNeto, 0);
+  const subtotalExento = Math.max(subtotalItemsExento - descuentoExento, 0);
+  const porcentajeIva = toNumber(cotizacion.porcentaje_iva) || 19;
+  const montoIva = roundCurrencyValue((subtotalNeto * porcentajeIva) / 100);
+
+  return {
+    subtotalNeto,
+    subtotalExento,
+    montoIva,
+    total: subtotalNeto + subtotalExento + montoIva,
+  };
 }
 
 function formatCurrency(
   value: number | string | null | undefined,
-  currency = 'CLP'
+  currency = "CLP",
 ) {
-  return new Intl.NumberFormat('es-CL', {
-    style: 'currency',
-    currency: currency || 'CLP',
+  return new Intl.NumberFormat("es-CL", {
+    style: "currency",
+    currency: currency || "CLP",
     maximumFractionDigits: 0,
-  }).format(toNumber(value))
+  }).format(toNumber(value));
 }
 
 function formatDate(value: string | null | undefined) {
-  if (!value) return '—'
+  if (!value) return "—";
 
-  const date = new Date(`${value}T00:00:00`)
-  if (Number.isNaN(date.getTime())) return '—'
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return "—";
 
-  return new Intl.DateTimeFormat('es-CL', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  }).format(date)
+  return new Intl.DateTimeFormat("es-CL", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(date);
 }
 
 function getEstadoStyles(estado: EstadoCotizacion) {
   switch (estado) {
-    case 'borrador':
-      return 'bg-slate-100 text-slate-700 border-slate-200'
-    case 'enviada':
-      return 'bg-blue-100 text-blue-700 border-blue-200'
-    case 'aprobada':
-      return 'bg-emerald-100 text-emerald-700 border-emerald-200'
-    case 'rechazada':
-      return 'bg-rose-100 text-rose-700 border-rose-200'
-    case 'vencida':
-      return 'bg-amber-100 text-amber-800 border-amber-200'
+    case "borrador":
+      return "bg-slate-100 text-slate-700 border-slate-200";
+    case "enviada":
+      return "bg-blue-100 text-blue-700 border-blue-200";
+    case "aprobada":
+      return "bg-emerald-100 text-emerald-700 border-emerald-200";
+    case "rechazada":
+      return "bg-rose-100 text-rose-700 border-rose-200";
+    case "vencida":
+      return "bg-amber-100 text-amber-800 border-amber-200";
     default:
-      return 'bg-slate-100 text-slate-700 border-slate-200'
+      return "bg-slate-100 text-slate-700 border-slate-200";
   }
 }
 
 function isExpired(fechaVencimiento: string | null | undefined) {
-  if (!fechaVencimiento) return false
+  if (!fechaVencimiento) return false;
 
-  const today = new Date()
-  const limit = new Date(`${fechaVencimiento}T23:59:59`)
+  const today = new Date();
+  const limit = new Date(`${fechaVencimiento}T23:59:59`);
 
-  return limit.getTime() < today.getTime()
+  return limit.getTime() < today.getTime();
 }
 
 function getClienteDisplayName(cliente: ClienteRow | undefined) {
-  if (!cliente) return 'Sin cliente'
+  if (!cliente) return "Sin cliente";
 
   return (
     cliente.razon_social ||
@@ -112,82 +190,84 @@ function getClienteDisplayName(cliente: ClienteRow | undefined) {
     cliente.empresa ||
     cliente.cliente ||
     cliente.rut ||
-    'Sin cliente'
-  )
+    "Sin cliente"
+  );
 }
 
 export default function CotizacionesPage() {
-  const [empresaActivaId, setEmpresaActivaId] = useState('')
-  const [empresaActivaNombre, setEmpresaActivaNombre] = useState('')
-  const [cotizaciones, setCotizaciones] = useState<CotizacionRow[]>([])
-  const [clientesMap, setClientesMap] = useState<Record<string, ClienteRow>>({})
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
+  const [empresaActivaId, setEmpresaActivaId] = useState("");
+  const [empresaActivaNombre, setEmpresaActivaNombre] = useState("");
+  const [cotizaciones, setCotizaciones] = useState<CotizacionRow[]>([]);
+  const [clientesMap, setClientesMap] = useState<Record<string, ClienteRow>>(
+    {},
+  );
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
-  const [q, setQ] = useState('')
-  const [estado, setEstado] = useState('comerciales')
-  const [usuarioRol, setUsuarioRol] = useState('')
-  const [isAdmin, setIsAdmin] = useState(false)
+  const [q, setQ] = useState("");
+  const [estado, setEstado] = useState("comerciales");
+  const [usuarioRol, setUsuarioRol] = useState("");
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     const syncEmpresaActiva = () => {
-      const empresaId = window.localStorage.getItem(STORAGE_ID_KEY) || ''
-      const empresaNombre = window.localStorage.getItem(STORAGE_NAME_KEY) || ''
+      const empresaId = window.localStorage.getItem(STORAGE_ID_KEY) || "";
+      const empresaNombre = window.localStorage.getItem(STORAGE_NAME_KEY) || "";
 
-      setEmpresaActivaId(empresaId)
-      setEmpresaActivaNombre(empresaNombre)
-    }
+      setEmpresaActivaId(empresaId);
+      setEmpresaActivaNombre(empresaNombre);
+    };
 
-    syncEmpresaActiva()
-    window.addEventListener('empresa-activa-cambiada', syncEmpresaActiva)
+    syncEmpresaActiva();
+    window.addEventListener("empresa-activa-cambiada", syncEmpresaActiva);
 
     return () => {
-      window.removeEventListener('empresa-activa-cambiada', syncEmpresaActiva)
-    }
-  }, [])
+      window.removeEventListener("empresa-activa-cambiada", syncEmpresaActiva);
+    };
+  }, []);
 
   useEffect(() => {
     const fetchData = async () => {
       if (!empresaActivaId) {
-        setCotizaciones([])
-        setClientesMap({})
-        setLoading(false)
-        return
+        setCotizaciones([]);
+        setClientesMap({});
+        setLoading(false);
+        return;
       }
 
-      setLoading(true)
-      setError('')
+      setLoading(true);
+      setError("");
 
       try {
-        const { data, error: sessionError } = await supabase.auth.getSession()
-        const session = data.session
+        const { data, error: sessionError } = await supabase.auth.getSession();
+        const session = data.session;
 
         if (sessionError || !session) {
-          setError('No se pudo recuperar la sesión activa del navegador.')
-          setLoading(false)
-          return
+          setError("No se pudo recuperar la sesión activa del navegador.");
+          setLoading(false);
+          return;
         }
 
-        const accessToken = session.access_token
-        const userId = session.user.id
-        const apiKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-        const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+        const accessToken = session.access_token;
+        const userId = session.user.id;
+        const apiKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
+        const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
 
         if (!apiKey || !baseUrl) {
-          setError('Faltan variables públicas de Supabase.')
-          setLoading(false)
-          return
+          setError("Faltan variables públicas de Supabase.");
+          setLoading(false);
+          return;
         }
 
         const [cotizacionesResp, clientesResp, rolResp] = await Promise.all([
           fetch(
-            `${baseUrl}/rest/v1/cotizaciones?empresa_id=eq.${empresaActivaId}&select=id,empresa_id,cliente_id,folio,codigo,estado,titulo,fecha_emision,fecha_vencimiento,moneda,subtotal_neto,subtotal_exento,monto_iva,total,created_at&order=created_at.desc`,
+            `${baseUrl}/rest/v1/cotizaciones?empresa_id=eq.${empresaActivaId}&select=id,empresa_id,cliente_id,folio,codigo,estado,titulo,fecha_emision,fecha_vencimiento,moneda,porcentaje_iva,descuento_global_tipo,descuento_global_valor,subtotal_neto,subtotal_exento,monto_iva,total,created_at&order=created_at.desc`,
             {
               headers: {
                 apikey: apiKey,
                 Authorization: `Bearer ${accessToken}`,
               },
-            }
+            },
           ),
           fetch(
             `${baseUrl}/rest/v1/clientes?empresa_id=eq.${empresaActivaId}&select=*&order=nombre.asc`,
@@ -196,7 +276,7 @@ export default function CotizacionesPage() {
                 apikey: apiKey,
                 Authorization: `Bearer ${accessToken}`,
               },
-            }
+            },
           ),
           fetch(
             `${baseUrl}/rest/v1/usuario_empresas?select=rol&usuario_id=eq.${userId}&empresa_id=eq.${empresaActivaId}&activo=eq.true`,
@@ -205,23 +285,23 @@ export default function CotizacionesPage() {
                 apikey: apiKey,
                 Authorization: `Bearer ${accessToken}`,
               },
-            }
+            },
           ),
-        ])
+        ]);
 
-        const cotizacionesJson = await cotizacionesResp.json()
-        const clientesJson = await clientesResp.json()
-        const rolJson = await rolResp.json()
+        const cotizacionesJson = await cotizacionesResp.json();
+        const clientesJson = await clientesResp.json();
+        const rolJson = await rolResp.json();
 
         if (!cotizacionesResp.ok) {
           setError(
             cotizacionesJson?.message ||
               cotizacionesJson?.error_description ||
               cotizacionesJson?.error ||
-              'No se pudieron cargar las cotizaciones.'
-          )
-          setLoading(false)
-          return
+              "No se pudieron cargar las cotizaciones.",
+          );
+          setLoading(false);
+          return;
         }
 
         if (!clientesResp.ok) {
@@ -229,10 +309,10 @@ export default function CotizacionesPage() {
             clientesJson?.message ||
               clientesJson?.error_description ||
               clientesJson?.error ||
-              'No se pudieron cargar los clientes.'
-          )
-          setLoading(false)
-          return
+              "No se pudieron cargar los clientes.",
+          );
+          setLoading(false);
+          return;
         }
 
         if (!rolResp.ok) {
@@ -240,81 +320,136 @@ export default function CotizacionesPage() {
             rolJson?.message ||
               rolJson?.error_description ||
               rolJson?.error ||
-              'No se pudo cargar el rol del usuario.'
-          )
-          setLoading(false)
-          return
+              "No se pudo cargar el rol del usuario.",
+          );
+          setLoading(false);
+          return;
         }
 
         const rol =
-          Array.isArray(rolJson) && rolJson.length > 0 ? rolJson[0].rol || '' : ''
+          Array.isArray(rolJson) && rolJson.length > 0
+            ? rolJson[0].rol || ""
+            : "";
 
-        setUsuarioRol(rol)
-        setIsAdmin(rol === 'admin')
+        setUsuarioRol(rol);
+        setIsAdmin(rol === "admin");
 
-        const clientesIndex: Record<string, ClienteRow> = {}
+        const clientesIndex: Record<string, ClienteRow> = {};
         for (const cliente of (clientesJson ?? []) as ClienteRow[]) {
-          clientesIndex[cliente.id] = cliente
+          clientesIndex[cliente.id] = cliente;
         }
 
-        setClientesMap(clientesIndex)
-        setCotizaciones((cotizacionesJson ?? []) as CotizacionRow[])
+        const cotizacionesBase = (cotizacionesJson ?? []) as CotizacionRow[];
+        const cotizacionIds = cotizacionesBase
+          .map((row) => row.id)
+          .filter(Boolean);
+        const itemsPorCotizacion: Record<string, CotizacionItemRow[]> = {};
+
+        if (cotizacionIds.length > 0) {
+          const idsParam = cotizacionIds.join(",");
+          const itemsResp = await fetch(
+            `${baseUrl}/rest/v1/cotizacion_items?cotizacion_id=in.(${idsParam})&activo=eq.true&deleted_at=is.null&select=cotizacion_id,cantidad,precio_unitario,subtotal,afecto_iva`,
+            {
+              headers: {
+                apikey: apiKey,
+                Authorization: `Bearer ${accessToken}`,
+              },
+            },
+          );
+          const itemsJson = await itemsResp.json();
+
+          if (!itemsResp.ok) {
+            setError(
+              itemsJson?.message ||
+                itemsJson?.error_description ||
+                itemsJson?.error ||
+                "No se pudieron cargar los ítems activos de las cotizaciones.",
+            );
+            setLoading(false);
+            return;
+          }
+
+          for (const item of (itemsJson ?? []) as CotizacionItemRow[]) {
+            if (!itemsPorCotizacion[item.cotizacion_id]) {
+              itemsPorCotizacion[item.cotizacion_id] = [];
+            }
+            itemsPorCotizacion[item.cotizacion_id].push(item);
+          }
+        }
+
+        const cotizacionesCalculadas = cotizacionesBase.map((row) => {
+          const totales = calcularTotalesCotizacion(
+            row,
+            itemsPorCotizacion[row.id] ?? [],
+          );
+
+          return {
+            ...row,
+            subtotal_neto: totales.subtotalNeto,
+            subtotal_exento: totales.subtotalExento,
+            monto_iva: totales.montoIva,
+            total: totales.total,
+          };
+        });
+
+        setClientesMap(clientesIndex);
+        setCotizaciones(cotizacionesCalculadas);
       } catch (err) {
         setError(
           err instanceof Error
             ? err.message
-            : 'Ocurrió un error cargando las cotizaciones.'
-        )
+            : "Ocurrió un error cargando las cotizaciones.",
+        );
       } finally {
-        setLoading(false)
+        setLoading(false);
       }
-    }
+    };
 
-    fetchData()
-  }, [empresaActivaId])
+    fetchData();
+  }, [empresaActivaId]);
 
   const filteredCotizaciones = useMemo(() => {
-    const term = q.trim().toLowerCase()
+    const term = q.trim().toLowerCase();
 
     return cotizaciones.filter((row) => {
-      const cliente = row.cliente_id ? clientesMap[row.cliente_id] : undefined
-      const clienteNombre = getClienteDisplayName(cliente).toLowerCase()
+      const cliente = row.cliente_id ? clientesMap[row.cliente_id] : undefined;
+      const clienteNombre = getClienteDisplayName(cliente).toLowerCase();
 
       const matchesEstado =
-        estado === 'comerciales'
-          ? row.estado !== 'borrador'
+        estado === "comerciales"
+          ? row.estado !== "borrador"
           : estado
             ? row.estado === estado
-            : true
+            : true;
       const matchesQ = term
         ? [
-            row.codigo || '',
-            row.titulo || '',
-            String(row.folio ?? ''),
+            row.codigo || "",
+            row.titulo || "",
+            String(row.folio ?? ""),
             clienteNombre,
           ]
-            .join(' ')
+            .join(" ")
             .toLowerCase()
             .includes(term)
-        : true
+        : true;
 
-      return matchesEstado && matchesQ
-    })
-  }, [cotizaciones, clientesMap, q, estado])
+      return matchesEstado && matchesQ;
+    });
+  }, [cotizaciones, clientesMap, q, estado]);
 
   const resumen = useMemo(() => {
     return filteredCotizaciones.reduce(
       (acc, row) => {
-        acc.total += 1
-        acc.montoTotal += toNumber(row.total)
+        acc.total += 1;
+        acc.montoTotal += toNumber(row.total);
 
-        if (row.estado === 'borrador') acc.borrador += 1
-        if (row.estado === 'enviada') acc.enviada += 1
-        if (row.estado === 'aprobada') acc.aprobada += 1
-        if (row.estado === 'rechazada') acc.rechazada += 1
-        if (row.estado === 'vencida') acc.vencida += 1
+        if (row.estado === "borrador") acc.borrador += 1;
+        if (row.estado === "enviada") acc.enviada += 1;
+        if (row.estado === "aprobada") acc.aprobada += 1;
+        if (row.estado === "rechazada") acc.rechazada += 1;
+        if (row.estado === "vencida") acc.vencida += 1;
 
-        return acc
+        return acc;
       },
       {
         total: 0,
@@ -324,9 +459,9 @@ export default function CotizacionesPage() {
         rechazada: 0,
         vencida: 0,
         montoTotal: 0,
-      }
-    )
-  }, [filteredCotizaciones])
+      },
+    );
+  }, [filteredCotizaciones]);
 
   if (!empresaActivaId && !loading) {
     return (
@@ -346,7 +481,7 @@ export default function CotizacionesPage() {
           </div>
         </div>
       </ProtectedCotizacionesRoute>
-    )
+    );
   }
 
   return (
@@ -359,7 +494,7 @@ export default function CotizacionesPage() {
               Cotizaciones
             </h1>
             <p className="mt-1 text-sm text-slate-600">
-              Empresa activa:{' '}
+              Empresa activa:{" "}
               <span className="font-medium text-slate-900">
                 {empresaActivaNombre || empresaActivaId}
               </span>
@@ -380,11 +515,12 @@ export default function CotizacionesPage() {
 
         {!isAdmin && !loading ? (
           <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-            El usuario actual tiene rol{' '}
+            El usuario actual tiene rol{" "}
             <span className="font-semibold">
-              {usuarioRol || 'sin rol asignado'}
+              {usuarioRol || "sin rol asignado"}
             </span>
-            . Puede visualizar cotizaciones, pero solo el administrador puede crear o editar.
+            . Puede visualizar cotizaciones, pero solo el administrador puede
+            crear o editar.
           </div>
         ) : null}
 
@@ -471,8 +607,8 @@ export default function CotizacionesPage() {
               <button
                 type="button"
                 onClick={() => {
-                  setQ('')
-                  setEstado('comerciales')
+                  setQ("");
+                  setEstado("comerciales");
                 }}
                 className="w-full rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
               >
@@ -487,7 +623,7 @@ export default function CotizacionesPage() {
             <h2 className="text-base font-semibold text-slate-900">Listado</h2>
             <p className="mt-1 text-sm text-slate-500">
               {filteredCotizaciones.length} resultado
-              {filteredCotizaciones.length === 1 ? '' : 's'}
+              {filteredCotizaciones.length === 1 ? "" : "s"}
             </p>
           </div>
 
@@ -532,23 +668,25 @@ export default function CotizacionesPage() {
                     <th className="px-5 py-3 font-medium text-right">Neto</th>
                     <th className="px-5 py-3 font-medium text-right">IVA</th>
                     <th className="px-5 py-3 font-medium text-right">Total</th>
-                    <th className="px-5 py-3 font-medium text-right">Acciones</th>
+                    <th className="px-5 py-3 font-medium text-right">
+                      Acciones
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
                   {filteredCotizaciones.map((row) => {
                     const cliente = row.cliente_id
                       ? clientesMap[row.cliente_id]
-                      : undefined
-                    const expired = isExpired(row.fecha_vencimiento)
+                      : undefined;
+                    const expired = isExpired(row.fecha_vencimiento);
 
                     return (
                       <tr key={row.id} className="hover:bg-slate-50/70">
                         <td className="px-5 py-4 font-medium text-slate-900">
-                          {row.folio ?? '—'}
+                          {row.folio ?? "—"}
                         </td>
                         <td className="px-5 py-4 font-medium text-slate-900">
-                          {row.codigo || '—'}
+                          {row.codigo || "—"}
                         </td>
                         <td className="px-5 py-4">
                           <div className="font-medium text-slate-900">
@@ -566,7 +704,7 @@ export default function CotizacionesPage() {
                           <div className="text-slate-700">
                             {formatDate(row.fecha_vencimiento)}
                           </div>
-                          {expired && row.estado !== 'vencida' ? (
+                          {expired && row.estado !== "vencida" ? (
                             <div className="text-xs font-medium text-amber-700">
                               Fecha vencida
                             </div>
@@ -575,20 +713,23 @@ export default function CotizacionesPage() {
                         <td className="px-5 py-4">
                           <span
                             className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium capitalize ${getEstadoStyles(
-                              row.estado
+                              row.estado,
                             )}`}
                           >
                             {row.estado}
                           </span>
                         </td>
                         <td className="px-5 py-4 text-right text-slate-700">
-                          {formatCurrency(row.subtotal_neto, row.moneda ?? 'CLP')}
+                          {formatCurrency(
+                            row.subtotal_neto,
+                            row.moneda ?? "CLP",
+                          )}
                         </td>
                         <td className="px-5 py-4 text-right text-slate-700">
-                          {formatCurrency(row.monto_iva, row.moneda ?? 'CLP')}
+                          {formatCurrency(row.monto_iva, row.moneda ?? "CLP")}
                         </td>
                         <td className="px-5 py-4 text-right font-medium text-slate-900">
-                          {formatCurrency(row.total, row.moneda ?? 'CLP')}
+                          {formatCurrency(row.total, row.moneda ?? "CLP")}
                         </td>
                         <td className="px-5 py-4">
                           <div className="flex justify-end gap-2">
@@ -610,7 +751,7 @@ export default function CotizacionesPage() {
                           </div>
                         </td>
                       </tr>
-                    )
+                    );
                   })}
                 </tbody>
               </table>
@@ -619,5 +760,5 @@ export default function CotizacionesPage() {
         </section>
       </div>
     </ProtectedCotizacionesRoute>
-  )
+  );
 }

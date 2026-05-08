@@ -157,6 +157,97 @@ function getClienteDisplayName(cliente: Cliente | null) {
   )
 }
 
+
+type ResumenEconomico = {
+  subtotalItemsNeto: number
+  subtotalItemsExento: number
+  descuentoGlobalNeto: number
+  descuentoGlobalExento: number
+  descuentoGlobalTotal: number
+  subtotalNeto: number
+  subtotalExento: number
+  montoIva: number
+  total: number
+}
+
+function calcularItemSubtotal(item: CotizacionItem) {
+  const cantidad = toNumber(item.cantidad)
+  const precioUnitario = toNumber(item.precio_unitario)
+  const bruto = item.bruto != null ? toNumber(item.bruto) : cantidad * precioUnitario
+
+  if (item.subtotal != null) {
+    return toNumber(item.subtotal)
+  }
+
+  const descuentoValor = toNumber(item.descuento_valor)
+
+  if (!item.descuento_tipo || descuentoValor <= 0) {
+    return bruto
+  }
+
+  const descuento =
+    item.descuento_tipo === 'porcentaje'
+      ? bruto * (descuentoValor / 100)
+      : descuentoValor
+
+  return Math.max(bruto - descuento, 0)
+}
+
+function calcularResumenEconomico(
+  cotizacion: Cotizacion,
+  items: CotizacionItem[]
+): ResumenEconomico {
+  const subtotalItemsNeto = items.reduce((total, item) => {
+    return item.afecto_iva ? total + calcularItemSubtotal(item) : total
+  }, 0)
+
+  const subtotalItemsExento = items.reduce((total, item) => {
+    return item.afecto_iva ? total : total + calcularItemSubtotal(item)
+  }, 0)
+
+  const baseDescuento = subtotalItemsNeto + subtotalItemsExento
+  const descuentoGlobalValor = toNumber(cotizacion.descuento_global_valor)
+
+  let descuentoGlobalNeto = 0
+  let descuentoGlobalExento = 0
+
+  if (cotizacion.descuento_global_tipo && descuentoGlobalValor > 0) {
+    if (cotizacion.descuento_global_tipo === 'porcentaje') {
+      descuentoGlobalNeto = subtotalItemsNeto * (descuentoGlobalValor / 100)
+      descuentoGlobalExento = subtotalItemsExento * (descuentoGlobalValor / 100)
+    } else if (baseDescuento > 0) {
+      descuentoGlobalNeto =
+        descuentoGlobalValor * (subtotalItemsNeto / baseDescuento)
+      descuentoGlobalExento =
+        descuentoGlobalValor * (subtotalItemsExento / baseDescuento)
+    }
+  }
+
+  descuentoGlobalNeto = Math.min(descuentoGlobalNeto, subtotalItemsNeto)
+  descuentoGlobalExento = Math.min(descuentoGlobalExento, subtotalItemsExento)
+
+  const subtotalNeto = Math.max(subtotalItemsNeto - descuentoGlobalNeto, 0)
+  const subtotalExento = Math.max(
+    subtotalItemsExento - descuentoGlobalExento,
+    0
+  )
+  const porcentajeIva = toNumber(cotizacion.porcentaje_iva || 19)
+  const montoIva = subtotalNeto * (porcentajeIva / 100)
+  const total = subtotalNeto + subtotalExento + montoIva
+
+  return {
+    subtotalItemsNeto: Math.round(subtotalItemsNeto),
+    subtotalItemsExento: Math.round(subtotalItemsExento),
+    descuentoGlobalNeto: Math.round(descuentoGlobalNeto),
+    descuentoGlobalExento: Math.round(descuentoGlobalExento),
+    descuentoGlobalTotal: Math.round(descuentoGlobalNeto + descuentoGlobalExento),
+    subtotalNeto: Math.round(subtotalNeto),
+    subtotalExento: Math.round(subtotalExento),
+    montoIva: Math.round(montoIva),
+    total: Math.round(total),
+  }
+}
+
 export default function CotizacionDetallePage() {
   const params = useParams<{ id: string }>()
   const cotizacionId = String(params?.id || '')
@@ -252,7 +343,7 @@ export default function CotizacionDetallePage() {
         }
 
         const itemsResp = await fetch(
-          `${baseUrl}/rest/v1/cotizacion_items?cotizacion_id=eq.${cotizacionId}&select=*&order=orden.asc`,
+          `${baseUrl}/rest/v1/cotizacion_items?cotizacion_id=eq.${cotizacionId}&activo=eq.true&deleted_at=is.null&select=*&order=orden.asc`,
           {
             headers: {
               apikey: apiKey,
@@ -319,6 +410,12 @@ export default function CotizacionDetallePage() {
       empresaActivaNombre,
     })
   }, [cotizacion, empresaActivaNombre])
+
+  const resumenEconomico = useMemo(() => {
+    if (!cotizacion) return null
+
+    return calcularResumenEconomico(cotizacion, items)
+  }, [cotizacion, items])
 
   if (!empresaActivaId && !loading) {
     return (
@@ -481,7 +578,7 @@ export default function CotizacionDetallePage() {
           <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
             <p className="text-sm text-slate-500">Total</p>
             <p className="mt-2 text-lg font-semibold text-slate-900">
-              {formatCurrency(cotizacion.total, cotizacion.moneda ?? 'CLP')}
+              {formatCurrency(resumenEconomico?.total, cotizacion.moneda ?? 'CLP')}
             </p>
           </div>
         </section>
@@ -763,7 +860,7 @@ export default function CotizacionDetallePage() {
                   <span className="text-slate-600">Subtotal ítems afectos</span>
                   <span className="font-medium text-slate-900">
                     {formatCurrency(
-                      cotizacion.subtotal_items_neto,
+                      resumenEconomico?.subtotalItemsNeto,
                       cotizacion.moneda ?? 'CLP'
                     )}
                   </span>
@@ -773,7 +870,7 @@ export default function CotizacionDetallePage() {
                   <span className="text-slate-600">Subtotal ítems exentos</span>
                   <span className="font-medium text-slate-900">
                     {formatCurrency(
-                      cotizacion.subtotal_items_exento,
+                      resumenEconomico?.subtotalItemsExento,
                       cotizacion.moneda ?? 'CLP'
                     )}
                   </span>
@@ -783,7 +880,7 @@ export default function CotizacionDetallePage() {
                   <span className="text-slate-600">Descuento global neto</span>
                   <span className="font-medium text-slate-900">
                     {formatCurrency(
-                      cotizacion.descuento_global_neto,
+                      resumenEconomico?.descuentoGlobalNeto,
                       cotizacion.moneda ?? 'CLP'
                     )}
                   </span>
@@ -793,7 +890,7 @@ export default function CotizacionDetallePage() {
                   <span className="text-slate-600">Descuento global exento</span>
                   <span className="font-medium text-slate-900">
                     {formatCurrency(
-                      cotizacion.descuento_global_exento,
+                      resumenEconomico?.descuentoGlobalExento,
                       cotizacion.moneda ?? 'CLP'
                     )}
                   </span>
@@ -803,7 +900,7 @@ export default function CotizacionDetallePage() {
                   <span className="text-slate-600">Descuento global total</span>
                   <span className="font-medium text-slate-900">
                     {formatCurrency(
-                      cotizacion.descuento_global_total,
+                      resumenEconomico?.descuentoGlobalTotal,
                       cotizacion.moneda ?? 'CLP'
                     )}
                   </span>
@@ -815,7 +912,7 @@ export default function CotizacionDetallePage() {
                   <span className="text-slate-600">Neto final</span>
                   <span className="font-medium text-slate-900">
                     {formatCurrency(
-                      cotizacion.subtotal_neto,
+                      resumenEconomico?.subtotalNeto,
                       cotizacion.moneda ?? 'CLP'
                     )}
                   </span>
@@ -825,7 +922,7 @@ export default function CotizacionDetallePage() {
                   <span className="text-slate-600">Exento final</span>
                   <span className="font-medium text-slate-900">
                     {formatCurrency(
-                      cotizacion.subtotal_exento,
+                      resumenEconomico?.subtotalExento,
                       cotizacion.moneda ?? 'CLP'
                     )}
                   </span>
@@ -835,7 +932,7 @@ export default function CotizacionDetallePage() {
                   <span className="text-slate-600">IVA</span>
                   <span className="font-medium text-slate-900">
                     {formatCurrency(
-                      cotizacion.monto_iva,
+                      resumenEconomico?.montoIva,
                       cotizacion.moneda ?? 'CLP'
                     )}
                   </span>
@@ -846,7 +943,7 @@ export default function CotizacionDetallePage() {
                     Total
                   </span>
                   <span className="text-lg font-semibold text-slate-900">
-                    {formatCurrency(cotizacion.total, cotizacion.moneda ?? 'CLP')}
+                    {formatCurrency(resumenEconomico?.total, cotizacion.moneda ?? 'CLP')}
                   </span>
                 </div>
               </div>

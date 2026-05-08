@@ -132,14 +132,14 @@ export default function EditarCotizacionPage() {
             }
           ),
           fetch(
-            `${baseUrl}/rest/v1/cotizacion_items?cotizacion_id=eq.${cotizacionId}&select=*&order=orden.asc`,
-            {
-              headers: {
-                apikey: apiKey,
-                Authorization: `Bearer ${accessToken}`,
-              },
-            }
-          ),
+  `${baseUrl}/rest/v1/cotizacion_items?cotizacion_id=eq.${cotizacionId}&activo=eq.true&deleted_at=is.null&select=*&order=orden.asc`,
+  {
+    headers: {
+      apikey: apiKey,
+      Authorization: `Bearer ${accessToken}`,
+    },
+  }
+),
           fetch(
             `${baseUrl}/rest/v1/clientes?empresa_id=eq.${empresaActivaId}&select=*&order=nombre.asc`,
             {

@@ -203,6 +203,49 @@ function normalizeDiscountType(
   return null;
 }
 
+function itemSignature(item: {
+  descripcion: string;
+  detalle?: string | null;
+  unidad?: string | null;
+  cantidad: number | string;
+  precio_unitario: number | string;
+  descuento_tipo?: string | null;
+  descuento_valor: number | string;
+  afecto_iva: boolean;
+}) {
+  return [
+    item.descripcion.trim().toLowerCase(),
+    (item.detalle ?? "").trim().toLowerCase(),
+    (item.unidad ?? "").trim().toLowerCase(),
+    round2(typeof item.cantidad === "number" ? item.cantidad : toNumber(item.cantidad)),
+    round2(
+      typeof item.precio_unitario === "number"
+        ? item.precio_unitario
+        : toNumber(item.precio_unitario)
+    ),
+    item.descuento_tipo || "",
+    round2(
+      typeof item.descuento_valor === "number"
+        ? item.descuento_valor
+        : toNumber(item.descuento_valor)
+    ),
+    item.afecto_iva ? "iva" : "no-iva",
+  ].join("|");
+}
+
+function deduplicateFormItems(items: CotizacionFormItem[]) {
+  const seen = new Set<string>();
+
+  return items.filter((item) => {
+    const signature = itemSignature(item);
+
+    if (seen.has(signature)) return false;
+
+    seen.add(signature);
+    return true;
+  });
+}
+
 export default function CotizacionForm({
   empresaId,
   clientes,
@@ -214,9 +257,13 @@ export default function CotizacionForm({
 }: Props) {
   const router = useRouter();
   const [form, setForm] = useState<CotizacionFormValues>(initialValues);
-  const [items, setItems] = useState<CotizacionFormItem[]>(
-    initialItems && initialItems.length > 0 ? initialItems : [createEmptyItem()]
-  );
+  const [items, setItems] = useState<CotizacionFormItem[]>(() => {
+    const initial = initialItems && initialItems.length > 0
+      ? deduplicateFormItems(initialItems)
+      : [];
+
+    return initial.length > 0 ? initial : [createEmptyItem()];
+  });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -294,7 +341,7 @@ export default function CotizacionForm({
         return;
       }
 
-      const validItems = items
+      const sanitizedItems = items
         .map((item, index) => ({
           orden: index + 1,
           descripcion: item.descripcion.trim(),
@@ -307,6 +354,21 @@ export default function CotizacionForm({
           afecto_iva: item.afecto_iva,
         }))
         .filter((item) => item.descripcion.length > 0);
+
+      const itemMap = new Map<string, (typeof sanitizedItems)[number]>();
+
+      for (const item of sanitizedItems) {
+        const signature = itemSignature(item);
+
+        if (!itemMap.has(signature)) {
+          itemMap.set(signature, item);
+        }
+      }
+
+      const validItems = Array.from(itemMap.values()).map((item, index) => ({
+        ...item,
+        orden: index + 1,
+      }));
 
       if (!form.titulo.trim()) {
         setError("Debes ingresar un título para la cotización.");
@@ -445,7 +507,7 @@ export default function CotizacionForm({
         softDeleteItemsAt = new Date().toISOString();
 
         const archiveItemsResp = await fetch(
-          `${baseUrl}/rest/v1/cotizacion_items?cotizacion_id=eq.${cotizacionId}&activo=is.true`,
+          `${baseUrl}/rest/v1/cotizacion_items?cotizacion_id=eq.${cotizacionId}&activo=eq.true&deleted_at=is.null`,
           {
             method: "PATCH",
             headers: {
