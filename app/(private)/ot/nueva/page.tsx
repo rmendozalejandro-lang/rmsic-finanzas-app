@@ -128,6 +128,13 @@ function NuevaOTContent() {
   const tipoPreventivaId = useMemo(() => {
     return tiposServicio.find((item) => item.codigo === 'preventiva')?.id ?? ''
   }, [tiposServicio])
+const selectedTipo = useMemo(() => {
+  return tiposServicio.find((item) => item.id === form.tipo_servicio_id) ?? null
+}, [tiposServicio, form.tipo_servicio_id])
+
+const isPreventivaMespack = selectedTipo?.codigo === 'preventiva'
+const isPreventivaGeneral = selectedTipo?.codigo === 'preventiva_general'
+const isPreventiva = isPreventivaMespack || isPreventivaGeneral
 
   const selectedTipo = useMemo(() => {
     return tiposServicio.find((item) => item.id === form.tipo_servicio_id) ?? null
@@ -315,13 +322,24 @@ function NuevaOTContent() {
   }, [])
 
   useEffect(() => {
-    if (form.tipo_servicio_id === tipoPreventivaId) {
-      setForm((prev) => ({
-        ...prev,
-        requiere_checklist: true,
-      }))
-    }
-  }, [form.tipo_servicio_id, tipoPreventivaId])
+   const tipoSeleccionado = tiposServicio.find(
+  (item) => item.id === form.tipo_servicio_id
+)
+
+if (tipoSeleccionado?.codigo === 'preventiva') {
+  setForm((prev) => ({
+    ...prev,
+    requiere_checklist: true,
+  }))
+}
+
+if (tipoSeleccionado?.codigo === 'preventiva_general') {
+  setForm((prev) => ({
+    ...prev,
+    requiere_checklist: false,
+  }))
+}
+  }, [form.tipo_servicio_id, tiposServicio])
 
   const handleChange = <K extends keyof FormDataState>(
     field: K,
@@ -584,14 +602,14 @@ function NuevaOTContent() {
                     onChange={(e) =>
                       handleChange('requiere_checklist', e.target.checked)
                     }
-                    disabled={form.tipo_servicio_id === tipoPreventivaId}
+                    disabled={isPreventivaMespack}
                   />
                   Requiere checklist
                 </label>
               </div>
             </div>
 
-            {selectedTipo?.codigo === 'preventiva' ? (
+            {isPreventivaMespack ? (
               <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
                 Para OT de mantención preventiva, el checklist queda marcado automáticamente.
               </div>

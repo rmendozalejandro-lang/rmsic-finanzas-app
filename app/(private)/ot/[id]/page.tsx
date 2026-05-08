@@ -398,7 +398,9 @@ function OTDetalleContent() {
 
   const tipoCodigo = selectedTipo?.codigo ?? ''
 
-  const isPreventiva = tipoCodigo === 'preventiva'
+  const isPreventivaMespack = tipoCodigo === 'preventiva'
+const isPreventivaGeneral = tipoCodigo === 'preventiva_general'
+const isPreventiva = isPreventivaMespack || isPreventivaGeneral
   const isUrgencia = tipoCodigo === 'urgencia'
   const isAsistencia = tipoCodigo === 'general'
   const isUrgenciaOAsistencia = isUrgencia || isAsistencia
@@ -418,7 +420,7 @@ function OTDetalleContent() {
 
   const requiresChecklistForClose = useMemo(() => {
   const requierePorTipo =
-    form.requiere_checklist || form.tipo_servicio_id === tipoPreventivaId
+    form.requiere_checklist || isPreventivaMespack
 
   return requierePorTipo && !!detalle?.plantilla_checklist_id
 }, [
@@ -521,7 +523,7 @@ function OTDetalleContent() {
           firmasResp,
           checklistResp,
         ] = await Promise.all([
-          supabase.from('ot_vw_resumen').select('*').eq('id', otId).single(),
+          supabase.from('ot_vw_resumen').select('*').eq('id', otId).maybeSingle(),
           supabase
             .from('ot_ordenes_trabajo')
             .select(
@@ -574,7 +576,7 @@ function OTDetalleContent() {
             .eq('id', otId)
             .eq('activo', true)
             .is('deleted_at', null)
-            .single(),
+            .maybeSingle(),
           supabase
             .from('ot_estados')
             .select('id, codigo, nombre, orden')
@@ -622,6 +624,11 @@ function OTDetalleContent() {
         }
         if (detalleResp.error) {
           throw new Error(`No se pudo cargar el detalle OT: ${detalleResp.error.message}`)
+        }
+        if (!resumenResp.data || !detalleResp.data) {
+          throw new Error(
+            'No se encontró la OT solicitada o fue archivada. Vuelve al listado y selecciona una OT activa.'
+          )
         }
         if (estadosResp.error) {
           throw new Error(`No se pudieron cargar los estados: ${estadosResp.error.message}`)
@@ -755,12 +762,23 @@ function OTDetalleContent() {
   }, [loadData])
 
   useEffect(() => {
-    if (form.tipo_servicio_id === tipoPreventivaId) {
-      setForm((prev) => ({
-        ...prev,
-        requiere_checklist: true,
-      }))
-    }
+    const tipoSeleccionado = tiposServicio.find(
+  (item) => item.id === form.tipo_servicio_id
+)
+
+if (tipoSeleccionado?.codigo === 'preventiva') {
+  setForm((prev) => ({
+    ...prev,
+    requiere_checklist: true,
+  }))
+}
+
+if (tipoSeleccionado?.codigo === 'preventiva_general') {
+  setForm((prev) => ({
+    ...prev,
+    requiere_checklist: false,
+  }))
+}
   }, [form.tipo_servicio_id, tipoPreventivaId])
 
   const handleChange = <K extends keyof FormState>(field: K, value: FormState[K]) => {
@@ -816,6 +834,54 @@ function OTDetalleContent() {
     return ''
   }
 
+  const buildOtDraftPayload = () => ({
+    tipo_servicio_id: form.tipo_servicio_id,
+    estado_id: form.estado_id,
+    fecha_ot: form.fecha_ot,
+    fecha_programada: form.fecha_programada || null,
+    titulo: form.titulo.trim(),
+    descripcion_solicitud: form.descripcion_solicitud.trim() || null,
+
+    problema_reportado: form.problema_reportado.trim() || null,
+    diagnostico: form.diagnostico.trim() || null,
+    causa_probable: form.causa_probable.trim() || null,
+    trabajo_realizado: form.trabajo_realizado.trim() || null,
+    recomendaciones: form.recomendaciones.trim() || null,
+    tecnico_responsable_id: form.tecnico_responsable_id || null,
+    supervisor_id: form.supervisor_id || null,
+    prioridad: form.prioridad,
+    requiere_checklist: form.requiere_checklist,
+    observaciones_cierre: form.observaciones_cierre.trim() || null,
+    contacto_cliente_nombre: form.contacto_cliente_nombre.trim() || null,
+    contacto_cliente_cargo: form.contacto_cliente_cargo.trim() || null,
+    area_trabajo: form.area_trabajo.trim() || null,
+
+    resultado_servicio: form.resultado_servicio.trim() || null,
+    hallazgos: form.hallazgos.trim() || null,
+    conclusiones_tecnicas: form.conclusiones_tecnicas.trim() || null,
+    mostrar_nota_valor_hora: form.mostrar_nota_valor_hora,
+    valor_hora_uf: form.mostrar_nota_valor_hora
+      ? Number(form.valor_hora_uf)
+      : detalle?.valor_hora_uf ?? Number(form.valor_hora_uf || '2.10'),
+  })
+
+  const saveOtDraft = async () => {
+    const payload = buildOtDraftPayload()
+
+    const { error: updateError } = await supabase
+      .from('ot_ordenes_trabajo')
+      .update(payload)
+      .eq('id', otId)
+      .eq('activo', true)
+      .is('deleted_at', null)
+
+    if (updateError) {
+      throw new Error(`No se pudo guardar el avance de la OT: ${updateError.message}`)
+    }
+
+    return payload
+  }
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
 
@@ -830,80 +896,7 @@ function OTDetalleContent() {
       setError('')
       setSuccess('')
 
-      const payload = {
-  tipo_servicio_id: form.tipo_servicio_id,
-  estado_id: form.estado_id,
-  fecha_ot: form.fecha_ot,
-  fecha_programada: form.fecha_programada || null,
-  titulo: form.titulo.trim(),
-  descripcion_solicitud: form.descripcion_solicitud.trim() || null,
-
-  problema_reportado:
-    isUrgenciaOAsistencia || isAsesoria
-      ? form.problema_reportado.trim() || null
-      : detalle?.problema_reportado || null,
-
-  diagnostico:
-    isUrgenciaOAsistencia || isAsesoria
-      ? form.diagnostico.trim() || null
-      : detalle?.diagnostico || null,
-
-  causa_probable:
-    isUrgenciaOAsistencia
-      ? form.causa_probable.trim() || null
-      : detalle?.causa_probable || null,
-
-  trabajo_realizado:
-    isPreventiva || isUrgenciaOAsistencia
-      ? form.trabajo_realizado.trim() || null
-      : detalle?.trabajo_realizado || null,
-
-  recomendaciones: form.recomendaciones.trim() || null,
-  tecnico_responsable_id: form.tecnico_responsable_id || null,
-  supervisor_id: form.supervisor_id || null,
-  prioridad: form.prioridad,
-  requiere_checklist: form.requiere_checklist,
-  observaciones_cierre: form.observaciones_cierre.trim() || null,
-  contacto_cliente_nombre: form.contacto_cliente_nombre.trim() || null,
-  contacto_cliente_cargo: form.contacto_cliente_cargo.trim() || null,
-  area_trabajo: form.area_trabajo.trim() || null,
-
-  resultado_servicio:
-    isPreventiva || isUrgenciaOAsistencia
-      ? form.resultado_servicio.trim() || null
-      : detalle?.resultado_servicio || null,
-
-  hallazgos:
-    isPreventiva
-      ? form.hallazgos.trim() || null
-      : detalle?.hallazgos || null,
-
-  conclusiones_tecnicas:
-    isAsesoria
-      ? form.conclusiones_tecnicas.trim() || null
-      : detalle?.conclusiones_tecnicas || null,
-
-  mostrar_nota_valor_hora: isUrgenciaOAsistencia
-    ? form.mostrar_nota_valor_hora
-    : detalle?.mostrar_nota_valor_hora ?? false,
-
-  valor_hora_uf: isUrgenciaOAsistencia
-    ? form.mostrar_nota_valor_hora
-      ? Number(form.valor_hora_uf)
-      : detalle?.valor_hora_uf ?? Number(form.valor_hora_uf || '2.10')
-    : detalle?.valor_hora_uf ?? Number(form.valor_hora_uf || '2.10'),
-}
-
-      const { error: updateError } = await supabase
-        .from('ot_ordenes_trabajo')
-        .update(payload)
-        .eq('id', otId)
-        .eq('activo', true)
-        .is('deleted_at', null)
-
-      if (updateError) {
-        throw new Error(`No se pudo guardar la OT: ${updateError.message}`)
-      }
+      await saveOtDraft()
 
       await loadData(false)
       setSuccess('OT actualizada correctamente.')
@@ -1017,8 +1010,17 @@ function OTDetalleContent() {
       setError('')
       setSuccess('')
 
+      const validationError = validateForm()
+      if (validationError) {
+        throw new Error(validationError)
+      }
+
+      await saveOtDraft()
+
       if (!estadoCerrada) {
-        throw new Error('No se encontró el estado "cerrada" en la base.')
+        throw new Error(
+          'El avance quedó guardado, pero no se pudo cerrar: no se encontró el estado "cerrada" en la base.'
+        )
       }
 
       const trabajoPrincipal = form.trabajo_realizado.trim()
@@ -1028,11 +1030,13 @@ function OTDetalleContent() {
       if (isAsesoria) {
         if (!analisisAsesoria && !conclusionesAsesoria) {
           throw new Error(
-            'Debes completar al menos el análisis técnico o las conclusiones técnicas antes de cerrar la OT.'
+            'El avance quedó guardado, pero no se pudo cerrar: debes completar al menos el análisis técnico o las conclusiones técnicas.'
           )
         }
       } else if (!trabajoPrincipal) {
-        throw new Error('Debes completar "Trabajo realizado" antes de cerrar la OT.')
+        throw new Error(
+          'El avance quedó guardado, pero no se pudo cerrar: debes completar "Trabajo realizado".'
+        )
       }
 
       if (requiresChecklistForClose) {
@@ -1042,11 +1046,15 @@ function OTDetalleContent() {
           .eq('ot_id', otId)
 
         if (checklistError) {
-          throw new Error(`No se pudo validar el checklist: ${checklistError.message}`)
+          throw new Error(
+            `El avance quedó guardado, pero no se pudo validar el checklist: ${checklistError.message}`
+          )
         }
 
         if ((checklistActual ?? []).length === 0) {
-          throw new Error('Esta OT requiere checklist y aún no tiene respuestas registradas.')
+          throw new Error(
+            'El avance quedó guardado, pero no se pudo cerrar: esta OT requiere checklist y aún no tiene respuestas registradas.'
+          )
         }
       }
 
@@ -1064,7 +1072,9 @@ function OTDetalleContent() {
         .is('deleted_at', null)
 
       if (tiemposError) {
-        throw new Error(`No se pudieron revisar los tiempos: ${tiemposError.message}`)
+        throw new Error(
+          `El avance quedó guardado, pero no se pudieron revisar los tiempos: ${tiemposError.message}`
+        )
       }
 
       const tiemposValidos = ((tiemposActuales ?? []) as TiempoCierreRow[]).filter(
@@ -1098,28 +1108,9 @@ function OTDetalleContent() {
           : null
 
       const payload = {
+        ...buildOtDraftPayload(),
         estado_id: estadoCerrada.id,
         fecha_cierre: nowIso,
-
-        descripcion_solicitud: form.descripcion_solicitud.trim() || null,
-        problema_reportado:
-          form.problema_reportado.trim() || detalle?.problema_reportado || null,
-        diagnostico: form.diagnostico.trim() || detalle?.diagnostico || null,
-        causa_probable:
-          form.causa_probable.trim() || detalle?.causa_probable || null,
-        trabajo_realizado:
-          form.trabajo_realizado.trim() || detalle?.trabajo_realizado || null,
-        recomendaciones:
-          form.recomendaciones.trim() || detalle?.recomendaciones || null,
-        observaciones_cierre:
-          form.observaciones_cierre.trim() || detalle?.observaciones_cierre || null,
-
-        resultado_servicio:
-          form.resultado_servicio.trim() || detalle?.resultado_servicio || null,
-        hallazgos: form.hallazgos.trim() || detalle?.hallazgos || null,
-        conclusiones_tecnicas:
-          form.conclusiones_tecnicas.trim() || detalle?.conclusiones_tecnicas || null,
-
         hora_inicio: horaInicio,
         hora_termino: horaTermino,
         duracion_minutos: duracionMinutos,
@@ -1133,11 +1124,13 @@ function OTDetalleContent() {
         .is('deleted_at', null)
 
       if (updateError) {
-        throw new Error(`No se pudo cerrar la OT: ${updateError.message}`)
+        throw new Error(
+          `El avance quedó guardado, pero no se pudo cerrar la OT: ${updateError.message}`
+        )
       }
 
       await loadData(false)
-      setCierreSuccess('OT cerrada correctamente mediante cierre rápido.')
+      setCierreSuccess('OT guardada y cerrada correctamente.')
       router.refresh()
     } catch (err) {
       setCierreError(err instanceof Error ? err.message : 'No se pudo cerrar la OT.')
@@ -1537,7 +1530,7 @@ function OTDetalleContent() {
                 type="checkbox"
                 checked={form.requiere_checklist}
                 onChange={(e) => handleChange('requiere_checklist', e.target.checked)}
-                disabled={form.tipo_servicio_id === tipoPreventivaId}
+                disabled={isPreventivaMespack}
               />
               Requiere checklist
             </label>
@@ -2132,7 +2125,7 @@ function OTDetalleContent() {
         empresaId={detalle.empresa_id}
         currentUserId={currentUserId}
         initialPlantillaId={detalle.plantilla_checklist_id}
-        requiereChecklist={form.requiere_checklist || isPreventiva}
+        requiereChecklist={form.requiere_checklist || isPreventivaMespack}
         onChanged={() => void loadData(false)}
       />
 
@@ -2151,7 +2144,7 @@ function OTDetalleContent() {
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <SectionTitle
           title="Cierre rápido de OT"
-          subtitle="Valida lo mÃ­nimo necesario antes de cerrar la orden."
+          subtitle="Guarda el avance y luego intenta cerrar la orden sin perder el texto escrito."
         />
 
         <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -2248,8 +2241,8 @@ function OTDetalleContent() {
             {isClosed
               ? 'OT ya cerrada'
               : closingOt
-                ? 'Cerrando OT...'
-                : 'Cerrar OT'}
+                ? 'Guardando y cerrando OT...'
+                : 'Guardar y cerrar OT'}
           </button>
 
           {currentRole === 'admin' ? (
