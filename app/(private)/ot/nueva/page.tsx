@@ -125,20 +125,11 @@ function NuevaOTContent() {
     return estados.find((item) => item.codigo === 'asignada')?.id ?? ''
   }, [estados])
 
-  const tipoPreventivaId = useMemo(() => {
-    return tiposServicio.find((item) => item.codigo === 'preventiva')?.id ?? ''
-  }, [tiposServicio])
-const selectedTipo = useMemo(() => {
-  return tiposServicio.find((item) => item.id === form.tipo_servicio_id) ?? null
-}, [tiposServicio, form.tipo_servicio_id])
-
-const isPreventivaMespack = selectedTipo?.codigo === 'preventiva'
-const isPreventivaGeneral = selectedTipo?.codigo === 'preventiva_general'
-const isPreventiva = isPreventivaMespack || isPreventivaGeneral
-
   const selectedTipo = useMemo(() => {
     return tiposServicio.find((item) => item.id === form.tipo_servicio_id) ?? null
   }, [tiposServicio, form.tipo_servicio_id])
+
+  const isPreventivaMespack = selectedTipo?.codigo === 'preventiva'
 
   useEffect(() => {
     const storedEmpresaId = window.localStorage.getItem(STORAGE_ID_KEY) || ''
@@ -322,23 +313,24 @@ const isPreventiva = isPreventivaMespack || isPreventivaGeneral
   }, [])
 
   useEffect(() => {
-   const tipoSeleccionado = tiposServicio.find(
-  (item) => item.id === form.tipo_servicio_id
-)
+    const tipoSeleccionado = tiposServicio.find(
+      (item) => item.id === form.tipo_servicio_id
+    )
 
-if (tipoSeleccionado?.codigo === 'preventiva') {
-  setForm((prev) => ({
-    ...prev,
-    requiere_checklist: true,
-  }))
-}
+    if (tipoSeleccionado?.codigo === 'preventiva') {
+      setForm((prev) => ({
+        ...prev,
+        requiere_checklist: true,
+      }))
+      return
+    }
 
-if (tipoSeleccionado?.codigo === 'preventiva_general') {
-  setForm((prev) => ({
-    ...prev,
-    requiere_checklist: false,
-  }))
-}
+    if (tipoSeleccionado?.codigo === 'preventiva_general') {
+      setForm((prev) => ({
+        ...prev,
+        requiere_checklist: false,
+      }))
+    }
   }, [form.tipo_servicio_id, tiposServicio])
 
   const handleChange = <K extends keyof FormDataState>(
@@ -402,6 +394,13 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
         throw new Error('No hay usuario autenticado.')
       }
 
+      const requiereChecklist =
+        selectedTipo?.codigo === 'preventiva'
+          ? true
+          : selectedTipo?.codigo === 'preventiva_general'
+            ? false
+            : form.requiere_checklist
+
       const payload = {
         empresa_id: form.empresa_id,
         cliente_id: form.cliente_id,
@@ -415,7 +414,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
         tecnico_responsable_id: form.tecnico_responsable_id || null,
         supervisor_id: form.supervisor_id || null,
         prioridad: form.prioridad,
-        requiere_checklist: form.requiere_checklist,
+        requiere_checklist: requiereChecklist,
         created_by: user.id,
       }
 
@@ -611,7 +610,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
 
             {isPreventivaMespack ? (
               <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
-                Para OT de mantención preventiva, el checklist queda marcado automáticamente.
+                Para OT de mantención preventiva Mespack, el checklist queda marcado automáticamente.
               </div>
             ) : null}
 
