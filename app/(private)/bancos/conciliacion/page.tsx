@@ -491,32 +491,34 @@ export default function ConciliacionBancariaPage() {
     setSugerencias((sugerenciasResp.data ?? []) as Sugerencia[])
 
     let pendientesQuery = supabase
-      .from('banco_importacion_filas')
-      .select(
-        `
-        id,
-        empresa_id,
-        cuenta_bancaria_id,
-        fecha,
-        descripcion_original,
-        numero_documento,
-        cargo,
-        abono,
-        estado,
-        movimiento_id,
-        conciliado_at,
-        conciliacion_tipo,
-        diferencia_conciliacion
-      `,
-        { count: 'exact' }
-      )
-      .eq('empresa_id', empresaActivaId)
-      .is('movimiento_id', null)
-      .neq('estado', 'omitida')
-      .eq('es_duplicado', false)
-      .eq('tipo_registro', 'movimiento')
-      .order('fecha', { ascending: false })
-      .limit(30)
+  .from('banco_importacion_filas')
+  .select(
+    `
+    id,
+    empresa_id,
+    cuenta_bancaria_id,
+    fecha,
+    descripcion_original,
+    numero_documento,
+    cargo,
+    abono,
+    estado,
+    movimiento_id,
+    transferencia_bancaria_id,
+    conciliado_at,
+    conciliacion_tipo,
+    diferencia_conciliacion
+  `,
+    { count: 'exact' }
+  )
+  .eq('empresa_id', empresaActivaId)
+  .eq('estado', 'pendiente')
+  .is('movimiento_id', null)
+  .is('transferencia_bancaria_id', null)
+  .eq('es_duplicado', false)
+  .eq('tipo_registro', 'movimiento')
+  .order('fecha', { ascending: false })
+  .limit(30)
 
     if (cuentaFiltro) {
       pendientesQuery = pendientesQuery.eq('cuenta_bancaria_id', cuentaFiltro)
