@@ -62,6 +62,11 @@ const menuItems: MenuItem[] = [
 
  { href: '/plan-cuentas', label: 'Plan de Cuentas', moduleKey: 'plan_cuentas' },
 { href: '/asientos', label: 'Asientos contables', moduleKey: 'plan_cuentas' },
+{
+  label: 'Activos fijos',
+  href: '/activos-fijos',
+  moduleKey: 'plan_cuentas',
+},
 { href: '/reportes', label: 'Reportes', moduleKey: 'reportes' },
 
   { href: '/ot', label: 'OT', moduleKey: 'ot' },
