@@ -126,6 +126,7 @@ type TiempoFormState = {
   fecha: string
   hora_inicio: string
   hora_termino: string
+  termina_dia_siguiente: boolean
   tipo_tiempo: 'trabajo' | 'traslado' | 'espera' | 'supervision'
   observacion: string
 }
@@ -240,11 +241,19 @@ function toDateInputValue(value: string | null | undefined) {
   return value.slice(0, 10)
 }
 
-function combineDateAndTimeToISOString(dateValue: string, timeValue: string) {
+function combineDateAndTimeToISOString(
+  dateValue: string,
+  timeValue: string,
+  addDays = 0
+) {
   if (!dateValue || !timeValue) return null
 
   const composed = new Date(`${dateValue}T${timeValue}`)
   if (Number.isNaN(composed.getTime())) return null
+
+  if (addDays > 0) {
+    composed.setDate(composed.getDate() + addDays)
+  }
 
   return composed.toISOString()
 }
@@ -384,6 +393,7 @@ function OTDetalleContent() {
     fecha: todayLocalDate(),
     hora_inicio: '',
     hora_termino: '',
+    termina_dia_siguiente: false,
     tipo_tiempo: 'trabajo',
     observacion: '',
   })
@@ -739,15 +749,16 @@ const isPreventiva = isPreventivaMespack || isPreventivaGeneral
               : '2.10',
         })
 
-        setTiempoForm((prev) => ({
-          usuario_id:
-            prev.usuario_id || detalleData.tecnico_responsable_id || user.id || '',
-          fecha: prev.fecha || toDateInputValue(detalleData.fecha_ot) || todayLocalDate(),
-          hora_inicio: prev.hora_inicio,
-          hora_termino: prev.hora_termino,
-          tipo_tiempo: prev.tipo_tiempo || 'trabajo',
-          observacion: prev.observacion || '',
-        }))
+       setTiempoForm((prev) => ({
+  usuario_id:
+    prev.usuario_id || detalleData.tecnico_responsable_id || user.id || '',
+  fecha: prev.fecha || toDateInputValue(detalleData.fecha_ot) || todayLocalDate(),
+  hora_inicio: prev.hora_inicio,
+  hora_termino: prev.hora_termino,
+  termina_dia_siguiente: prev.termina_dia_siguiente ?? false,
+  tipo_tiempo: prev.tipo_tiempo,
+  observacion: prev.observacion,
+}))
       } catch (err) {
         setError(err instanceof Error ? err.message : 'No se pudo cargar la OT.')
       } finally {
@@ -823,12 +834,16 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
     const inicio = new Date(`${tiempoForm.fecha}T${tiempoForm.hora_inicio}`)
     const termino = new Date(`${tiempoForm.fecha}T${tiempoForm.hora_termino}`)
 
+    if (tiempoForm.termina_dia_siguiente) {
+      termino.setDate(termino.getDate() + 1)
+    }
+
     if (Number.isNaN(inicio.getTime()) || Number.isNaN(termino.getTime())) {
       return 'Las horas ingresadas no son vÃ¡lidas.'
     }
 
     if (termino <= inicio) {
-      return 'La hora de tÃ©rmino debe ser mayor que la hora de inicio.'
+      return 'La hora de tÃ©rmino debe ser mayor que la hora de inicio. Si el servicio terminÃ³ al dÃ­a siguiente, marca "Termina al dÃ­a siguiente".'
     }
 
     return ''
@@ -922,12 +937,30 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
       setTiempoError('')
       setTiempoSuccess('')
 
+      const horaInicioIso = combineDateAndTimeToISOString(
+        tiempoForm.fecha,
+        tiempoForm.hora_inicio
+      )
+      const horaTerminoIso = combineDateAndTimeToISOString(
+        tiempoForm.fecha,
+        tiempoForm.hora_termino,
+        tiempoForm.termina_dia_siguiente ? 1 : 0
+      )
+
+      const inicioMs = horaInicioIso ? new Date(horaInicioIso).getTime() : NaN
+      const terminoMs = horaTerminoIso ? new Date(horaTerminoIso).getTime() : NaN
+      const duracionMinutos =
+        Number.isFinite(inicioMs) && Number.isFinite(terminoMs)
+          ? Math.max(0, Math.round((terminoMs - inicioMs) / 60000))
+          : null
+
       const payload = {
         ot_id: otId,
         usuario_id: tiempoForm.usuario_id,
         fecha: tiempoForm.fecha,
-        hora_inicio: combineDateAndTimeToISOString(tiempoForm.fecha, tiempoForm.hora_inicio),
-        hora_termino: combineDateAndTimeToISOString(tiempoForm.fecha, tiempoForm.hora_termino),
+        hora_inicio: horaInicioIso,
+        hora_termino: horaTerminoIso,
+        duracion_minutos: duracionMinutos,
         tipo_tiempo: tiempoForm.tipo_tiempo,
         observacion: tiempoForm.observacion.trim() || null,
       }
@@ -947,6 +980,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
         fecha: prev.fecha || todayLocalDate(),
         hora_inicio: '',
         hora_termino: '',
+        termina_dia_siguiente: false,
         tipo_tiempo: prev.tipo_tiempo,
         observacion: '',
       }))
@@ -2020,6 +2054,27 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
                 onChange={(e) => handleTiempoChange('hora_termino', e.target.value)}
                 className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
               />
+            </div>
+
+            <div className="md:col-span-2 xl:col-span-3">
+              <label className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={tiempoForm.termina_dia_siguiente}
+                  onChange={(e) =>
+                    handleTiempoChange('termina_dia_siguiente', e.target.checked)
+                  }
+                  className="mt-1 h-4 w-4 rounded border-slate-300"
+                />
+                <span>
+                  <span className="font-medium text-slate-900">
+                    Termina al dÃ­a siguiente
+                  </span>
+                  <span className="mt-1 block text-xs text-slate-500">
+                    Usa esta opciÃ³n cuando el servicio inicia en la noche y termina en la madrugada, por ejemplo 21:15 a 03:00.
+                  </span>
+                </span>
+              </label>
             </div>
           </div>
 
