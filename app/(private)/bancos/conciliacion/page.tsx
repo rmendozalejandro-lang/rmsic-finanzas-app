@@ -87,6 +87,26 @@ type MovimientoManual = {
   categorias?: CategoriaMovimiento | CategoriaMovimiento[] | null
 }
 
+type TransferenciaBancaria = {
+  id: string
+  empresa_id?: string
+  fecha?: string | null
+  monto?: number | string | null
+  monto_total?: number | string | null
+  valor?: number | string | null
+  estado?: string | null
+  descripcion?: string | null
+  observacion?: string | null
+  observaciones?: string | null
+  cuenta_origen_id?: string | null
+  cuenta_destino_id?: string | null
+  cuenta_bancaria_origen_id?: string | null
+  cuenta_bancaria_destino_id?: string | null
+  origen_cuenta_bancaria_id?: string | null
+  destino_cuenta_bancaria_id?: string | null
+  created_at?: string | null
+}
+
 type Cliente = {
   id: string
   nombre: string
@@ -145,6 +165,18 @@ type FormTributario = {
   descripcion: string
 }
 
+type FormSimple = {
+  fila_id: string
+  tipo_movimiento: 'ingreso' | 'egreso'
+  monto_banco: string
+  descripcion_banco: string
+  tipo_documento: 'comprobante' | 'boleta' | 'otro'
+  numero_documento: string
+  categoria_id: string
+  centro_costo_id: string
+  descripcion: string
+}
+
 const STORAGE_ID_KEY = 'empresa_activa_id'
 const STORAGE_NAME_KEY = 'empresa_activa_nombre'
 
@@ -165,6 +197,18 @@ const initialTributarioForm: FormTributario = {
   monto_exento: '',
   impuesto_especifico: '',
   tratamiento_tributario: 'afecto_iva',
+  descripcion: '',
+}
+
+const initialSimpleForm: FormSimple = {
+  fila_id: '',
+  tipo_movimiento: 'egreso',
+  monto_banco: '0',
+  descripcion_banco: '',
+  tipo_documento: 'comprobante',
+  numero_documento: '',
+  categoria_id: '',
+  centro_costo_id: '',
   descripcion: '',
 }
 
@@ -207,6 +251,54 @@ function getMontoFila(fila: FilaBanco | null) {
     : Number(fila.abono ?? 0)
 }
 
+function getTransferenciaMonto(transferencia: TransferenciaBancaria) {
+  return Number(
+    transferencia.monto ?? transferencia.monto_total ?? transferencia.valor ?? 0
+  )
+}
+
+function getTransferenciaCuentaOrigenId(transferencia: TransferenciaBancaria) {
+  return (
+    transferencia.cuenta_origen_id ||
+    transferencia.cuenta_bancaria_origen_id ||
+    transferencia.origen_cuenta_bancaria_id ||
+    null
+  )
+}
+
+function getTransferenciaCuentaDestinoId(transferencia: TransferenciaBancaria) {
+  return (
+    transferencia.cuenta_destino_id ||
+    transferencia.cuenta_bancaria_destino_id ||
+    transferencia.destino_cuenta_bancaria_id ||
+    null
+  )
+}
+
+function getTransferenciaDescripcion(transferencia: TransferenciaBancaria) {
+  return (
+    transferencia.descripcion ||
+    transferencia.observacion ||
+    transferencia.observaciones ||
+    'Transferencia interna'
+  )
+}
+
+function getDateDistanceDays(a: string | null | undefined, b: string | null | undefined) {
+  if (!a || !b) return 9999
+
+  const dateA = new Date(`${a.slice(0, 10)}T00:00:00`)
+  const dateB = new Date(`${b.slice(0, 10)}T00:00:00`)
+
+  if (Number.isNaN(dateA.getTime()) || Number.isNaN(dateB.getTime())) {
+    return 9999
+  }
+
+  return Math.abs(
+    Math.round((dateA.getTime() - dateB.getTime()) / 86_400_000)
+  )
+}
+
 function getBancoLabel(banco: Banco | undefined) {
   if (!banco) return 'Cuenta no identificada'
 
@@ -238,6 +330,12 @@ export default function ConciliacionBancariaPage() {
   const [processing, setProcessing] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+
+  const [showSimpleForm, setShowSimpleForm] = useState(false)
+  const [savingSimple, setSavingSimple] = useState(false)
+  const [simpleError, setSimpleError] = useState('')
+  const [simpleForm, setSimpleForm] =
+    useState<FormSimple>(initialSimpleForm)
 
   const [showTributarioForm, setShowTributarioForm] = useState(false)
   const [savingTributario, setSavingTributario] = useState(false)
@@ -275,6 +373,17 @@ export default function ConciliacionBancariaPage() {
   const [multipleLoading, setMultipleLoading] = useState(false)
   const [multipleSaving, setMultipleSaving] = useState(false)
   const [multipleError, setMultipleError] = useState('')
+
+  const [showTransferenciaForm, setShowTransferenciaForm] = useState(false)
+  const [transferenciaFila, setTransferenciaFila] = useState<FilaBanco | null>(null)
+  const [transferenciaBusqueda, setTransferenciaBusqueda] = useState('')
+  const [transferenciaResultados, setTransferenciaResultados] = useState<
+    TransferenciaBancaria[]
+  >([])
+  const [transferenciaId, setTransferenciaId] = useState('')
+  const [transferenciaLoading, setTransferenciaLoading] = useState(false)
+  const [transferenciaSaving, setTransferenciaSaving] = useState(false)
+  const [transferenciaError, setTransferenciaError] = useState('')
 
   const cargarEmpresaActiva = useCallback(() => {
     const id = window.localStorage.getItem(STORAGE_ID_KEY) || ''
@@ -315,6 +424,20 @@ export default function ConciliacionBancariaPage() {
       (categoria) => categoria.id === tributarioForm.categoria_id
     )
   }, [categorias, tributarioForm.categoria_id])
+
+  const categoriasSimpleFiltradas = useMemo(() => {
+    return categorias.filter(
+      (categoria) => categoria.tipo === simpleForm.tipo_movimiento
+    )
+  }, [categorias, simpleForm.tipo_movimiento])
+
+  const categoriaSimpleSeleccionada = useMemo(() => {
+    return categorias.find(
+      (categoria) => categoria.id === simpleForm.categoria_id
+    )
+  }, [categorias, simpleForm.categoria_id])
+
+  const totalSimple = Number(simpleForm.monto_banco || 0)
 
   const totalTributario = useMemo(() => {
     return (
@@ -722,45 +845,125 @@ export default function ConciliacionBancariaPage() {
     setProcessing(false)
   }
 
-  const crearMovimientoSimple = async (fila: FilaBanco) => {
-    const monto = Number(fila.cargo ?? 0) > 0 ? fila.cargo : fila.abono
+  const crearMovimientoSimple = (fila: FilaBanco) => {
+    const esEgreso = Number(fila.cargo ?? 0) > 0
+    const montoBanco = getMontoFila(fila)
+
+    setSimpleForm({
+      ...initialSimpleForm,
+      fila_id: fila.id,
+      tipo_movimiento: esEgreso ? 'egreso' : 'ingreso',
+      monto_banco: String(montoBanco),
+      descripcion_banco: fila.descripcion_original,
+      numero_documento: fila.numero_documento || '',
+      descripcion: fila.descripcion_original,
+    })
+    setSimpleError('')
+    setShowSimpleForm(true)
+  }
+
+  const cerrarFormularioSimple = () => {
+    if (savingSimple) return
+
+    setShowSimpleForm(false)
+    setSimpleError('')
+    setSimpleForm(initialSimpleForm)
+  }
+
+  const handleSimpleChange = (field: keyof FormSimple, value: string) => {
+    setSimpleForm((current) => {
+      const next = {
+        ...current,
+        [field]: value,
+      }
+
+      if (field === 'categoria_id') {
+        next.centro_costo_id = ''
+      }
+
+      return next
+    })
+  }
+
+  const guardarMovimientoSimple = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+
+    if (!simpleForm.fila_id) {
+      setSimpleError('No se encontró la línea de cartola.')
+      return
+    }
+
+    if (!simpleForm.categoria_id) {
+      setSimpleError('Debes seleccionar una categoría contable.')
+      return
+    }
+
+    if (!categoriaSimpleSeleccionada?.cuenta_contable_id) {
+      setSimpleError(
+        'La categoría seleccionada no tiene cuenta contable asociada. Selecciona otra categoría o corrige la categoría antes de crear el movimiento.'
+      )
+      return
+    }
+
+    if (
+      categoriaSimpleSeleccionada.requiere_centro_costo &&
+      !simpleForm.centro_costo_id
+    ) {
+      setSimpleError('La categoría seleccionada requiere centro de costo.')
+      return
+    }
+
+    if (!simpleForm.descripcion.trim()) {
+      setSimpleError('Debes ingresar una descripción.')
+      return
+    }
 
     const confirmar = window.confirm(
       `¿Crear movimiento simple no afecto por ${formatCLP(
-        monto
-      )}? Esta opción debe usarse solo para comisiones, intereses, cargos bancarios, ajustes o movimientos no tributarios.`
+        totalSimple
+      )} y conciliarlo automáticamente?`
     )
 
     if (!confirmar) return
 
-    const descripcion = window.prompt(
-      'Descripción del movimiento:',
-      fila.descripcion_original
-    )
-
-    if (descripcion === null) return
-
-    setProcessing(true)
+    setSavingSimple(true)
+    setSimpleError('')
     setError('')
     setSuccess('')
 
     const { error: rpcError } = await supabase.rpc(
-      'crear_movimiento_simple_desde_fila_bancaria',
+      'crear_movimiento_tributario_desde_fila_bancaria',
       {
-        p_fila_id: fila.id,
-        p_descripcion: descripcion,
+        p_fila_id: simpleForm.fila_id,
+        p_tipo_documento: simpleForm.tipo_documento,
+        p_numero_documento: simpleForm.numero_documento,
+        p_categoria_id: simpleForm.categoria_id,
+        p_tercero_tipo: 'otro',
+        p_cliente_id: null,
+        p_proveedor_id: null,
+        p_monto_neto: 0,
+        p_monto_iva: 0,
+        p_monto_exento: totalSimple,
+        p_impuesto_especifico: 0,
+        p_tratamiento_tributario: 'no_afecto',
+        p_descripcion: simpleForm.descripcion,
+        p_centro_costo_id: simpleForm.centro_costo_id || null,
       }
     )
 
     if (rpcError) {
-      setError(rpcError.message)
-      setProcessing(false)
+      setSimpleError(rpcError.message)
+      setSavingSimple(false)
       return
     }
 
-    setSuccess('Movimiento simple creado y conciliado correctamente.')
+    setSuccess(
+      'Movimiento simple creado, conciliado y enviado a asiento borrador correctamente.'
+    )
     await cargarDatos()
-    setProcessing(false)
+
+    setSavingSimple(false)
+    cerrarFormularioSimple()
   }
 
   const cargarMovimientosManual = async (
@@ -1153,6 +1356,195 @@ export default function ConciliacionBancariaPage() {
 
     setMultipleSaving(false)
     cerrarConciliacionMultiple()
+  }
+
+  const transferenciaCompatibleConFila = (
+    transferencia: TransferenciaBancaria,
+    fila: FilaBanco | null = transferenciaFila
+  ) => {
+    if (!fila) return false
+
+    const cuentaOrigenId = getTransferenciaCuentaOrigenId(transferencia)
+    const cuentaDestinoId = getTransferenciaCuentaDestinoId(transferencia)
+
+    if (Number(fila.cargo ?? 0) > 0) {
+      return cuentaOrigenId === fila.cuenta_bancaria_id
+    }
+
+    if (Number(fila.abono ?? 0) > 0) {
+      return cuentaDestinoId === fila.cuenta_bancaria_id
+    }
+
+    return false
+  }
+
+  const cargarTransferencias = async (
+    fila: FilaBanco | null = transferenciaFila,
+    busqueda: string = transferenciaBusqueda
+  ) => {
+    if (!empresaActivaId || !fila) return
+
+    setTransferenciaLoading(true)
+    setTransferenciaError('')
+
+    const texto = busqueda.trim().toLowerCase()
+    const montoBanco = getMontoFila(fila)
+
+    const { data, error: queryError } = await supabase
+      .from('transferencias_bancarias')
+      .select('*')
+      .eq('empresa_id', empresaActivaId)
+      .order('fecha', { ascending: false })
+      .limit(300)
+
+    if (queryError) {
+      setTransferenciaError(
+        `Error al buscar transferencias: ${queryError.message}`
+      )
+      setTransferenciaResultados([])
+      setTransferenciaLoading(false)
+      return
+    }
+
+    let resultados = ((data ?? []) as TransferenciaBancaria[]).filter(
+      (transferencia) => {
+        const montoTransferencia = getTransferenciaMonto(transferencia)
+        const estado = String(transferencia.estado || '').toLowerCase()
+
+        if (estado === 'anulada' || estado === 'cancelada') return false
+
+        if (Math.abs(montoTransferencia - montoBanco) > 0.49) return false
+
+        if (!texto) return true
+
+        const campos = [
+          transferencia.fecha,
+          transferencia.estado,
+          getTransferenciaDescripcion(transferencia),
+          getTransferenciaCuentaOrigenId(transferencia),
+          getTransferenciaCuentaDestinoId(transferencia),
+          String(montoTransferencia),
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase()
+
+        return campos.includes(texto)
+      }
+    )
+
+    resultados = resultados.sort((a, b) => {
+      const compatibleA = transferenciaCompatibleConFila(a, fila) ? 0 : 1
+      const compatibleB = transferenciaCompatibleConFila(b, fila) ? 0 : 1
+
+      if (compatibleA !== compatibleB) return compatibleA - compatibleB
+
+      const diffA = getDateDistanceDays(a.fecha, fila.fecha)
+      const diffB = getDateDistanceDays(b.fecha, fila.fecha)
+
+      if (diffA !== diffB) return diffA - diffB
+
+      return String(b.fecha || '').localeCompare(String(a.fecha || ''))
+    })
+
+    setTransferenciaResultados(resultados)
+    setTransferenciaId(resultados[0]?.id || '')
+    setTransferenciaLoading(false)
+  }
+
+  const abrirVincularTransferencia = async (fila: FilaBanco) => {
+    setTransferenciaFila(fila)
+    setTransferenciaBusqueda('')
+    setTransferenciaResultados([])
+    setTransferenciaId('')
+    setTransferenciaError('')
+    setShowTransferenciaForm(true)
+
+    await cargarTransferencias(fila, '')
+  }
+
+  const cerrarVincularTransferencia = () => {
+    if (transferenciaSaving) return
+
+    setShowTransferenciaForm(false)
+    setTransferenciaFila(null)
+    setTransferenciaBusqueda('')
+    setTransferenciaResultados([])
+    setTransferenciaId('')
+    setTransferenciaError('')
+  }
+
+  const vincularTransferencia = async () => {
+    if (!transferenciaFila) {
+      setTransferenciaError('No se encontró la línea de cartola seleccionada.')
+      return
+    }
+
+    const transferencia = transferenciaResultados.find(
+      (item) => item.id === transferenciaId
+    )
+
+    if (!transferencia) {
+      setTransferenciaError('Debes seleccionar una transferencia existente.')
+      return
+    }
+
+    const montoBanco = getMontoFila(transferenciaFila)
+    const montoTransferencia = getTransferenciaMonto(transferencia)
+    const diferencia = montoTransferencia - montoBanco
+
+    if (Math.abs(diferencia) > 0.49) {
+      setTransferenciaError(
+        `El monto de la transferencia no coincide con la cartola. Diferencia: ${formatCLP(
+          diferencia
+        )}`
+      )
+      return
+    }
+
+    const compatible = transferenciaCompatibleConFila(
+      transferencia,
+      transferenciaFila
+    )
+
+    const mensajeCompatibilidad = compatible
+      ? ''
+      : '\n\nAdvertencia: la cuenta bancaria de la línea no coincide claramente con la cuenta origen/destino de la transferencia. La función de base de datos validará antes de conciliar.'
+
+    const confirmar = window.confirm(
+      `¿Vincular esta línea de cartola por ${formatCLP(
+        montoBanco
+      )} con la transferencia seleccionada?${mensajeCompatibilidad}`
+    )
+
+    if (!confirmar) return
+
+    setTransferenciaSaving(true)
+    setTransferenciaError('')
+    setError('')
+    setSuccess('')
+
+    const { error: rpcError } = await supabase.rpc(
+      'vincular_transferencia_existente_a_fila_bancaria',
+      {
+        p_fila_id: transferenciaFila.id,
+        p_transferencia_id: transferencia.id,
+        p_observacion:
+          'Conciliación transferencia interna entre cuentas propias desde app',
+      }
+    )
+
+    if (rpcError) {
+      setTransferenciaError(rpcError.message)
+      setTransferenciaSaving(false)
+      return
+    }
+
+    setSuccess('Transferencia interna vinculada y conciliada correctamente.')
+    await cargarDatos()
+
+    setTransferenciaSaving(false)
+    cerrarVincularTransferencia()
   }
 
   const abrirFormularioTributario = (fila: FilaBanco) => {
@@ -1625,6 +2017,15 @@ export default function ConciliacionBancariaPage() {
                       >
                         Conciliar múltiple
                       </button>
+
+                      <button
+                        type="button"
+                        onClick={() => abrirVincularTransferencia(fila)}
+                        disabled={processing}
+                        className="w-full rounded-lg border border-cyan-200 bg-cyan-50 px-3 py-1.5 text-xs font-medium text-cyan-700 hover:bg-cyan-100 disabled:opacity-60"
+                      >
+                        Vincular transferencia
+                      </button>
                     </div>
                   </div>
                 ))}
@@ -1706,6 +2107,187 @@ export default function ConciliacionBancariaPage() {
             )}
           </div>
         </section>
+      ) : null}
+
+      {showSimpleForm ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+          <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-3xl bg-white p-6 shadow-xl">
+            <div className="flex flex-col gap-3 border-b pb-4 md:flex-row md:items-start md:justify-between">
+              <div>
+                <p className="text-sm font-medium text-slate-500">
+                  Crear desde cartola
+                </p>
+
+                <h2 className="mt-1 text-xl font-semibold text-slate-900">
+                  Movimiento simple no afecto
+                </h2>
+
+                <p className="mt-1 text-sm text-slate-600">
+                  {simpleForm.descripcion_banco || 'Sin descripción'} ·{' '}
+                  {formatCLP(totalSimple)}
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={cerrarFormularioSimple}
+                disabled={savingSimple}
+                className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+              >
+                Cerrar
+              </button>
+            </div>
+
+            <form onSubmit={guardarMovimientoSimple} className="mt-5 space-y-5">
+              {simpleError ? (
+                <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+                  {simpleError}
+                </div>
+              ) : null}
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="rounded-2xl border bg-slate-50 p-4">
+                  <p className="text-sm text-slate-500">Tipo</p>
+                  <p className="mt-1 text-lg font-semibold text-slate-900">
+                    {simpleForm.tipo_movimiento === 'egreso'
+                      ? 'Egreso'
+                      : 'Ingreso'}
+                  </p>
+                </div>
+
+                <div className="rounded-2xl border bg-slate-50 p-4">
+                  <p className="text-sm text-slate-500">Monto cartola</p>
+                  <p className="mt-1 text-lg font-semibold text-slate-900">
+                    {formatCLP(totalSimple)}
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <label className="text-sm font-medium text-slate-700">
+                  Tipo documento
+                  <select
+                    value={simpleForm.tipo_documento}
+                    onChange={(event) =>
+                      handleSimpleChange(
+                        'tipo_documento',
+                        event.target.value as FormSimple['tipo_documento']
+                      )
+                    }
+                    className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-900"
+                  >
+                    <option value="comprobante">Comprobante</option>
+                    <option value="boleta">Boleta</option>
+                    <option value="otro">Otro</option>
+                  </select>
+                </label>
+
+                <label className="text-sm font-medium text-slate-700">
+                  Número documento
+                  <input
+                    type="text"
+                    value={simpleForm.numero_documento}
+                    onChange={(event) =>
+                      handleSimpleChange('numero_documento', event.target.value)
+                    }
+                    className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-900"
+                    placeholder="Folio, comprobante o referencia"
+                  />
+                </label>
+              </div>
+
+              <label className="block text-sm font-medium text-slate-700">
+                Categoría contable
+                <select
+                  value={simpleForm.categoria_id}
+                  onChange={(event) =>
+                    handleSimpleChange('categoria_id', event.target.value)
+                  }
+                  className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-900"
+                  required
+                >
+                  <option value="">Seleccionar categoría</option>
+                  {categoriasSimpleFiltradas.map((categoria) => (
+                    <option key={categoria.id} value={categoria.id}>
+                      {categoria.nombre}
+                      {categoria.cuenta_contable_id ? '' : ' - sin cuenta'}
+                    </option>
+                  ))}
+                </select>
+                {categoriaSimpleSeleccionada?.cuenta_contable_id ? (
+                  <p className="mt-1 text-xs text-emerald-700">
+                    Esta categoría tiene cuenta contable asociada.
+                  </p>
+                ) : simpleForm.categoria_id ? (
+                  <p className="mt-1 text-xs text-red-700">
+                    Esta categoría no tiene cuenta contable asociada.
+                  </p>
+                ) : null}
+              </label>
+
+              {categoriaSimpleSeleccionada?.requiere_centro_costo ? (
+                <label className="block text-sm font-medium text-slate-700">
+                  Centro de costo
+                  <select
+                    value={simpleForm.centro_costo_id}
+                    onChange={(event) =>
+                      handleSimpleChange('centro_costo_id', event.target.value)
+                    }
+                    className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-900"
+                    required
+                  >
+                    <option value="">Seleccionar centro de costo</option>
+                    {centrosCosto.map((centro) => (
+                      <option key={centro.id} value={centro.id}>
+                        {centro.codigo ? `${centro.codigo} - ` : ''}
+                        {centro.nombre}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
+
+              <label className="block text-sm font-medium text-slate-700">
+                Descripción
+                <input
+                  type="text"
+                  value={simpleForm.descripcion}
+                  onChange={(event) =>
+                    handleSimpleChange('descripcion', event.target.value)
+                  }
+                  className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-900"
+                  required
+                />
+              </label>
+
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+                Usa esta opción para pagos no afectos o movimientos sin IVA,
+                como F29, comisiones, intereses, ajustes bancarios o cargos no
+                tributarios. Para facturas o compras con IVA usa “Crear
+                compra/venta”.
+              </div>
+
+              <div className="flex flex-col-reverse gap-3 border-t pt-4 sm:flex-row sm:justify-end">
+                <button
+                  type="button"
+                  onClick={cerrarFormularioSimple}
+                  disabled={savingSimple}
+                  className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                >
+                  Cancelar
+                </button>
+
+                <button
+                  type="submit"
+                  disabled={savingSimple}
+                  className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-slate-800 disabled:opacity-60"
+                >
+                  {savingSimple ? 'Creando...' : 'Crear y conciliar'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       ) : null}
 
       {showConciliarManualForm ? (
@@ -2175,6 +2757,223 @@ export default function ConciliacionBancariaPage() {
                   {multipleSaving
                     ? 'Conciliando...'
                     : 'Conciliar seleccionados'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {showTransferenciaForm ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+          <div className="max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-3xl bg-white p-6 shadow-xl">
+            <div className="flex flex-col gap-3 border-b pb-4 md:flex-row md:items-start md:justify-between">
+              <div>
+                <p className="text-sm font-medium text-slate-500">
+                  Vincular transferencia existente
+                </p>
+
+                <h2 className="mt-1 text-xl font-semibold text-slate-900">
+                  Transferencia interna
+                </h2>
+
+                <p className="mt-1 text-sm text-slate-600">
+                  {transferenciaFila?.descripcion_original || 'Sin descripción'} ·{' '}
+                  {formatDate(transferenciaFila?.fecha)} ·{' '}
+                  {formatCLP(getMontoFila(transferenciaFila))}
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={cerrarVincularTransferencia}
+                disabled={transferenciaSaving}
+                className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+              >
+                Cerrar
+              </button>
+            </div>
+
+            <div className="mt-5 space-y-5">
+              {transferenciaError ? (
+                <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+                  {transferenciaError}
+                </div>
+              ) : null}
+
+              <div className="rounded-2xl border bg-cyan-50 p-4 text-sm text-cyan-800">
+                Usa esta opción solo para transferencias entre cuentas propias ya creadas en el módulo Transferencias. No crea movimientos ni egresos nuevos.
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-[1fr_auto]">
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-slate-700">
+                    Buscar transferencia existente
+                  </label>
+                  <input
+                    type="text"
+                    value={transferenciaBusqueda}
+                    onChange={(event) =>
+                      setTransferenciaBusqueda(event.target.value)
+                    }
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        event.preventDefault()
+                        void cargarTransferencias()
+                      }
+                    }}
+                    placeholder="Descripción, fecha, estado o monto"
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-900"
+                  />
+                </div>
+
+                <div className="flex items-end">
+                  <button
+                    type="button"
+                    onClick={() => cargarTransferencias()}
+                    disabled={transferenciaLoading || transferenciaSaving}
+                    className="w-full rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60"
+                  >
+                    {transferenciaLoading ? 'Buscando...' : 'Buscar'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-3">
+                <div className="rounded-2xl border bg-slate-50 p-4">
+                  <p className="text-sm text-slate-500">Monto cartola</p>
+                  <p className="mt-1 text-lg font-semibold text-slate-900">
+                    {formatCLP(getMontoFila(transferenciaFila))}
+                  </p>
+                </div>
+
+                <div className="rounded-2xl border bg-slate-50 p-4">
+                  <p className="text-sm text-slate-500">Cuenta cartola</p>
+                  <p className="mt-1 text-sm font-semibold text-slate-900">
+                    {getBancoLabel(
+                      transferenciaFila
+                        ? bancosPorId.get(transferenciaFila.cuenta_bancaria_id)
+                        : undefined
+                    )}
+                  </p>
+                </div>
+
+                <div className="rounded-2xl border bg-slate-50 p-4">
+                  <p className="text-sm text-slate-500">Tipo línea</p>
+                  <p className="mt-1 text-lg font-semibold text-slate-900">
+                    {Number(transferenciaFila?.cargo ?? 0) > 0
+                      ? 'Salida / origen'
+                      : 'Entrada / destino'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="overflow-hidden rounded-xl border text-sm">
+                <div className="grid grid-cols-7 bg-slate-50 text-xs uppercase text-slate-500">
+                  <div className="px-4 py-3 font-semibold">Sel.</div>
+                  <div className="px-4 py-3 font-semibold">Fecha</div>
+                  <div className="px-4 py-3 font-semibold">Monto</div>
+                  <div className="px-4 py-3 font-semibold">Origen</div>
+                  <div className="px-4 py-3 font-semibold">Destino</div>
+                  <div className="px-4 py-3 font-semibold">Estado</div>
+                  <div className="px-4 py-3 font-semibold">Descripción</div>
+                </div>
+
+                {transferenciaResultados.length > 0 ? (
+                  <div className="divide-y">
+                    {transferenciaResultados.map((transferencia) => {
+                      const seleccionado = transferencia.id === transferenciaId
+                      const origenId = getTransferenciaCuentaOrigenId(transferencia)
+                      const destinoId = getTransferenciaCuentaDestinoId(transferencia)
+                      const compatible = transferenciaCompatibleConFila(
+                        transferencia,
+                        transferenciaFila
+                      )
+
+                      return (
+                        <label
+                          key={transferencia.id}
+                          className={
+                            seleccionado
+                              ? 'grid cursor-pointer grid-cols-7 items-center bg-cyan-50'
+                              : 'grid cursor-pointer grid-cols-7 items-center hover:bg-slate-50'
+                          }
+                        >
+                          <div className="px-4 py-3">
+                            <input
+                              type="radio"
+                              name="transferencia_bancaria_id"
+                              checked={seleccionado}
+                              onChange={() => setTransferenciaId(transferencia.id)}
+                            />
+                          </div>
+
+                          <div className="px-4 py-3">
+                            {formatDate(transferencia.fecha)}
+                            {compatible ? (
+                              <p className="text-xs text-emerald-600">
+                                Cuenta compatible
+                              </p>
+                            ) : (
+                              <p className="text-xs text-amber-600">
+                                Revisar cuenta
+                              </p>
+                            )}
+                          </div>
+
+                          <div className="px-4 py-3 font-semibold text-slate-900">
+                            {formatCLP(getTransferenciaMonto(transferencia))}
+                          </div>
+
+                          <div className="px-4 py-3 text-xs text-slate-700">
+                            {getBancoLabel(
+                              origenId ? bancosPorId.get(origenId) : undefined
+                            )}
+                          </div>
+
+                          <div className="px-4 py-3 text-xs text-slate-700">
+                            {getBancoLabel(
+                              destinoId ? bancosPorId.get(destinoId) : undefined
+                            )}
+                          </div>
+
+                          <div className="px-4 py-3 capitalize text-slate-700">
+                            {transferencia.estado || '-'}
+                          </div>
+
+                          <div className="px-4 py-3 text-slate-700">
+                            {getTransferenciaDescripcion(transferencia)}
+                          </div>
+                        </label>
+                      )
+                    })}
+                  </div>
+                ) : (
+                  <div className="px-4 py-5 text-center text-slate-500">
+                    No se encontraron transferencias existentes por el mismo monto. Primero registra la transferencia en el módulo Transferencias.
+                  </div>
+                )}
+              </div>
+
+              <div className="flex flex-col-reverse gap-3 border-t pt-4 sm:flex-row sm:justify-end">
+                <button
+                  type="button"
+                  onClick={cerrarVincularTransferencia}
+                  disabled={transferenciaSaving}
+                  className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                >
+                  Cancelar
+                </button>
+
+                <button
+                  type="button"
+                  onClick={vincularTransferencia}
+                  disabled={transferenciaSaving || !transferenciaId}
+                  className="rounded-xl bg-cyan-700 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-cyan-800 disabled:opacity-60"
+                >
+                  {transferenciaSaving
+                    ? 'Vinculando...'
+                    : 'Vincular transferencia'}
                 </button>
               </div>
             </div>
