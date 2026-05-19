@@ -9,6 +9,74 @@ import type { OTResumen } from '../../../lib/ot/types'
 
 const STORAGE_ID_KEY = 'empresa_activa_id'
 
+type OTRecord = OTResumen & Record<string, unknown>
+
+function valueToString(value: unknown) {
+  if (value === null || value === undefined) return ''
+  if (typeof value === 'string') return value
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  return ''
+}
+
+function pickStringValue(ot: OTResumen, keys: string[]) {
+  const record = ot as OTRecord
+
+  for (const key of keys) {
+    const value = valueToString(record[key]).trim()
+
+    if (value) {
+      return value
+    }
+  }
+
+  return ''
+}
+
+function normalizarFechaFiltro(fecha: string) {
+  if (!fecha) return ''
+
+  return fecha.slice(0, 10)
+}
+
+function obtenerFechaOt(ot: OTResumen) {
+  return pickStringValue(ot, [
+    'fecha_inicio',
+    'fecha_inicio_servicio',
+    'fecha_servicio',
+    'fecha_programada',
+    'fecha_cierre',
+    'fecha_ot',
+    'fecha',
+    'created_at',
+  ])
+}
+
+function obtenerClienteId(ot: OTResumen) {
+  return pickStringValue(ot, [
+    'cliente_id',
+    'clienteId',
+    'cliente_nombre',
+    'cliente_razon_social',
+    'razon_social_cliente',
+    'nombre_cliente',
+    'cliente',
+  ])
+}
+
+function obtenerClienteNombre(ot: OTResumen) {
+  return (
+    pickStringValue(ot, [
+      'cliente_nombre',
+      'cliente_razon_social',
+      'razon_social_cliente',
+      'nombre_cliente',
+      'cliente',
+      'razon_social',
+      'nombre_fantasia',
+    ]) || 'Sin cliente'
+  )
+}
+
 function OTPageContent() {
   const [ots, setOts] = useState<OTResumen[]>([])
   const [loading, setLoading] = useState(true)
@@ -16,6 +84,10 @@ function OTPageContent() {
 
   const [checkingRole, setCheckingRole] = useState(true)
   const [canManageTecnicos, setCanManageTecnicos] = useState(false)
+
+  const [filtroCliente, setFiltroCliente] = useState('')
+  const [fechaDesde, setFechaDesde] = useState('')
+  const [fechaHasta, setFechaHasta] = useState('')
 
   useEffect(() => {
     let active = true
@@ -189,19 +261,65 @@ function OTPageContent() {
     }
   }, [])
 
+  const clientesFiltro = useMemo(() => {
+    const mapaClientes = new Map<string, string>()
+
+    ots.forEach((ot) => {
+      const clienteId = obtenerClienteId(ot)
+      const clienteNombre = obtenerClienteNombre(ot)
+      const key = clienteId || clienteNombre
+
+      if (key && !mapaClientes.has(key)) {
+        mapaClientes.set(key, clienteNombre)
+      }
+    })
+
+    return Array.from(mapaClientes.entries())
+      .map(([id, nombre]) => ({ id, nombre }))
+      .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'))
+  }, [ots])
+
+  const otsFiltradas = useMemo(() => {
+    return ots.filter((ot) => {
+      const clienteOt = obtenerClienteId(ot) || obtenerClienteNombre(ot)
+      const fechaOt = normalizarFechaFiltro(obtenerFechaOt(ot))
+
+      if (filtroCliente && clienteOt !== filtroCliente) {
+        return false
+      }
+
+      if (fechaDesde && (!fechaOt || fechaOt < fechaDesde)) {
+        return false
+      }
+
+      if (fechaHasta && (!fechaOt || fechaOt > fechaHasta)) {
+        return false
+      }
+
+      return true
+    })
+  }, [ots, filtroCliente, fechaDesde, fechaHasta])
+
+  const filtrosActivos = Boolean(filtroCliente || fechaDesde || fechaHasta)
+
   const totalAsignadas = useMemo(
-    () => ots.filter((ot) => ot.estado_nombre?.toLowerCase() === 'asignada').length,
-    [ots]
+    () =>
+      otsFiltradas.filter((ot) => ot.estado_nombre?.toLowerCase() === 'asignada')
+        .length,
+    [otsFiltradas]
   )
 
   const totalEnProceso = useMemo(
-    () => ots.filter((ot) => ot.estado_nombre?.toLowerCase() === 'en proceso').length,
-    [ots]
+    () =>
+      otsFiltradas.filter((ot) => ot.estado_nombre?.toLowerCase() === 'en proceso')
+        .length,
+    [otsFiltradas]
   )
 
   const totalCerradas = useMemo(
-    () => ots.filter((ot) => ot.estado_nombre?.toLowerCase() === 'cerrada').length,
-    [ots]
+    () =>
+      otsFiltradas.filter((ot) => ot.estado_nombre?.toLowerCase() === 'cerrada').length,
+    [otsFiltradas]
   )
 
   return (
@@ -236,10 +354,90 @@ function OTPageContent() {
         </div>
       </div>
 
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-col gap-1">
+          <h2 className="text-base font-semibold text-slate-900">
+            Filtros de búsqueda
+          </h2>
+          <p className="text-sm text-slate-500">
+            Filtra las OT por cliente y rango de fechas para revisar servicios de un
+            período específico.
+          </p>
+        </div>
+
+        <div className="mt-4 grid gap-4 md:grid-cols-4">
+          <div className="md:col-span-2">
+            <label className="mb-1 block text-sm font-medium text-slate-700">
+              Cliente
+            </label>
+            <select
+              value={filtroCliente}
+              onChange={(event) => setFiltroCliente(event.target.value)}
+              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-[#163A5F] focus:ring-2 focus:ring-[#163A5F]/20"
+            >
+              <option value="">Todos los clientes</option>
+              {clientesFiltro.map((cliente) => (
+                <option key={cliente.id} value={cliente.id}>
+                  {cliente.nombre}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-sm font-medium text-slate-700">
+              Fecha desde
+            </label>
+            <input
+              type="date"
+              value={fechaDesde}
+              onChange={(event) => setFechaDesde(event.target.value)}
+              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-[#163A5F] focus:ring-2 focus:ring-[#163A5F]/20"
+            />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-sm font-medium text-slate-700">
+              Fecha hasta
+            </label>
+            <input
+              type="date"
+              value={fechaHasta}
+              onChange={(event) => setFechaHasta(event.target.value)}
+              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-[#163A5F] focus:ring-2 focus:ring-[#163A5F]/20"
+            />
+          </div>
+        </div>
+
+        <div className="mt-4 flex flex-col gap-3 text-sm text-slate-500 md:flex-row md:items-center md:justify-between">
+          <p>
+            Mostrando{' '}
+            <span className="font-semibold text-slate-900">{otsFiltradas.length}</span>{' '}
+            de <span className="font-semibold text-slate-900">{ots.length}</span> OT.
+          </p>
+
+          {filtrosActivos ? (
+            <button
+              type="button"
+              onClick={() => {
+                setFiltroCliente('')
+                setFechaDesde('')
+                setFechaHasta('')
+              }}
+              className="inline-flex items-center justify-center rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+            >
+              Limpiar filtros
+            </button>
+          ) : null}
+        </div>
+      </div>
+
       <div className="grid gap-4 md:grid-cols-4">
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <p className="text-sm text-slate-500">Total OT</p>
-          <p className="mt-2 text-2xl font-bold text-slate-900">{ots.length}</p>
+          <p className="mt-2 text-2xl font-bold text-slate-900">
+            {otsFiltradas.length}
+          </p>
         </div>
 
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -266,8 +464,12 @@ function OTPageContent() {
         <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-sm text-red-700 shadow-sm">
           {error}
         </div>
+      ) : otsFiltradas.length === 0 ? (
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-600 shadow-sm">
+          No se encontraron OT con los filtros seleccionados.
+        </div>
       ) : (
-        <OTDataTable data={ots} />
+        <OTDataTable data={otsFiltradas} />
       )}
     </div>
   )
