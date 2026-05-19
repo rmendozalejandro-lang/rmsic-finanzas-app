@@ -5,6 +5,11 @@ import type { OTResumen } from '../../lib/ot/types'
 
 type Props = {
   data: OTResumen[]
+  selectable?: boolean
+  selectedIds?: ReadonlySet<string>
+  allRowsSelected?: boolean
+  onToggleSelect?: (otId: string) => void
+  onToggleSelectAll?: () => void
 }
 
 function formatDate(value: string | null | undefined) {
@@ -121,7 +126,14 @@ function estadoBadgeClass(estado: string | null | undefined) {
   }
 }
 
-export function OTDataTable({ data }: Props) {
+export function OTDataTable({
+  data,
+  selectable = false,
+  selectedIds,
+  allRowsSelected = false,
+  onToggleSelect,
+  onToggleSelectAll,
+}: Props) {
   if (!data.length) {
     return (
       <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center shadow-sm">
@@ -141,6 +153,17 @@ export function OTDataTable({ data }: Props) {
         <table className="min-w-full text-sm">
           <thead className="bg-slate-50">
             <tr className="text-left text-slate-600">
+              {selectable ? (
+                <th className="w-12 px-4 py-3 font-semibold">
+                  <input
+                    type="checkbox"
+                    checked={allRowsSelected}
+                    onChange={onToggleSelectAll}
+                    aria-label="Seleccionar todas las OT filtradas"
+                    className="h-4 w-4 rounded border-slate-300"
+                  />
+                </th>
+              ) : null}
               <th className="px-4 py-3 font-semibold">Folio</th>
               <th className="px-4 py-3 font-semibold">Fecha</th>
               <th className="px-4 py-3 font-semibold">Cliente</th>
@@ -155,70 +178,86 @@ export function OTDataTable({ data }: Props) {
           </thead>
 
           <tbody>
-            {data.map((ot) => (
-              <tr key={ot.id} className="border-t border-slate-100 text-slate-700">
-                <td className="px-4 py-3 font-semibold text-slate-900">
-                  {labelOrDash(ot.folio)}
-                </td>
+            {data.map((ot) => {
+              const checked = Boolean(selectedIds?.has(ot.id))
 
-                <td className="px-4 py-3">{formatDate(ot.fecha_ot)}</td>
+              return (
+                <tr key={ot.id} className="border-t border-slate-100 text-slate-700">
+                  {selectable ? (
+                    <td className="px-4 py-3 align-middle">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => onToggleSelect?.(ot.id)}
+                        aria-label={`Seleccionar ${ot.folio || 'OT'}`}
+                        className="h-4 w-4 rounded border-slate-300"
+                      />
+                    </td>
+                  ) : null}
 
-                <td className="px-4 py-3">
-                  <div className="max-w-[220px] whitespace-normal break-words">
-                    {labelOrDash(ot.cliente_nombre)}
-                  </div>
-                </td>
+                  <td className="px-4 py-3 font-semibold text-slate-900">
+                    {labelOrDash(ot.folio)}
+                  </td>
 
-                <td className="px-4 py-3">
-                  <div className="max-w-[280px] whitespace-normal break-words">
-                    {labelOrDash(ot.titulo)}
-                  </div>
-                </td>
+                  <td className="px-4 py-3">{formatDate(ot.fecha_ot)}</td>
 
-                <td className="px-4 py-3">
-                  <div className="max-w-[180px] whitespace-normal break-words">
-                    {labelOrDash(ot.tipo_servicio_nombre)}
-                  </div>
-                </td>
+                  <td className="px-4 py-3">
+                    <div className="max-w-[220px] whitespace-normal break-words">
+                      {labelOrDash(ot.cliente_nombre)}
+                    </div>
+                  </td>
 
-                <td className="px-4 py-3">
-                  <span
-                    className={`inline-flex rounded-full border px-3 py-1 text-xs font-medium ${estadoBadgeClass(
-                      ot.estado_nombre
-                    )}`}
-                  >
-                    {labelOrDash(ot.estado_nombre)}
-                  </span>
-                </td>
+                  <td className="px-4 py-3">
+                    <div className="max-w-[280px] whitespace-normal break-words">
+                      {labelOrDash(ot.titulo)}
+                    </div>
+                  </td>
 
-                <td className="px-4 py-3">
-                  <span
-                    className={`inline-flex rounded-full border px-3 py-1 text-xs font-medium ${priorityBadgeClass(
-                      ot.prioridad
-                    )}`}
-                  >
-                    {labelOrDash(ot.prioridad)}
-                  </span>
-                </td>
+                  <td className="px-4 py-3">
+                    <div className="max-w-[180px] whitespace-normal break-words">
+                      {labelOrDash(ot.tipo_servicio_nombre)}
+                    </div>
+                  </td>
 
-                <td className="px-4 py-3">
-                  <div className="max-w-[180px] whitespace-normal break-words">
-                    {humanizePerson(ot.tecnico_nombre)}
-                  </div>
-                </td>
+                  <td className="px-4 py-3">
+                    <span
+                      className={`inline-flex rounded-full border px-3 py-1 text-xs font-medium ${estadoBadgeClass(
+                        ot.estado_nombre
+                      )}`}
+                    >
+                      {labelOrDash(ot.estado_nombre)}
+                    </span>
+                  </td>
 
-                <td className="px-4 py-3">{formatDuration(ot.duracion_minutos)}</td>
+                  <td className="px-4 py-3">
+                    <span
+                      className={`inline-flex rounded-full border px-3 py-1 text-xs font-medium ${priorityBadgeClass(
+                        ot.prioridad
+                      )}`}
+                    >
+                      {labelOrDash(ot.prioridad)}
+                    </span>
+                  </td>
 
-                <td className="px-4 py-3 text-right">
-                  <Link
-                    href={`/ot/${ot.id}`}
-                    className="inline-flex items-center justify-center rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-100"
-                  >
-                    Detalle
-                  </Link>
-                </td>
-              </tr>
-            ))}
+                  <td className="px-4 py-3">
+                    <div className="max-w-[180px] whitespace-normal break-words">
+                      {humanizePerson(ot.tecnico_nombre)}
+                    </div>
+                  </td>
+
+                  <td className="px-4 py-3">{formatDuration(ot.duracion_minutos)}</td>
+
+                  <td className="px-4 py-3 text-right">
+                    <Link
+                      href={`/ot/${ot.id}`}
+                      className="inline-flex items-center justify-center rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-100"
+                    >
+                      Detalle
+                    </Link>
+                  </td>
+                </tr>
+              )
+            })}
           </tbody>
         </table>
       </div>

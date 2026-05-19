@@ -88,6 +88,8 @@ function OTPageContent() {
   const [filtroCliente, setFiltroCliente] = useState('')
   const [fechaDesde, setFechaDesde] = useState('')
   const [fechaHasta, setFechaHasta] = useState('')
+  const [otIdsSeleccionadas, setOtIdsSeleccionadas] = useState<Set<string>>(new Set())
+  const [generandoPdfLote, setGenerandoPdfLote] = useState(false)
 
   useEffect(() => {
     let active = true
@@ -300,6 +302,25 @@ function OTPageContent() {
     })
   }, [ots, filtroCliente, fechaDesde, fechaHasta])
 
+  useEffect(() => {
+    setOtIdsSeleccionadas((prev) => {
+      const idsVisibles = new Set(otsFiltradas.map((ot) => ot.id))
+      const next = new Set<string>()
+
+      prev.forEach((id) => {
+        if (idsVisibles.has(id)) {
+          next.add(id)
+        }
+      })
+
+      if (next.size === prev.size && Array.from(next).every((id) => prev.has(id))) {
+        return prev
+      }
+
+      return next
+    })
+  }, [otsFiltradas])
+
   const filtrosActivos = Boolean(filtroCliente || fechaDesde || fechaHasta)
 
   const totalAsignadas = useMemo(
@@ -317,10 +338,107 @@ function OTPageContent() {
   )
 
   const totalCerradas = useMemo(
-    () =>
-      otsFiltradas.filter((ot) => ot.estado_nombre?.toLowerCase() === 'cerrada').length,
+    () => otsFiltradas.filter((ot) => ot.estado_nombre?.toLowerCase() === 'cerrada').length,
     [otsFiltradas]
   )
+
+  const cantidadSeleccionadas = otIdsSeleccionadas.size
+
+  const todasFiltradasSeleccionadas = useMemo(() => {
+    return (
+      otsFiltradas.length > 0 &&
+      otsFiltradas.every((ot) => otIdsSeleccionadas.has(ot.id))
+    )
+  }, [otsFiltradas, otIdsSeleccionadas])
+
+  const toggleSeleccionOt = (otId: string) => {
+    setOtIdsSeleccionadas((prev) => {
+      const next = new Set(prev)
+
+      if (next.has(otId)) {
+        next.delete(otId)
+      } else {
+        next.add(otId)
+      }
+
+      return next
+    })
+  }
+
+  const seleccionarTodasFiltradas = () => {
+    setOtIdsSeleccionadas(new Set(otsFiltradas.map((ot) => ot.id)))
+  }
+
+  const limpiarSeleccion = () => {
+    setOtIdsSeleccionadas(new Set())
+  }
+
+  const limpiarFiltros = () => {
+    setFiltroCliente('')
+    setFechaDesde('')
+    setFechaHasta('')
+  }
+
+  const imprimirOtSeleccionadas = async () => {
+    const ids = Array.from(otIdsSeleccionadas)
+
+    if (ids.length === 0) {
+      alert('Selecciona una o más OT para generar el PDF.')
+      return
+    }
+
+    try {
+      setGenerandoPdfLote(true)
+
+      const {
+        data: { session },
+        error: sessionError,
+      } = await supabase.auth.getSession()
+
+      if (sessionError || !session) {
+        throw new Error('No se pudo validar la sesión actual.')
+      }
+
+      const response = await fetch(
+        `/api/ot-pdf-lote?ids=${encodeURIComponent(ids.join(','))}`,
+        {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          cache: 'no-store',
+        }
+      )
+
+      if (!response.ok) {
+        const contentType = response.headers.get('content-type') || ''
+        let message = 'No se pudo generar el PDF de OT seleccionadas.'
+
+        if (contentType.includes('application/json')) {
+          const body = await response.json()
+          message = body?.error || message
+        }
+
+        throw new Error(message)
+      }
+
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
+      window.open(url, '_blank', 'noopener,noreferrer')
+
+      window.setTimeout(() => {
+        window.URL.revokeObjectURL(url)
+      }, 60_000)
+    } catch (err) {
+      alert(
+        err instanceof Error
+          ? err.message
+          : 'No se pudo generar el PDF de OT seleccionadas.'
+      )
+    } finally {
+      setGenerandoPdfLote(false)
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -409,26 +527,55 @@ function OTPageContent() {
           </div>
         </div>
 
-        <div className="mt-4 flex flex-col gap-3 text-sm text-slate-500 md:flex-row md:items-center md:justify-between">
+        <div className="mt-4 flex flex-col gap-3 text-sm text-slate-500 lg:flex-row lg:items-center lg:justify-between">
           <p>
             Mostrando{' '}
             <span className="font-semibold text-slate-900">{otsFiltradas.length}</span>{' '}
-            de <span className="font-semibold text-slate-900">{ots.length}</span> OT.
+            de <span className="font-semibold text-slate-900">{ots.length}</span> OT.{' '}
+            <span className="font-semibold text-slate-900">{cantidadSeleccionadas}</span>{' '}
+            seleccionada{cantidadSeleccionadas === 1 ? '' : 's'} para imprimir.
           </p>
 
-          {filtrosActivos ? (
+          <div className="flex flex-wrap gap-2">
+            {filtrosActivos ? (
+              <button
+                type="button"
+                onClick={limpiarFiltros}
+                className="inline-flex items-center justify-center rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+              >
+                Limpiar filtros
+              </button>
+            ) : null}
+
             <button
               type="button"
-              onClick={() => {
-                setFiltroCliente('')
-                setFechaDesde('')
-                setFechaHasta('')
-              }}
-              className="inline-flex items-center justify-center rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+              onClick={seleccionarTodasFiltradas}
+              disabled={otsFiltradas.length === 0 || todasFiltradasSeleccionadas}
+              className="inline-flex items-center justify-center rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              Limpiar filtros
+              Seleccionar filtradas
             </button>
-          ) : null}
+
+            <button
+              type="button"
+              onClick={limpiarSeleccion}
+              disabled={cantidadSeleccionadas === 0}
+              className="inline-flex items-center justify-center rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Limpiar selección
+            </button>
+
+            <button
+              type="button"
+              onClick={imprimirOtSeleccionadas}
+              disabled={cantidadSeleccionadas === 0 || generandoPdfLote}
+              className="inline-flex items-center justify-center rounded-xl bg-[#163A5F] px-4 py-2 text-sm font-semibold text-white hover:bg-[#245C90] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {generandoPdfLote
+                ? 'Generando PDF...'
+                : `Imprimir seleccionadas (${cantidadSeleccionadas})`}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -469,7 +616,16 @@ function OTPageContent() {
           No se encontraron OT con los filtros seleccionados.
         </div>
       ) : (
-        <OTDataTable data={otsFiltradas} />
+        <OTDataTable
+          data={otsFiltradas}
+          selectable
+          selectedIds={otIdsSeleccionadas}
+          allRowsSelected={todasFiltradasSeleccionadas}
+          onToggleSelect={toggleSeleccionOt}
+          onToggleSelectAll={
+            todasFiltradasSeleccionadas ? limpiarSeleccion : seleccionarTodasFiltradas
+          }
+        />
       )}
     </div>
   )
