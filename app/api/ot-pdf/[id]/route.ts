@@ -88,6 +88,76 @@ type TipoServicioOption = {
   nombre: string
 }
 
+
+const CHILE_TIME_ZONE = 'America/Santiago'
+
+type DateTimeParts = {
+  year: string
+  month: string
+  day: string
+  hour: string
+  minute: string
+  second: string
+}
+
+function getChileDateTimeParts(value: string | null | undefined): DateTimeParts | null {
+  if (!value) return null
+
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return null
+
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: CHILE_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+    hourCycle: 'h23',
+  })
+
+  const parts = formatter.formatToParts(date).reduce<Record<string, string>>(
+    (acc, part) => {
+      if (part.type !== 'literal') acc[part.type] = part.value
+      return acc
+    },
+    {}
+  )
+
+  if (!parts.year || !parts.month || !parts.day || !parts.hour || !parts.minute) {
+    return null
+  }
+
+  return {
+    year: parts.year,
+    month: parts.month,
+    day: parts.day,
+    hour: parts.hour.padStart(2, '0'),
+    minute: parts.minute.padStart(2, '0'),
+    second: (parts.second || '00').padStart(2, '0'),
+  }
+}
+
+function toChileDate(value: string | null | undefined) {
+  const parts = getChileDateTimeParts(value)
+  if (!parts) return null
+  return `${parts.year}-${parts.month}-${parts.day}`
+}
+
+function toChileFloatingDateTime(value: string | null | undefined) {
+  const parts = getChileDateTimeParts(value)
+  if (!parts) return null
+
+  // Importante: devolvemos fecha/hora local de Chile SIN sufijo Z ni offset.
+  // El componente PDF vuelve a formatear con new Date(). En Vercel el servidor
+  // corre en UTC; si le pasamos el timestamptz original, muestra +4 horas.
+  // Al pasar un datetime "flotante" como 2026-05-11T21:15:00, tanto local
+  // como Vercel muestran la hora real del servicio.
+  return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:${parts.second}`
+}
+
 type TiempoTrabajo = {
   id: string
   ot_id: string
@@ -158,9 +228,9 @@ function obtenerHorarioDesdeTiempos(tiempos: TiempoTrabajo[]) {
   }, 0)
 
   return {
-    fecha_ot: inicio?.fecha || null,
-    hora_inicio: inicio?.hora_inicio || null,
-    hora_termino: termino?.hora_termino || null,
+    fecha_ot: toChileDate(inicio?.hora_inicio || inicio?.fecha || null),
+    hora_inicio: toChileFloatingDateTime(inicio?.hora_inicio || null),
+    hora_termino: toChileFloatingDateTime(termino?.hora_termino || null),
     duracion_minutos: duracionTotal > 0 ? duracionTotal : null,
   }
 }
@@ -546,7 +616,9 @@ return new Response(pdfBytes, {      status: 200,
       headers: {
         'Content-Type': 'application/pdf',
         'Content-Disposition': `inline; filename="${safeFolio}.pdf"`,
-        'Cache-Control': 'private, no-store, max-age=0',
+        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
+        Pragma: 'no-cache',
+        Expires: '0',
       },
     })
   } catch (error) {
