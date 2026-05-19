@@ -88,6 +88,83 @@ type TipoServicioOption = {
   nombre: string
 }
 
+type TiempoTrabajo = {
+  id: string
+  ot_id: string
+  usuario_id: string
+  fecha: string
+  hora_inicio: string | null
+  hora_termino: string | null
+  duracion_minutos: number | null
+  tipo_tiempo: 'trabajo' | 'traslado' | 'espera' | 'supervision'
+  observacion: string | null
+  created_at: string
+  updated_at: string
+}
+
+function toValidTime(value: string | null | undefined) {
+  if (!value) return null
+
+  const time = new Date(value).getTime()
+  return Number.isFinite(time) ? time : null
+}
+
+function obtenerHorarioDesdeTiempos(tiempos: TiempoTrabajo[]) {
+  const activosConHoras = tiempos.filter(
+    (item) => toValidTime(item.hora_inicio) !== null || toValidTime(item.hora_termino) !== null
+  )
+
+  if (activosConHoras.length === 0) return null
+
+  // Para el encabezado del informe, priorizamos los bloques de trabajo.
+  // Si no existen, usamos cualquier bloque de tiempo registrado en la OT.
+  const base = activosConHoras.some((item) => item.tipo_tiempo === 'trabajo')
+    ? activosConHoras.filter((item) => item.tipo_tiempo === 'trabajo')
+    : activosConHoras
+
+  const inicio = base.reduce<TiempoTrabajo | null>((selected, current) => {
+    const currentTime = toValidTime(current.hora_inicio)
+    if (currentTime === null) return selected
+
+    if (!selected) return current
+
+    const selectedTime = toValidTime(selected.hora_inicio)
+    return selectedTime === null || currentTime < selectedTime ? current : selected
+  }, null)
+
+  const termino = base.reduce<TiempoTrabajo | null>((selected, current) => {
+    const currentTime = toValidTime(current.hora_termino)
+    if (currentTime === null) return selected
+
+    if (!selected) return current
+
+    const selectedTime = toValidTime(selected.hora_termino)
+    return selectedTime === null || currentTime > selectedTime ? current : selected
+  }, null)
+
+  const duracionTotal = base.reduce((total, item) => {
+    if (typeof item.duracion_minutos === 'number') {
+      return total + item.duracion_minutos
+    }
+
+    const inicioMs = toValidTime(item.hora_inicio)
+    const terminoMs = toValidTime(item.hora_termino)
+
+    if (inicioMs === null || terminoMs === null || terminoMs < inicioMs) {
+      return total
+    }
+
+    return total + Math.round((terminoMs - inicioMs) / 60000)
+  }, 0)
+
+  return {
+    fecha_ot: inicio?.fecha || null,
+    hora_inicio: inicio?.hora_inicio || null,
+    hora_termino: termino?.hora_termino || null,
+    duracion_minutos: duracionTotal > 0 ? duracionTotal : null,
+  }
+}
+
 function jsonError(message: string, status = 500) {
   return new Response(JSON.stringify({ error: message }), {
     status,
@@ -170,6 +247,7 @@ const supabaseServiceRoleKeySafe = supabaseServiceRoleKey as string
       detalleResp,
       evidenciasResp,
       firmasResp,
+      tiemposResp,
       perfilesResp,
       tiposResp,
     ] = await Promise.all([
@@ -258,6 +336,27 @@ const supabaseServiceRoleKeySafe = supabaseServiceRoleKey as string
         )
         .eq('ot_id', otId)
         .order('fecha_firma', { ascending: false }),
+      adminClient
+        .from('ot_tiempos_trabajo')
+        .select(
+          `
+            id,
+            ot_id,
+            usuario_id,
+            fecha,
+            hora_inicio,
+            hora_termino,
+            duracion_minutos,
+            tipo_tiempo,
+            observacion,
+            created_at,
+            updated_at
+          `
+        )
+        .eq('ot_id', otId)
+        .eq('activo', true)
+        .is('deleted_at', null)
+        .order('hora_inicio', { ascending: true }),
       adminClient.from('perfiles').select('id, email').order('email', { ascending: true }),
       adminClient.from('ot_tipos_servicio').select('id, codigo, nombre').eq('activo', true),
     ])
@@ -274,6 +373,9 @@ const supabaseServiceRoleKeySafe = supabaseServiceRoleKey as string
     if (firmasResp.error) {
       return jsonError(`No se pudieron cargar las firmas: ${firmasResp.error.message}`, 500)
     }
+    if (tiemposResp.error) {
+      return jsonError(`No se pudieron cargar los tiempos registrados: ${tiemposResp.error.message}`, 500)
+    }
     if (perfilesResp.error) {
       return jsonError(`No se pudieron cargar los perfiles: ${perfilesResp.error.message}`, 500)
     }
@@ -289,6 +391,8 @@ const supabaseServiceRoleKeySafe = supabaseServiceRoleKey as string
 
     const resumen = resumenResp.data as OTResumen
     const detalle = detalleResp.data as OTDetalle
+    const tiempos = (tiemposResp.data ?? []) as TiempoTrabajo[]
+    const horarioDesdeTiempos = obtenerHorarioDesdeTiempos(tiempos)
 
     const checklistResp = await adminClient
       .from('ot_respuestas_checklist')
@@ -388,6 +492,15 @@ const supabaseServiceRoleKeySafe = supabaseServiceRoleKey as string
 
     const detallePdf: OTDetalle = {
       ...detalle,
+      ...(horarioDesdeTiempos
+        ? {
+            fecha_ot: horarioDesdeTiempos.fecha_ot || detalle.fecha_ot,
+            hora_inicio: horarioDesdeTiempos.hora_inicio || detalle.hora_inicio,
+            hora_termino: horarioDesdeTiempos.hora_termino || detalle.hora_termino,
+            duracion_minutos:
+              horarioDesdeTiempos.duracion_minutos ?? detalle.duracion_minutos,
+          }
+        : {}),
       observaciones_cierre: [
         detalle.observaciones_cierre,
         checklistTextoPdf
@@ -402,8 +515,20 @@ const supabaseServiceRoleKeySafe = supabaseServiceRoleKey as string
     const tiposServicio = (tiposResp.data ?? []) as TipoServicioOption[]
     const logoUrl = new URL('/rmsic-logo.png', request.url).toString()
 
+    const resumenPdf = horarioDesdeTiempos
+      ? ({
+          ...resumen,
+          fecha_ot: horarioDesdeTiempos.fecha_ot || (resumen as any).fecha_ot,
+          fecha_visita: horarioDesdeTiempos.fecha_ot || (resumen as any).fecha_visita,
+          hora_inicio: horarioDesdeTiempos.hora_inicio || (resumen as any).hora_inicio,
+          hora_termino: horarioDesdeTiempos.hora_termino || (resumen as any).hora_termino,
+          duracion_minutos:
+            horarioDesdeTiempos.duracion_minutos ?? (resumen as any).duracion_minutos,
+        } as OTResumen)
+      : resumen
+
  const pdfElement = React.createElement(OTPdfDocument, {
-  resumen,
+  resumen: resumenPdf,
   detalle: detallePdf,
   evidencias,
   firmas,
