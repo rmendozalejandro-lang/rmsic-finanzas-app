@@ -87,6 +87,16 @@ type MovimientoManual = {
   categorias?: CategoriaMovimiento | CategoriaMovimiento[] | null
 }
 
+
+type PagoParcialResumen = {
+  movimiento_id: string
+  total_documento: number | string
+  total_pagado_parcial: number | string
+  saldo_pendiente: number | string
+  cantidad_pagos: number | string
+  estado_pago_calculado: string
+}
+
 type TransferenciaBancaria = {
   id: string
   empresa_id?: string
@@ -373,6 +383,23 @@ export default function ConciliacionBancariaPage() {
   const [multipleLoading, setMultipleLoading] = useState(false)
   const [multipleSaving, setMultipleSaving] = useState(false)
   const [multipleError, setMultipleError] = useState('')
+
+  const [showConciliarParcialForm, setShowConciliarParcialForm] =
+    useState(false)
+  const [parcialFila, setParcialFila] = useState<FilaBanco | null>(null)
+  const [parcialBusqueda, setParcialBusqueda] = useState('')
+  const [parcialTipo, setParcialTipo] = useState<
+    'todos' | 'ingreso' | 'egreso'
+  >('todos')
+  const [parcialResultados, setParcialResultados] = useState<
+    MovimientoManual[]
+  >([])
+  const [parcialMovimientoId, setParcialMovimientoId] = useState('')
+  const [parcialResumenPorMovimiento, setParcialResumenPorMovimiento] =
+    useState<Record<string, PagoParcialResumen>>({})
+  const [parcialLoading, setParcialLoading] = useState(false)
+  const [parcialSaving, setParcialSaving] = useState(false)
+  const [parcialError, setParcialError] = useState('')
 
   const [showTransferenciaForm, setShowTransferenciaForm] = useState(false)
   const [transferenciaFila, setTransferenciaFila] = useState<FilaBanco | null>(null)
@@ -1358,6 +1385,302 @@ export default function ConciliacionBancariaPage() {
     cerrarConciliacionMultiple()
   }
 
+  const cargarMovimientosParcial = async (
+    fila: FilaBanco | null = parcialFila,
+    busqueda: string = parcialBusqueda,
+    tipo: 'todos' | 'ingreso' | 'egreso' = parcialTipo
+  ) => {
+    if (!empresaActivaId || !fila) return
+
+    setParcialLoading(true)
+    setParcialError('')
+    setParcialMovimientoId('')
+
+    const texto = busqueda.trim().toLowerCase()
+    const montoBuscado = Number(limpiarMonto(busqueda) || 0)
+    const montoBanco = getMontoFila(fila)
+
+    let query = supabase
+      .from('movimientos')
+      .select(`
+        id,
+        fecha,
+        tipo_movimiento,
+        tipo_documento,
+        numero_documento,
+        descripcion,
+        monto_neto,
+        monto_iva,
+        monto_exento,
+        impuesto_especifico,
+        monto_total,
+        estado,
+        clientes:cliente_id (
+          nombre,
+          rut
+        ),
+        proveedores:proveedor_id (
+          nombre,
+          rut
+        ),
+        categorias:categoria_id (
+          nombre
+        )
+      `)
+      .eq('empresa_id', empresaActivaId)
+      .is('deleted_at', null)
+      .order('fecha', { ascending: false })
+      .limit(montoBuscado > 0 ? 120 : 300)
+
+    if (tipo !== 'todos') {
+      query = query.eq('tipo_movimiento', tipo)
+    }
+
+    if (montoBuscado > 0) {
+      query = query.or(
+        `monto_total.eq.${montoBuscado},numero_documento.ilike.%${montoBuscado}%,descripcion.ilike.%${montoBuscado}%`
+      )
+    }
+
+    const { data, error: queryError } = await query
+
+    if (queryError) {
+      setParcialError(`Error al buscar movimientos: ${queryError.message}`)
+      setParcialResultados([])
+      setParcialResumenPorMovimiento({})
+      setParcialLoading(false)
+      return
+    }
+
+    const movimientosBase = (data ?? []) as unknown as MovimientoManual[]
+    const ids = movimientosBase.map((movimiento) => movimiento.id)
+
+    let resumenMap: Record<string, PagoParcialResumen> = {}
+
+    if (ids.length > 0) {
+      const { data: resumenData, error: resumenError } = await supabase
+        .from('v_conciliacion_pago_parcial_resumen')
+        .select(`
+          movimiento_id,
+          total_documento,
+          total_pagado_parcial,
+          saldo_pendiente,
+          cantidad_pagos,
+          estado_pago_calculado
+        `)
+        .in('movimiento_id', ids)
+
+      if (resumenError) {
+        setParcialError(
+          `Error al cargar saldos parciales: ${resumenError.message}`
+        )
+        setParcialResultados([])
+        setParcialResumenPorMovimiento({})
+        setParcialLoading(false)
+        return
+      }
+
+      resumenMap = Object.fromEntries(
+        ((resumenData ?? []) as PagoParcialResumen[]).map((item) => [
+          item.movimiento_id,
+          item,
+        ])
+      )
+    }
+
+    let resultados = movimientosBase.filter((movimiento) => {
+      const resumen = resumenMap[movimiento.id]
+      const saldoPendiente = Number(
+        resumen?.saldo_pendiente ?? movimiento.monto_total ?? 0
+      )
+
+      if (saldoPendiente <= 0.49) return false
+
+      if (!texto || montoBuscado > 0) return true
+
+      const campos = [
+        movimiento.tipo_movimiento,
+        movimiento.tipo_documento,
+        movimiento.numero_documento,
+        movimiento.descripcion,
+        movimiento.estado,
+        getRelacionNombre(movimiento.clientes),
+        getRelacionNombre(movimiento.proveedores),
+        getRelacionNombre(movimiento.categorias),
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
+
+      return campos.includes(texto)
+    })
+
+    resultados = resultados.sort((a, b) => {
+      const resumenA = resumenMap[a.id]
+      const resumenB = resumenMap[b.id]
+      const saldoA = Number(resumenA?.saldo_pendiente ?? a.monto_total ?? 0)
+      const saldoB = Number(resumenB?.saldo_pendiente ?? b.monto_total ?? 0)
+      const diffA = Math.abs(saldoA - montoBanco)
+      const diffB = Math.abs(saldoB - montoBanco)
+
+      if (diffA !== diffB) return diffA - diffB
+
+      return String(b.fecha || '').localeCompare(String(a.fecha || ''))
+    })
+
+    const enrichedResumenMap = { ...resumenMap }
+
+    for (const movimiento of resultados) {
+      if (!enrichedResumenMap[movimiento.id]) {
+        enrichedResumenMap[movimiento.id] = {
+          movimiento_id: movimiento.id,
+          total_documento: movimiento.monto_total,
+          total_pagado_parcial: 0,
+          saldo_pendiente: movimiento.monto_total,
+          cantidad_pagos: 0,
+          estado_pago_calculado: 'sin_pagos',
+        }
+      }
+    }
+
+    setParcialResumenPorMovimiento(enrichedResumenMap)
+    setParcialResultados(resultados)
+    setParcialMovimientoId(resultados[0]?.id || '')
+    setParcialLoading(false)
+  }
+
+  const abrirConciliacionParcial = async (fila: FilaBanco) => {
+    const tipo = Number(fila.cargo ?? 0) > 0 ? 'egreso' : 'ingreso'
+
+    setParcialFila(fila)
+    setParcialBusqueda('')
+    setParcialTipo(tipo)
+    setParcialResultados([])
+    setParcialMovimientoId('')
+    setParcialResumenPorMovimiento({})
+    setParcialError('')
+    setShowConciliarParcialForm(true)
+
+    await cargarMovimientosParcial(fila, '', tipo)
+  }
+
+  const cerrarConciliacionParcial = () => {
+    if (parcialSaving) return
+
+    setShowConciliarParcialForm(false)
+    setParcialFila(null)
+    setParcialBusqueda('')
+    setParcialTipo('todos')
+    setParcialResultados([])
+    setParcialMovimientoId('')
+    setParcialResumenPorMovimiento({})
+    setParcialError('')
+  }
+
+  const getResumenParcialMovimiento = (movimiento: MovimientoManual | undefined) => {
+    if (!movimiento) return null
+
+    return (
+      parcialResumenPorMovimiento[movimiento.id] || {
+        movimiento_id: movimiento.id,
+        total_documento: movimiento.monto_total,
+        total_pagado_parcial: 0,
+        saldo_pendiente: movimiento.monto_total,
+        cantidad_pagos: 0,
+        estado_pago_calculado: 'sin_pagos',
+      }
+    )
+  }
+
+  const getMovimientoParcialSeleccionado = () => {
+    return parcialResultados.find((item) => item.id === parcialMovimientoId)
+  }
+
+  const conciliarParcial = async () => {
+    if (!parcialFila) {
+      setParcialError('No se encontró la línea de cartola seleccionada.')
+      return
+    }
+
+    const movimiento = getMovimientoParcialSeleccionado()
+
+    if (!movimiento) {
+      setParcialError('Debes seleccionar una factura o movimiento.')
+      return
+    }
+
+    const resumen = getResumenParcialMovimiento(movimiento)
+    const montoBanco = getMontoFila(parcialFila)
+    const saldoPendiente = Number(resumen?.saldo_pendiente ?? 0)
+
+    if (montoBanco <= 0) {
+      setParcialError('La línea bancaria no tiene monto válido.')
+      return
+    }
+
+    if (montoBanco > saldoPendiente + 0.49) {
+      setParcialError(
+        `El pago excede el saldo pendiente. Saldo: ${formatCLP(
+          saldoPendiente
+        )}, pago banco: ${formatCLP(montoBanco)}.`
+      )
+      return
+    }
+
+    const saldoDespues = Math.max(saldoPendiente - montoBanco, 0)
+
+    const confirmar = window.confirm(
+      `¿Aplicar este pago parcial por ${formatCLP(
+        montoBanco
+      )} al documento seleccionado?\n\nSaldo actual: ${formatCLP(
+        saldoPendiente
+      )}\nSaldo después: ${formatCLP(saldoDespues)}`
+    )
+
+    if (!confirmar) return
+
+    setParcialSaving(true)
+    setParcialError('')
+    setError('')
+    setSuccess('')
+
+    const { data, error: rpcError } = await supabase.rpc(
+      'conciliar_pago_parcial_bancario',
+      {
+        p_banco_importacion_fila_id: parcialFila.id,
+        p_movimiento_id: movimiento.id,
+        p_observacion: `Conciliación parcial desde app: ${
+          movimiento.tipo_movimiento
+        } ${movimiento.tipo_documento || ''} ${
+          movimiento.numero_documento || ''
+        }`.trim(),
+      }
+    )
+
+    if (rpcError) {
+      setParcialError(rpcError.message)
+      setParcialSaving(false)
+      return
+    }
+
+    const resultado = Array.isArray(data) ? data[0] : null
+    const saldoFinal = resultado?.saldo_pendiente
+
+    setSuccess(
+      typeof saldoFinal !== 'undefined'
+        ? `Pago parcial registrado correctamente. Saldo pendiente: ${formatCLP(
+            saldoFinal
+          )}.`
+        : 'Pago parcial registrado correctamente.'
+    )
+
+    await cargarDatos()
+
+    setParcialSaving(false)
+    cerrarConciliacionParcial()
+  }
+
+
   const transferenciaCompatibleConFila = (
     transferencia: TransferenciaBancaria,
     fila: FilaBanco | null = transferenciaFila
@@ -2007,6 +2330,15 @@ export default function ConciliacionBancariaPage() {
                         className="w-full rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-100 disabled:opacity-60"
                       >
                         Conciliar manual
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => abrirConciliacionParcial(fila)}
+                        disabled={processing}
+                        className="w-full rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-100 disabled:opacity-60"
+                      >
+                        Conciliar parcial
                       </button>
 
                       <button
@@ -2757,6 +3089,291 @@ export default function ConciliacionBancariaPage() {
                   {multipleSaving
                     ? 'Conciliando...'
                     : 'Conciliar seleccionados'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {showConciliarParcialForm ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+          <div className="max-h-[90vh] w-full max-w-6xl overflow-y-auto rounded-3xl bg-white p-6 shadow-xl">
+            <div className="flex flex-col gap-3 border-b pb-4 md:flex-row md:items-start md:justify-between">
+              <div>
+                <p className="text-sm font-medium text-slate-500">
+                  Conciliar varios pagos contra una factura
+                </p>
+
+                <h2 className="mt-1 text-xl font-semibold text-slate-900">
+                  Conciliación parcial
+                </h2>
+
+                <p className="mt-1 text-sm text-slate-600">
+                  {parcialFila?.descripcion_original || 'Sin descripción'} ·{' '}
+                  {formatDate(parcialFila?.fecha)} ·{' '}
+                  {formatCLP(getMontoFila(parcialFila))}
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={cerrarConciliacionParcial}
+                disabled={parcialSaving}
+                className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+              >
+                Cerrar
+              </button>
+            </div>
+
+            <div className="mt-5 space-y-5">
+              {parcialError ? (
+                <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+                  {parcialError}
+                </div>
+              ) : null}
+
+              <div className="rounded-2xl border bg-amber-50 p-4 text-sm text-amber-800">
+                Usa esta opción cuando una factura o movimiento ya existe por el
+                total, pero fue pagado con dos o más líneas bancarias desde una
+                o más cuentas. No crea otra factura ni duplica IVA/gasto.
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-[1fr_220px_auto]">
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-slate-700">
+                    Buscar factura o movimiento existente
+                  </label>
+                  <input
+                    type="text"
+                    value={parcialBusqueda}
+                    onChange={(event) =>
+                      setParcialBusqueda(event.target.value)
+                    }
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        event.preventDefault()
+                        void cargarMovimientosParcial()
+                      }
+                    }}
+                    placeholder="Factura, proveedor/cliente, descripción o monto total"
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-900"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-slate-700">
+                    Tipo
+                  </label>
+                  <select
+                    value={parcialTipo}
+                    onChange={(event) =>
+                      setParcialTipo(
+                        event.target.value as 'todos' | 'ingreso' | 'egreso'
+                      )
+                    }
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-900"
+                  >
+                    <option value="todos">Todos</option>
+                    <option value="ingreso">Ingresos</option>
+                    <option value="egreso">Egresos</option>
+                  </select>
+                </div>
+
+                <div className="flex items-end">
+                  <button
+                    type="button"
+                    onClick={() => cargarMovimientosParcial()}
+                    disabled={parcialLoading || parcialSaving}
+                    className="w-full rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60"
+                  >
+                    {parcialLoading ? 'Buscando...' : 'Buscar'}
+                  </button>
+                </div>
+              </div>
+
+              {(() => {
+                const movimiento = getMovimientoParcialSeleccionado()
+                const resumen = getResumenParcialMovimiento(movimiento)
+                const montoBanco = getMontoFila(parcialFila)
+                const saldoPendiente = Number(resumen?.saldo_pendiente ?? 0)
+                const saldoDespues = Math.max(saldoPendiente - montoBanco, 0)
+
+                return (
+                  <div className="grid gap-4 md:grid-cols-4">
+                    <div className="rounded-2xl border bg-slate-50 p-4">
+                      <p className="text-sm text-slate-500">Pago cartola</p>
+                      <p className="mt-1 text-lg font-semibold text-slate-900">
+                        {formatCLP(montoBanco)}
+                      </p>
+                    </div>
+
+                    <div className="rounded-2xl border bg-slate-50 p-4">
+                      <p className="text-sm text-slate-500">Total documento</p>
+                      <p className="mt-1 text-lg font-semibold text-slate-900">
+                        {formatCLP(resumen?.total_documento)}
+                      </p>
+                    </div>
+
+                    <div className="rounded-2xl border bg-slate-50 p-4">
+                      <p className="text-sm text-slate-500">Ya pagado parcial</p>
+                      <p className="mt-1 text-lg font-semibold text-slate-900">
+                        {formatCLP(resumen?.total_pagado_parcial)}
+                      </p>
+                    </div>
+
+                    <div
+                      className={
+                        movimiento && montoBanco <= saldoPendiente + 0.49
+                          ? 'rounded-2xl border border-emerald-200 bg-emerald-50 p-4'
+                          : 'rounded-2xl border border-amber-200 bg-amber-50 p-4'
+                      }
+                    >
+                      <p className="text-sm text-slate-500">Saldo después</p>
+                      <p className="mt-1 text-lg font-semibold text-slate-900">
+                        {movimiento ? formatCLP(saldoDespues) : '-'}
+                      </p>
+                    </div>
+                  </div>
+                )
+              })()}
+
+              <div className="overflow-hidden rounded-xl border text-sm">
+                <div className="grid grid-cols-8 bg-slate-50 text-xs uppercase text-slate-500">
+                  <div className="px-4 py-3 font-semibold">Sel.</div>
+                  <div className="px-4 py-3 font-semibold">Fecha</div>
+                  <div className="px-4 py-3 font-semibold">Tipo</div>
+                  <div className="px-4 py-3 font-semibold">Documento</div>
+                  <div className="px-4 py-3 font-semibold">Tercero</div>
+                  <div className="px-4 py-3 font-semibold">Descripción</div>
+                  <div className="px-4 py-3 font-semibold">Total</div>
+                  <div className="px-4 py-3 font-semibold">Saldo</div>
+                </div>
+
+                {parcialResultados.length > 0 ? (
+                  <div className="divide-y">
+                    {parcialResultados.map((movimiento) => {
+                      const tercero =
+                        getRelacionNombre(movimiento.clientes) ||
+                        getRelacionNombre(movimiento.proveedores) ||
+                        '-'
+                      const categoria = getRelacionNombre(movimiento.categorias)
+                      const resumen = getResumenParcialMovimiento(movimiento)
+                      const saldo = Number(resumen?.saldo_pendiente ?? 0)
+                      const seleccionado = movimiento.id === parcialMovimientoId
+                      const compatible =
+                        getMontoFila(parcialFila) <= saldo + 0.49
+
+                      return (
+                        <label
+                          key={movimiento.id}
+                          className={
+                            seleccionado
+                              ? 'grid cursor-pointer grid-cols-8 items-center bg-amber-50'
+                              : 'grid cursor-pointer grid-cols-8 items-center hover:bg-slate-50'
+                          }
+                        >
+                          <div className="px-4 py-3">
+                            <input
+                              type="radio"
+                              name="movimiento-parcial"
+                              checked={seleccionado}
+                              onChange={() =>
+                                setParcialMovimientoId(movimiento.id)
+                              }
+                            />
+                          </div>
+
+                          <div className="px-4 py-3">
+                            {formatDate(movimiento.fecha)}
+                          </div>
+
+                          <div className="px-4 py-3 capitalize">
+                            {movimiento.tipo_movimiento}
+                            <p className="text-xs text-slate-500">
+                              {movimiento.estado}
+                            </p>
+                          </div>
+
+                          <div className="px-4 py-3">
+                            <p className="font-medium text-slate-900">
+                              {movimiento.tipo_documento || '-'}
+                            </p>
+                            <p className="text-xs text-slate-500">
+                              {movimiento.numero_documento || 'Sin número'}
+                            </p>
+                          </div>
+
+                          <div className="px-4 py-3">
+                            <p className="font-medium text-slate-900">
+                              {tercero}
+                            </p>
+                            {categoria ? (
+                              <p className="text-xs text-slate-500">
+                                {categoria}
+                              </p>
+                            ) : null}
+                          </div>
+
+                          <div className="px-4 py-3 text-slate-700">
+                            {movimiento.descripcion || '-'}
+                            <p
+                              className={
+                                compatible
+                                  ? 'mt-1 text-xs font-medium text-emerald-700'
+                                  : 'mt-1 text-xs font-medium text-red-700'
+                              }
+                            >
+                              {compatible
+                                ? 'El pago cabe en el saldo'
+                                : 'El pago excede el saldo'}
+                            </p>
+                          </div>
+
+                          <div className="px-4 py-3 font-semibold text-slate-900">
+                            {formatCLP(resumen?.total_documento)}
+                          </div>
+
+                          <div className="px-4 py-3 font-semibold text-amber-700">
+                            {formatCLP(resumen?.saldo_pendiente)}
+                            {Number(resumen?.cantidad_pagos ?? 0) > 0 ? (
+                              <p className="text-xs font-normal text-slate-500">
+                                {resumen?.cantidad_pagos} pago(s)
+                              </p>
+                            ) : null}
+                          </div>
+                        </label>
+                      )
+                    })}
+                  </div>
+                ) : (
+                  <div className="px-4 py-5 text-center text-slate-500">
+                    No hay facturas o movimientos disponibles para la búsqueda.
+                    Prueba con número de factura, proveedor/cliente o
+                    descripción.
+                  </div>
+                )}
+              </div>
+
+              <div className="flex flex-col-reverse gap-3 border-t pt-4 sm:flex-row sm:justify-end">
+                <button
+                  type="button"
+                  onClick={cerrarConciliacionParcial}
+                  disabled={parcialSaving}
+                  className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                >
+                  Cancelar
+                </button>
+
+                <button
+                  type="button"
+                  onClick={conciliarParcial}
+                  disabled={parcialSaving || !parcialMovimientoId}
+                  className="rounded-xl bg-amber-700 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-amber-800 disabled:opacity-60"
+                >
+                  {parcialSaving
+                    ? 'Conciliando...'
+                    : 'Aplicar pago parcial'}
                 </button>
               </div>
             </div>
