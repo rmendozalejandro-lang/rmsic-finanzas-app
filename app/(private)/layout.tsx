@@ -73,6 +73,7 @@ const menuItems: MenuItem[] = [
 
   { href: '/remuneraciones', label: 'Remuneraciones', moduleKey: 'remuneraciones' },
 { href: '/remuneraciones/prestamos', label: 'Préstamos y anticipos', moduleKey: 'remuneraciones' },
+{ href: '/remuneraciones/cotizaciones', label: 'Cotizaciones / Leyes sociales', moduleKey: 'remuneraciones' },
 
   {
     href: '/configuracion/usuarios',
