@@ -558,11 +558,13 @@ export default function LibroMayorPage() {
               className="w-full rounded-2xl border border-slate-300 px-4 py-2.5 text-sm outline-none focus:border-[#245C90]"
             >
               <option value="todos">Todos</option>
-              {estados.map((item) => (
-                <option key={item} value={item}>
-                  {item}
-                </option>
-              ))}
+{estados
+  .filter((elemento): elemento is string => Boolean(elemento))
+  .map((elemento) => (
+    <option key={elemento} value={elemento}>
+      {elemento}
+    </option>
+  ))}
             </select>
           </div>
 
