@@ -13,8 +13,8 @@ type LibroMayorMovimiento = {
   created_at: string
   updated_at: string
 
-  tipo_movimiento: string
-  estado: string
+  tipo_movimiento: string | null
+  estado: string | null
 
   tipo_documento: string | null
   numero_documento: string | null
@@ -154,7 +154,7 @@ export default function LibroMayorPage() {
       setError('')
 
       let movimientosQuery = supabase
-        .from('v_libro_mayor_cuenta_contable')
+        .from('v_libro_mayor_cuenta_contable_formal')
         .select(
           `
             id,
@@ -406,8 +406,8 @@ export default function LibroMayorPage() {
             </h1>
             <p className="mt-2 max-w-3xl text-sm text-slate-600">
               Revisa los movimientos cronológicos de cada cuenta contable con debe, haber y
-              saldo acumulado. Este reporte es operativo-contable y se basa en los movimientos
-              registrados en la app.
+              saldo acumulado. Este reporte usa el Libro Mayor contable formal, basado en
+              movimientos contabilizados, asientos contables, ajustes y registros formales.
             </p>
             <p className="mt-2 text-sm text-slate-500">
               Empresa activa:{' '}
@@ -708,7 +708,7 @@ export default function LibroMayorPage() {
                       </td>
 
                       <td className="whitespace-nowrap px-4 py-3 text-slate-700">
-                        <div>{movimiento.tipo_documento || '-'}</div>
+                        <div>{movimiento.tipo_documento || 'asiento'}</div>
                         <div className="mt-1 text-xs text-slate-500">
                           {movimiento.numero_documento || '-'}
                         </div>
@@ -717,7 +717,7 @@ export default function LibroMayorPage() {
                       <td className="min-w-[260px] px-4 py-3 text-slate-700">
                         {movimiento.descripcion}
                         <div className="mt-1 text-xs text-slate-500">
-                          {movimiento.tipo_movimiento} · {movimiento.estado}
+                          {movimiento.tipo_movimiento || 'asiento contable'} · {movimiento.estado || 'contabilizado'}
                         </div>
                       </td>
 
