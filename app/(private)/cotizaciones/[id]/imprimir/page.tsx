@@ -131,24 +131,6 @@ function formatFolioNumber(value: number | null | undefined) {
   return String(n).padStart(4, '0')
 }
 
-
-function formatFolioPdfName(value: number | null | undefined) {
-  const n = Math.trunc(toNumber(value))
-  if (!n) return '000'
-  return String(n).padStart(3, '0')
-}
-
-function limpiarNombreArchivo(value: string) {
-  const clean = value
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[\\/:*?"<>|]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 80)
-
-  return clean || 'Cliente'
-}
 function getClienteDisplayName(cliente: Cliente | null) {
   if (!cliente) return 'Sin cliente'
 
@@ -271,7 +253,7 @@ export default function CotizacionImprimirPage() {
         }
 
         const itemsResp = await fetch(
-          `${baseUrl}/rest/v1/cotizacion_items?cotizacion_id=eq.${cotizacionId}&select=*&order=orden.asc`,
+          `${baseUrl}/rest/v1/cotizacion_items?cotizacion_id=eq.${cotizacionId}&activo=eq.true&deleted_at=is.null&select=*&order=orden.asc`,
           {
             headers: {
               apikey: apiKey,
@@ -342,18 +324,50 @@ export default function CotizacionImprimirPage() {
     })
   }, [cotizacion, empresaActivaNombre])
 
-  const pdfSuggestedTitle = useMemo(() => {
-    const folio = formatFolioPdfName(cotizacion?.folio)
-    const clienteNombre = limpiarNombreArchivo(getClienteDisplayName(cliente))
+  const resumenEconomico = useMemo(() => {
+    const subtotalItemsNeto = items.reduce((acc, item) => {
+      return item.afecto_iva ? acc + toNumber(item.subtotal) : acc
+    }, 0)
 
-    return `Cot. N° ${folio} - ${clienteNombre}`
-  }, [cotizacion, cliente])
+    const subtotalItemsExento = items.reduce((acc, item) => {
+      return item.afecto_iva ? acc : acc + toNumber(item.subtotal)
+    }, 0)
 
-  useEffect(() => {
-    if (!cotizacion) return
+    const subtotalItemsTotal = subtotalItemsNeto + subtotalItemsExento
+    const descuentoValor = toNumber(cotizacion?.descuento_global_valor)
+    const descuentoTipo = cotizacion?.descuento_global_tipo
 
-    document.title = pdfSuggestedTitle
-  }, [cotizacion, pdfSuggestedTitle])
+    let descuentoGlobalTotal = 0
+
+    if (descuentoTipo === 'porcentaje') {
+      descuentoGlobalTotal = Math.round(subtotalItemsTotal * (descuentoValor / 100))
+    } else if (descuentoTipo === 'monto') {
+      descuentoGlobalTotal = Math.min(descuentoValor, subtotalItemsTotal)
+    }
+
+    const descuentoGlobalNeto =
+      subtotalItemsTotal > 0
+        ? Math.round(descuentoGlobalTotal * (subtotalItemsNeto / subtotalItemsTotal))
+        : 0
+    const descuentoGlobalExento = descuentoGlobalTotal - descuentoGlobalNeto
+
+    const subtotalNeto = Math.max(subtotalItemsNeto - descuentoGlobalNeto, 0)
+    const subtotalExento = Math.max(subtotalItemsExento - descuentoGlobalExento, 0)
+    const porcentajeIva = toNumber(cotizacion?.porcentaje_iva || 19)
+    const montoIva = Math.round(subtotalNeto * (porcentajeIva / 100))
+    const total = subtotalNeto + subtotalExento + montoIva
+
+    return {
+      subtotalItemsNeto,
+      subtotalItemsExento,
+      descuentoGlobalTotal,
+      subtotalNeto,
+      subtotalExento,
+      montoIva,
+      total,
+    }
+  }, [items, cotizacion?.descuento_global_tipo, cotizacion?.descuento_global_valor, cotizacion?.porcentaje_iva])
+
   if (!empresaActivaId && !loading) {
     return (
       <ProtectedCotizacionesRoute>
@@ -469,10 +483,7 @@ export default function CotizacionImprimirPage() {
 
                 <button
                   type="button"
-                  onClick={() => {
-                    document.title = pdfSuggestedTitle
-                    window.print()
-                  }}
+                  onClick={() => window.print()}
                   className="inline-flex items-center rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
                 >
                   Imprimir / Guardar PDF
@@ -697,7 +708,7 @@ export default function CotizacionImprimirPage() {
                       <span className="text-slate-600">Subtotal afecto</span>
                       <span className="font-medium text-slate-900">
                         {formatCurrency(
-                          cotizacion.subtotal_items_neto,
+                          resumenEconomico.subtotalItemsNeto,
                           cotizacion.moneda ?? 'CLP'
                         )}
                       </span>
@@ -707,7 +718,7 @@ export default function CotizacionImprimirPage() {
                       <span className="text-slate-600">Descuento</span>
                       <span className="font-medium text-slate-900">
                         {formatCurrency(
-                          cotizacion.descuento_global_total,
+                          resumenEconomico.descuentoGlobalTotal,
                           cotizacion.moneda ?? 'CLP'
                         )}
                       </span>
@@ -717,7 +728,7 @@ export default function CotizacionImprimirPage() {
                       <span className="text-slate-600">Neto</span>
                       <span className="font-medium text-slate-900">
                         {formatCurrency(
-                          cotizacion.subtotal_neto,
+                          resumenEconomico.subtotalNeto,
                           cotizacion.moneda ?? 'CLP'
                         )}
                       </span>
@@ -727,7 +738,7 @@ export default function CotizacionImprimirPage() {
                       <span className="text-slate-600">IVA</span>
                       <span className="font-medium text-slate-900">
                         {formatCurrency(
-                          cotizacion.monto_iva,
+                          resumenEconomico.montoIva,
                           cotizacion.moneda ?? 'CLP'
                         )}
                       </span>
@@ -740,7 +751,7 @@ export default function CotizacionImprimirPage() {
                         </span>
                         <span className="text-[17px] font-bold text-slate-900">
                           {formatCurrency(
-                            cotizacion.total,
+                            resumenEconomico.total,
                             cotizacion.moneda ?? 'CLP'
                           )}
                         </span>
