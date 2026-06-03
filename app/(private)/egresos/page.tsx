@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import Link from 'next/link'
 import {
@@ -18,6 +18,8 @@ import ProtectedModuleRoute from '@/components/ProtectedModuleRoute'
 type Proveedor = {
   id: string
   nombre: string
+  condicion_pago: string | null
+  dias_credito: number | null
 }
 
 type CuentaBancaria = {
@@ -46,6 +48,7 @@ type TratamientoTributario = 'afecto_iva' | 'exento' | 'mixto' | 'combustible'
 type Egreso = {
   id: string
   fecha: string
+  fecha_vencimiento: string | null
   tipo_documento: string | null
   numero_documento: string | null
   descripcion: string
@@ -69,6 +72,7 @@ type Egreso = {
 
 type FormData = {
   fecha: string
+  fecha_vencimiento: string
   tipo_documento: string
   numero_documento: string
   descripcion: string
@@ -101,6 +105,7 @@ const IVA_RATE = 0.19
 
 const buildInitialForm = (): FormData => ({
   fecha: new Date().toISOString().slice(0, 10),
+  fecha_vencimiento: new Date().toISOString().slice(0, 10),
   tipo_documento: 'factura',
   numero_documento: '',
   descripcion: '',
@@ -161,6 +166,64 @@ const formatDate = (value: string | null) => {
   const date = new Date(`${value}T00:00:00`)
   if (Number.isNaN(date.getTime())) return value
   return date.toLocaleDateString('es-CL')
+}
+
+const sumarDiasFecha = (fechaBase: string, dias: number) => {
+  if (!fechaBase) return ''
+
+  const date = new Date(`${fechaBase}T00:00:00`)
+  if (Number.isNaN(date.getTime())) return fechaBase
+
+  date.setDate(date.getDate() + dias)
+  return date.toISOString().slice(0, 10)
+}
+
+const getDiasCreditoProveedor = (proveedor: Proveedor | undefined) => {
+  if (!proveedor) return 0
+
+  switch (proveedor.condicion_pago || 'contado') {
+    case 'contado':
+      return 0
+    case '7_dias':
+      return 7
+    case '15_dias':
+      return 15
+    case '30_dias':
+      return 30
+    case '45_dias':
+      return 45
+    case '60_dias':
+      return 60
+    case 'personalizado':
+      return Math.max(0, Math.trunc(Number(proveedor.dias_credito || 0)))
+    default:
+      return Math.max(0, Math.trunc(Number(proveedor.dias_credito || 0)))
+  }
+}
+
+const getCondicionPagoLabel = (proveedor: Proveedor | undefined) => {
+  if (!proveedor) return ''
+
+  if ((proveedor.condicion_pago || 'contado') === 'personalizado') {
+    return `Personalizado (${proveedor.dias_credito || 0} días)`
+  }
+
+  switch (proveedor.condicion_pago || 'contado') {
+    case 'contado':
+      return 'Contado'
+    case '7_dias':
+      return '7 días'
+    case '15_dias':
+      return '15 días'
+    case '30_dias':
+      return '30 días'
+    case '45_dias':
+      return '45 días'
+    case '60_dias':
+      return '60 días'
+    default:
+      return 'Contado'
+  }
 }
 
 const formatTratamientoTributario = (value: string | null | undefined) => {
@@ -301,7 +364,7 @@ export default function EgresosPage() {
         rolResp,
       ] = await Promise.all([
         fetch(
-          `${baseUrl}/rest/v1/proveedores?select=id,nombre&empresa_id=eq.${empresaActivaId}&activo=eq.true&deleted_at=is.null&order=nombre.asc`,
+          `${baseUrl}/rest/v1/proveedores?select=id,nombre,condicion_pago,dias_credito&empresa_id=eq.${empresaActivaId}&activo=eq.true&deleted_at=is.null&order=nombre.asc`,
           { headers }
         ),
         fetch(
@@ -317,7 +380,7 @@ export default function EgresosPage() {
           { headers }
         ),
         fetch(
-          `${baseUrl}/rest/v1/movimientos?select=id,fecha,tipo_documento,numero_documento,descripcion,tratamiento_tributario,monto_neto,monto_exento,monto_iva,impuesto_especifico,monto_total,estado,proveedor_id,categoria_id,centro_costo_id,cuenta_bancaria_id,empresa_id,activo,deleted_at&empresa_id=eq.${empresaActivaId}&tipo_movimiento=eq.egreso&activo=eq.true&deleted_at=is.null&order=fecha.desc`,
+          `${baseUrl}/rest/v1/movimientos?select=id,fecha,fecha_vencimiento,tipo_documento,numero_documento,descripcion,tratamiento_tributario,monto_neto,monto_exento,monto_iva,impuesto_especifico,monto_total,estado,proveedor_id,categoria_id,centro_costo_id,cuenta_bancaria_id,empresa_id,activo,deleted_at&empresa_id=eq.${empresaActivaId}&tipo_movimiento=eq.egreso&activo=eq.true&deleted_at=is.null&order=fecha.desc`,
           { headers }
         ),
         fetch(
@@ -342,7 +405,7 @@ export default function EgresosPage() {
         return
       }
       if (!categoriasResp.ok) {
-        setError('No se pudieron cargar las categorías.')
+        setError('No se pudieron cargar las categorÃ­as.')
         return
       }
       if (!centrosResp.ok) {
@@ -372,7 +435,7 @@ export default function EgresosPage() {
 
       const proveedoresMap = new Map(proveedoresData.map((item) => [item.id, item.nombre]))
       const cuentasMap = new Map(
-        cuentasData.map((item) => [item.id, `${item.banco} · ${item.nombre_cuenta}`])
+        cuentasData.map((item) => [item.id, `${item.banco} Â· ${item.nombre_cuenta}`])
       )
       const categoriasMap = new Map(categoriasData.map((item) => [item.id, item.nombre]))
       const centrosMap = new Map(centrosData.map((item) => [item.id, item.nombre]))
@@ -446,6 +509,37 @@ export default function EgresosPage() {
     e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
   ) => {
     const { name, value } = e.target
+
+    if (name === 'proveedor_id') {
+      const proveedorSeleccionado = proveedores.find((item) => item.id === value)
+      const diasCredito = getDiasCreditoProveedor(proveedorSeleccionado)
+
+      setFormData((prev) => ({
+        ...prev,
+        proveedor_id: value,
+        fecha_vencimiento: value
+          ? sumarDiasFecha(prev.fecha, diasCredito)
+          : prev.fecha_vencimiento,
+      }))
+      return
+    }
+
+    if (name === 'fecha') {
+      setFormData((prev) => {
+        const proveedorSeleccionado = proveedores.find((item) => item.id === prev.proveedor_id)
+        const diasCredito = getDiasCreditoProveedor(proveedorSeleccionado)
+
+        return {
+          ...prev,
+          fecha: value,
+          fecha_vencimiento: prev.proveedor_id
+            ? sumarDiasFecha(value, diasCredito)
+            : prev.fecha_vencimiento || value,
+        }
+      })
+      return
+    }
+
     setFormData((prev) => ({ ...prev, [name]: value }))
   }
 
@@ -477,6 +571,7 @@ export default function EgresosPage() {
     setEditingId(item.id)
     setFormData({
       fecha: item.fecha || new Date().toISOString().slice(0, 10),
+      fecha_vencimiento: item.fecha_vencimiento || item.fecha || new Date().toISOString().slice(0, 10),
       tipo_documento: item.tipo_documento || 'factura',
       numero_documento: item.numero_documento || '',
       descripcion: item.descripcion || '',
@@ -568,6 +663,7 @@ export default function EgresosPage() {
         empresa_id: empresaActivaId,
         tipo_movimiento: 'egreso',
         fecha: formData.fecha,
+        fecha_vencimiento: formData.fecha_vencimiento || formData.fecha,
         tipo_documento: formData.tipo_documento || null,
         numero_documento: formData.numero_documento || null,
         descripcion: formData.descripcion,
@@ -647,7 +743,7 @@ export default function EgresosPage() {
     }
 
     const confirmacion = window.confirm(
-      `¿Desea archivar el egreso "${item.descripcion}"? No se borrará de la base de datos.`
+      `Â¿Desea archivar el egreso "${item.descripcion}"? No se borrarÃ¡ de la base de datos.`
     )
     if (!confirmacion) return
 
@@ -810,7 +906,7 @@ export default function EgresosPage() {
 
         <EmpresaActivaBanner
           modulo="Egresos"
-          descripcion="Todos los registros visibles corresponden únicamente a la empresa activa seleccionada."
+          descripcion="Todos los registros visibles corresponden Ãºnicamente a la empresa activa seleccionada."
         />
 
         {!isAdmin && !loading ? (
@@ -825,7 +921,7 @@ export default function EgresosPage() {
           <div className="mb-4 flex flex-col gap-1">
             <h2 className="text-lg font-semibold text-slate-900">Filtros de egresos</h2>
             <p className="text-sm text-slate-500">
-              Busca por fecha, documento, proveedor, descripción o monto total/neto.
+              Busca por fecha, documento, proveedor, descripciÃ³n o monto total/neto.
             </p>
           </div>
 
@@ -865,7 +961,7 @@ export default function EgresosPage() {
             </div>
 
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">N° documento</label>
+              <label className="mb-1 block text-sm font-medium text-slate-700">NÂ° documento</label>
               <input
                 type="text"
                 value={filters.numeroDocumento}
@@ -895,7 +991,7 @@ export default function EgresosPage() {
                 type="text"
                 value={filters.texto}
                 onChange={(e) => setFilters((prev) => ({ ...prev, texto: e.target.value }))}
-                placeholder="Descripción, proveedor, categoría o monto"
+                placeholder="Descripción, proveedor, categorÃ­a o monto"
                 className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
               />
             </div>
@@ -952,10 +1048,11 @@ export default function EgresosPage() {
             <p className="text-sm text-slate-500">No hay egresos para los filtros seleccionados.</p>
           ) : (
             <div className="overflow-x-auto">
-              <table className="min-w-[1320px] w-full text-sm">
+              <table className="min-w-[1420px] w-full text-sm">
                 <thead>
                   <tr className="border-b border-slate-200 text-left text-slate-500">
                     <th className="py-3 pr-4">Fecha</th>
+                    <th className="py-3 pr-4">Vencimiento</th>
                     <th className="py-3 pr-4">Documento</th>
                     <th className="py-3 pr-4">Descripción</th>
                     <th className="py-3 pr-4">Proveedor</th>
@@ -972,6 +1069,7 @@ export default function EgresosPage() {
                   {egresosFiltrados.map((item) => (
                     <tr key={item.id} className="border-b border-slate-100 align-top">
                       <td className="py-3 pr-4 whitespace-nowrap">{formatDate(item.fecha)}</td>
+                      <td className="py-3 pr-4 whitespace-nowrap">{formatDate(item.fecha_vencimiento)}</td>
                       <td className="py-3 pr-4 whitespace-nowrap">
                         <div className="font-medium text-slate-800">{item.tipo_documento || '-'}</div>
                         <div className="text-slate-500">{item.numero_documento || '-'}</div>
@@ -1019,13 +1117,24 @@ export default function EgresosPage() {
           subtitle={editingId ? 'Modifique los datos del egreso seleccionado.' : 'Registre un nuevo movimiento de egreso para la empresa activa.'}
         >
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
               <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">Fecha</label>
+                <label className="mb-1 block text-sm font-medium text-slate-700">Fecha emisión</label>
                 <input
                   type="date"
                   name="fecha"
                   value={formData.fecha}
+                  onChange={handleChange}
+                  className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
+                  required
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700">Fecha vencimiento</label>
+                <input
+                  type="date"
+                  name="fecha_vencimiento"
+                  value={formData.fecha_vencimiento}
                   onChange={handleChange}
                   className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
                   required
@@ -1180,9 +1289,18 @@ export default function EgresosPage() {
                 >
                   <option value="">Seleccionar proveedor</option>
                   {proveedores.map((item) => (
-                    <option key={item.id} value={item.id}>{item.nombre}</option>
+                    <option key={item.id} value={item.id}>
+                      {item.nombre}
+                      {getCondicionPagoLabel(item) ? ` · ${getCondicionPagoLabel(item)}` : ''}
+                    </option>
                   ))}
                 </select>
+                {formData.proveedor_id ? (
+                  <p className="mt-1 text-xs text-slate-500">
+                    Vencimiento sugerido según condición del proveedor:{' '}
+                    {getCondicionPagoLabel(proveedores.find((item) => item.id === formData.proveedor_id))}
+                  </p>
+                ) : null}
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-slate-700">Categoría</label>
@@ -1192,7 +1310,7 @@ export default function EgresosPage() {
                   onChange={handleChange}
                   className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
                 >
-                  <option value="">Seleccionar categoría</option>
+                  <option value="">Seleccionar categorÃ­a</option>
                   {categorias.map((item) => (
                     <option key={item.id} value={item.id}>{item.nombre}</option>
                   ))}
@@ -1225,7 +1343,7 @@ export default function EgresosPage() {
                 >
                   <option value="">Seleccionar cuenta</option>
                   {cuentas.map((item) => (
-                    <option key={item.id} value={item.id}>{item.banco} · {item.nombre_cuenta}</option>
+                    <option key={item.id} value={item.id}>{item.banco} Â· {item.nombre_cuenta}</option>
                   ))}
                 </select>
               </div>
@@ -1253,3 +1371,5 @@ export default function EgresosPage() {
     </ProtectedModuleRoute>
   )
 }
+
+
