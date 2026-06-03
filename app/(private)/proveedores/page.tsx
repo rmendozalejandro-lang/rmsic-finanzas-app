@@ -6,6 +6,15 @@ import { supabase } from '../../../lib/supabase/client'
 import StatusBadge from '../../../components/StatusBadge'
 import ProtectedModuleRoute from '@/components/ProtectedModuleRoute'
 
+type CondicionPago =
+  | 'contado'
+  | '7_dias'
+  | '15_dias'
+  | '30_dias'
+  | '45_dias'
+  | '60_dias'
+  | 'personalizado'
+
 type Proveedor = {
   id: string
   empresa_id: string
@@ -15,11 +24,43 @@ type Proveedor = {
   email: string | null
   telefono: string | null
   direccion: string | null
+  condicion_pago: CondicionPago | null
+  dias_credito: number | null
   activo: boolean
   created_at: string
 }
 
 const STORAGE_KEY = 'empresa_activa_id'
+
+const condicionesPago = [
+  { value: 'contado', label: 'Contado', dias: 0 },
+  { value: '7_dias', label: '7 días', dias: 7 },
+  { value: '15_dias', label: '15 días', dias: 15 },
+  { value: '30_dias', label: '30 días', dias: 30 },
+  { value: '45_dias', label: '45 días', dias: 45 },
+  { value: '60_dias', label: '60 días', dias: 60 },
+  { value: 'personalizado', label: 'Personalizado', dias: 0 },
+] as const
+
+function getDiasPorCondicion(condicion: string, diasCredito: string | number | null | undefined) {
+  if (condicion === 'personalizado') {
+    const dias = Number(diasCredito ?? 0)
+    return Number.isFinite(dias) && dias >= 0 ? Math.trunc(dias) : 0
+  }
+
+  return condicionesPago.find((item) => item.value === condicion)?.dias ?? 0
+}
+
+function getCondicionLabel(condicion: string | null | undefined, diasCredito: number | null | undefined) {
+  const value = condicion || 'contado'
+  const option = condicionesPago.find((item) => item.value === value)
+
+  if (value === 'personalizado') {
+    return `Personalizado (${diasCredito ?? 0} días)`
+  }
+
+  return option?.label ?? 'Contado'
+}
 
 export default function ProveedoresPage() {
   const router = useRouter()
@@ -40,6 +81,8 @@ export default function ProveedoresPage() {
     email: '',
     telefono: '',
     direccion: '',
+    condicion_pago: 'contado',
+    dias_credito: '0',
     activo: 'true',
   })
 
@@ -65,6 +108,8 @@ export default function ProveedoresPage() {
       email: '',
       telefono: '',
       direccion: '',
+      condicion_pago: 'contado',
+      dias_credito: '0',
       activo: 'true',
     })
     setEditingId(null)
@@ -126,10 +171,29 @@ export default function ProveedoresPage() {
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
   ) => {
     const { name, value } = e.target
+
+    if (name === 'condicion_pago') {
+      setForm((prev) => ({
+        ...prev,
+        condicion_pago: value,
+        dias_credito: String(getDiasPorCondicion(value, prev.dias_credito)),
+      }))
+      return
+    }
+
+    if (name === 'dias_credito') {
+      const dias = Math.max(0, Math.trunc(Number(value || 0)))
+      setForm((prev) => ({ ...prev, dias_credito: Number.isFinite(dias) ? String(dias) : '0' }))
+      return
+    }
+
     setForm((prev) => ({ ...prev, [name]: value }))
   }
 
   const startEdit = (proveedor: Proveedor) => {
+    const condicion = proveedor.condicion_pago || 'contado'
+    const dias = getDiasPorCondicion(condicion, proveedor.dias_credito ?? 0)
+
     setEditingId(proveedor.id)
     setError('')
     setSuccess('')
@@ -140,6 +204,8 @@ export default function ProveedoresPage() {
       email: proveedor.email ?? '',
       telefono: proveedor.telefono ?? '',
       direccion: proveedor.direccion ?? '',
+      condicion_pago: condicion,
+      dias_credito: String(dias),
       activo: proveedor.activo ? 'true' : 'false',
     })
     window.scrollTo({ top: 0, behavior: 'smooth' })
@@ -174,6 +240,7 @@ export default function ProveedoresPage() {
       const accessToken = sessionData.session.access_token
       const apiKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
       const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+      const diasCredito = getDiasPorCondicion(form.condicion_pago, form.dias_credito)
 
       const payload = {
         empresa_id: empresaActivaId,
@@ -183,6 +250,8 @@ export default function ProveedoresPage() {
         email: form.email.trim() || null,
         telefono: form.telefono.trim() || null,
         direccion: form.direccion.trim() || null,
+        condicion_pago: form.condicion_pago,
+        dias_credito: diasCredito,
         activo: form.activo === 'true',
       }
 
@@ -305,219 +374,262 @@ export default function ProveedoresPage() {
   }
 
   return (
-  <ProtectedModuleRoute moduleKey="proveedores">
-    <main className="space-y-6">
-      <div>
-        <h1 className="text-4xl font-semibold text-slate-900">Proveedores</h1>
-        <p className="text-slate-600 mt-2">
-          Administración de proveedores por empresa activa.
-        </p>
-      </div>
-
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        <div className="xl:col-span-2 rounded-2xl bg-white p-6 shadow-sm border border-slate-200">
-          <h2 className="text-2xl font-semibold text-slate-900">
-            Listado de proveedores
-          </h2>
-          <p className="text-slate-500 text-sm mt-1 mb-4">
-            Proveedores registrados para la empresa activa.
+    <ProtectedModuleRoute moduleKey="proveedores">
+      <main className="space-y-6">
+        <div>
+          <h1 className="text-4xl font-semibold text-slate-900">Proveedores</h1>
+          <p className="text-slate-600 mt-2">
+            Administración de proveedores por empresa activa.
           </p>
+        </div>
 
-          {loading && <div className="text-slate-500">Cargando proveedores...</div>}
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+          <div className="xl:col-span-2 rounded-2xl bg-white p-6 shadow-sm border border-slate-200">
+            <h2 className="text-2xl font-semibold text-slate-900">
+              Listado de proveedores
+            </h2>
+            <p className="text-slate-500 text-sm mt-1 mb-4">
+              Proveedores registrados para la empresa activa.
+            </p>
 
-          {!loading && !error && proveedores.length === 0 && (
-            <div className="text-slate-500 text-sm">
-              No hay proveedores registrados para esta empresa.
-            </div>
-          )}
+            {loading && <div className="text-slate-500">Cargando proveedores...</div>}
 
-          {!loading && !error && proveedores.length > 0 && (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-slate-200 text-left text-slate-500">
-                    <th className="py-3 pr-4">Nombre</th>
-                    <th className="py-3 pr-4">RUT</th>
-                    <th className="py-3 pr-4">Contacto</th>
-                    <th className="py-3 pr-4">Email</th>
-                    <th className="py-3 pr-4">Teléfono</th>
-                    <th className="py-3 pr-4">Estado</th>
-                    <th className="py-3 pr-4">Acciones</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {proveedores.map((item) => (
-                    <tr key={item.id} className="border-b border-slate-100">
-                      <td className="py-3 pr-4 font-medium">{item.nombre}</td>
-                      <td className="py-3 pr-4">{item.rut ?? '-'}</td>
-                      <td className="py-3 pr-4">{item.contacto ?? '-'}</td>
-                      <td className="py-3 pr-4">{item.email ?? '-'}</td>
-                      <td className="py-3 pr-4">{item.telefono ?? '-'}</td>
-                      <td className="py-3 pr-4">
-                        <StatusBadge status={item.activo ? 'activo' : 'inactivo'} />
-                      </td>
-                      <td className="py-3 pr-4">
-                        <div className="flex gap-2">
-                          <button
-                            type="button"
-                            onClick={() => startEdit(item)}
-                            className="rounded-xl border border-slate-300 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                          >
-                            Editar
-                          </button>
+            {!loading && !error && proveedores.length === 0 && (
+              <div className="text-slate-500 text-sm">
+                No hay proveedores registrados para esta empresa.
+              </div>
+            )}
 
-                          <button
-                            type="button"
-                            onClick={() => toggleActivo(item)}
-                            disabled={updatingId === item.id}
-                            className="rounded-xl border border-slate-300 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
-                          >
-                            {updatingId === item.id
-                              ? 'Guardando...'
-                              : item.activo
-                              ? 'Inactivar'
-                              : 'Activar'}
-                          </button>
-                        </div>
-                      </td>
+            {!loading && !error && proveedores.length > 0 && (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-200 text-left text-slate-500">
+                      <th className="py-3 pr-4">Nombre</th>
+                      <th className="py-3 pr-4">RUT</th>
+                      <th className="py-3 pr-4">Contacto</th>
+                      <th className="py-3 pr-4">Email</th>
+                      <th className="py-3 pr-4">Teléfono</th>
+                      <th className="py-3 pr-4">Condición pago</th>
+                      <th className="py-3 pr-4">Estado</th>
+                      <th className="py-3 pr-4">Acciones</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
+                  </thead>
+                  <tbody>
+                    {proveedores.map((item) => (
+                      <tr key={item.id} className="border-b border-slate-100">
+                        <td className="py-3 pr-4 font-medium">{item.nombre}</td>
+                        <td className="py-3 pr-4">{item.rut ?? '-'}</td>
+                        <td className="py-3 pr-4">{item.contacto ?? '-'}</td>
+                        <td className="py-3 pr-4">{item.email ?? '-'}</td>
+                        <td className="py-3 pr-4">{item.telefono ?? '-'}</td>
+                        <td className="py-3 pr-4">
+                          {getCondicionLabel(item.condicion_pago, item.dias_credito)}
+                        </td>
+                        <td className="py-3 pr-4">
+                          <StatusBadge status={item.activo ? 'activo' : 'inactivo'} />
+                        </td>
+                        <td className="py-3 pr-4">
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => startEdit(item)}
+                              className="rounded-xl border border-slate-300 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                            >
+                              Editar
+                            </button>
 
-        <div className="rounded-2xl bg-white p-6 shadow-sm border border-slate-200">
-          <h2 className="text-2xl font-semibold text-slate-900">
-            {editingId ? 'Editar proveedor' : 'Nuevo proveedor'}
-          </h2>
-          <p className="text-slate-500 text-sm mt-1 mb-4">
-            {editingId
-              ? 'Actualiza la información del proveedor.'
-              : 'Crea un proveedor sin entrar a Supabase.'}
-          </p>
-
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="block text-sm text-slate-600 mb-2">Nombre</label>
-              <input
-                type="text"
-                name="nombre"
-                value={form.nombre}
-                onChange={handleChange}
-                className="w-full rounded-xl border border-slate-300 px-4 py-3"
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm text-slate-600 mb-2">RUT</label>
-              <input
-                type="text"
-                name="rut"
-                value={form.rut}
-                onChange={handleChange}
-                className="w-full rounded-xl border border-slate-300 px-4 py-3"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm text-slate-600 mb-2">Contacto</label>
-              <input
-                type="text"
-                name="contacto"
-                value={form.contacto}
-                onChange={handleChange}
-                className="w-full rounded-xl border border-slate-300 px-4 py-3"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm text-slate-600 mb-2">Email</label>
-              <input
-                type="email"
-                name="email"
-                value={form.email}
-                onChange={handleChange}
-                className="w-full rounded-xl border border-slate-300 px-4 py-3"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm text-slate-600 mb-2">Teléfono</label>
-              <input
-                type="text"
-                name="telefono"
-                value={form.telefono}
-                onChange={handleChange}
-                className="w-full rounded-xl border border-slate-300 px-4 py-3"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm text-slate-600 mb-2">Dirección</label>
-              <textarea
-                name="direccion"
-                value={form.direccion}
-                onChange={handleChange}
-                rows={3}
-                className="w-full rounded-xl border border-slate-300 px-4 py-3"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm text-slate-600 mb-2">Estado</label>
-              <select
-                name="activo"
-                value={form.activo}
-                onChange={handleChange}
-                className="w-full rounded-xl border border-slate-300 px-4 py-3"
-              >
-                <option value="true">Activo</option>
-                <option value="false">Inactivo</option>
-              </select>
-            </div>
-
-            {error && (
-              <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
-                {error}
+                            <button
+                              type="button"
+                              onClick={() => toggleActivo(item)}
+                              disabled={updatingId === item.id}
+                              className="rounded-xl border border-slate-300 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                            >
+                              {updatingId === item.id
+                                ? 'Guardando...'
+                                : item.activo
+                                ? 'Inactivar'
+                                : 'Activar'}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
+          </div>
 
-            {success && (
-              <div className="rounded-xl bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-700">
-                {success}
+          <div className="rounded-2xl bg-white p-6 shadow-sm border border-slate-200">
+            <h2 className="text-2xl font-semibold text-slate-900">
+              {editingId ? 'Editar proveedor' : 'Nuevo proveedor'}
+            </h2>
+            <p className="text-slate-500 text-sm mt-1 mb-4">
+              {editingId
+                ? 'Actualiza la información del proveedor.'
+                : 'Crea un proveedor sin entrar a Supabase.'}
+            </p>
+
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label className="block text-sm text-slate-600 mb-2">Nombre</label>
+                <input
+                  type="text"
+                  name="nombre"
+                  value={form.nombre}
+                  onChange={handleChange}
+                  className="w-full rounded-xl border border-slate-300 px-4 py-3"
+                  required
+                />
               </div>
-            )}
 
-            <div className="flex gap-3">
-              <button
-                type="submit"
-                disabled={saving}
-                className="flex-1 rounded-xl bg-slate-900 text-white py-3 font-medium disabled:opacity-60"
-              >
-                {saving
-                  ? 'Guardando...'
-                  : editingId
-                  ? 'Actualizar proveedor'
-                  : 'Guardar proveedor'}
-              </button>
+              <div>
+                <label className="block text-sm text-slate-600 mb-2">RUT</label>
+                <input
+                  type="text"
+                  name="rut"
+                  value={form.rut}
+                  onChange={handleChange}
+                  className="w-full rounded-xl border border-slate-300 px-4 py-3"
+                />
+              </div>
 
-              {editingId && (
-                <button
-                  type="button"
-                  onClick={resetForm}
-                  className="rounded-xl border border-slate-300 px-4 py-3 font-medium"
+              <div>
+                <label className="block text-sm text-slate-600 mb-2">Contacto</label>
+                <input
+                  type="text"
+                  name="contacto"
+                  value={form.contacto}
+                  onChange={handleChange}
+                  className="w-full rounded-xl border border-slate-300 px-4 py-3"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm text-slate-600 mb-2">Email</label>
+                <input
+                  type="email"
+                  name="email"
+                  value={form.email}
+                  onChange={handleChange}
+                  className="w-full rounded-xl border border-slate-300 px-4 py-3"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm text-slate-600 mb-2">Teléfono</label>
+                <input
+                  type="text"
+                  name="telefono"
+                  value={form.telefono}
+                  onChange={handleChange}
+                  className="w-full rounded-xl border border-slate-300 px-4 py-3"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm text-slate-600 mb-2">Dirección</label>
+                <textarea
+                  name="direccion"
+                  value={form.direccion}
+                  onChange={handleChange}
+                  rows={3}
+                  className="w-full rounded-xl border border-slate-300 px-4 py-3"
+                />
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 space-y-4">
+                <div>
+                  <label className="block text-sm text-slate-600 mb-2">
+                    Condición de pago
+                  </label>
+                  <select
+                    name="condicion_pago"
+                    value={form.condicion_pago}
+                    onChange={handleChange}
+                    className="w-full rounded-xl border border-slate-300 px-4 py-3 bg-white"
+                  >
+                    {condicionesPago.map((item) => (
+                      <option key={item.value} value={item.value}>
+                        {item.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm text-slate-600 mb-2">
+                    Días de crédito
+                  </label>
+                  <input
+                    type="number"
+                    name="dias_credito"
+                    value={form.dias_credito}
+                    onChange={handleChange}
+                    min={0}
+                    disabled={form.condicion_pago !== 'personalizado'}
+                    className="w-full rounded-xl border border-slate-300 px-4 py-3 disabled:bg-slate-100 disabled:text-slate-500"
+                  />
+                  <p className="mt-1 text-xs text-slate-500">
+                    Para condiciones fijas se calcula automáticamente. Usa "Personalizado"
+                    para ingresar otro plazo.
+                  </p>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm text-slate-600 mb-2">Estado</label>
+                <select
+                  name="activo"
+                  value={form.activo}
+                  onChange={handleChange}
+                  className="w-full rounded-xl border border-slate-300 px-4 py-3"
                 >
-                  Cancelar
-                </button>
+                  <option value="true">Activo</option>
+                  <option value="false">Inactivo</option>
+                </select>
+              </div>
+
+              {error && (
+                <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+                  {error}
+                </div>
               )}
-            </div>
-          </form>
+
+              {success && (
+                <div className="rounded-xl bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-700">
+                  {success}
+                </div>
+              )}
+
+              <div className="flex gap-3">
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="flex-1 rounded-xl bg-slate-900 text-white py-3 font-medium disabled:opacity-60"
+                >
+                  {saving
+                    ? 'Guardando...'
+                    : editingId
+                    ? 'Actualizar proveedor'
+                    : 'Guardar proveedor'}
+                </button>
+
+                {editingId && (
+                  <button
+                    type="button"
+                    onClick={resetForm}
+                    className="rounded-xl border border-slate-300 px-4 py-3 font-medium"
+                  >
+                    Cancelar
+                  </button>
+                )}
+              </div>
+            </form>
+          </div>
         </div>
-      </div>
-    </main>
-</ProtectedModuleRoute>
+      </main>
+    </ProtectedModuleRoute>
   )
 }

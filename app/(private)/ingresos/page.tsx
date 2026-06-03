@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import Link from 'next/link'
 import {
@@ -18,6 +18,8 @@ import ProtectedModuleRoute from '@/components/ProtectedModuleRoute'
 type Cliente = {
   id: string
   nombre: string
+  condicion_pago: string | null
+  dias_credito: number | null
 }
 
 type CuentaBancaria = {
@@ -46,6 +48,7 @@ type TratamientoTributario = 'afecto_iva' | 'exento' | 'mixto'
 type Ingreso = {
   id: string
   fecha: string
+  fecha_vencimiento: string | null
   tipo_documento: string | null
   numero_documento: string | null
   descripcion: string
@@ -69,6 +72,7 @@ type Ingreso = {
 
 type FormData = {
   fecha: string
+  fecha_vencimiento: string
   tipo_documento: string
   numero_documento: string
   descripcion: string
@@ -101,6 +105,7 @@ const IVA_RATE = 0.19
 
 const buildInitialForm = (): FormData => ({
   fecha: new Date().toISOString().slice(0, 10),
+  fecha_vencimiento: new Date().toISOString().slice(0, 10),
   tipo_documento: 'factura',
   numero_documento: '',
   descripcion: '',
@@ -161,6 +166,64 @@ const formatDate = (value: string | null) => {
   const date = new Date(`${value}T00:00:00`)
   if (Number.isNaN(date.getTime())) return value
   return date.toLocaleDateString('es-CL')
+}
+
+const sumarDiasFecha = (fechaBase: string, dias: number) => {
+  if (!fechaBase) return ''
+
+  const date = new Date(`${fechaBase}T00:00:00`)
+  if (Number.isNaN(date.getTime())) return fechaBase
+
+  date.setDate(date.getDate() + dias)
+  return date.toISOString().slice(0, 10)
+}
+
+const getDiasCreditoCliente = (cliente: Cliente | undefined) => {
+  if (!cliente) return 0
+
+  switch (cliente.condicion_pago || 'contado') {
+    case 'contado':
+      return 0
+    case '7_dias':
+      return 7
+    case '15_dias':
+      return 15
+    case '30_dias':
+      return 30
+    case '45_dias':
+      return 45
+    case '60_dias':
+      return 60
+    case 'personalizado':
+      return Math.max(0, Math.trunc(Number(cliente.dias_credito || 0)))
+    default:
+      return Math.max(0, Math.trunc(Number(cliente.dias_credito || 0)))
+  }
+}
+
+const getCondicionPagoLabel = (cliente: Cliente | undefined) => {
+  if (!cliente) return ''
+
+  if ((cliente.condicion_pago || 'contado') === 'personalizado') {
+    return `Personalizado (${cliente.dias_credito || 0} días)`
+  }
+
+  switch (cliente.condicion_pago || 'contado') {
+    case 'contado':
+      return 'Contado'
+    case '7_dias':
+      return '7 días'
+    case '15_dias':
+      return '15 días'
+    case '30_dias':
+      return '30 días'
+    case '45_dias':
+      return '45 días'
+    case '60_dias':
+      return '60 días'
+    default:
+      return 'Contado'
+  }
 }
 
 const formatTratamientoTributario = (value: string | null | undefined) => {
@@ -295,7 +358,7 @@ export default function IngresosPage() {
         rolResp,
       ] = await Promise.all([
         fetch(
-          `${baseUrl}/rest/v1/clientes?select=id,nombre&empresa_id=eq.${empresaActivaId}&activo=eq.true&deleted_at=is.null&order=nombre.asc`,
+          `${baseUrl}/rest/v1/clientes?select=id,nombre,condicion_pago,dias_credito&empresa_id=eq.${empresaActivaId}&activo=eq.true&deleted_at=is.null&order=nombre.asc`,
           { headers }
         ),
         fetch(
@@ -311,7 +374,7 @@ export default function IngresosPage() {
           { headers }
         ),
         fetch(
-          `${baseUrl}/rest/v1/movimientos?select=id,fecha,tipo_documento,numero_documento,descripcion,tratamiento_tributario,monto_neto,monto_exento,monto_iva,impuesto_especifico,monto_total,estado,cliente_id,categoria_id,centro_costo_id,cuenta_bancaria_id,empresa_id,activo,deleted_at&empresa_id=eq.${empresaActivaId}&tipo_movimiento=eq.ingreso&activo=eq.true&deleted_at=is.null&order=fecha.desc`,
+          `${baseUrl}/rest/v1/movimientos?select=id,fecha,fecha_vencimiento,tipo_documento,numero_documento,descripcion,tratamiento_tributario,monto_neto,monto_exento,monto_iva,impuesto_especifico,monto_total,estado,cliente_id,categoria_id,centro_costo_id,cuenta_bancaria_id,empresa_id,activo,deleted_at&empresa_id=eq.${empresaActivaId}&tipo_movimiento=eq.ingreso&activo=eq.true&deleted_at=is.null&order=fecha.desc`,
           { headers }
         ),
         fetch(
@@ -336,7 +399,7 @@ export default function IngresosPage() {
         return
       }
       if (!categoriasResp.ok) {
-        setError('No se pudieron cargar las categorías.')
+        setError('No se pudieron cargar las categorÃ­as.')
         return
       }
       if (!centrosResp.ok) {
@@ -366,7 +429,7 @@ export default function IngresosPage() {
 
       const clientesMap = new Map(clientesData.map((item) => [item.id, item.nombre]))
       const cuentasMap = new Map(
-        cuentasData.map((item) => [item.id, `${item.banco} · ${item.nombre_cuenta}`])
+        cuentasData.map((item) => [item.id, `${item.banco} Â· ${item.nombre_cuenta}`])
       )
       const categoriasMap = new Map(categoriasData.map((item) => [item.id, item.nombre]))
       const centrosMap = new Map(centrosData.map((item) => [item.id, item.nombre]))
@@ -436,6 +499,37 @@ export default function IngresosPage() {
     e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
   ) => {
     const { name, value } = e.target
+
+    if (name === 'cliente_id') {
+      const clienteSeleccionado = clientes.find((item) => item.id === value)
+      const diasCredito = getDiasCreditoCliente(clienteSeleccionado)
+
+      setFormData((prev) => ({
+        ...prev,
+        cliente_id: value,
+        fecha_vencimiento: value
+          ? sumarDiasFecha(prev.fecha, diasCredito)
+          : prev.fecha_vencimiento,
+      }))
+      return
+    }
+
+    if (name === 'fecha') {
+      setFormData((prev) => {
+        const clienteSeleccionado = clientes.find((item) => item.id === prev.cliente_id)
+        const diasCredito = getDiasCreditoCliente(clienteSeleccionado)
+
+        return {
+          ...prev,
+          fecha: value,
+          fecha_vencimiento: prev.cliente_id
+            ? sumarDiasFecha(value, diasCredito)
+            : prev.fecha_vencimiento || value,
+        }
+      })
+      return
+    }
+
     setFormData((prev) => ({ ...prev, [name]: value }))
   }
 
@@ -467,6 +561,7 @@ export default function IngresosPage() {
     setEditingId(item.id)
     setFormData({
       fecha: item.fecha || new Date().toISOString().slice(0, 10),
+      fecha_vencimiento: item.fecha_vencimiento || item.fecha || new Date().toISOString().slice(0, 10),
       tipo_documento: item.tipo_documento || 'factura',
       numero_documento: item.numero_documento || '',
       descripcion: item.descripcion || '',
@@ -551,6 +646,7 @@ export default function IngresosPage() {
         empresa_id: empresaActivaId,
         tipo_movimiento: 'ingreso',
         fecha: formData.fecha,
+        fecha_vencimiento: formData.fecha_vencimiento || formData.fecha,
         tipo_documento: formData.tipo_documento || null,
         numero_documento: formData.numero_documento || null,
         descripcion: formData.descripcion,
@@ -625,7 +721,7 @@ export default function IngresosPage() {
     }
 
     const confirmacion = window.confirm(
-      `¿Desea archivar el ingreso "${item.descripcion}"? No se borrará de la base de datos.`
+      `Â¿Desea archivar el ingreso "${item.descripcion}"? No se borrarÃ¡ de la base de datos.`
     )
     if (!confirmacion) return
 
@@ -788,7 +884,7 @@ export default function IngresosPage() {
 
         <EmpresaActivaBanner
           modulo="Ingresos"
-          descripcion="Todos los registros visibles corresponden únicamente a la empresa activa seleccionada."
+          descripcion="Todos los registros visibles corresponden Ãºnicamente a la empresa activa seleccionada."
         />
 
         {!isAdmin && !loading ? (
@@ -803,7 +899,7 @@ export default function IngresosPage() {
           <div className="mb-4 flex flex-col gap-1">
             <h2 className="text-lg font-semibold text-slate-900">Filtros de ingresos</h2>
             <p className="text-sm text-slate-500">
-              Busca por fecha, documento, cliente, descripción o monto total/neto.
+              Busca por fecha, documento, cliente, descripcion o monto total/neto.
             </p>
           </div>
 
@@ -843,7 +939,7 @@ export default function IngresosPage() {
             </div>
 
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">N° documento</label>
+              <label className="mb-1 block text-sm font-medium text-slate-700">NÂ° documento</label>
               <input
                 type="text"
                 value={filters.numeroDocumento}
@@ -873,7 +969,7 @@ export default function IngresosPage() {
                 type="text"
                 value={filters.texto}
                 onChange={(e) => setFilters((prev) => ({ ...prev, texto: e.target.value }))}
-                placeholder="Descripción, cliente, categoría o monto"
+                placeholder="Descripcion, cliente, categoria o monto"
                 className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
               />
             </div>
@@ -930,14 +1026,15 @@ export default function IngresosPage() {
             <p className="text-sm text-slate-500">No hay ingresos para los filtros seleccionados.</p>
           ) : (
             <div className="overflow-x-auto">
-              <table className="min-w-[1320px] w-full text-sm">
+              <table className="min-w-[1420px] w-full text-sm">
                 <thead>
                   <tr className="border-b border-slate-200 text-left text-slate-500">
                     <th className="py-3 pr-4">Fecha</th>
+                    <th className="py-3 pr-4">Vencimiento</th>
                     <th className="py-3 pr-4">Documento</th>
-                    <th className="py-3 pr-4">Descripción</th>
+                    <th className="py-3 pr-4">Descripcion</th>
                     <th className="py-3 pr-4">Cliente</th>
-                    <th className="py-3 pr-4">Categoría</th>
+                    <th className="py-3 pr-4">CategorÃ­a</th>
                     <th className="py-3 pr-4">Centro costo</th>
                     <th className="py-3 pr-4">Cuenta bancaria</th>
                     <th className="py-3 pr-4">Tratamiento</th>
@@ -950,6 +1047,7 @@ export default function IngresosPage() {
                   {ingresosFiltrados.map((item) => (
                     <tr key={item.id} className="border-b border-slate-100 align-top">
                       <td className="py-3 pr-4 whitespace-nowrap">{formatDate(item.fecha)}</td>
+                      <td className="py-3 pr-4 whitespace-nowrap">{formatDate(item.fecha_vencimiento)}</td>
                       <td className="py-3 pr-4 whitespace-nowrap">
                         <div className="font-medium text-slate-800">{item.tipo_documento || '-'}</div>
                         <div className="text-slate-500">{item.numero_documento || '-'}</div>
@@ -997,13 +1095,24 @@ export default function IngresosPage() {
           subtitle={editingId ? 'Modifique los datos del ingreso seleccionado.' : 'Registre un nuevo movimiento de ingreso para la empresa activa.'}
         >
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
               <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">Fecha</label>
+                <label className="mb-1 block text-sm font-medium text-slate-700">Fecha emisión</label>
                 <input
                   type="date"
                   name="fecha"
                   value={formData.fecha}
+                  onChange={handleChange}
+                  className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
+                  required
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700">Fecha vencimiento</label>
+                <input
+                  type="date"
+                  name="fecha_vencimiento"
+                  value={formData.fecha_vencimiento}
                   onChange={handleChange}
                   className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
                   required
@@ -1027,7 +1136,7 @@ export default function IngresosPage() {
 
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">Número documento</label>
+                <label className="mb-1 block text-sm font-medium text-slate-700">Numero documento</label>
                 <input
                   type="text"
                   name="numero_documento"
@@ -1053,7 +1162,7 @@ export default function IngresosPage() {
             </div>
 
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Descripción</label>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Descripcion</label>
               <textarea
                 name="descripcion"
                 value={formData.descripcion}
@@ -1144,19 +1253,28 @@ export default function IngresosPage() {
                 >
                   <option value="">Seleccionar cliente</option>
                   {clientes.map((item) => (
-                    <option key={item.id} value={item.id}>{item.nombre}</option>
+                    <option key={item.id} value={item.id}>
+                      {item.nombre}
+                      {getCondicionPagoLabel(item) ? ` · ${getCondicionPagoLabel(item)}` : ''}
+                    </option>
                   ))}
                 </select>
+                {formData.cliente_id ? (
+                  <p className="mt-1 text-xs text-slate-500">
+                    Vencimiento sugerido según condición del cliente:{' '}
+                    {getCondicionPagoLabel(clientes.find((item) => item.id === formData.cliente_id))}
+                  </p>
+                ) : null}
               </div>
               <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">Categoría</label>
+                <label className="mb-1 block text-sm font-medium text-slate-700">Categoria</label>
                 <select
                   name="categoria_id"
                   value={formData.categoria_id}
                   onChange={handleChange}
                   className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
                 >
-                  <option value="">Seleccionar categoría</option>
+                  <option value="">Seleccionar categorÃ­a</option>
                   {categorias.map((item) => (
                     <option key={item.id} value={item.id}>{item.nombre}</option>
                   ))}
@@ -1189,7 +1307,7 @@ export default function IngresosPage() {
                 >
                   <option value="">Seleccionar cuenta</option>
                   {cuentas.map((item) => (
-                    <option key={item.id} value={item.id}>{item.banco} · {item.nombre_cuenta}</option>
+                    <option key={item.id} value={item.id}>{item.banco} Â· {item.nombre_cuenta}</option>
                   ))}
                 </select>
               </div>
@@ -1217,3 +1335,4 @@ export default function IngresosPage() {
     </ProtectedModuleRoute>
   )
 }
+

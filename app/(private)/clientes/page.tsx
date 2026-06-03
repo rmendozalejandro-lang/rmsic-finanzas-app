@@ -5,6 +5,15 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '../../../lib/supabase/client'
 import StatusBadge from '../../../components/StatusBadge'
 
+type CondicionPago =
+  | 'contado'
+  | '7_dias'
+  | '15_dias'
+  | '30_dias'
+  | '45_dias'
+  | '60_dias'
+  | 'personalizado'
+
 type Cliente = {
   id: string
   empresa_id: string
@@ -14,11 +23,43 @@ type Cliente = {
   email: string | null
   telefono: string | null
   direccion: string | null
+  condicion_pago: CondicionPago | null
+  dias_credito: number | null
   activo: boolean
   created_at: string
 }
 
 const STORAGE_KEY = 'empresa_activa_id'
+
+const condicionesPago = [
+  { value: 'contado', label: 'Contado', dias: 0 },
+  { value: '7_dias', label: '7 días', dias: 7 },
+  { value: '15_dias', label: '15 días', dias: 15 },
+  { value: '30_dias', label: '30 días', dias: 30 },
+  { value: '45_dias', label: '45 días', dias: 45 },
+  { value: '60_dias', label: '60 días', dias: 60 },
+  { value: 'personalizado', label: 'Personalizado', dias: 0 },
+] as const
+
+function getDiasPorCondicion(condicion: string, diasCredito: string | number | null | undefined) {
+  if (condicion === 'personalizado') {
+    const dias = Number(diasCredito ?? 0)
+    return Number.isFinite(dias) && dias >= 0 ? Math.trunc(dias) : 0
+  }
+
+  return condicionesPago.find((item) => item.value === condicion)?.dias ?? 0
+}
+
+function getCondicionLabel(condicion: string | null | undefined, diasCredito: number | null | undefined) {
+  const value = condicion || 'contado'
+  const option = condicionesPago.find((item) => item.value === value)
+
+  if (value === 'personalizado') {
+    return `Personalizado (${diasCredito ?? 0} días)`
+  }
+
+  return option?.label ?? 'Contado'
+}
 
 export default function ClientesPage() {
   const router = useRouter()
@@ -39,6 +80,8 @@ export default function ClientesPage() {
     email: '',
     telefono: '',
     direccion: '',
+    condicion_pago: 'contado',
+    dias_credito: '0',
     activo: 'true',
   })
 
@@ -64,6 +107,8 @@ export default function ClientesPage() {
       email: '',
       telefono: '',
       direccion: '',
+      condicion_pago: 'contado',
+      dias_credito: '0',
       activo: 'true',
     })
     setEditingId(null)
@@ -124,10 +169,29 @@ export default function ClientesPage() {
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
   ) => {
     const { name, value } = e.target
+
+    if (name === 'condicion_pago') {
+      setForm((prev) => ({
+        ...prev,
+        condicion_pago: value,
+        dias_credito: String(getDiasPorCondicion(value, prev.dias_credito)),
+      }))
+      return
+    }
+
+    if (name === 'dias_credito') {
+      const dias = Math.max(0, Math.trunc(Number(value || 0)))
+      setForm((prev) => ({ ...prev, dias_credito: Number.isFinite(dias) ? String(dias) : '0' }))
+      return
+    }
+
     setForm((prev) => ({ ...prev, [name]: value }))
   }
 
   const startEdit = (cliente: Cliente) => {
+    const condicion = cliente.condicion_pago || 'contado'
+    const dias = getDiasPorCondicion(condicion, cliente.dias_credito ?? 0)
+
     setEditingId(cliente.id)
     setError('')
     setSuccess('')
@@ -138,6 +202,8 @@ export default function ClientesPage() {
       email: cliente.email ?? '',
       telefono: cliente.telefono ?? '',
       direccion: cliente.direccion ?? '',
+      condicion_pago: condicion,
+      dias_credito: String(dias),
       activo: cliente.activo ? 'true' : 'false',
     })
     window.scrollTo({ top: 0, behavior: 'smooth' })
@@ -172,6 +238,7 @@ export default function ClientesPage() {
       const accessToken = sessionData.session.access_token
       const apiKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
       const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+      const diasCredito = getDiasPorCondicion(form.condicion_pago, form.dias_credito)
 
       const payload = {
         empresa_id: empresaActivaId,
@@ -181,6 +248,8 @@ export default function ClientesPage() {
         email: form.email.trim() || null,
         telefono: form.telefono.trim() || null,
         direccion: form.direccion.trim() || null,
+        condicion_pago: form.condicion_pago,
+        dias_credito: diasCredito,
         activo: form.activo === 'true',
       }
 
@@ -338,6 +407,7 @@ export default function ClientesPage() {
                     <th className="py-3 pr-4">Contacto</th>
                     <th className="py-3 pr-4">Email</th>
                     <th className="py-3 pr-4">Teléfono</th>
+                    <th className="py-3 pr-4">Condición pago</th>
                     <th className="py-3 pr-4">Estado</th>
                     <th className="py-3 pr-4">Acciones</th>
                   </tr>
@@ -350,6 +420,9 @@ export default function ClientesPage() {
                       <td className="py-3 pr-4">{item.contacto ?? '-'}</td>
                       <td className="py-3 pr-4">{item.email ?? '-'}</td>
                       <td className="py-3 pr-4">{item.telefono ?? '-'}</td>
+                      <td className="py-3 pr-4">
+                        {getCondicionLabel(item.condicion_pago, item.dias_credito)}
+                      </td>
                       <td className="py-3 pr-4">
                         <StatusBadge status={item.activo ? 'activo' : 'inactivo'} />
                       </td>
@@ -461,6 +534,45 @@ export default function ClientesPage() {
                 rows={3}
                 className="w-full rounded-xl border border-slate-300 px-4 py-3"
               />
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 space-y-4">
+              <div>
+                <label className="block text-sm text-slate-600 mb-2">
+                  Condición de pago
+                </label>
+                <select
+                  name="condicion_pago"
+                  value={form.condicion_pago}
+                  onChange={handleChange}
+                  className="w-full rounded-xl border border-slate-300 px-4 py-3 bg-white"
+                >
+                  {condicionesPago.map((item) => (
+                    <option key={item.value} value={item.value}>
+                      {item.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm text-slate-600 mb-2">
+                  Días de crédito
+                </label>
+                <input
+                  type="number"
+                  name="dias_credito"
+                  value={form.dias_credito}
+                  onChange={handleChange}
+                  min={0}
+                  disabled={form.condicion_pago !== 'personalizado'}
+                  className="w-full rounded-xl border border-slate-300 px-4 py-3 disabled:bg-slate-100 disabled:text-slate-500"
+                />
+                <p className="mt-1 text-xs text-slate-500">
+                  Para condiciones fijas se calcula automáticamente. Usa "Personalizado"
+                  para ingresar otro plazo.
+                </p>
+              </div>
             </div>
 
             <div>
