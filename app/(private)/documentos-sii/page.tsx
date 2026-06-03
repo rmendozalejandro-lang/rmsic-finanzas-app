@@ -92,6 +92,8 @@ type TerceroBasico = {
   id: string
   nombre: string
   rut: string | null
+  condicion_pago: string | null
+  dias_credito: number | null
 }
 
 type CuentaBancariaBasica = {
@@ -175,6 +177,72 @@ function formatDate(value: string | null | undefined) {
     month: '2-digit',
     year: 'numeric',
   }).format(date)
+}
+
+function sumarDiasFecha(fechaBase: string | null | undefined, dias: number) {
+  if (!fechaBase) return ''
+
+  const date = new Date(`${fechaBase}T00:00:00`)
+  if (Number.isNaN(date.getTime())) return fechaBase
+
+  date.setDate(date.getDate() + dias)
+  return date.toISOString().slice(0, 10)
+}
+
+function getDiasCreditoTercero(tercero: TerceroBasico | undefined) {
+  if (!tercero) return 0
+
+  switch (tercero.condicion_pago || 'contado') {
+    case 'contado':
+      return 0
+    case '7_dias':
+      return 7
+    case '15_dias':
+      return 15
+    case '30_dias':
+      return 30
+    case '45_dias':
+      return 45
+    case '60_dias':
+      return 60
+    case 'personalizado':
+      return Math.max(0, Math.trunc(Number(tercero.dias_credito || 0)))
+    default:
+      return Math.max(0, Math.trunc(Number(tercero.dias_credito || 0)))
+  }
+}
+
+function getCondicionPagoLabel(tercero: TerceroBasico | undefined) {
+  if (!tercero) return ''
+
+  if ((tercero.condicion_pago || 'contado') === 'personalizado') {
+    return `Personalizado (${tercero.dias_credito || 0} días)`
+  }
+
+  switch (tercero.condicion_pago || 'contado') {
+    case 'contado':
+      return 'Contado'
+    case '7_dias':
+      return '7 días'
+    case '15_dias':
+      return '15 días'
+    case '30_dias':
+      return '30 días'
+    case '45_dias':
+      return '45 días'
+    case '60_dias':
+      return '60 días'
+    default:
+      return 'Contado'
+  }
+}
+
+function calcularFechaVencimientoSugerida(
+  documento: SiiDocumento,
+  tercero: TerceroBasico | undefined
+) {
+  const fechaBase = documento.fecha_docto || todayLocalDate()
+  return sumarDiasFecha(fechaBase, getDiasCreditoTercero(tercero))
 }
 
 function getEstadoClass(estado: string) {
@@ -828,14 +896,14 @@ function DocumentosSiiPageContent() {
 
       supabase
         .from('proveedores')
-        .select('id, nombre, rut')
+        .select('id, nombre, rut, condicion_pago, dias_credito')
         .eq('empresa_id', empresaId)
         .eq('activo', true)
         .order('nombre', { ascending: true }),
 
       supabase
         .from('clientes')
-        .select('id, nombre, rut')
+        .select('id, nombre, rut, condicion_pago, dias_credito')
         .eq('empresa_id', empresaId)
         .eq('activo', true)
         .order('nombre', { ascending: true }),
@@ -1543,15 +1611,18 @@ function DocumentosSiiPageContent() {
     const terceroDetectado = terceros.find(
       (tercero) => normalizeRutSii(tercero.rut) === rutDocumento
     )
+    const terceroId =
+      documento.tipo_registro === 'ventas'
+        ? documento.cliente_id || terceroDetectado?.id || ''
+        : documento.proveedor_id || terceroDetectado?.id || ''
+    const terceroInicial = terceros.find((tercero) => tercero.id === terceroId)
 
     setSelectedDocumento(documento)
     setReviewForm({
       ...EMPTY_REVIEW_FORM,
       descripcion: getDescripcionSugerida(documento),
-      tercero_id:
-        documento.tipo_registro === 'ventas'
-          ? documento.cliente_id || terceroDetectado?.id || ''
-          : documento.proveedor_id || terceroDetectado?.id || '',
+      tercero_id: terceroId,
+      fecha_vencimiento: calcularFechaVencimientoSugerida(documento, terceroInicial),
     })
     setShowReviewModal(true)
     setError('')
@@ -1817,10 +1888,7 @@ function DocumentosSiiPageContent() {
         empresa_id: empresaId,
         tipo_movimiento: tipoMovimiento,
         fecha: fechaDocumento,
-        fecha_vencimiento:
-          selectedDocumento.tipo_registro === 'ventas' && reviewForm.fecha_vencimiento
-            ? reviewForm.fecha_vencimiento
-            : null,
+        fecha_vencimiento: reviewForm.fecha_vencimiento || fechaDocumento,
         tercero_tipo: selectedDocumento.tipo_registro === 'ventas' ? 'cliente' : 'proveedor',
         cliente_id:
           selectedDocumento.tipo_registro === 'ventas' ? reviewForm.tercero_id : null,
@@ -1899,7 +1967,7 @@ function DocumentosSiiPageContent() {
           movimiento_id: movimiento.id,
           proveedor_id: reviewForm.tercero_id,
           fecha_emision: fechaDocumento,
-          fecha_vencimiento: null,
+          fecha_vencimiento: reviewForm.fecha_vencimiento || fechaDocumento,
           monto_total: montoTotal,
           monto_pagado: 0,
           saldo_pendiente: montoTotal,
@@ -2641,12 +2709,25 @@ function DocumentosSiiPageContent() {
                   </label>
                   <select
                     value={reviewForm.tercero_id}
-                    onChange={(event) =>
+                    onChange={(event) => {
+                      const terceroId = event.target.value
+                      const terceros =
+                        selectedDocumento.tipo_registro === 'ventas' ? clientes : proveedores
+                      const terceroSeleccionado = terceros.find(
+                        (tercero) => tercero.id === terceroId
+                      )
+
                       setReviewForm((prev) => ({
                         ...prev,
-                        tercero_id: event.target.value,
+                        tercero_id: terceroId,
+                        fecha_vencimiento: terceroId
+                          ? calcularFechaVencimientoSugerida(
+                              selectedDocumento,
+                              terceroSeleccionado
+                            )
+                          : prev.fecha_vencimiento,
                       }))
-                    }
+                    }}
                     className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-[#163A5F]"
                   >
                     <option value="">
@@ -2661,9 +2742,24 @@ function DocumentosSiiPageContent() {
                       <option key={tercero.id} value={tercero.id}>
                         {tercero.nombre}
                         {tercero.rut ? ` - ${tercero.rut}` : ''}
+                        {getCondicionPagoLabel(tercero)
+                          ? ` · ${getCondicionPagoLabel(tercero)}`
+                          : ''}
                       </option>
                     ))}
                   </select>
+                  {reviewForm.tercero_id ? (
+                    <p className="mt-1 text-xs text-slate-500">
+                      Vencimiento sugerido según condición del{' '}
+                      {selectedDocumento.tipo_registro === 'ventas' ? 'cliente' : 'proveedor'}:{' '}
+                      {getCondicionPagoLabel(
+                        (selectedDocumento.tipo_registro === 'ventas'
+                          ? clientes
+                          : proveedores
+                        ).find((tercero) => tercero.id === reviewForm.tercero_id)
+                      )}
+                    </p>
+                  ) : null}
                   {!reviewForm.tercero_id ? (
                     <p className="mt-1 text-xs text-amber-600">
                       No se detectó automáticamente por RUT. Selecciona uno antes de crear el movimiento.
@@ -2743,24 +2839,22 @@ function DocumentosSiiPageContent() {
                   </select>
                 </div>
 
-                {selectedDocumento.tipo_registro === 'ventas' ? (
-                  <div>
-                    <label className="mb-2 block text-sm font-medium text-slate-700">
-                      Fecha vencimiento
-                    </label>
-                    <input
-                      type="date"
-                      value={reviewForm.fecha_vencimiento}
-                      onChange={(event) =>
-                        setReviewForm((prev) => ({
-                          ...prev,
-                          fecha_vencimiento: event.target.value,
-                        }))
-                      }
-                      className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-[#163A5F]"
-                    />
-                  </div>
-                ) : null}
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-700">
+                    Fecha vencimiento
+                  </label>
+                  <input
+                    type="date"
+                    value={reviewForm.fecha_vencimiento}
+                    onChange={(event) =>
+                      setReviewForm((prev) => ({
+                        ...prev,
+                        fecha_vencimiento: event.target.value,
+                      }))
+                    }
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-[#163A5F]"
+                  />
+                </div>
 
                 {reviewForm.estado_pago === 'pagado' ? (
                   <div>
