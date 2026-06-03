@@ -78,7 +78,7 @@ export default function AsientosContablesPage() {
   const [asientos, setAsientos] = useState<AsientoResumen[]>([])
   const [detalles, setDetalles] = useState<AsientoDetalle[]>([])
   const [asientoSeleccionadoId, setAsientoSeleccionadoId] = useState('')
-  const [estadoFiltro, setEstadoFiltro] = useState<'todos' | 'borrador' | 'contabilizado'>('borrador')
+  const [estadoFiltro, setEstadoFiltro] = useState<'todos' | 'borrador' | 'contabilizado'>('todos')
   const [loading, setLoading] = useState(true)
   const [processing, setProcessing] = useState(false)
   const [error, setError] = useState('')
@@ -327,9 +327,9 @@ export default function AsientosContablesPage() {
           }
           className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-900 md:max-w-sm"
         >
+          <option value="todos">Todos</option>
           <option value="borrador">Borradores</option>
           <option value="contabilizado">Contabilizados</option>
-          <option value="todos">Todos</option>
         </select>
       </section>
 
