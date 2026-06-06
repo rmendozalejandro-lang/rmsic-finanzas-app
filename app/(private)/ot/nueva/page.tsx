@@ -408,21 +408,30 @@ function NuevaOTContent() {
     field: K,
     value: FormDataState[K]
   ) => {
-    if (field === 'cliente_id') {
-      setForm((prev) => {
-        const equipoSeleccionado = equipos.find((item) => item.id === prev.equipo_id)
-        const equipoPerteneceCliente =
-          equipoSeleccionado &&
-          (!equipoSeleccionado.cliente_id || equipoSeleccionado.cliente_id === value)
+   if (field === 'cliente_id') {
+  const clienteId = String(value || '')
 
-        return {
-          ...prev,
-          cliente_id: value,
-          equipo_id: equipoPerteneceCliente ? prev.equipo_id : '',
-        }
-      })
-      return
+  setForm((prev) => {
+    const equipoSeleccionado = equipos.find((item) => item.id === prev.equipo_id)
+
+    const equipoPerteneceCliente = Boolean(
+      equipoSeleccionado &&
+        (
+          !clienteId ||
+          !equipoSeleccionado.cliente_id ||
+          equipoSeleccionado.cliente_id === clienteId
+        )
+    )
+
+    return {
+      ...prev,
+      cliente_id: clienteId,
+      equipo_id: equipoPerteneceCliente ? prev.equipo_id : '',
     }
+  })
+
+  return
+}
 
     setForm((prev) => ({
       ...prev,
