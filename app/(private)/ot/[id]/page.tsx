@@ -56,6 +56,22 @@ type OTDetalle = {
   valor_hora_uf: number | null
 }
 
+type OTResumenConEquipo = OTResumen & {
+  equipo_id: string | null
+  equipo_tag: string | null
+  equipo_nombre: string | null
+  equipo_descripcion: string | null
+  equipo_tipo: string | null
+  equipo_planta: string | null
+  equipo_area: string | null
+  equipo_linea: string | null
+  equipo_ubicacion: string | null
+  equipo_marca: string | null
+  equipo_modelo: string | null
+  equipo_serie: string | null
+  equipo_potencia: string | null
+}
+
 type EstadoOption = {
   id: string
   codigo: string
@@ -139,26 +155,49 @@ function todayLocalDate() {
   return `${year}-${month}-${day}`
 }
 
-function formatDate(value: string | null) {
-  if (!value) return '-'
+const CHILE_TIME_ZONE = 'America/Santiago'
 
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return '-'
+function parseDateOnly(value: string) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
+
+  if (!match) return null
+
+  const [, year, month, day] = match
+  return new Date(Number(year), Number(month) - 1, Number(day))
+}
+
+function parseDateValue(value: string | null) {
+  if (!value) return null
+
+  const trimmed = value.trim()
+  const dateOnly = parseDateOnly(trimmed)
+
+  if (dateOnly) return dateOnly
+
+  const date = new Date(trimmed)
+  if (Number.isNaN(date.getTime())) return null
+
+  return date
+}
+
+function formatDate(value: string | null) {
+  const date = parseDateValue(value)
+  if (!date) return '-'
 
   return new Intl.DateTimeFormat('es-CL', {
     dateStyle: 'medium',
+    timeZone: CHILE_TIME_ZONE,
   }).format(date)
 }
 
 function formatDateTime(value: string | null) {
-  if (!value) return '-'
-
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return '-'
+  const date = parseDateValue(value)
+  if (!date) return '-'
 
   return new Intl.DateTimeFormat('es-CL', {
     dateStyle: 'medium',
     timeStyle: 'short',
+    timeZone: CHILE_TIME_ZONE,
   }).format(date)
 }
 
@@ -194,16 +233,16 @@ function humanizePerson(value: string | null | undefined) {
   const lower = raw.toLowerCase()
 
   const knownMap: Record<string, string> = {
-    'rmendoza@rmsic.cl': 'RaÃºl Mendoza',
+    'rmendoza@rmsic.cl': 'Raúl Mendoza',
     'dallendes@rmsic.cl': 'David Allendes',
-    'rmendozaalejandro@gmail.com': 'RaÃºl Mendoza',
-    'raul mendoza': 'RaÃºl Mendoza',
-    'raÃºl mendoza': 'RaÃºl Mendoza',
-    'raul mendoza c.': 'RaÃºl Mendoza',
-    'raÃºl mendoza c.': 'RaÃºl Mendoza',
+    'rmendozaalejandro@gmail.com': 'Raúl Mendoza',
+    'raul mendoza': 'Raúl Mendoza',
+    'raúl mendoza': 'Raúl Mendoza',
+    'raul mendoza c.': 'Raúl Mendoza',
+    'raúl mendoza c.': 'Raúl Mendoza',
     'david allendes': 'David Allendes',
     'david allendes a.': 'David Allendes',
-    'rmendoza': 'RaÃºl Mendoza',
+    'rmendoza': 'Raúl Mendoza',
     'dallendes': 'David Allendes',
   }
 
@@ -212,9 +251,9 @@ function humanizePerson(value: string | null | undefined) {
   if (
     lower.includes('rmendoza') ||
     (lower.includes('raul') && lower.includes('mendoza')) ||
-    (lower.includes('raÃºl') && lower.includes('mendoza'))
+    (lower.includes('raúl') && lower.includes('mendoza'))
   ) {
-    return 'RaÃºl Mendoza'
+    return 'Raúl Mendoza'
   }
 
   if (
@@ -348,7 +387,7 @@ function OTDetalleContent() {
   const [cierreSuccess, setCierreSuccess] = useState('')
   const [deleteError, setDeleteError] = useState('')
 
-  const [resumen, setResumen] = useState<OTResumen | null>(null)
+  const [resumen, setResumen] = useState<OTResumenConEquipo | null>(null)
   const [detalle, setDetalle] = useState<OTDetalle | null>(null)
   const [tiempos, setTiempos] = useState<TiempoTrabajo[]>([])
   const [firmas, setFirmas] = useState<FirmaMini[]>([])
@@ -483,7 +522,7 @@ const isPreventiva = isPreventivaMespack || isPreventivaGeneral
         setDeleteError('')
 
         if (!otId) {
-          throw new Error('No se recibiÃ³ el identificador de la OT.')
+          throw new Error('No se recibió el identificador de la OT.')
         }
 
         const {
@@ -658,7 +697,7 @@ const isPreventiva = isPreventivaMespack || isPreventivaGeneral
           throw new Error(`No se pudo validar checklist: ${checklistResp.error.message}`)
         }
 
-        const resumenData = resumenResp.data as OTResumen
+        const resumenData = resumenResp.data as OTResumenConEquipo
         const detalleData = detalleResp.data as OTDetalle
         const estadosData = (estadosResp.data ?? []) as EstadoOption[]
         const tiposData = (tiposResp.data ?? []) as TipoServicioOption[]
@@ -685,7 +724,7 @@ const isPreventiva = isPreventivaMespack || isPreventivaGeneral
         let nextMap: Record<string, string> = {}
 
         if (perfilesResp.error) {
-          perfilesWarning = 'No se pudo cargar la lista de tÃ©cnicos OT.'
+          perfilesWarning = 'No se pudo cargar la lista de técnicos OT.'
         } else {
           const tecnicosRaw =
             (perfilesResp.data ?? []) as Array<{
@@ -812,13 +851,13 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
   const validateForm = () => {
     if (!form.tipo_servicio_id) return 'Debes seleccionar un tipo de servicio.'
     if (!form.estado_id) return 'Debes seleccionar un estado.'
-    if (!form.titulo.trim()) return 'Debes ingresar un tÃ­tulo.'
+    if (!form.titulo.trim()) return 'Debes ingresar un título.'
     if (!form.fecha_ot) return 'Debes indicar la fecha OT.'
 
     if (isUrgenciaOAsistencia && form.mostrar_nota_valor_hora) {
       const valor = Number(form.valor_hora_uf)
       if (Number.isNaN(valor) || valor <= 0) {
-        return 'Debes ingresar un valor hora UF vÃ¡lido.'
+        return 'Debes ingresar un valor hora UF válido.'
       }
     }
 
@@ -829,7 +868,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
     if (!tiempoForm.usuario_id) return 'Debes seleccionar un usuario para el tiempo.'
     if (!tiempoForm.fecha) return 'Debes indicar la fecha del registro.'
     if (!tiempoForm.hora_inicio) return 'Debes indicar la hora de inicio.'
-    if (!tiempoForm.hora_termino) return 'Debes indicar la hora de tÃ©rmino.'
+    if (!tiempoForm.hora_termino) return 'Debes indicar la hora de término.'
 
     const inicio = new Date(`${tiempoForm.fecha}T${tiempoForm.hora_inicio}`)
     const termino = new Date(`${tiempoForm.fecha}T${tiempoForm.hora_termino}`)
@@ -839,11 +878,11 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
     }
 
     if (Number.isNaN(inicio.getTime()) || Number.isNaN(termino.getTime())) {
-      return 'Las horas ingresadas no son vÃ¡lidas.'
+      return 'Las horas ingresadas no son válidas.'
     }
 
     if (termino <= inicio) {
-      return 'La hora de tÃ©rmino debe ser mayor que la hora de inicio. Si el servicio terminÃ³ al dÃ­a siguiente, marca "Termina al dÃ­a siguiente".'
+      return 'La hora de término debe ser mayor que la hora de inicio. Si el servicio terminó al día siguiente, marca "Termina al día siguiente".'
     }
 
     return ''
@@ -1230,6 +1269,28 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
     ? getUserLabel(detalle.created_by)
     : '-'
 
+  const equipoUbicacionLabel = resumen
+    ? [
+        resumen.equipo_planta,
+        resumen.equipo_area,
+        resumen.equipo_linea,
+        resumen.equipo_ubicacion,
+      ]
+        .filter(Boolean)
+        .join(' / ')
+    : ''
+
+  const equipoCaracteristicasLabel = resumen
+    ? [
+        resumen.equipo_tipo,
+        resumen.equipo_marca,
+        resumen.equipo_modelo,
+        resumen.equipo_potencia,
+      ]
+        .filter(Boolean)
+        .join(' · ')
+    : ''
+
   if (loading) {
     return (
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -1259,7 +1320,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
     return (
       <div className="space-y-4">
         <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-sm text-red-700 shadow-sm">
-          No se encontrÃ³ la orden de trabajo.
+          No se encontró la orden de trabajo.
         </div>
 
         <Link
@@ -1289,6 +1350,15 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
                 {labelOrDash(resumen.cliente_nombre)}
               </span>
             </p>
+            {resumen.equipo_tag ? (
+              <p className="mt-1 text-sm text-slate-500">
+                Equipo / TAG:{' '}
+                <span className="font-medium text-slate-700">
+                  {resumen.equipo_tag}
+                  {resumen.equipo_nombre ? ` · ${resumen.equipo_nombre}` : ''}
+                </span>
+              </p>
+            ) : null}
           </div>
 
           <div className="flex flex-wrap gap-3">
@@ -1317,7 +1387,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-5">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <p className="text-sm text-slate-500">Estado actual</p>
           <p className="mt-2 text-lg font-semibold text-slate-900">
@@ -1333,6 +1403,13 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
         </div>
 
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <p className="text-sm text-slate-500">Equipo / TAG</p>
+          <p className="mt-2 text-lg font-semibold text-slate-900">
+            {labelOrDash(resumen.equipo_tag)}
+          </p>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <p className="text-sm text-slate-500">Prioridad</p>
           <p className="mt-2 text-lg font-semibold text-slate-900">
             {labelOrDash(form.prioridad)}
@@ -1340,7 +1417,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
         </div>
 
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-sm text-slate-500">DuraciÃ³n OT (cierre)</p>
+          <p className="text-sm text-slate-500">Duración OT (cierre)</p>
           <p className="mt-2 text-lg font-semibold text-slate-900">
             {formatDuration(detalle.duracion_minutos)}
           </p>
@@ -1357,7 +1434,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <SectionTitle
           title="Resumen general"
-          subtitle="InformaciÃ³n principal de la orden de trabajo."
+          subtitle="Información principal de la orden de trabajo."
         />
 
         <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -1366,11 +1443,16 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
           <DetailField label="Folio" value={detalle.folio} />
           <DetailField label="Contacto cliente" value={form.contacto_cliente_nombre} />
           <DetailField label="Cargo contacto" value={form.contacto_cliente_cargo} />
-          <DetailField label="Ãrea / sector trabajo" value={form.area_trabajo} />
-          <DetailField label="UbicaciÃ³n base" value={resumen.ubicacion_nombre} />
+          <DetailField label="Área / sector trabajo" value={form.area_trabajo} />
+          <DetailField label="Ubicación base" value={resumen.ubicacion_nombre} />
           <DetailField label="Activo base" value={resumen.activo_nombre} />
+          <DetailField label="Equipo / TAG" value={resumen.equipo_tag} />
+          <DetailField label="Equipo nombre" value={resumen.equipo_nombre} />
+          <DetailField label="Equipo descripción" value={resumen.equipo_descripcion} />
+          <DetailField label="Equipo ubicación" value={equipoUbicacionLabel || null} />
+          <DetailField label="Equipo características" value={equipoCaracteristicasLabel || null} />
           <DetailField
-            label="TÃ©cnico actual"
+            label="Técnico actual"
             value={humanizePerson(resumen.tecnico_nombre)}
           />
           <DetailField label="Supervisor actual" value={supervisorLabel} />
@@ -1449,7 +1531,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
 
             <div>
               <label className="mb-2 block text-sm font-medium text-slate-700">
-                TÃ­tulo *
+                Título *
               </label>
               <input
                 type="text"
@@ -1473,7 +1555,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
                 <option value="baja">Baja</option>
                 <option value="media">Media</option>
                 <option value="alta">Alta</option>
-                <option value="critica">CrÃ­tica</option>
+                <option value="critica">Crítica</option>
               </select>
             </div>
           </div>
@@ -1505,7 +1587,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
 
             <div>
               <label className="mb-2 block text-sm font-medium text-slate-700">
-                Ãrea / sector de trabajo
+                Área / sector de trabajo
               </label>
               <input
                 type="text"
@@ -1517,12 +1599,12 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
           </div>
 
           <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-            <h3 className="text-base font-semibold text-slate-900">AsignaciÃ³n</h3>
+            <h3 className="text-base font-semibold text-slate-900">Asignación</h3>
 
             <div className="mt-5 grid gap-4 md:grid-cols-2">
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-700">
-                  TÃ©cnico responsable
+                  Técnico responsable
                 </label>
                 <select
                   value={form.tecnico_responsable_id}
@@ -1572,7 +1654,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
 
           {isPreventiva ? (
             <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
-              En mantenimiento preventivo el checklist queda marcado automÃ¡ticamente.
+              En mantenimiento preventivo el checklist queda marcado automáticamente.
             </div>
           ) : null}
         </div>
@@ -1581,7 +1663,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
           <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
             <SectionTitle
               title="Contenido OT: mantenimiento preventivo"
-              subtitle="Estructura enfocada en control, ejecuciÃ³n, hallazgos y recomendaciones."
+              subtitle="Estructura enfocada en control, ejecución, hallazgos y recomendaciones."
             />
 
             <div className="mt-5 grid gap-4">
@@ -1651,8 +1733,8 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
         {isUrgenciaOAsistencia ? (
           <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
             <SectionTitle
-              title="Contenido OT: urgencia / asistencia tÃ©cnica"
-              subtitle="Estructura correctiva y operativa para atenciÃ³n inmediata o soporte tÃ©cnico."
+              title="Contenido OT: urgencia / asistencia técnica"
+              subtitle="Estructura correctiva y operativa para atención inmediata o soporte técnico."
             />
 
             <div className="mt-5 grid gap-4">
@@ -1682,7 +1764,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
 
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-700">
-                  DiagnÃ³stico
+                  Diagnóstico
                 </label>
                 <textarea
                   value={form.diagnostico}
@@ -1768,7 +1850,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
                   </div>
 
                   <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                    Esta nota quedarÃ¡ disponible para el PDF cliente solo cuando la actives.
+                    Esta nota quedará disponible para el PDF cliente solo cuando la actives.
                   </div>
                 </div>
               ) : null}
@@ -1779,14 +1861,14 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
         {isAsesoria ? (
           <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
             <SectionTitle
-              title="Contenido OT: consultorÃ­a / asesorÃ­a tÃ©cnica"
-              subtitle="Estructura enfocada en anÃ¡lisis, conclusiones y recomendaciones."
+              title="Contenido OT: consultoría / asesoría técnica"
+              subtitle="Estructura enfocada en análisis, conclusiones y recomendaciones."
             />
 
             <div className="mt-5 grid gap-4">
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-700">
-                  Objetivo de la asesorÃ­a
+                  Objetivo de la asesoría
                 </label>
                 <textarea
                   value={form.descripcion_solicitud}
@@ -1810,7 +1892,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
 
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-700">
-                  AnÃ¡lisis tÃ©cnico
+                  Análisis técnico
                 </label>
                 <textarea
                   value={form.diagnostico}
@@ -1822,7 +1904,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
 
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-700">
-                  Conclusiones tÃ©cnicas
+                  Conclusiones técnicas
                 </label>
                 <textarea
                   value={form.conclusiones_tecnicas}
@@ -1851,13 +1933,13 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
           <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
             <SectionTitle
               title="Contenido general"
-              subtitle="Modo de respaldo para tipos no clasificados todavÃ­a."
+              subtitle="Modo de respaldo para tipos no clasificados todavía."
             />
 
             <div className="mt-5 grid gap-4">
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-700">
-                  DescripciÃ³n de la solicitud
+                  Descripción de la solicitud
                 </label>
                 <textarea
                   value={form.descripcion_solicitud}
@@ -1881,7 +1963,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
 
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-700">
-                  DiagnÃ³stico
+                  Diagnóstico
                 </label>
                 <textarea
                   value={form.diagnostico}
@@ -1976,7 +2058,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <SectionTitle
           title="Registrar tiempo de trabajo"
-          subtitle="Agrega bloques de tiempo para trabajo, traslado, espera o supervisiÃ³n."
+          subtitle="Agrega bloques de tiempo para trabajo, traslado, espera o supervisión."
         />
 
         <form onSubmit={handleAddTiempo} className="mt-5 space-y-5">
@@ -2028,7 +2110,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
                 <option value="trabajo">Trabajo</option>
                 <option value="traslado">Traslado</option>
                 <option value="espera">Espera</option>
-                <option value="supervision">SupervisiÃ³n</option>
+                <option value="supervision">Supervisión</option>
               </select>
             </div>
 
@@ -2046,7 +2128,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
 
             <div>
               <label className="mb-2 block text-sm font-medium text-slate-700">
-                Hora tÃ©rmino *
+                Hora término *
               </label>
               <input
                 type="time"
@@ -2068,10 +2150,10 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
                 />
                 <span>
                   <span className="font-medium text-slate-900">
-                    Termina al dÃ­a siguiente
+                    Termina al día siguiente
                   </span>
                   <span className="mt-1 block text-xs text-slate-500">
-                    Usa esta opciÃ³n cuando el servicio inicia en la noche y termina en la madrugada, por ejemplo 21:15 a 03:00.
+                    Usa esta opción cuando el servicio inicia en la noche y termina en la madrugada, por ejemplo 21:15 a 03:00.
                   </span>
                 </span>
               </label>
@@ -2080,13 +2162,13 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
 
           <div>
             <label className="mb-2 block text-sm font-medium text-slate-700">
-              ObservaciÃ³n
+              Observación
             </label>
             <textarea
               value={tiempoForm.observacion}
               onChange={(e) => handleTiempoChange('observacion', e.target.value)}
               rows={3}
-              placeholder="Ejemplo: intervenciÃ³n en tablero principal, visita en terreno, traslado a planta, etc."
+              placeholder="Ejemplo: intervención en tablero principal, visita en terreno, traslado a planta, etc."
               className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-500"
             />
           </div>
@@ -2123,7 +2205,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
 
         {tiempos.length === 0 ? (
           <div className="mt-5 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-600">
-            AÃºn no hay tiempos registrados para esta OT.
+            Aún no hay tiempos registrados para esta OT.
           </div>
         ) : (
           <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200">
@@ -2135,9 +2217,9 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
                     <th className="px-4 py-3 font-semibold">Usuario</th>
                     <th className="px-4 py-3 font-semibold">Tipo</th>
                     <th className="px-4 py-3 font-semibold">Inicio</th>
-                    <th className="px-4 py-3 font-semibold">TÃ©rmino</th>
-                    <th className="px-4 py-3 font-semibold">DuraciÃ³n</th>
-                    <th className="px-4 py-3 font-semibold">ObservaciÃ³n</th>
+                    <th className="px-4 py-3 font-semibold">Término</th>
+                    <th className="px-4 py-3 font-semibold">Duración</th>
+                    <th className="px-4 py-3 font-semibold">Observación</th>
                     <th className="px-4 py-3 font-semibold text-right">Acciones</th>
                   </tr>
                 </thead>
@@ -2209,11 +2291,11 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
             detail={
               isAsesoria
                 ? hasTrabajoRealizado
-                  ? 'El anÃ¡lisis tÃ©cnico o las conclusiones ya estÃ¡n completas.'
-                  : 'Debes completar el anÃ¡lisis tÃ©cnico o las conclusiones antes de cerrar.'
+                  ? 'El análisis técnico o las conclusiones ya están completas.'
+                  : 'Debes completar el análisis técnico o las conclusiones antes de cerrar.'
                 : hasTrabajoRealizado
-                  ? 'El campo principal de ejecuciÃ³n ya estÃ¡ completo.'
-                  : 'Debes completar el campo principal de ejecuciÃ³n antes de cerrar.'
+                  ? 'El campo principal de ejecución ya está completo.'
+                  : 'Debes completar el campo principal de ejecución antes de cerrar.'
             }
           />
 
@@ -2232,7 +2314,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
             ok={true}
             detail={
               hasAnyFirma
-                ? `Firmas guardadas: ${firmas.length}. TÃ©cnico: ${hasFirmaTecnico ? 'sÃ­' : 'no'}. Cliente: ${hasFirmaCliente ? 'sÃ­' : 'no'}.`
+                ? `Firmas guardadas: ${firmas.length}. Técnico: ${hasFirmaTecnico ? 'sí' : 'no'}. Cliente: ${hasFirmaCliente ? 'sí' : 'no'}.`
                 : 'Opcional: puedes guardar firma del cliente o técnico, pero no bloquea el cierre rápido.'
             }
           />
@@ -2244,7 +2326,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
               requiresChecklistForClose
                 ? hasChecklistResponses
                   ? `Checklist respondido: ${checklistResponsesCount} registro(s).`
-                  : 'Esta OT requiere checklist y aÃºn no tiene respuestas.'
+                  : 'Esta OT requiere checklist y aún no tiene respuestas.'
                 : 'Esta OT no exige checklist para cierre.'
             }
           />
@@ -2255,7 +2337,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
             detail={
               isClosed
                 ? 'La OT ya se encuentra cerrada.'
-                : 'La OT aÃºn no estÃ¡ cerrada.'
+                : 'La OT aún no está cerrada.'
             }
           />
         </div>
@@ -2284,7 +2366,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
             onClick={() => void loadData(false)}
             className="inline-flex items-center justify-center rounded-xl border border-slate-300 px-5 py-3 text-sm font-medium text-slate-700 hover:bg-slate-100"
           >
-            Actualizar validaciÃ³n
+            Actualizar validación
           </button>
 
           <button

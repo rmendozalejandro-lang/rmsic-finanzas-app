@@ -50,6 +50,21 @@ function toTitleCase(text: string) {
     .join(' ')
 }
 
+function buildEquipoSubtitle(ot: OTResumen) {
+  const descripcion = ot.equipo_nombre || ot.equipo_descripcion || ''
+  const ubicacion = [
+    ot.equipo_planta,
+    ot.equipo_area,
+    ot.equipo_linea,
+    ot.equipo_ubicacion,
+  ]
+    .filter(Boolean)
+    .join(' / ')
+
+  if (descripcion && ubicacion) return `${descripcion} · ${ubicacion}`
+  return descripcion || ubicacion || ''
+}
+
 function humanizePerson(value: string | null | undefined) {
   if (!value || !value.trim()) return '-'
 
@@ -169,6 +184,7 @@ export function OTDataTable({
               <th className="px-4 py-3 font-semibold">Cliente</th>
               <th className="px-4 py-3 font-semibold">Título</th>
               <th className="px-4 py-3 font-semibold">Tipo</th>
+              <th className="px-4 py-3 font-semibold">Equipo / TAG</th>
               <th className="px-4 py-3 font-semibold">Estado</th>
               <th className="px-4 py-3 font-semibold">Prioridad</th>
               <th className="px-4 py-3 font-semibold">Técnico</th>
@@ -180,6 +196,7 @@ export function OTDataTable({
           <tbody>
             {data.map((ot) => {
               const checked = Boolean(selectedIds?.has(ot.id))
+              const equipoSubtitle = buildEquipoSubtitle(ot)
 
               return (
                 <tr key={ot.id} className="border-t border-slate-100 text-slate-700">
@@ -217,6 +234,23 @@ export function OTDataTable({
                     <div className="max-w-[180px] whitespace-normal break-words">
                       {labelOrDash(ot.tipo_servicio_nombre)}
                     </div>
+                  </td>
+
+                  <td className="px-4 py-3">
+                    {ot.equipo_tag ? (
+                      <div className="max-w-[240px] whitespace-normal break-words">
+                        <div className="font-semibold text-slate-900">
+                          {labelOrDash(ot.equipo_tag)}
+                        </div>
+                        {equipoSubtitle ? (
+                          <div className="mt-1 text-xs leading-5 text-slate-500">
+                            {equipoSubtitle}
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <span className="text-slate-400">-</span>
+                    )}
                   </td>
 
                   <td className="px-4 py-3">

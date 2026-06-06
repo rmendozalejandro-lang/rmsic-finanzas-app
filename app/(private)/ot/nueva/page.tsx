@@ -11,6 +11,25 @@ type ClienteOption = {
   nombre: string
 }
 
+type EquipoOption = {
+  id: string
+  cliente_id: string | null
+  tag: string
+  nombre: string | null
+  descripcion: string | null
+  tipo_equipo: string | null
+  planta: string | null
+  area: string | null
+  linea: string | null
+  ubicacion: string | null
+  marca: string | null
+  modelo: string | null
+  serie: string | null
+  potencia: string | null
+  estado: string | null
+  activo: boolean | null
+}
+
 type TipoServicioOption = {
   id: string
   codigo: string
@@ -47,6 +66,7 @@ type PerfilRow = {
 type FormDataState = {
   empresa_id: string
   cliente_id: string
+  equipo_id: string
   tipo_servicio_id: string
   estado_id: string
   fecha_ot: string
@@ -100,6 +120,7 @@ function NuevaOTContent() {
   const [empresaActivaNombre, setEmpresaActivaNombre] = useState('')
 
   const [clientes, setClientes] = useState<ClienteOption[]>([])
+  const [equipos, setEquipos] = useState<EquipoOption[]>([])
   const [tiposServicio, setTiposServicio] = useState<TipoServicioOption[]>([])
   const [estados, setEstados] = useState<EstadoOption[]>([])
   const [tecnicos, setTecnicos] = useState<SelectOption[]>([])
@@ -108,6 +129,7 @@ function NuevaOTContent() {
   const [form, setForm] = useState<FormDataState>({
     empresa_id: '',
     cliente_id: '',
+    equipo_id: '',
     tipo_servicio_id: '',
     estado_id: '',
     fecha_ot: todayLocalDate(),
@@ -128,6 +150,16 @@ function NuevaOTContent() {
   const selectedTipo = useMemo(() => {
     return tiposServicio.find((item) => item.id === form.tipo_servicio_id) ?? null
   }, [tiposServicio, form.tipo_servicio_id])
+
+  const equiposCliente = useMemo(() => {
+    if (!form.cliente_id) return equipos
+
+    return equipos.filter((item) => !item.cliente_id || item.cliente_id === form.cliente_id)
+  }, [equipos, form.cliente_id])
+
+  const selectedEquipo = useMemo(() => {
+    return equipos.find((item) => item.id === form.equipo_id) ?? null
+  }, [equipos, form.equipo_id])
 
   const isPreventivaMespack = selectedTipo?.codigo === 'preventiva'
 
@@ -173,13 +205,28 @@ function NuevaOTContent() {
           throw new Error('No hay usuario autenticado.')
         }
 
-        const [clientesResp, tiposResp, estadosResp, tecnicosResp, supervisoresResp] =
-          await Promise.all([
+        const [
+          clientesResp,
+          equiposResp,
+          tiposResp,
+          estadosResp,
+          tecnicosResp,
+          supervisoresResp,
+        ] = await Promise.all([
             supabase
               .from('clientes')
               .select('id, nombre')
               .eq('empresa_id', storedEmpresaId)
               .order('nombre', { ascending: true }),
+
+            supabase
+              .from('ot_vw_equipos')
+              .select(
+                'id, cliente_id, tag, nombre, descripcion, tipo_equipo, planta, area, linea, ubicacion, marca, modelo, serie, potencia, estado, activo'
+              )
+              .eq('empresa_id', storedEmpresaId)
+              .is('deleted_at', null)
+              .order('tag', { ascending: true }),
 
             supabase
               .from('ot_tipos_servicio')
@@ -211,6 +258,10 @@ function NuevaOTContent() {
           throw new Error(`No se pudieron cargar los clientes: ${clientesResp.error.message}`)
         }
 
+        if (equiposResp.error) {
+          throw new Error(`No se pudieron cargar los equipos: ${equiposResp.error.message}`)
+        }
+
         if (tiposResp.error) {
           throw new Error(
             `No se pudieron cargar los tipos de servicio: ${tiposResp.error.message}`
@@ -228,6 +279,25 @@ function NuevaOTContent() {
         const clientesData: ClienteOption[] = (clientesResp.data ?? []).map((item) => ({
           id: item.id,
           nombre: item.nombre,
+        }))
+
+        const equiposData: EquipoOption[] = (equiposResp.data ?? []).map((item) => ({
+          id: item.id,
+          cliente_id: item.cliente_id,
+          tag: item.tag,
+          nombre: item.nombre,
+          descripcion: item.descripcion,
+          tipo_equipo: item.tipo_equipo,
+          planta: item.planta,
+          area: item.area,
+          linea: item.linea,
+          ubicacion: item.ubicacion,
+          marca: item.marca,
+          modelo: item.modelo,
+          serie: item.serie,
+          potencia: item.potencia,
+          estado: item.estado,
+          activo: item.activo,
         }))
 
         const tiposData: TipoServicioOption[] = (tiposResp.data ?? []).map((item) => ({
@@ -269,6 +339,7 @@ function NuevaOTContent() {
         if (!active) return
 
         setClientes(clientesData)
+        setEquipos(equiposData)
         setTiposServicio(tiposData)
         setEstados(estadosData)
         setTecnicos(tecnicosData)
@@ -337,6 +408,22 @@ function NuevaOTContent() {
     field: K,
     value: FormDataState[K]
   ) => {
+    if (field === 'cliente_id') {
+      setForm((prev) => {
+        const equipoSeleccionado = equipos.find((item) => item.id === prev.equipo_id)
+        const equipoPerteneceCliente =
+          equipoSeleccionado &&
+          (!equipoSeleccionado.cliente_id || equipoSeleccionado.cliente_id === value)
+
+        return {
+          ...prev,
+          cliente_id: value,
+          equipo_id: equipoPerteneceCliente ? prev.equipo_id : '',
+        }
+      })
+      return
+    }
+
     setForm((prev) => ({
       ...prev,
       [field]: value,
@@ -404,6 +491,7 @@ function NuevaOTContent() {
       const payload = {
         empresa_id: form.empresa_id,
         cliente_id: form.cliente_id,
+        equipo_id: form.equipo_id || null,
         tipo_servicio_id: form.tipo_servicio_id,
         estado_id: form.estado_id || estadoAsignadaId,
         fecha_ot: form.fecha_ot || todayLocalDate(),
@@ -503,6 +591,65 @@ function NuevaOTContent() {
                   ))}
                 </select>
               </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  Equipo / TAG
+                </label>
+                <select
+                  value={form.equipo_id}
+                  onChange={(e) => handleChange('equipo_id', e.target.value)}
+                  disabled={!form.cliente_id && equiposCliente.length === 0}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500 disabled:bg-slate-100 disabled:text-slate-500"
+                >
+                  <option value="">
+                    {equiposCliente.length === 0
+                      ? 'Sin equipos registrados'
+                      : 'Sin equipo asociado'}
+                  </option>
+                  {equiposCliente.map((equipo) => (
+                    <option key={equipo.id} value={equipo.id}>
+                      {equipo.tag}
+                      {equipo.nombre ? ` - ${equipo.nombre}` : ''}
+                      {equipo.descripcion && !equipo.nombre ? ` - ${equipo.descripcion}` : ''}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1 text-xs text-slate-500">
+                  Opcional para RMSIC. Para DyF/Softys permite asociar la OT a un motor o activo por TAG.
+                </p>
+              </div>
+
+              {selectedEquipo ? (
+                <div className="md:col-span-2 rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+                  <div className="font-semibold">
+                    Equipo seleccionado: {selectedEquipo.tag}
+                    {selectedEquipo.nombre ? ` - ${selectedEquipo.nombre}` : ''}
+                  </div>
+                  <div className="mt-1 grid gap-1 md:grid-cols-2">
+                    <div>
+                      <span className="font-medium">Descripción:</span>{' '}
+                      {selectedEquipo.descripcion || 'Sin descripción'}
+                    </div>
+                    <div>
+                      <span className="font-medium">Tipo:</span>{' '}
+                      {selectedEquipo.tipo_equipo || 'Sin tipo'}
+                    </div>
+                    <div>
+                      <span className="font-medium">Ubicación:</span>{' '}
+                      {[selectedEquipo.planta, selectedEquipo.area, selectedEquipo.linea, selectedEquipo.ubicacion]
+                        .filter(Boolean)
+                        .join(' / ') || 'Sin ubicación'}
+                    </div>
+                    <div>
+                      <span className="font-medium">Datos técnicos:</span>{' '}
+                      {[selectedEquipo.marca, selectedEquipo.modelo, selectedEquipo.potencia]
+                        .filter(Boolean)
+                        .join(' · ') || 'Sin datos técnicos'}
+                    </div>
+                  </div>
+                </div>
+              ) : null}
 
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-700">
