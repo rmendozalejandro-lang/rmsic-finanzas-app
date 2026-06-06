@@ -91,7 +91,7 @@ const criticidadLabels: Record<string, string> = {
   baja: 'Baja',
   media: 'Media',
   alta: 'Alta',
-  critica: 'CrÃ­tica',
+  critica: 'Crítica',
 }
 
 function normalizarTexto(value: string | null | undefined) {
@@ -210,7 +210,7 @@ export default function OTEquiposPage() {
       setClientes(clientesJson ?? [])
       setEquipos(equiposJson ?? [])
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'No se pudo cargar la informaciÃ³n.')
+      setError(err instanceof Error ? err.message : 'No se pudo cargar la información.')
     } finally {
       setLoading(false)
     }
@@ -384,8 +384,8 @@ export default function OTEquiposPage() {
     const nuevoActivo = !equipo.activo
     const confirmar = window.confirm(
       nuevoActivo
-        ? `Â¿Deseas activar el equipo ${equipo.tag}?`
-        : `Â¿Deseas inactivar el equipo ${equipo.tag}?`
+        ? `¿Deseas activar el equipo ${equipo.tag}?`
+        : `¿Deseas inactivar el equipo ${equipo.tag}?`
     )
 
     if (!confirmar) return
@@ -450,7 +450,7 @@ export default function OTEquiposPage() {
               Maestro de equipos
             </h1>
             <p className="mt-2 max-w-3xl text-slate-600">
-              Carga y administra motores, equipos o activos por TAG para generar Ã³rdenes de trabajo
+              Carga y administra motores, equipos o activos por TAG para generar órdenes de trabajo
               independientes por equipo.
             </p>
           </div>
@@ -502,7 +502,7 @@ export default function OTEquiposPage() {
                   Equipos registrados
                 </h2>
                 <p className="mt-1 text-sm text-slate-500">
-                  Busca por TAG, descripciÃ³n, cliente, planta, Ã¡rea o ubicaciÃ³n.
+                  Busca por TAG, descripción, cliente, planta, área o ubicación.
                 </p>
               </div>
 
@@ -520,7 +520,7 @@ export default function OTEquiposPage() {
                 <div className="text-sm text-slate-500">Cargando equipos...</div>
               ) : equiposFiltrados.length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500">
-                  No hay equipos registrados o no hay coincidencias para la bÃºsqueda.
+                  No hay equipos registrados o no hay coincidencias para la búsqueda.
                 </div>
               ) : (
                 <table className="min-w-[1100px] w-full text-sm">
@@ -529,7 +529,7 @@ export default function OTEquiposPage() {
                       <th className="py-3 pr-4">TAG</th>
                       <th className="py-3 pr-4">Equipo</th>
                       <th className="py-3 pr-4">Cliente</th>
-                      <th className="py-3 pr-4">UbicaciÃ³n</th>
+                      <th className="py-3 pr-4">Ubicación</th>
                       <th className="py-3 pr-4">Tipo</th>
                       <th className="py-3 pr-4">Criticidad</th>
                       <th className="py-3 pr-4">Estado</th>
@@ -553,7 +553,7 @@ export default function OTEquiposPage() {
                           ) : null}
                           {(equipo.marca || equipo.modelo || equipo.potencia) && (
                             <div className="mt-1 text-xs text-slate-500">
-                              {[equipo.marca, equipo.modelo, equipo.potencia].filter(Boolean).join(' Â· ')}
+                              {[equipo.marca, equipo.modelo, equipo.potencia].filter(Boolean).join(' · ')}
                             </div>
                           )}
                         </td>
@@ -635,7 +635,7 @@ export default function OTEquiposPage() {
                   {clientes.map((cliente) => (
                     <option key={cliente.id} value={cliente.id}>
                       {cliente.nombre}
-                      {cliente.rut ? ` Â· ${cliente.rut}` : ''}
+                      {cliente.rut ? ` · ${cliente.rut}` : ''}
                     </option>
                   ))}
                 </select>
@@ -685,7 +685,7 @@ export default function OTEquiposPage() {
 
               <div>
                 <label className="mb-1 block text-sm font-medium text-slate-700">
-                  DescripciÃ³n
+                  Descripción
                 </label>
                 <textarea
                   name="descripcion"
@@ -693,7 +693,7 @@ export default function OTEquiposPage() {
                   onChange={handleChange}
                   rows={3}
                   className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm"
-                  placeholder="DescripciÃ³n tÃ©cnica del equipo"
+                  placeholder="Descripción técnica del equipo"
                 />
               </div>
 
@@ -713,33 +713,33 @@ export default function OTEquiposPage() {
 
                 <div>
                   <label className="mb-1 block text-sm font-medium text-slate-700">
-                    Ãrea
+                    Área
                   </label>
                   <input
                     name="area"
                     value={form.area}
                     onChange={handleChange}
                     className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm"
-                    placeholder="MantenciÃ³n"
+                    placeholder="Mantención"
                   />
                 </div>
 
                 <div>
                   <label className="mb-1 block text-sm font-medium text-slate-700">
-                    LÃ­nea
+                    Línea
                   </label>
                   <input
                     name="linea"
                     value={form.linea}
                     onChange={handleChange}
                     className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm"
-                    placeholder="LÃ­nea 352"
+                    placeholder="Línea 352"
                   />
                 </div>
 
                 <div>
                   <label className="mb-1 block text-sm font-medium text-slate-700">
-                    UbicaciÃ³n
+                    Ubicación
                   </label>
                   <input
                     name="ubicacion"
@@ -816,7 +816,7 @@ export default function OTEquiposPage() {
                     <option value="baja">Baja</option>
                     <option value="media">Media</option>
                     <option value="alta">Alta</option>
-                    <option value="critica">CrÃ­tica</option>
+                    <option value="critica">Crítica</option>
                   </select>
                 </div>
 
@@ -848,7 +848,7 @@ export default function OTEquiposPage() {
                   onChange={handleChange}
                   className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm"
                 >
-                  <option value="true">SÃ­</option>
+                  <option value="true">Sí</option>
                   <option value="false">No</option>
                 </select>
               </div>
@@ -896,4 +896,6 @@ export default function OTEquiposPage() {
     </ProtectedModuleRoute>
   )
 }
+
+
 

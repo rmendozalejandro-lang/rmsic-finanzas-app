@@ -73,7 +73,7 @@ const menuItems: MenuItem[] = [
   { href: '/ot/equipos', label: 'Equipos / Activos', moduleKey: 'ot' },
 
   { href: '/remuneraciones', label: 'Remuneraciones', moduleKey: 'remuneraciones' },
-{ href: '/remuneraciones/prestamos', label: 'PrÃ©stamos y anticipos', moduleKey: 'remuneraciones' },
+{ href: '/remuneraciones/prestamos', label: 'Prestamos y anticipos', moduleKey: 'remuneraciones' },
 { href: '/remuneraciones/cotizaciones', label: 'Cotizaciones / Leyes sociales', moduleKey: 'remuneraciones' },
 
   {
@@ -88,7 +88,7 @@ const menuItems: MenuItem[] = [
   },
   {
     href: '/configuracion/auditoria',
-    label: 'AuditorÃ­a',
+    label: 'Auditori­a',
     moduleKey: 'configuracion_auditoria',
   },
 ]
@@ -141,7 +141,7 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
       .eq('habilitado', true)
 
     if (modulosResp.error) {
-      console.error('No se pudieron cargar mÃ³dulos de empresa:', modulosResp.error.message)
+      console.error('No se pudieron cargar modulos de empresa:', modulosResp.error.message)
       setModulosHabilitados([])
       return
     }
@@ -439,16 +439,16 @@ if (empresaGuardadaValida) {
     empresaActiva?.nombre || empresaActivaNombreLocal || 'Sin empresa activa'
 
   const appTitle = isTecnicoOT
-    ? 'MÃ³dulo OT'
+    ? 'Modulo OT'
     : 'Plataforma financiera y administrativa'
 
   const appSubtitle = isTecnicoOT
-    ? 'Ã“rdenes de trabajo y gestiÃ³n en terreno'
+    ? 'Ordenes de trabajo y gestion en terreno'
     : 'Plataforma financiera y administrativa'
 
   const sidebarSupportText = isTecnicoOT
-    ? 'Acceso restringido al mÃ³dulo OT para ejecuciÃ³n, firmas y evidencia en terreno.'
-    : 'GestiÃ³n multiempresa con mÃ³dulos habilitados por empresa y permisos por rol.'
+    ? 'Acceso restringido al modulo OT para ejecucion, firmas y evidencia en terreno.'
+    : 'Gestion multiempresa con modulos habilitados por empresa y permisos por rol.'
 
   if (checkingSession) {
     return (
@@ -457,7 +457,7 @@ if (empresaGuardadaValida) {
           <div className="space-y-2">
             <p className="text-sm font-medium text-slate-500">Auren</p>
             <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
-              Verificando sesiÃ³n
+              Verificando sesión
             </h1>
             <p className="text-sm text-slate-500">
               Estamos preparando su entorno empresarial.
@@ -526,7 +526,7 @@ if (empresaGuardadaValida) {
             {isSuperAdmin && (
               <div>
                 <div className="mb-2 px-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
-                  AdministraciÃ³n
+                  Administracion
                 </div>
 
                 <Link
@@ -592,7 +592,7 @@ if (empresaGuardadaValida) {
                     onClick={() => void handleLogout()}
                     className="rounded-2xl bg-[#163A5F] px-4 py-3 text-sm font-medium text-white transition hover:bg-[#245C90]"
                   >
-                    Cerrar sesiÃ³n
+                    Cerrar sesión
                   </button>
                 </div>
               </div>
@@ -646,10 +646,10 @@ if (empresaGuardadaValida) {
               <section className="mx-auto max-w-3xl rounded-[28px] border border-amber-200 bg-amber-50 p-6 shadow-sm">
                 <p className="text-sm font-medium text-amber-700">Acceso restringido</p>
                 <h2 className="mt-2 text-2xl font-semibold tracking-tight text-amber-950">
-                  No tienes acceso a este mÃ³dulo
+                  No tienes acceso a este modulo
                 </h2>
                 <p className="mt-3 text-sm leading-6 text-amber-800">
-                  El mÃ³dulo solicitado no estÃ¡ habilitado para la empresa activa o tu rol no tiene permiso para acceder.
+                  El modulo solicitado no esta habilitado para la empresa activa o tu rol no tiene permiso para acceder.
                 </p>
                 <p className="mt-2 text-sm leading-6 text-amber-800">
                   Empresa activa: <span className="font-semibold">{empresaActivaNombreVisual}</span>
