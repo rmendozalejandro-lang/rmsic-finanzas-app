@@ -1378,6 +1378,13 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
             </Link>
 
             <Link
+              href={`/ot/${otId}/informe-softys`}
+              className="inline-flex rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+            >
+              Informe DyF / Softys
+            </Link>
+
+            <Link
               href="/ot"
               className="inline-flex rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
             >
