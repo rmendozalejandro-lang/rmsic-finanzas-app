@@ -236,12 +236,8 @@ function humanizePerson(value: string | null | undefined) {
     'rmendoza@rmsic.cl': 'Raúl Mendoza',
     'dallendes@rmsic.cl': 'David Allendes',
     'rmendozaalejandro@gmail.com': 'Raúl Mendoza',
-    'raúl mendoza': 'Raúl Mendoza',
-    'raúl mendoza': 'Raúl Mendoza',
-    'raúl mendoza c.': 'Raúl Mendoza',
     'raúl mendoza c.': 'Raúl Mendoza',
     'david allendes': 'David Allendes',
-    'david allendes a.': 'David Allendes',
     'rmendoza': 'Raúl Mendoza',
     'dallendes': 'David Allendes',
   }
