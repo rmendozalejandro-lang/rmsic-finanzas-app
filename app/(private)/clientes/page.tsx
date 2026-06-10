@@ -1,136 +1,172 @@
-'use client'
+"use client";
 
-import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { supabase } from '../../../lib/supabase/client'
-import StatusBadge from '../../../components/StatusBadge'
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { supabase } from "../../../lib/supabase/client";
+import StatusBadge from "../../../components/StatusBadge";
 
 type CondicionPago =
-  | 'contado'
-  | '7_dias'
-  | '15_dias'
-  | '30_dias'
-  | '45_dias'
-  | '60_dias'
-  | 'personalizado'
+  | "contado"
+  | "7_dias"
+  | "15_dias"
+  | "30_dias"
+  | "45_dias"
+  | "60_dias"
+  | "personalizado";
+
+type EstadoComercial = "prospecto" | "cliente_activo" | "inactivo";
 
 type Cliente = {
-  id: string
-  empresa_id: string
-  nombre: string
-  rut: string | null
-  contacto: string | null
-  email: string | null
-  telefono: string | null
-  direccion: string | null
-  condicion_pago: CondicionPago | null
-  dias_credito: number | null
-  activo: boolean
-  created_at: string
-}
+  id: string;
+  empresa_id: string;
+  nombre: string;
+  rut: string | null;
+  contacto: string | null;
+  email: string | null;
+  telefono: string | null;
+  direccion: string | null;
+  condicion_pago: CondicionPago | null;
+  dias_credito: number | null;
+  estado_comercial: EstadoComercial | null;
+  activo: boolean;
+  created_at: string;
+};
 
-const STORAGE_KEY = 'empresa_activa_id'
+const STORAGE_KEY = "empresa_activa_id";
 
 const condicionesPago = [
-  { value: 'contado', label: 'Contado', dias: 0 },
-  { value: '7_dias', label: '7 días', dias: 7 },
-  { value: '15_dias', label: '15 días', dias: 15 },
-  { value: '30_dias', label: '30 días', dias: 30 },
-  { value: '45_dias', label: '45 días', dias: 45 },
-  { value: '60_dias', label: '60 días', dias: 60 },
-  { value: 'personalizado', label: 'Personalizado', dias: 0 },
-] as const
+  { value: "contado", label: "Contado", dias: 0 },
+  { value: "7_dias", label: "7 días", dias: 7 },
+  { value: "15_dias", label: "15 días", dias: 15 },
+  { value: "30_dias", label: "30 días", dias: 30 },
+  { value: "45_dias", label: "45 días", dias: 45 },
+  { value: "60_dias", label: "60 días", dias: 60 },
+  { value: "personalizado", label: "Personalizado", dias: 0 },
+] as const;
 
-function getDiasPorCondicion(condicion: string, diasCredito: string | number | null | undefined) {
-  if (condicion === 'personalizado') {
-    const dias = Number(diasCredito ?? 0)
-    return Number.isFinite(dias) && dias >= 0 ? Math.trunc(dias) : 0
+const estadosComerciales = [
+  { value: "prospecto", label: "Prospecto" },
+  { value: "cliente_activo", label: "Cliente activo" },
+  { value: "inactivo", label: "Inactivo" },
+] as const;
+
+function getDiasPorCondicion(
+  condicion: string,
+  diasCredito: string | number | null | undefined,
+) {
+  if (condicion === "personalizado") {
+    const dias = Number(diasCredito ?? 0);
+    return Number.isFinite(dias) && dias >= 0 ? Math.trunc(dias) : 0;
   }
 
-  return condicionesPago.find((item) => item.value === condicion)?.dias ?? 0
+  return condicionesPago.find((item) => item.value === condicion)?.dias ?? 0;
 }
 
-function getCondicionLabel(condicion: string | null | undefined, diasCredito: number | null | undefined) {
-  const value = condicion || 'contado'
-  const option = condicionesPago.find((item) => item.value === value)
+function getCondicionLabel(
+  condicion: string | null | undefined,
+  diasCredito: number | null | undefined,
+) {
+  const value = condicion || "contado";
+  const option = condicionesPago.find((item) => item.value === value);
 
-  if (value === 'personalizado') {
-    return `Personalizado (${diasCredito ?? 0} días)`
+  if (value === "personalizado") {
+    return `Personalizado (${diasCredito ?? 0} días)`;
   }
 
-  return option?.label ?? 'Contado'
+  return option?.label ?? "Contado";
+}
+
+function getEstadoComercialLabel(estado: string | null | undefined) {
+  return (
+    estadosComerciales.find((item) => item.value === estado)?.label ??
+    "Cliente activo"
+  );
+}
+
+function getEstadoComercialBadgeClass(estado: string | null | undefined) {
+  if (estado === "prospecto") {
+    return "border-amber-200 bg-amber-50 text-amber-700";
+  }
+
+  if (estado === "inactivo") {
+    return "border-slate-200 bg-slate-100 text-slate-600";
+  }
+
+  return "border-emerald-200 bg-emerald-50 text-emerald-700";
 }
 
 export default function ClientesPage() {
-  const router = useRouter()
+  const router = useRouter();
 
-  const [empresaActivaId, setEmpresaActivaId] = useState('')
-  const [clientes, setClientes] = useState<Cliente[]>([])
-  const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
-  const [updatingId, setUpdatingId] = useState('')
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const [error, setError] = useState('')
-  const [success, setSuccess] = useState('')
+  const [empresaActivaId, setEmpresaActivaId] = useState("");
+  const [clientes, setClientes] = useState<Cliente[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [updatingId, setUpdatingId] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
 
   const [form, setForm] = useState({
-    nombre: '',
-    rut: '',
-    contacto: '',
-    email: '',
-    telefono: '',
-    direccion: '',
-    condicion_pago: 'contado',
-    dias_credito: '0',
-    activo: 'true',
-  })
+    nombre: "",
+    rut: "",
+    contacto: "",
+    email: "",
+    telefono: "",
+    direccion: "",
+    condicion_pago: "contado",
+    dias_credito: "0",
+    estado_comercial: "cliente_activo",
+    activo: "true",
+  });
 
   useEffect(() => {
     const syncEmpresaActiva = () => {
-      const empresaId = window.localStorage.getItem(STORAGE_KEY) || ''
-      setEmpresaActivaId(empresaId)
-    }
+      const empresaId = window.localStorage.getItem(STORAGE_KEY) || "";
+      setEmpresaActivaId(empresaId);
+    };
 
-    syncEmpresaActiva()
-    window.addEventListener('empresa-activa-cambiada', syncEmpresaActiva)
+    syncEmpresaActiva();
+    window.addEventListener("empresa-activa-cambiada", syncEmpresaActiva);
 
     return () => {
-      window.removeEventListener('empresa-activa-cambiada', syncEmpresaActiva)
-    }
-  }, [])
+      window.removeEventListener("empresa-activa-cambiada", syncEmpresaActiva);
+    };
+  }, []);
 
   const resetForm = () => {
     setForm({
-      nombre: '',
-      rut: '',
-      contacto: '',
-      email: '',
-      telefono: '',
-      direccion: '',
-      condicion_pago: 'contado',
-      dias_credito: '0',
-      activo: 'true',
-    })
-    setEditingId(null)
-  }
+      nombre: "",
+      rut: "",
+      contacto: "",
+      email: "",
+      telefono: "",
+      direccion: "",
+      condicion_pago: "contado",
+      dias_credito: "0",
+      estado_comercial: "cliente_activo",
+      activo: "true",
+    });
+    setEditingId(null);
+  };
 
   const fetchClientes = async () => {
-    if (!empresaActivaId) return
+    if (!empresaActivaId) return;
 
     try {
-      setLoading(true)
-      setError('')
+      setLoading(true);
+      setError("");
 
-      const { data: sessionData } = await supabase.auth.getSession()
+      const { data: sessionData } = await supabase.auth.getSession();
 
       if (!sessionData.session) {
-        router.push('/login')
-        return
+        router.push("/login");
+        return;
       }
 
-      const accessToken = sessionData.session.access_token
-      const apiKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-      const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+      const accessToken = sessionData.session.access_token;
+      const apiKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
+      const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
 
       const resp = await fetch(
         `${baseUrl}/rest/v1/clientes?empresa_id=eq.${empresaActivaId}&select=*&order=nombre.asc`,
@@ -139,106 +175,115 @@ export default function ClientesPage() {
             apikey: apiKey,
             Authorization: `Bearer ${accessToken}`,
           },
-        }
-      )
+        },
+      );
 
-      const json = await resp.json()
+      const json = await resp.json();
 
       if (!resp.ok) {
-        setError(`No se pudieron cargar los clientes. ${JSON.stringify(json)}`)
-        return
+        setError(`No se pudieron cargar los clientes. ${JSON.stringify(json)}`);
+        return;
       }
 
-      setClientes(json ?? [])
+      setClientes(json ?? []);
     } catch (err) {
       if (err instanceof Error) {
-        setError(err.message)
+        setError(err.message);
       } else {
-        setError('Error desconocido')
+        setError("Error desconocido");
       }
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   useEffect(() => {
-    fetchClientes()
-  }, [router, empresaActivaId])
+    fetchClientes();
+  }, [router, empresaActivaId]);
 
   const handleChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
+    e: React.ChangeEvent<
+      HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
+    >,
   ) => {
-    const { name, value } = e.target
+    const { name, value } = e.target;
 
-    if (name === 'condicion_pago') {
+    if (name === "condicion_pago") {
       setForm((prev) => ({
         ...prev,
         condicion_pago: value,
         dias_credito: String(getDiasPorCondicion(value, prev.dias_credito)),
-      }))
-      return
+      }));
+      return;
     }
 
-    if (name === 'dias_credito') {
-      const dias = Math.max(0, Math.trunc(Number(value || 0)))
-      setForm((prev) => ({ ...prev, dias_credito: Number.isFinite(dias) ? String(dias) : '0' }))
-      return
+    if (name === "dias_credito") {
+      const dias = Math.max(0, Math.trunc(Number(value || 0)));
+      setForm((prev) => ({
+        ...prev,
+        dias_credito: Number.isFinite(dias) ? String(dias) : "0",
+      }));
+      return;
     }
 
-    setForm((prev) => ({ ...prev, [name]: value }))
-  }
+    setForm((prev) => ({ ...prev, [name]: value }));
+  };
 
   const startEdit = (cliente: Cliente) => {
-    const condicion = cliente.condicion_pago || 'contado'
-    const dias = getDiasPorCondicion(condicion, cliente.dias_credito ?? 0)
+    const condicion = cliente.condicion_pago || "contado";
+    const dias = getDiasPorCondicion(condicion, cliente.dias_credito ?? 0);
 
-    setEditingId(cliente.id)
-    setError('')
-    setSuccess('')
+    setEditingId(cliente.id);
+    setError("");
+    setSuccess("");
     setForm({
-      nombre: cliente.nombre ?? '',
-      rut: cliente.rut ?? '',
-      contacto: cliente.contacto ?? '',
-      email: cliente.email ?? '',
-      telefono: cliente.telefono ?? '',
-      direccion: cliente.direccion ?? '',
+      nombre: cliente.nombre ?? "",
+      rut: cliente.rut ?? "",
+      contacto: cliente.contacto ?? "",
+      email: cliente.email ?? "",
+      telefono: cliente.telefono ?? "",
+      direccion: cliente.direccion ?? "",
       condicion_pago: condicion,
       dias_credito: String(dias),
-      activo: cliente.activo ? 'true' : 'false',
-    })
-    window.scrollTo({ top: 0, behavior: 'smooth' })
-  }
+      estado_comercial: cliente.estado_comercial || "cliente_activo",
+      activo: cliente.activo ? "true" : "false",
+    });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+    e.preventDefault();
 
-    setError('')
-    setSuccess('')
+    setError("");
+    setSuccess("");
 
     if (!empresaActivaId) {
-      setError('Debes seleccionar una empresa activa.')
-      return
+      setError("Debes seleccionar una empresa activa.");
+      return;
     }
 
     if (!form.nombre.trim()) {
-      setError('Debes ingresar el nombre del cliente.')
-      return
+      setError("Debes ingresar el nombre del cliente.");
+      return;
     }
 
     try {
-      setSaving(true)
+      setSaving(true);
 
-      const { data: sessionData } = await supabase.auth.getSession()
+      const { data: sessionData } = await supabase.auth.getSession();
 
       if (!sessionData.session) {
-        router.push('/login')
-        return
+        router.push("/login");
+        return;
       }
 
-      const accessToken = sessionData.session.access_token
-      const apiKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-      const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
-      const diasCredito = getDiasPorCondicion(form.condicion_pago, form.dias_credito)
+      const accessToken = sessionData.session.access_token;
+      const apiKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
+      const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+      const diasCredito = getDiasPorCondicion(
+        form.condicion_pago,
+        form.dias_credito,
+      );
 
       const payload = {
         empresa_id: empresaActivaId,
@@ -250,126 +295,127 @@ export default function ClientesPage() {
         direccion: form.direccion.trim() || null,
         condicion_pago: form.condicion_pago,
         dias_credito: diasCredito,
-        activo: form.activo === 'true',
-      }
+        estado_comercial: form.estado_comercial,
+        activo: form.activo === "true",
+      };
 
       const url = editingId
         ? `${baseUrl}/rest/v1/clientes?id=eq.${editingId}`
-        : `${baseUrl}/rest/v1/clientes`
+        : `${baseUrl}/rest/v1/clientes`;
 
-      const method = editingId ? 'PATCH' : 'POST'
+      const method = editingId ? "PATCH" : "POST";
 
       const resp = await fetch(url, {
         method,
         headers: {
           apikey: apiKey,
           Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-          Prefer: 'return=representation',
+          "Content-Type": "application/json",
+          Prefer: "return=representation",
         },
         body: JSON.stringify(payload),
-      })
+      });
 
-      const json = await resp.json().catch(() => null)
+      const json = await resp.json().catch(() => null);
 
       if (!resp.ok) {
-        console.error(json)
+        console.error(json);
         setError(
           editingId
-            ? 'No se pudo actualizar el cliente.'
-            : 'No se pudo guardar el cliente.'
-        )
-        return
+            ? "No se pudo actualizar el cliente."
+            : "No se pudo guardar el cliente.",
+        );
+        return;
       }
 
       setSuccess(
         editingId
-          ? 'Cliente actualizado correctamente.'
-          : 'Cliente registrado correctamente.'
-      )
-      resetForm()
-      await fetchClientes()
+          ? "Cliente actualizado correctamente."
+          : "Cliente registrado correctamente.",
+      );
+      resetForm();
+      await fetchClientes();
     } catch (err) {
       if (err instanceof Error) {
-        setError(err.message)
+        setError(err.message);
       } else {
-        setError('Error desconocido al guardar.')
+        setError("Error desconocido al guardar.");
       }
     } finally {
-      setSaving(false)
+      setSaving(false);
     }
-  }
+  };
 
   const toggleActivo = async (cliente: Cliente) => {
-    const accion = cliente.activo ? 'inactivar' : 'activar'
-    const confirmar = window.confirm(`¿Deseas ${accion} este cliente?`)
+    const accion = cliente.activo ? "inactivar" : "activar";
+    const confirmar = window.confirm(`¿Deseas ${accion} este cliente?`);
 
-    if (!confirmar) return
+    if (!confirmar) return;
 
     try {
-      setUpdatingId(cliente.id)
-      setError('')
-      setSuccess('')
+      setUpdatingId(cliente.id);
+      setError("");
+      setSuccess("");
 
-      const { data: sessionData } = await supabase.auth.getSession()
+      const { data: sessionData } = await supabase.auth.getSession();
 
       if (!sessionData.session) {
-        router.push('/login')
-        return
+        router.push("/login");
+        return;
       }
 
-      const accessToken = sessionData.session.access_token
-      const apiKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-      const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+      const accessToken = sessionData.session.access_token;
+      const apiKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
+      const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
 
       const resp = await fetch(
         `${baseUrl}/rest/v1/clientes?id=eq.${cliente.id}`,
         {
-          method: 'PATCH',
+          method: "PATCH",
           headers: {
             apikey: apiKey,
             Authorization: `Bearer ${accessToken}`,
-            'Content-Type': 'application/json',
-            Prefer: 'return=representation',
+            "Content-Type": "application/json",
+            Prefer: "return=representation",
           },
           body: JSON.stringify({
             activo: !cliente.activo,
           }),
-        }
-      )
+        },
+      );
 
-      const json = await resp.json().catch(() => null)
+      const json = await resp.json().catch(() => null);
 
       if (!resp.ok) {
-        console.error(json)
-        setError('No se pudo actualizar el estado del cliente.')
-        return
+        console.error(json);
+        setError("No se pudo actualizar el estado del cliente.");
+        return;
       }
 
       setSuccess(
         !cliente.activo
-          ? 'Cliente activado correctamente.'
-          : 'Cliente inactivado correctamente.'
-      )
+          ? "Cliente activado correctamente."
+          : "Cliente inactivado correctamente.",
+      );
 
       if (editingId === cliente.id) {
         setForm((prev) => ({
           ...prev,
-          activo: !cliente.activo ? 'true' : 'false',
-        }))
+          activo: !cliente.activo ? "true" : "false",
+        }));
       }
 
-      await fetchClientes()
+      await fetchClientes();
     } catch (err) {
       if (err instanceof Error) {
-        setError(err.message)
+        setError(err.message);
       } else {
-        setError('Error desconocido al actualizar.')
+        setError("Error desconocido al actualizar.");
       }
     } finally {
-      setUpdatingId('')
+      setUpdatingId("");
     }
-  }
+  };
 
   return (
     <main className="space-y-6">
@@ -389,7 +435,9 @@ export default function ClientesPage() {
             Clientes registrados para la empresa activa.
           </p>
 
-          {loading && <div className="text-slate-500">Cargando clientes...</div>}
+          {loading && (
+            <div className="text-slate-500">Cargando clientes...</div>
+          )}
 
           {!loading && !error && clientes.length === 0 && (
             <div className="text-slate-500 text-sm">
@@ -407,6 +455,7 @@ export default function ClientesPage() {
                     <th className="py-3 pr-4">Contacto</th>
                     <th className="py-3 pr-4">Email</th>
                     <th className="py-3 pr-4">Teléfono</th>
+                    <th className="py-3 pr-4">Tipo cliente</th>
                     <th className="py-3 pr-4">Condición pago</th>
                     <th className="py-3 pr-4">Estado</th>
                     <th className="py-3 pr-4">Acciones</th>
@@ -416,15 +465,29 @@ export default function ClientesPage() {
                   {clientes.map((item) => (
                     <tr key={item.id} className="border-b border-slate-100">
                       <td className="py-3 pr-4 font-medium">{item.nombre}</td>
-                      <td className="py-3 pr-4">{item.rut ?? '-'}</td>
-                      <td className="py-3 pr-4">{item.contacto ?? '-'}</td>
-                      <td className="py-3 pr-4">{item.email ?? '-'}</td>
-                      <td className="py-3 pr-4">{item.telefono ?? '-'}</td>
+                      <td className="py-3 pr-4">{item.rut ?? "-"}</td>
+                      <td className="py-3 pr-4">{item.contacto ?? "-"}</td>
+                      <td className="py-3 pr-4">{item.email ?? "-"}</td>
+                      <td className="py-3 pr-4">{item.telefono ?? "-"}</td>
                       <td className="py-3 pr-4">
-                        {getCondicionLabel(item.condicion_pago, item.dias_credito)}
+                        <span
+                          className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${getEstadoComercialBadgeClass(
+                            item.estado_comercial,
+                          )}`}
+                        >
+                          {getEstadoComercialLabel(item.estado_comercial)}
+                        </span>
                       </td>
                       <td className="py-3 pr-4">
-                        <StatusBadge status={item.activo ? 'activo' : 'inactivo'} />
+                        {getCondicionLabel(
+                          item.condicion_pago,
+                          item.dias_credito,
+                        )}
+                      </td>
+                      <td className="py-3 pr-4">
+                        <StatusBadge
+                          status={item.activo ? "activo" : "inactivo"}
+                        />
                       </td>
                       <td className="py-3 pr-4">
                         <div className="flex gap-2">
@@ -443,10 +506,10 @@ export default function ClientesPage() {
                             className="rounded-xl border border-slate-300 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
                           >
                             {updatingId === item.id
-                              ? 'Guardando...'
+                              ? "Guardando..."
                               : item.activo
-                              ? 'Inactivar'
-                              : 'Activar'}
+                                ? "Inactivar"
+                                : "Activar"}
                           </button>
                         </div>
                       </td>
@@ -460,17 +523,19 @@ export default function ClientesPage() {
 
         <div className="rounded-2xl bg-white p-6 shadow-sm border border-slate-200">
           <h2 className="text-2xl font-semibold text-slate-900">
-            {editingId ? 'Editar cliente' : 'Nuevo cliente'}
+            {editingId ? "Editar cliente" : "Nuevo cliente / prospecto"}
           </h2>
           <p className="text-slate-500 text-sm mt-1 mb-4">
             {editingId
-              ? 'Actualiza la información del cliente.'
-              : 'Crea un cliente sin entrar a Supabase.'}
+              ? "Actualiza la información del cliente."
+              : "Crea un cliente real o un prospecto para cotizaciones."}
           </p>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-sm text-slate-600 mb-2">Nombre</label>
+              <label className="block text-sm text-slate-600 mb-2">
+                Nombre
+              </label>
               <input
                 type="text"
                 name="nombre"
@@ -493,7 +558,30 @@ export default function ClientesPage() {
             </div>
 
             <div>
-              <label className="block text-sm text-slate-600 mb-2">Contacto</label>
+              <label className="block text-sm text-slate-600 mb-2">
+                Estado comercial
+              </label>
+              <select
+                name="estado_comercial"
+                value={form.estado_comercial}
+                onChange={handleChange}
+                className="w-full rounded-xl border border-slate-300 px-4 py-3 bg-white"
+              >
+                {estadosComerciales.map((item) => (
+                  <option key={item.value} value={item.value}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1 text-xs text-slate-500">
+                Usa Prospecto para cotizaciones cuando aún no es cliente real.
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm text-slate-600 mb-2">
+                Contacto
+              </label>
               <input
                 type="text"
                 name="contacto"
@@ -515,7 +603,9 @@ export default function ClientesPage() {
             </div>
 
             <div>
-              <label className="block text-sm text-slate-600 mb-2">Teléfono</label>
+              <label className="block text-sm text-slate-600 mb-2">
+                Teléfono
+              </label>
               <input
                 type="text"
                 name="telefono"
@@ -526,7 +616,9 @@ export default function ClientesPage() {
             </div>
 
             <div>
-              <label className="block text-sm text-slate-600 mb-2">Dirección</label>
+              <label className="block text-sm text-slate-600 mb-2">
+                Dirección
+              </label>
               <textarea
                 name="direccion"
                 value={form.direccion}
@@ -565,18 +657,20 @@ export default function ClientesPage() {
                   value={form.dias_credito}
                   onChange={handleChange}
                   min={0}
-                  disabled={form.condicion_pago !== 'personalizado'}
+                  disabled={form.condicion_pago !== "personalizado"}
                   className="w-full rounded-xl border border-slate-300 px-4 py-3 disabled:bg-slate-100 disabled:text-slate-500"
                 />
                 <p className="mt-1 text-xs text-slate-500">
-                  Para condiciones fijas se calcula automáticamente. Usa "Personalizado"
-                  para ingresar otro plazo.
+                  Para condiciones fijas se calcula automáticamente. Usa
+                  "Personalizado" para ingresar otro plazo.
                 </p>
               </div>
             </div>
 
             <div>
-              <label className="block text-sm text-slate-600 mb-2">Estado</label>
+              <label className="block text-sm text-slate-600 mb-2">
+                Estado interno
+              </label>
               <select
                 name="activo"
                 value={form.activo}
@@ -607,10 +701,10 @@ export default function ClientesPage() {
                 className="flex-1 rounded-xl bg-slate-900 text-white py-3 font-medium disabled:opacity-60"
               >
                 {saving
-                  ? 'Guardando...'
+                  ? "Guardando..."
                   : editingId
-                  ? 'Actualizar cliente'
-                  : 'Guardar cliente'}
+                    ? "Actualizar cliente"
+                    : "Guardar cliente"}
               </button>
 
               {editingId && (
@@ -627,5 +721,5 @@ export default function ClientesPage() {
         </div>
       </div>
     </main>
-  )
+  );
 }
