@@ -6,6 +6,27 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import ProtectedModuleRoute from '../../../../../components/ProtectedModuleRoute'
 import { supabase } from '../../../../../lib/supabase/client'
 
+function sanitizeFileNamePart(value: string) {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9\s._-]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 80)
+}
+
+function buildOtPdfFileName(params: {
+  folio?: string | null
+  cliente?: string | null
+  otId: string
+}) {
+  const folio = sanitizeFileNamePart(params.folio || '') || `OT-${params.otId.slice(0, 8)}`
+  const cliente = sanitizeFileNamePart(params.cliente || '')
+
+  return cliente ? `${folio} - ${cliente}.pdf` : `${folio}.pdf`
+}
+
 function OTPdfRealPageContent() {
   const params = useParams()
 
@@ -57,6 +78,22 @@ function OTPdfRealPageContent() {
           throw new Error('No hay sesión activa para generar el PDF.')
         }
 
+        let nextFileName = `ot-${otId}.pdf`
+
+        const { data: otFileData } = await supabase
+          .from('ot_vw_resumen')
+          .select('folio, cliente_nombre')
+          .eq('id', otId)
+          .maybeSingle()
+
+        if (otFileData) {
+          nextFileName = buildOtPdfFileName({
+            folio: (otFileData as { folio?: string | null }).folio,
+            cliente: (otFileData as { cliente_nombre?: string | null }).cliente_nombre,
+            otId,
+          })
+        }
+
         const response = await fetch(`/api/ot-pdf/${otId}`, {
           method: 'GET',
           headers: {
@@ -80,7 +117,7 @@ function OTPdfRealPageContent() {
         const nextBlobUrl = URL.createObjectURL(blob)
         blobUrlRef.current = nextBlobUrl
         setBlobUrl(nextBlobUrl)
-        setFileName(`ot-${otId}.pdf`)
+        setFileName(nextFileName)
       } catch (err) {
         if (!active) return
         setError(err instanceof Error ? err.message : 'No se pudo generar el PDF real.')

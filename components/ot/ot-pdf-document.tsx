@@ -5,6 +5,7 @@ import {
   View,
   Image,
   StyleSheet,
+  Font,
 } from '@react-pdf/renderer'
 
 type ResumenLike = {
@@ -66,6 +67,14 @@ type TipoServicioPdf = {
   nombre: string
 }
 
+type ChecklistRow = {
+  sistema: string
+  frecuencia: string
+  actividad: string
+  estado: string
+  observacion: string
+}
+
 export type OTPdfDocumentProps = {
   resumen: ResumenLike
   detalle: OTDetallePdf
@@ -76,22 +85,49 @@ export type OTPdfDocumentProps = {
   logoUrl: string
 }
 
+Font.registerHyphenationCallback((word) => [word])
+
+const COLORS = {
+  primary: '#2f5877',
+  primaryDark: '#24445e',
+  primarySoft: '#eaf2f8',
+  slate900: '#0f172a',
+  slate700: '#334155',
+  slate600: '#475569',
+  slate500: '#64748b',
+  slate300: '#cbd5e1',
+  slate200: '#e2e8f0',
+  slate100: '#f1f5f9',
+  slate50: '#f8fafc',
+  white: '#ffffff',
+  amber50: '#fffbeb',
+  amber300: '#fcd34d',
+  amber800: '#92400e',
+  green50: '#ecfdf5',
+  green700: '#047857',
+  red50: '#fef2f2',
+  red700: '#b91c1c',
+}
+
 const styles = StyleSheet.create({
   page: {
-    paddingTop: 28,
+    paddingTop: 26,
     paddingBottom: 30,
-    paddingHorizontal: 28,
-    fontSize: 10,
+    paddingHorizontal: 30,
+    fontSize: 9.3,
     fontFamily: 'Helvetica',
-    color: '#0f172a',
-    backgroundColor: '#ffffff',
+    color: COLORS.slate900,
+    backgroundColor: COLORS.white,
   },
 
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 16,
+    alignItems: 'stretch',
+    marginBottom: 14,
+    borderBottomWidth: 2,
+    borderBottomColor: COLORS.primary,
+    paddingBottom: 12,
   },
 
   headerLeft: {
@@ -99,19 +135,19 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     flexShrink: 1,
     flexBasis: 0,
-    maxWidth: 360,
+    maxWidth: 355,
   },
 
   logoBox: {
-    width: 82,
-    height: 58,
+    width: 78,
+    height: 56,
     borderWidth: 1,
-    borderColor: '#cbd5e1',
-    borderRadius: 12,
+    borderColor: COLORS.slate200,
+    borderRadius: 10,
     padding: 6,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#ffffff',
+    backgroundColor: COLORS.white,
   },
 
   logo: {
@@ -121,42 +157,44 @@ const styles = StyleSheet.create({
   },
 
   headerTextWrap: {
-    marginLeft: 14,
+    marginLeft: 13,
     flexGrow: 1,
     flexShrink: 1,
     flexBasis: 0,
   },
 
   company: {
-    fontSize: 8,
-    color: '#64748b',
+    fontSize: 7.5,
+    color: COLORS.slate500,
     fontWeight: 700,
-    letterSpacing: 1,
+    letterSpacing: 0.45,
+    textTransform: 'uppercase',
   },
 
   mainTitle: {
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: 700,
-    marginTop: 6,
-    color: '#0f172a',
-    lineHeight: 1.2,
+    marginTop: 5,
+    color: COLORS.primaryDark,
+    lineHeight: 1.15,
+    textTransform: 'uppercase',
   },
 
   subTitle: {
-    fontSize: 9.5,
-    color: '#475569',
-    marginTop: 8,
+    fontSize: 9.2,
+    color: COLORS.slate600,
+    marginTop: 6,
     lineHeight: 1.35,
   },
 
   headerCard: {
-    width: 175,
+    width: 176,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
-    backgroundColor: '#f8fafc',
-    borderRadius: 14,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
+    borderColor: COLORS.slate200,
+    backgroundColor: COLORS.slate50,
+    borderRadius: 12,
+    paddingVertical: 9,
+    paddingHorizontal: 11,
   },
 
   headerCardRow: {
@@ -174,82 +212,198 @@ const styles = StyleSheet.create({
   },
 
   fieldLabel: {
-    fontSize: 7.2,
-    color: '#64748b',
+    fontSize: 6.8,
+    color: COLORS.slate500,
     fontWeight: 700,
-    letterSpacing: 0.8,
+    letterSpacing: 0.7,
+    textTransform: 'uppercase',
+    lineHeight: 1.25,
   },
 
   fieldValue: {
-    fontSize: 9.5,
-    color: '#0f172a',
+    fontSize: 9.2,
+    color: COLORS.slate900,
     marginTop: 3,
     lineHeight: 1.3,
+    fontWeight: 700,
   },
 
   section: {
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 14,
-    backgroundColor: '#ffffff',
+    marginBottom: 12,
   },
 
   sectionTitle: {
-    fontSize: 11.5,
+    fontSize: 10.2,
     fontWeight: 700,
-    letterSpacing: 1,
-    marginBottom: 12,
-    color: '#0f172a',
-  },
-
-  rowTwo: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    letterSpacing: 0.75,
     marginBottom: 8,
+    color: COLORS.primaryDark,
+    backgroundColor: COLORS.primarySoft,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 7,
+    borderLeftWidth: 4,
+    borderLeftColor: COLORS.primary,
+    textTransform: 'uppercase',
   },
 
-  compactCardHalf: {
-    width: 245,
+  sectionPanel: {
     borderWidth: 1,
-    borderColor: '#e2e8f0',
-    borderRadius: 10,
-    padding: 10,
-    backgroundColor: '#f8fafc',
+    borderColor: COLORS.slate200,
+    borderRadius: 12,
+    backgroundColor: COLORS.white,
+    overflow: 'hidden',
+  },
+
+  infoGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+
+  infoCell: {
+    width: '50%',
+    minHeight: 49,
+    borderRightWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: COLORS.slate200,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    backgroundColor: COLORS.white,
+  },
+
+  infoCellWide: {
+    width: '100%',
+    minHeight: 49,
+    borderBottomWidth: 1,
+    borderColor: COLORS.slate200,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    backgroundColor: COLORS.white,
   },
 
   textBlock: {
-    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: COLORS.slate200,
+    borderRadius: 10,
+    marginBottom: 9,
+    backgroundColor: COLORS.white,
+    overflow: 'hidden',
+  },
+
+  textBlockTitleWrap: {
+    backgroundColor: COLORS.slate50,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.slate200,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
   },
 
   textBlockTitle: {
-    fontSize: 9,
+    fontSize: 8.2,
     fontWeight: 700,
-    letterSpacing: 0.8,
-    marginBottom: 5,
-    color: '#1e293b',
+    letterSpacing: 0.9,
+    color: COLORS.primaryDark,
+    textTransform: 'uppercase',
   },
 
   textBlockBody: {
-    fontSize: 10,
-    lineHeight: 1.55,
-    color: '#334155',
+    fontSize: 9.4,
+    lineHeight: 1.5,
+    color: COLORS.slate700,
+    paddingVertical: 9,
+    paddingHorizontal: 10,
   },
 
   noteBox: {
     marginTop: 4,
     borderWidth: 1,
-    borderColor: '#fcd34d',
-    borderRadius: 12,
-    padding: 12,
-    backgroundColor: '#fffbeb',
+    borderColor: COLORS.amber300,
+    borderRadius: 10,
+    padding: 10,
+    backgroundColor: COLORS.amber50,
   },
 
   noteText: {
-    fontSize: 9.5,
-    lineHeight: 1.5,
-    color: '#92400e',
+    fontSize: 9,
+    lineHeight: 1.45,
+    color: COLORS.amber800,
+  },
+
+  checklistTable: {
+    borderWidth: 1,
+    borderColor: COLORS.slate200,
+    borderRadius: 10,
+    overflow: 'hidden',
+  },
+
+  checklistHeader: {
+    flexDirection: 'row',
+    backgroundColor: COLORS.slate50,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.slate200,
+  },
+
+  checklistRow: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.slate200,
+    minHeight: 31,
+  },
+
+  th: {
+    fontSize: 6.5,
+    fontWeight: 700,
+    color: COLORS.slate700,
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+    paddingVertical: 6,
+    paddingHorizontal: 6,
+  },
+
+  td: {
+    fontSize: 7.8,
+    color: COLORS.slate700,
+    lineHeight: 1.35,
+    paddingVertical: 6,
+    paddingHorizontal: 6,
+  },
+
+  colSistema: {
+    width: '19%',
+    borderRightWidth: 1,
+    borderRightColor: COLORS.slate200,
+  },
+
+  colFrecuencia: {
+    width: '8%',
+    borderRightWidth: 1,
+    borderRightColor: COLORS.slate200,
+  },
+
+  colActividad: {
+    width: '37%',
+    borderRightWidth: 1,
+    borderRightColor: COLORS.slate200,
+  },
+
+  colEstado: {
+    width: '9%',
+    borderRightWidth: 1,
+    borderRightColor: COLORS.slate200,
+  },
+
+  colObs: {
+    width: '27%',
+  },
+
+  statusOk: {
+    color: COLORS.green700,
+    fontWeight: 700,
+  },
+
+  statusNoOk: {
+    color: COLORS.red700,
+    fontWeight: 700,
   },
 
   photoGroupWrap: {
@@ -257,77 +411,86 @@ const styles = StyleSheet.create({
   },
 
   photoGroupTitle: {
-    fontSize: 9,
+    fontSize: 8.8,
     fontWeight: 700,
-    letterSpacing: 0.8,
-    marginBottom: 8,
-    color: '#1e293b',
+    letterSpacing: 1,
+    marginBottom: 7,
+    color: COLORS.primary,
+    textTransform: 'uppercase',
   },
 
   photoCard: {
     borderWidth: 1,
-    borderColor: '#e2e8f0',
-    borderRadius: 12,
-    marginBottom: 18,
-    backgroundColor: '#ffffff',
-    paddingTop: 14,
-    paddingHorizontal: 14,
-    paddingBottom: 14,
+    borderColor: COLORS.slate200,
+    borderRadius: 11,
+    marginBottom: 15,
+    backgroundColor: COLORS.white,
+    paddingTop: 12,
+    paddingHorizontal: 12,
+    paddingBottom: 12,
   },
 
   photoImage: {
     width: 460,
-    height: 260,
+    height: 250,
     objectFit: 'contain',
     alignSelf: 'center',
-    marginBottom: 12,
+    marginBottom: 10,
   },
 
   photoBody: {
     borderTopWidth: 1,
-    borderTopColor: '#e2e8f0',
-    paddingTop: 10,
+    borderTopColor: COLORS.slate200,
+    paddingTop: 9,
   },
 
   photoTitle: {
-    fontSize: 10.5,
+    fontSize: 10,
     fontWeight: 700,
-    color: '#0f172a',
+    color: COLORS.slate900,
     marginBottom: 4,
     lineHeight: 1.35,
   },
 
   photoText: {
-    fontSize: 9.5,
-    lineHeight: 1.45,
-    color: '#334155',
-    marginTop: 4,
+    fontSize: 8.8,
+    lineHeight: 1.4,
+    color: COLORS.slate700,
+    marginTop: 3,
   },
 
   photoFileName: {
-    fontSize: 8.5,
+    fontSize: 8,
     lineHeight: 1.35,
-    color: '#64748b',
-    marginTop: 4,
+    color: COLORS.slate500,
+    marginTop: 3,
   },
 
   receptionWrap: {
     width: '100%',
-    maxWidth: 340,
+    maxWidth: 360,
     alignSelf: 'center',
   },
 
   receptionCard: {
     borderWidth: 1,
-    borderColor: '#e2e8f0',
-    borderRadius: 14,
+    borderColor: COLORS.slate200,
+    borderRadius: 12,
     padding: 14,
+    backgroundColor: COLORS.white,
+  },
+
+  receptionNote: {
+    fontSize: 8.6,
+    lineHeight: 1.4,
+    color: COLORS.slate600,
+    marginBottom: 9,
   },
 
   signatureBox: {
     marginTop: 8,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: COLORS.slate200,
     borderRadius: 10,
     paddingHorizontal: 10,
     paddingVertical: 8,
@@ -343,9 +506,26 @@ const styles = StyleSheet.create({
 
   signatureLine: {
     borderBottomWidth: 1,
-    borderBottomColor: '#94a3b8',
+    borderBottomColor: COLORS.slate300,
     width: '100%',
     height: 40,
+  },
+
+  footer: {
+    position: 'absolute',
+    bottom: 12,
+    left: 30,
+    right: 30,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.slate200,
+    paddingTop: 6,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+
+  footerText: {
+    fontSize: 7,
+    color: COLORS.slate500,
   },
 })
 
@@ -370,9 +550,6 @@ function formatDate(value: string | null) {
   const trimmed = value.trim()
   const match = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})/)
 
-  // Importante: no usar new Date() para fechas tipo 2026-05-17.
-  // JavaScript las interpreta como UTC y en Chile puede mostrarlas como
-  // el día anterior. Para OT usamos la fecha literal ya normalizada.
   if (match) {
     const year = match[1]
     const monthIndex = Number(match[2]) - 1
@@ -399,8 +576,6 @@ function formatTime(value: string | null) {
   const trimmed = value.trim()
   const match = trimmed.match(/T(\d{2}):(\d{2})/)
 
-  // Los horarios ya vienen normalizados como hora local de Chile desde la API.
-  // Se muestra la hora literal para evitar que Vercel o el navegador apliquen UTC.
   if (match) {
     return `${match[1]}:${match[2]}`
   }
@@ -486,17 +661,75 @@ function humanizePerson(value: string | null | undefined) {
 
   return raw
 }
-function FieldCardHalf({
+
+function splitObservacionesAndChecklist(value: string | null | undefined) {
+  const raw = value?.trim() ?? ''
+
+  if (!raw) {
+    return {
+      observaciones: '',
+      checklistRows: [] as ChecklistRow[],
+    }
+  }
+
+  const marker = 'CHECKLIST DE MANTENIMIENTO'
+  const markerIndex = raw.toUpperCase().indexOf(marker)
+
+  if (markerIndex < 0) {
+    return {
+      observaciones: raw,
+      checklistRows: [] as ChecklistRow[],
+    }
+  }
+
+  const observaciones = raw.slice(0, markerIndex).trim()
+  const checklistText = raw.slice(markerIndex + marker.length).trim()
+
+  const checklistRows = checklistText
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const parts = line.split('|').map((part) => part.trim())
+
+      const sistema = parts[0] || 'General'
+      const frecuencia = parts[1] || '-'
+      const actividad = parts[2] || line
+      const estado = parts[3] || '-'
+      const observacion = parts
+        .slice(4)
+        .join(' | ')
+        .replace(/^Obs:\s*/i, '')
+        .trim()
+
+      return {
+        sistema,
+        frecuencia,
+        actividad,
+        estado,
+        observacion,
+      }
+    })
+
+  return {
+    observaciones,
+    checklistRows,
+  }
+}
+
+function InfoCell({
   label,
   value,
+  wide = false,
 }: {
   label: string
   value: string | number | null | undefined
+  wide?: boolean
 }) {
   if (value == null || value === '' || value === '-') return null
 
   return (
-    <View style={styles.compactCardHalf}>
+    <View style={wide ? styles.infoCellWide : styles.infoCell}>
       <Text style={styles.fieldLabel}>{label}</Text>
       <Text style={styles.fieldValue}>{String(value)}</Text>
     </View>
@@ -514,8 +747,49 @@ function TextBlock({
 
   return (
     <View style={styles.textBlock}>
-      <Text style={styles.textBlockTitle}>{title}</Text>
+      <View style={styles.textBlockTitleWrap}>
+        <Text style={styles.textBlockTitle}>{title}</Text>
+      </View>
       <Text style={styles.textBlockBody}>{value}</Text>
+    </View>
+  )
+}
+
+function ChecklistTable({ rows }: { rows: ChecklistRow[] }) {
+  if (rows.length === 0) return null
+
+  return (
+    <View style={styles.section} break>
+      <Text style={styles.sectionTitle}>CHECKLIST DE MANTENIMIENTO</Text>
+
+      <View style={styles.checklistTable}>
+        <View style={styles.checklistHeader}>
+          <Text style={[styles.th, styles.colSistema]}>Sistema</Text>
+          <Text style={[styles.th, styles.colFrecuencia]}>Frec.</Text>
+          <Text style={[styles.th, styles.colActividad]}>Actividad</Text>
+          <Text style={[styles.th, styles.colEstado]}>Estado</Text>
+          <Text style={[styles.th, styles.colObs]}>Observación</Text>
+        </View>
+
+        {rows.map((row, index) => {
+          const estadoLower = row.estado.toLowerCase()
+          const estadoStyle = estadoLower.includes('ok')
+            ? styles.statusOk
+            : estadoLower.includes('no')
+              ? styles.statusNoOk
+              : null
+
+          return (
+            <View key={`${row.sistema}-${row.actividad}-${index}`} style={styles.checklistRow} wrap={false}>
+              <Text style={[styles.td, styles.colSistema]}>{row.sistema || '-'}</Text>
+              <Text style={[styles.td, styles.colFrecuencia]}>{row.frecuencia || '-'}</Text>
+              <Text style={[styles.td, styles.colActividad]}>{row.actividad || '-'}</Text>
+              <Text style={[styles.td, styles.colEstado, estadoStyle]}>{row.estado || '-'}</Text>
+              <Text style={[styles.td, styles.colObs]}>{row.observacion || '-'}</Text>
+            </View>
+          )
+        })}
+      </View>
     </View>
   )
 }
@@ -630,11 +904,15 @@ export function OTPdfDocument({
     detalle.contacto_cliente_cargo ||
     '-'
 
+  const { observaciones, checklistRows } = splitObservacionesAndChecklist(
+    detalle.observaciones_cierre
+  )
+
   return (
     <Document
-      title={`${detalle.folio || 'OT'} - ${detalle.titulo}`}
+      title={`${detalle.folio || 'OT'} - ${resumen.cliente_nombre || 'Cliente'} - ${detalle.titulo}`}
       author="RM Servicios de Ingeniería y Construcción SpA"
-      subject="Informe de servicio en terreno"
+      subject="Informe técnico de servicio en terreno"
       creator="Auren / RMSIC"
       producer="Auren / RMSIC"
     >
@@ -649,7 +927,7 @@ export function OTPdfDocument({
               <Text style={styles.company}>
                 RM SERVICIOS DE INGENIERÍA Y CONSTRUCCIÓN SPA
               </Text>
-              <Text style={styles.mainTitle}>Informe de servicio en terreno</Text>
+              <Text style={styles.mainTitle}>Informe técnico de servicio</Text>
               <Text style={styles.subTitle}>{detalle.titulo}</Text>
             </View>
           </View>
@@ -657,18 +935,18 @@ export function OTPdfDocument({
           <View style={styles.headerCard}>
             <View style={styles.headerCardRow}>
               <View style={styles.headerMetaLeft}>
-                <Text style={styles.fieldLabel}>FOLIO OT</Text>
+                <Text style={styles.fieldLabel}>Folio OT</Text>
                 <Text style={styles.fieldValue}>{detalle.folio || '-'}</Text>
               </View>
 
               <View style={styles.headerMetaRight}>
-                <Text style={styles.fieldLabel}>FECHA</Text>
+                <Text style={styles.fieldLabel}>Fecha</Text>
                 <Text style={styles.fieldValue}>{formatDate(detalle.fecha_ot)}</Text>
               </View>
             </View>
 
             <View>
-              <Text style={styles.fieldLabel}>TIPO DE SERVICIO</Text>
+              <Text style={styles.fieldLabel}>Tipo de servicio</Text>
               <Text style={styles.fieldValue}>{tipoNombre}</Text>
             </View>
           </View>
@@ -677,19 +955,15 @@ export function OTPdfDocument({
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>DATOS DEL CLIENTE Y SERVICIO</Text>
 
-          <View style={styles.rowTwo}>
-            <FieldCardHalf label="RAZÓN SOCIAL" value={resumen.cliente_nombre} />
-            <FieldCardHalf label="FECHA VISITA" value={formatDate(detalle.fecha_ot)} />
-          </View>
-
-          <View style={styles.rowTwo}>
-            <FieldCardHalf label="HORA INICIO" value={formatTime(detalle.hora_inicio)} />
-            <FieldCardHalf label="HORA TÉRMINO" value={formatTime(detalle.hora_termino)} />
-          </View>
-
-          <View style={styles.rowTwo}>
-            <FieldCardHalf label="TÉCNICO EJECUTANTE" value={nombreTecnico} />
-            <FieldCardHalf label="ÁREA / SECTOR" value={areaTrabajo} />
+          <View style={styles.sectionPanel}>
+            <View style={styles.infoGrid}>
+              <InfoCell label="Razón social" value={resumen.cliente_nombre} />
+              <InfoCell label="Fecha visita" value={formatDate(detalle.fecha_ot)} />
+              <InfoCell label="Hora inicio" value={formatTime(detalle.hora_inicio)} />
+              <InfoCell label="Hora término" value={formatTime(detalle.hora_termino)} />
+              <InfoCell label="Técnico ejecutante" value={nombreTecnico} />
+              <InfoCell label="Área / sector" value={areaTrabajo} />
+            </View>
           </View>
         </View>
 
@@ -697,20 +971,20 @@ export function OTPdfDocument({
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>DESARROLLO DE LA ACTIVIDAD</Text>
             <TextBlock
-              title="OBJETIVO DEL MANTENIMIENTO"
+              title="Objetivo del mantenimiento"
               value={detalle.descripcion_solicitud}
             />
             <TextBlock
-              title="ACTIVIDADES EJECUTADAS"
+              title="Actividades ejecutadas"
               value={detalle.trabajo_realizado}
             />
-            <TextBlock title="HALLAZGOS DETECTADOS" value={detalle.hallazgos} />
+            <TextBlock title="Hallazgos detectados" value={detalle.hallazgos} />
             <TextBlock
-              title="RESULTADO DEL SERVICIO"
+              title="Resultado del servicio"
               value={detalle.resultado_servicio}
             />
-            <TextBlock title="RECOMENDACIONES" value={detalle.recomendaciones} />
-            <TextBlock title="OBSERVACIONES" value={detalle.observaciones_cierre} />
+            <TextBlock title="Recomendaciones" value={detalle.recomendaciones} />
+            <TextBlock title="Observaciones" value={observaciones} />
           </View>
         ) : null}
 
@@ -718,24 +992,24 @@ export function OTPdfDocument({
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>DESARROLLO DE LA ACTIVIDAD</Text>
             <TextBlock
-              title="SOLICITUD DEL CLIENTE"
+              title="Solicitud del cliente"
               value={detalle.descripcion_solicitud}
             />
             <TextBlock
-              title="PROBLEMA DETECTADO"
+              title="Problema detectado"
               value={detalle.problema_reportado}
             />
-            <TextBlock title="CAUSA PROBABLE" value={detalle.causa_probable} />
+            <TextBlock title="Causa probable" value={detalle.causa_probable} />
             <TextBlock
-              title="SOLUCIÓN IMPLEMENTADA"
+              title="Solución implementada"
               value={detalle.trabajo_realizado}
             />
             <TextBlock
-              title="RESULTADO DEL SERVICIO"
+              title="Resultado del servicio"
               value={detalle.resultado_servicio}
             />
-            <TextBlock title="RECOMENDACIONES" value={detalle.recomendaciones} />
-            <TextBlock title="OBSERVACIONES" value={detalle.observaciones_cierre} />
+            <TextBlock title="Recomendaciones" value={detalle.recomendaciones} />
+            <TextBlock title="Observaciones" value={observaciones} />
 
             {detalle.mostrar_nota_valor_hora ? (
               <View style={styles.noteBox}>
@@ -764,20 +1038,20 @@ export function OTPdfDocument({
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>DESARROLLO DE LA ASESORÍA</Text>
             <TextBlock
-              title="OBJETIVO DE LA ASESORÍA"
+              title="Objetivo de la asesoría"
               value={detalle.descripcion_solicitud}
             />
             <TextBlock
-              title="ANTECEDENTES OBSERVADOS"
+              title="Antecedentes observados"
               value={detalle.problema_reportado}
             />
-            <TextBlock title="ANÁLISIS TÉCNICO" value={detalle.diagnostico} />
+            <TextBlock title="Análisis técnico" value={detalle.diagnostico} />
             <TextBlock
-              title="CONCLUSIONES TÉCNICAS"
+              title="Conclusiones técnicas"
               value={detalle.conclusiones_tecnicas}
             />
-            <TextBlock title="RECOMENDACIONES" value={detalle.recomendaciones} />
-            <TextBlock title="OBSERVACIONES" value={detalle.observaciones_cierre} />
+            <TextBlock title="Recomendaciones" value={detalle.recomendaciones} />
+            <TextBlock title="Observaciones" value={observaciones} />
           </View>
         ) : null}
 
@@ -785,34 +1059,36 @@ export function OTPdfDocument({
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>DESARROLLO DE LA ACTIVIDAD</Text>
             <TextBlock
-              title="SOLICITUD DEL CLIENTE"
+              title="Solicitud del cliente"
               value={detalle.descripcion_solicitud}
             />
             <TextBlock
-              title="PROBLEMA DETECTADO"
+              title="Problema detectado"
               value={detalle.problema_reportado}
             />
-            <TextBlock title="DIAGNÓSTICO" value={detalle.diagnostico} />
+            <TextBlock title="Diagnóstico" value={detalle.diagnostico} />
             <TextBlock
-              title="SOLUCIÓN IMPLEMENTADA"
+              title="Solución implementada"
               value={detalle.trabajo_realizado}
             />
             <TextBlock
-              title="RESULTADO DEL SERVICIO"
+              title="Resultado del servicio"
               value={detalle.resultado_servicio}
             />
-            <TextBlock title="RECOMENDACIONES" value={detalle.recomendaciones} />
-            <TextBlock title="OBSERVACIONES" value={detalle.observaciones_cierre} />
+            <TextBlock title="Recomendaciones" value={detalle.recomendaciones} />
+            <TextBlock title="Observaciones" value={observaciones} />
           </View>
         ) : null}
+
+        <ChecklistTable rows={checklistRows} />
 
         {evidenciasImagenes.length > 0 ? (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>REGISTRO FOTOGRÁFICO</Text>
-            <PhotoGroup title="ANTES" items={fotosAntes} />
-            <PhotoGroup title="DURANTE" items={fotosDurante} />
-            <PhotoGroup title="DESPUÉS" items={fotosDespues} />
-            <PhotoGroup title="OTRAS EVIDENCIAS" items={otrasFotos} />
+            <PhotoGroup title="Antes" items={fotosAntes} />
+            <PhotoGroup title="Durante" items={fotosDurante} />
+            <PhotoGroup title="Después" items={fotosDespues} />
+            <PhotoGroup title="Otras evidencias" items={otrasFotos} />
           </View>
         ) : null}
 
@@ -821,10 +1097,14 @@ export function OTPdfDocument({
 
           <View style={styles.receptionWrap}>
             <View style={styles.receptionCard}>
-              <Text style={styles.fieldLabel}>NOMBRE</Text>
+              <Text style={styles.receptionNote}>
+                El cliente declara recepción del servicio indicado en este informe, de acuerdo con los antecedentes, evidencias y observaciones registradas.
+              </Text>
+
+              <Text style={styles.fieldLabel}>Nombre receptor</Text>
               <Text style={styles.fieldValue}>{labelOrDash(nombreRecepcion)}</Text>
 
-              <Text style={[styles.fieldLabel, { marginTop: 8 }]}>CARGO</Text>
+              <Text style={[styles.fieldLabel, { marginTop: 8 }]}>Cargo</Text>
               <Text style={styles.fieldValue}>{labelOrDash(cargoRecepcion)}</Text>
 
               <View style={styles.signatureBox}>
@@ -836,6 +1116,11 @@ export function OTPdfDocument({
               </View>
             </View>
           </View>
+        </View>
+
+        <View style={styles.footer} fixed>
+          <Text style={styles.footerText}>RM Servicios de Ingeniería y Construcción SpA · Informe generado desde Auren OT</Text>
+          <Text style={styles.footerText}>{detalle.folio || 'OT'}</Text>
         </View>
       </Page>
     </Document>
