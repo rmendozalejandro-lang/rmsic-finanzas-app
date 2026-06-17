@@ -349,24 +349,69 @@ const styles = StyleSheet.create({
   },
 })
 
+const MONTHS_ES_CL = [
+  'enero',
+  'febrero',
+  'marzo',
+  'abril',
+  'mayo',
+  'junio',
+  'julio',
+  'agosto',
+  'septiembre',
+  'octubre',
+  'noviembre',
+  'diciembre',
+]
+
 function formatDate(value: string | null) {
   if (!value) return '-'
-  const date = new Date(value)
+
+  const trimmed = value.trim()
+  const match = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})/)
+
+  // Importante: no usar new Date() para fechas tipo 2026-05-17.
+  // JavaScript las interpreta como UTC y en Chile puede mostrarlas como
+  // el día anterior. Para OT usamos la fecha literal ya normalizada.
+  if (match) {
+    const year = match[1]
+    const monthIndex = Number(match[2]) - 1
+    const day = Number(match[3])
+    const monthName = MONTHS_ES_CL[monthIndex]
+
+    if (monthName && Number.isFinite(day)) {
+      return `${day} de ${monthName} de ${year}`
+    }
+  }
+
+  const date = new Date(trimmed)
   if (Number.isNaN(date.getTime())) return '-'
 
   return new Intl.DateTimeFormat('es-CL', {
     dateStyle: 'long',
+    timeZone: 'America/Santiago',
   }).format(date)
 }
 
 function formatTime(value: string | null) {
   if (!value) return '-'
-  const date = new Date(value)
+
+  const trimmed = value.trim()
+  const match = trimmed.match(/T(\d{2}):(\d{2})/)
+
+  // Los horarios ya vienen normalizados como hora local de Chile desde la API.
+  // Se muestra la hora literal para evitar que Vercel o el navegador apliquen UTC.
+  if (match) {
+    return `${match[1]}:${match[2]}`
+  }
+
+  const date = new Date(trimmed)
   if (Number.isNaN(date.getTime())) return '-'
 
   return new Intl.DateTimeFormat('es-CL', {
     hour: '2-digit',
     minute: '2-digit',
+    timeZone: 'America/Santiago',
   }).format(date)
 }
 

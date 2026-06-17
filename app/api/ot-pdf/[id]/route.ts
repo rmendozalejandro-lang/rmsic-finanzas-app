@@ -140,8 +140,23 @@ function getChileDateTimeParts(value: string | null | undefined): DateTimeParts 
   }
 }
 
+function isDateOnly(value: string | null | undefined) {
+  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value.trim())
+}
+
 function toChileDate(value: string | null | undefined) {
-  const parts = getChileDateTimeParts(value)
+  if (!value) return null
+
+  const trimmed = value.trim()
+
+  // Las fechas puras de Supabase, por ejemplo 2026-05-17, no deben pasar
+  // por new Date(), porque JS las interpreta como medianoche UTC y en Chile
+  // pueden retroceder al día anterior.
+  if (isDateOnly(trimmed)) {
+    return trimmed.slice(0, 10)
+  }
+
+  const parts = getChileDateTimeParts(trimmed)
   if (!parts) return null
   return `${parts.year}-${parts.month}-${parts.day}`
 }
