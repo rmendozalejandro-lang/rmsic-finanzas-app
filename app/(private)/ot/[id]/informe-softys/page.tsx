@@ -187,7 +187,7 @@ function mergeInformeDatos(
   };
 }
 
-const DYF_LOGO = "/logos/dyf-logo.png";
+const DYF_LOGO = "/logos/dyf-logo-transparente.png";
 const SOFTYS_LOGO = "/logos/softys-logo.png";
 
 function labelOrDash(value: string | number | null | undefined) {
@@ -1317,8 +1317,8 @@ export default function InformeSoftysPage() {
             display: grid;
             grid-template-columns: 1fr 1.5fr 1fr;
             align-items: center;
-            gap: 24px;
-            padding: 28px 34px 22px;
+            gap: 22px;
+            padding: 24px 30px 18px;
             border-bottom: 4px solid #163a5f;
           }
 
@@ -1352,9 +1352,9 @@ export default function InformeSoftysPage() {
           }
 
           .header-title h1 {
-            margin: 8px 0 0;
+            margin: 7px 0 0;
             color: #0f172a;
-            font-size: 24px;
+            font-size: 22px;
             line-height: 1.15;
             font-weight: 900;
             text-transform: uppercase;
@@ -1368,21 +1368,22 @@ export default function InformeSoftysPage() {
           }
 
           .report-body {
-            padding: 28px 34px 34px;
+            padding: 24px 30px 32px;
           }
 
           .summary-grid {
             display: grid;
             grid-template-columns: repeat(4, minmax(0, 1fr));
-            border: 1px solid #dbe3ea;
-            border-radius: 18px;
+            border: 1px solid #e2e8f0;
+            border-radius: 14px;
             overflow: hidden;
-            margin-bottom: 22px;
+            margin-bottom: 16px;
+            background: #ffffff;
           }
 
           .summary-grid .field {
-            border-right: 1px solid #dbe3ea;
-            border-bottom: 1px solid #dbe3ea;
+            border-right: 1px solid #e2e8f0;
+            border-bottom: 1px solid #e2e8f0;
           }
 
           .summary-grid .field:nth-child(4n) {
@@ -1390,42 +1391,55 @@ export default function InformeSoftysPage() {
           }
 
           .field {
-            min-height: 62px;
-            padding: 11px 13px;
+            min-height: 52px;
+            padding: 8px 10px;
+            background: #ffffff;
           }
 
           .field span {
             display: block;
             color: #64748b;
-            font-size: 10px;
+            font-size: 9px;
             font-weight: 800;
-            letter-spacing: 0.08em;
+            letter-spacing: 0.09em;
+            line-height: 1.2;
             text-transform: uppercase;
           }
 
           .field strong {
             display: block;
-            margin-top: 5px;
+            margin-top: 4px;
             color: #0f172a;
-            font-size: 13px;
-            line-height: 1.35;
-            font-weight: 800;
+            font-size: 12px;
+            line-height: 1.28;
+            font-weight: 700;
           }
 
           .section-block {
-            margin-top: 18px;
+            margin-top: 16px;
             break-inside: avoid;
           }
 
           .section-block h2 {
-            margin: 0 0 10px;
-            padding: 9px 12px;
+            margin: 0 0 8px;
+            padding: 7px 11px;
             color: #ffffff;
             background: #163a5f;
-            border-radius: 12px;
-            font-size: 13px;
+            border-radius: 10px;
+            font-size: 12px;
+            line-height: 1.2;
             font-weight: 900;
-            letter-spacing: 0.08em;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+          }
+
+          .label-title {
+            margin: 0 0 6px;
+            color: #334155;
+            font-size: 11px;
+            line-height: 1.2;
+            font-weight: 800;
+            letter-spacing: 0.06em;
             text-transform: uppercase;
           }
 
@@ -1442,12 +1456,12 @@ export default function InformeSoftysPage() {
           }
 
           .text-box {
-            border: 1px solid #dbe3ea;
-            border-radius: 14px;
-            padding: 13px 14px;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 10px 12px;
             color: #0f172a;
-            font-size: 13px;
-            line-height: 1.55;
+            font-size: 12px;
+            line-height: 1.5;
             white-space: pre-wrap;
             background: #ffffff;
           }
@@ -1467,8 +1481,8 @@ export default function InformeSoftysPage() {
 
           .reception-table th,
           .reception-table td {
-            border: 1px solid #dbe3ea;
-            padding: 10px;
+            border: 1px solid #e2e8f0;
+            padding: 8px;
             text-align: left;
             vertical-align: top;
           }
@@ -1492,14 +1506,14 @@ export default function InformeSoftysPage() {
             width: 100%;
             border-collapse: collapse;
             overflow: hidden;
-            border-radius: 14px;
-            font-size: 11px;
+            border-radius: 12px;
+            font-size: 10.5px;
           }
 
           .technical-checklist-table th,
           .technical-checklist-table td {
-            border: 1px solid #dbe3ea;
-            padding: 8px;
+            border: 1px solid #e2e8f0;
+            padding: 7px;
             text-align: left;
             vertical-align: top;
           }
