@@ -777,7 +777,7 @@ function ChecklistTable({ rows }: { rows: ChecklistRow[] }) {
             ? styles.statusOk
             : estadoLower.includes('no')
               ? styles.statusNoOk
-              : null
+              : {}
 
           return (
             <View key={`${row.sistema}-${row.actividad}-${index}`} style={styles.checklistRow} wrap={false}>
