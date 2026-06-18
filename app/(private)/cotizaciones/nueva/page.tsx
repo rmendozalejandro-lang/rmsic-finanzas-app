@@ -337,7 +337,7 @@ export default function NuevaCotizacionPage() {
           descuento_global_tipo: '',
           descuento_global_valor: '0',
           empresa_nombre: empresaNombreCompleto,
-          empresa_logo_url: empresaLogoUrl,
+          empresa_logo_url: empresaLogoUrl ?? '',
           empresa_email: empresaEmail,
           empresa_telefono: empresaTelefono,
           empresa_web: empresaWeb,
