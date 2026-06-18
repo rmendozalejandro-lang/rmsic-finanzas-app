@@ -43,18 +43,25 @@ type EstadoOption = {
   orden: number
 }
 
+type PlantillaOption = {
+  id: string
+  codigo: string
+  nombre: string
+  descripcion: string | null
+  vista_principal: string
+  ruta_principal: string
+  ruta_base: string
+  ruta_pdf: string | null
+  requiere_equipo: boolean
+  usa_checklist: boolean
+  checklist_plantilla_codigo: string | null
+  informe_codigo: string | null
+  es_predeterminada: boolean
+}
+
 type SelectOption = {
   id: string
   label: string
-}
-
-type OTTecnicoRow = {
-  user_id: string
-  nombre_completo: string
-  cargo: string
-  activo: boolean
-  puede_crear_ot: boolean
-  puede_cerrar_ot: boolean
 }
 
 type PerfilRow = {
@@ -63,10 +70,17 @@ type PerfilRow = {
   email: string | null
 }
 
+type UsuarioEmpresaRow = {
+  usuario_id: string
+  rol: string | null
+  activo: boolean | null
+}
+
 type FormDataState = {
   empresa_id: string
   cliente_id: string
   equipo_id: string
+  plantilla_id: string
   tipo_servicio_id: string
   estado_id: string
   fecha_ot: string
@@ -123,6 +137,7 @@ function NuevaOTContent() {
   const [equipos, setEquipos] = useState<EquipoOption[]>([])
   const [tiposServicio, setTiposServicio] = useState<TipoServicioOption[]>([])
   const [estados, setEstados] = useState<EstadoOption[]>([])
+  const [plantillas, setPlantillas] = useState<PlantillaOption[]>([])
   const [tecnicos, setTecnicos] = useState<SelectOption[]>([])
   const [supervisores, setSupervisores] = useState<SelectOption[]>([])
 
@@ -130,6 +145,7 @@ function NuevaOTContent() {
     empresa_id: '',
     cliente_id: '',
     equipo_id: '',
+    plantilla_id: '',
     tipo_servicio_id: '',
     estado_id: '',
     fecha_ot: todayLocalDate(),
@@ -146,6 +162,10 @@ function NuevaOTContent() {
   const estadoAsignadaId = useMemo(() => {
     return estados.find((item) => item.codigo === 'asignada')?.id ?? ''
   }, [estados])
+
+  const selectedPlantilla = useMemo(() => {
+    return plantillas.find((item) => item.id === form.plantilla_id) ?? null
+  }, [plantillas, form.plantilla_id])
 
   const selectedTipo = useMemo(() => {
     return tiposServicio.find((item) => item.id === form.tipo_servicio_id) ?? null
@@ -205,54 +225,51 @@ function NuevaOTContent() {
           throw new Error('No hay usuario autenticado.')
         }
 
-        const [
-          clientesResp,
-          equiposResp,
-          tiposResp,
-          estadosResp,
-          tecnicosResp,
-          supervisoresResp,
-        ] = await Promise.all([
-            supabase
-              .from('clientes')
-              .select('id, nombre')
-              .eq('empresa_id', storedEmpresaId)
-              .order('nombre', { ascending: true }),
+        const [clientesResp, equiposResp, tiposResp, estadosResp, plantillasResp] = await Promise.all([
+          supabase
+            .from('clientes')
+            .select('id, nombre')
+            .eq('empresa_id', storedEmpresaId)
+            .order('nombre', { ascending: true }),
 
-            supabase
-              .from('ot_vw_equipos')
-              .select(
-                'id, cliente_id, tag, nombre, descripcion, tipo_equipo, planta, area, linea, ubicacion, marca, modelo, serie, potencia, estado, activo'
-              )
-              .eq('empresa_id', storedEmpresaId)
-              .is('deleted_at', null)
-              .order('tag', { ascending: true }),
+          supabase
+            .from('ot_vw_equipos')
+            .select(
+              'id, cliente_id, tag, nombre, descripcion, tipo_equipo, planta, area, linea, ubicacion, marca, modelo, serie, potencia, estado, activo'
+            )
+            .eq('empresa_id', storedEmpresaId)
+            .is('deleted_at', null)
+            .order('tag', { ascending: true }),
 
-            supabase
-              .from('ot_tipos_servicio')
-              .select('id, codigo, nombre')
-              .eq('activo', true)
-              .order('nombre', { ascending: true }),
+          supabase
+            .from('ot_tipos_servicio')
+            .select('id, codigo, nombre')
+            .eq('activo', true)
+            .order('nombre', { ascending: true }),
 
-            supabase
-              .from('ot_estados')
-              .select('id, codigo, nombre, orden')
-              .eq('activo', true)
-              .order('orden', { ascending: true }),
+          supabase
+            .from('ot_estados')
+            .select('id, codigo, nombre, orden')
+            .eq('activo', true)
+            .order('orden', { ascending: true }),
 
-            supabase
-              .from('ot_tecnicos')
-              .select(
-                'user_id, nombre_completo, cargo, activo, puede_crear_ot, puede_cerrar_ot'
-              )
-              .eq('activo', true)
-              .order('nombre_completo', { ascending: true }),
 
-            supabase
-              .from('perfiles')
-              .select('id, nombre_completo, email')
-              .order('nombre_completo', { ascending: true }),
-          ])
+          supabase
+            .from('ot_plantillas')
+            .select(
+              'id, codigo, nombre, descripcion, vista_principal, ruta_principal, ruta_base, ruta_pdf, requiere_equipo, usa_checklist, checklist_plantilla_codigo, informe_codigo, es_predeterminada'
+            )
+            .eq('empresa_id', storedEmpresaId)
+            .eq('activo', true)
+            .order('es_predeterminada', { ascending: false })
+            .order('nombre', { ascending: true }),
+        ])
+
+        const { data: usuariosEmpresaRaw, error: usuariosEmpresaError } = await supabase
+          .from('usuario_empresas')
+          .select('usuario_id, rol, activo')
+          .eq('empresa_id', storedEmpresaId)
+          .eq('activo', true)
 
         if (clientesResp.error) {
           throw new Error(`No se pudieron cargar los clientes: ${clientesResp.error.message}`)
@@ -272,9 +289,42 @@ function NuevaOTContent() {
           throw new Error(`No se pudieron cargar los estados: ${estadosResp.error.message}`)
         }
 
-        if (tecnicosResp.error) {
-          throw new Error(`No se pudieron cargar los técnicos OT: ${tecnicosResp.error.message}`)
+        if (plantillasResp.error) {
+          throw new Error(`No se pudieron cargar las plantillas OT: ${plantillasResp.error.message}`)
         }
+
+        if (usuariosEmpresaError) {
+          throw new Error(
+            `No se pudieron cargar los usuarios de la empresa activa: ${usuariosEmpresaError.message}`
+          )
+        }
+
+        const usuariosEmpresa = (usuariosEmpresaRaw ?? []) as UsuarioEmpresaRow[]
+        const usuarioIds = Array.from(
+          new Set(
+            usuariosEmpresa
+              .map((item) => item.usuario_id)
+              .filter((id): id is string => Boolean(id))
+          )
+        )
+
+        const perfilesResp =
+          usuarioIds.length > 0
+            ? await supabase
+                .from('perfiles')
+                .select('id, nombre_completo, email')
+                .in('id', usuarioIds)
+            : { data: [], error: null }
+
+        if (perfilesResp.error) {
+          throw new Error(
+            `No se pudieron cargar los perfiles de la empresa activa: ${perfilesResp.error.message}`
+          )
+        }
+
+        const perfilesEmpresa = ((perfilesResp.data ?? []) as PerfilRow[]).sort((a, b) =>
+          buildSupervisorLabel(a).localeCompare(buildSupervisorLabel(b), 'es')
+        )
 
         const clientesData: ClienteOption[] = (clientesResp.data ?? []).map((item) => ({
           id: item.id,
@@ -313,28 +363,35 @@ function NuevaOTContent() {
           orden: item.orden,
         }))
 
-        const tecnicosRaw = (tecnicosResp.data ?? []) as OTTecnicoRow[]
-        const tecnicosData: SelectOption[] = tecnicosRaw.map((item) => ({
-          id: item.user_id,
-          label: item.cargo?.trim()
-            ? `${item.nombre_completo} - ${item.cargo}`
-            : item.nombre_completo,
+        const plantillasData: PlantillaOption[] = (plantillasResp.data ?? []).map((item) => ({
+          id: item.id,
+          codigo: item.codigo,
+          nombre: item.nombre,
+          descripcion: item.descripcion,
+          vista_principal: item.vista_principal,
+          ruta_principal: item.ruta_principal,
+          ruta_base: item.ruta_base,
+          ruta_pdf: item.ruta_pdf,
+          requiere_equipo: Boolean(item.requiere_equipo),
+          usa_checklist: Boolean(item.usa_checklist),
+          checklist_plantilla_codigo: item.checklist_plantilla_codigo,
+          informe_codigo: item.informe_codigo,
+          es_predeterminada: Boolean(item.es_predeterminada),
         }))
 
-        let supervisoresData: SelectOption[] = []
-        let nextWarning = ''
+        const usuariosEmpresaOptions: SelectOption[] = perfilesEmpresa.map((item) => ({
+          id: item.id,
+          label: buildSupervisorLabel(item),
+        }))
 
-        if (supervisoresResp.error) {
-          nextWarning =
-            'No se pudieron cargar los supervisores. Puedes crear la OT igual, pero sin asignar supervisor por ahora.'
-        } else {
-          supervisoresData = ((supervisoresResp.data ?? []) as PerfilRow[]).map((item) => ({
-            id: item.id,
-            label: buildSupervisorLabel(item),
-          }))
-        }
+        const tecnicosData: SelectOption[] = usuariosEmpresaOptions
+        const supervisoresData: SelectOption[] = usuariosEmpresaOptions
+        const nextWarning =
+          usuariosEmpresaOptions.length === 0
+            ? 'La empresa activa no tiene usuarios asociados. Puedes crear la OT sin técnico ni supervisor por ahora.'
+            : ''
 
-        const tecnicoActual = tecnicosRaw.find((item) => item.user_id === user.id)
+        const tecnicoActual = usuariosEmpresaOptions.find((item) => item.id === user.id)
 
         if (!active) return
 
@@ -342,6 +399,7 @@ function NuevaOTContent() {
         setEquipos(equiposData)
         setTiposServicio(tiposData)
         setEstados(estadosData)
+        setPlantillas(plantillasData)
         setTecnicos(tecnicosData)
         setSupervisores(supervisoresData)
         setWarning(nextWarning)
@@ -356,13 +414,24 @@ function NuevaOTContent() {
           estadosData[0]?.id ??
           ''
 
+        const plantillaPredeterminada =
+          plantillasData.find((item) => item.es_predeterminada)?.id ??
+          plantillasData[0]?.id ??
+          ''
+
+        const plantillaPredeterminadaData =
+          plantillasData.find((item) => item.id === plantillaPredeterminada) ?? null
+
         setForm((prev) => ({
           ...prev,
           empresa_id: storedEmpresaId,
+          plantilla_id: prev.plantilla_id || plantillaPredeterminada,
           tipo_servicio_id: prev.tipo_servicio_id || tipoGeneral,
           estado_id: prev.estado_id || estadoAsignada,
           tecnico_responsable_id:
-            prev.tecnico_responsable_id || tecnicoActual?.user_id || '',
+            prev.tecnico_responsable_id || tecnicoActual?.id || '',
+          requiere_checklist:
+            prev.requiere_checklist || Boolean(plantillaPredeterminadaData?.usa_checklist),
         }))
       } catch (err) {
         if (!active) return
@@ -382,6 +451,15 @@ function NuevaOTContent() {
       active = false
     }
   }, [])
+
+  useEffect(() => {
+    if (selectedPlantilla?.usa_checklist) {
+      setForm((prev) => ({
+        ...prev,
+        requiere_checklist: true,
+      }))
+    }
+  }, [selectedPlantilla?.usa_checklist])
 
   useEffect(() => {
     const tipoSeleccionado = tiposServicio.find(
@@ -408,7 +486,20 @@ function NuevaOTContent() {
     field: K,
     value: FormDataState[K]
   ) => {
-   if (field === 'cliente_id') {
+    if (field === 'plantilla_id') {
+      const plantillaId = String(value || '')
+      const plantillaSeleccionada = plantillas.find((item) => item.id === plantillaId)
+
+      setForm((prev) => ({
+        ...prev,
+        plantilla_id: plantillaId,
+        requiere_checklist: plantillaSeleccionada?.usa_checklist ? true : prev.requiere_checklist,
+      }))
+
+      return
+    }
+
+    if (field === 'cliente_id') {
   const clienteId = String(value || '')
 
   setForm((prev) => {
@@ -446,6 +537,14 @@ function NuevaOTContent() {
 
     if (!form.cliente_id) {
       return 'Debes seleccionar un cliente.'
+    }
+
+    if (!form.plantilla_id) {
+      return 'No se detectó una plantilla OT para la empresa activa.'
+    }
+
+    if (selectedPlantilla?.requiere_equipo && !form.equipo_id) {
+      return `La plantilla ${selectedPlantilla.nombre} requiere seleccionar un equipo/TAG.`
     }
 
     if (!form.tipo_servicio_id) {
@@ -491,7 +590,7 @@ function NuevaOTContent() {
       }
 
       const requiereChecklist =
-        selectedTipo?.codigo === 'preventiva'
+        selectedPlantilla?.usa_checklist || selectedTipo?.codigo === 'preventiva'
           ? true
           : selectedTipo?.codigo === 'preventiva_general'
             ? false
@@ -501,6 +600,7 @@ function NuevaOTContent() {
         empresa_id: form.empresa_id,
         cliente_id: form.cliente_id,
         equipo_id: form.equipo_id || null,
+        plantilla_id: form.plantilla_id || null,
         tipo_servicio_id: form.tipo_servicio_id,
         estado_id: form.estado_id || estadoAsignadaId,
         fecha_ot: form.fecha_ot || todayLocalDate(),
@@ -525,10 +625,24 @@ function NuevaOTContent() {
         throw new Error(`No se pudo crear la OT: ${insertError.message}`)
       }
 
+      if (data?.id && selectedPlantilla?.usa_checklist) {
+        if (selectedPlantilla.checklist_plantilla_codigo === 'motor_mt_post_mantencion') {
+          const { error: checklistError } = await supabase.rpc(
+            'ot_generar_checklist_motor_mt_ot',
+            { p_ot_id: data.id }
+          )
+
+          if (checklistError) {
+            console.warn('OT creada, pero no se pudo generar el checklist técnico:', checklistError.message)
+          }
+        }
+      }
+
       setSuccess(`OT creada correctamente${data?.folio ? ` (${data.folio})` : ''}.`)
 
       if (data?.id) {
-        router.push(`/ot/${data.id}`)
+        const rutaPrincipal = selectedPlantilla?.ruta_principal || '/ot/{id}'
+        router.push(rutaPrincipal.replace('{id}', data.id))
         router.refresh()
       }
     } catch (err) {
@@ -585,6 +699,38 @@ function NuevaOTContent() {
 
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-700">
+                  Plantilla OT *
+                </label>
+                <select
+                  value={form.plantilla_id}
+                  onChange={(e) => handleChange('plantilla_id', e.target.value)}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
+                >
+                  <option value="">
+                    {plantillas.length === 0
+                      ? 'Sin plantillas configuradas'
+                      : 'Selecciona una plantilla'}
+                  </option>
+                  {plantillas.map((plantilla) => (
+                    <option key={plantilla.id} value={plantilla.id}>
+                      {plantilla.nombre}
+                      {plantilla.es_predeterminada ? ' - predeterminada' : ''}
+                    </option>
+                  ))}
+                </select>
+                {selectedPlantilla ? (
+                  <p className="mt-1 text-xs text-slate-500">
+                    Vista principal: {selectedPlantilla.vista_principal === 'informe_softys'
+                      ? 'Informe OM Softys'
+                      : 'Detalle estándar'}
+                    {selectedPlantilla.requiere_equipo ? ' · requiere equipo/TAG' : ''}
+                    {selectedPlantilla.usa_checklist ? ' · usa checklist técnico' : ''}
+                  </p>
+                ) : null}
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
                   Cliente *
                 </label>
                 <select
@@ -603,7 +749,7 @@ function NuevaOTContent() {
 
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-700">
-                  Equipo / TAG
+                  Equipo / TAG{selectedPlantilla?.requiere_equipo ? ' *' : ''}
                 </label>
                 <select
                   value={form.equipo_id}
@@ -625,7 +771,9 @@ function NuevaOTContent() {
                   ))}
                 </select>
                 <p className="mt-1 text-xs text-slate-500">
-                  Opcional para RMSIC. Para DyF/Softys permite asociar la OT a un motor o activo por TAG.
+                  {selectedPlantilla?.requiere_equipo
+                    ? 'Obligatorio para esta plantilla. Selecciona el motor, equipo o activo por TAG.'
+                    : 'Opcional para plantillas estándar. Permite asociar la OT a un motor o activo por TAG.'}
                 </p>
               </div>
 
@@ -757,12 +905,24 @@ function NuevaOTContent() {
                     onChange={(e) =>
                       handleChange('requiere_checklist', e.target.checked)
                     }
-                    disabled={isPreventivaMespack}
+                    disabled={isPreventivaMespack || Boolean(selectedPlantilla?.usa_checklist)}
                   />
                   Requiere checklist
                 </label>
               </div>
             </div>
+
+            {selectedPlantilla?.requiere_equipo && !form.equipo_id ? (
+              <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                Esta plantilla requiere equipo/TAG. No podrás crear la OT hasta seleccionar uno.
+              </div>
+            ) : null}
+
+            {selectedPlantilla?.usa_checklist ? (
+              <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+                Esta plantilla generará checklist técnico automáticamente al crear la OT.
+              </div>
+            ) : null}
 
             {isPreventivaMespack ? (
               <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">

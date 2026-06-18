@@ -80,6 +80,7 @@ type Firma = {
 type TiempoTrabajo = {
   id: string;
   usuario_id: string;
+  usuario_nombre?: string | null;
   fecha: string;
   hora_inicio: string | null;
   hora_termino: string | null;
@@ -92,6 +93,12 @@ type InformeDatos = {
   numero_orden_cliente?: string;
   descripcion_trabajo?: string;
   empresa_contratista?: string;
+  sistema?: string;
+  sub_sistema?: string;
+  sub_equipo?: string;
+  criticidad?: string;
+  frecuencia?: string;
+  codigo_sap?: string;
   responsable_softys?: string;
   cargo_responsable_softys?: string;
   supervisor_contratista?: string;
@@ -151,6 +158,8 @@ type ChecklistResultado = {
   unidad: string | null;
   observacion: string | null;
   datos: Record<string, unknown> | null;
+  item_config?: Record<string, unknown> | null;
+  plantilla_config?: Record<string, unknown> | null;
   created_at: string | null;
   updated_at: string | null;
 };
@@ -159,6 +168,12 @@ const datosDefault: InformeDatos = {
   numero_orden_cliente: "",
   descripcion_trabajo: "",
   empresa_contratista: "DyF Ingeniería y Mantenimiento Industrial",
+  sistema: "",
+  sub_sistema: "",
+  sub_equipo: "",
+  criticidad: "",
+  frecuencia: "",
+  codigo_sap: "",
   responsable_softys: "",
   cargo_responsable_softys: "",
   supervisor_contratista: "",
@@ -219,6 +234,18 @@ function formatMinutes(value: number | null | undefined) {
   if (hours === 0) return `${minutes} min`;
   if (minutes === 0) return `${hours} h`;
   return `${hours} h ${minutes} min`;
+}
+
+function formatHoursDecimal(value: number | null | undefined) {
+  if (!value || value <= 0) return "-";
+  return `${(value / 60).toLocaleString("es-CL", {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 2,
+  })} HH`;
+}
+
+function nombreUsuarioTiempo(item: TiempoTrabajo) {
+  return item.usuario_nombre || item.usuario_id || "Técnico registrado";
 }
 
 function buildLocation(resumen: OTResumenConEquipo | null) {
@@ -390,6 +417,66 @@ function estadoChecklistLabel(value: string | null | undefined) {
   return "Pendiente";
 }
 
+function getItemConfig(item: ChecklistResultado) {
+  return item.item_config || {};
+}
+
+function checklistDatos(item: ChecklistResultado) {
+  return item.datos || {};
+}
+
+function datoBoolean(item: ChecklistResultado, key: string) {
+  return checklistDatos(item)[key] === true;
+}
+
+function datoTexto(item: ChecklistResultado, key: string) {
+  const value = checklistDatos(item)[key];
+  if (value === null || value === undefined) return "";
+  return String(value);
+}
+
+function checkSymbol(value: boolean) {
+  return value ? "☑" : "□";
+}
+
+function usesConfig(item: ChecklistResultado, key: string) {
+  const config = getItemConfig(item);
+  if (config[key] === true) return true;
+
+  const seccion = item.seccion || "";
+  const codigo = item.item_codigo || "";
+
+  if (key === "usa_cumplimiento") return seccion.startsWith("1.") || seccion.startsWith("2.");
+  if (key === "usa_encontrado") return seccion.startsWith("3.") || seccion.startsWith("4.");
+  if (key === "usa_acciones") return seccion.startsWith("3.") || seccion.startsWith("4.");
+  if (key === "usa_pt100") return codigo === "4.6" || codigo === "4.9";
+  if (key === "usa_valor_texto") return codigo === "4.7" || codigo === "4.10";
+  if (key === "usa_texto_largo") return codigo === "5.1";
+
+  return false;
+}
+
+const encontradoKeys = [
+  { key: "muy_bueno", label: "MB", title: "Muy bueno" },
+  { key: "bueno", label: "B", title: "Bueno" },
+  { key: "malo", label: "M", title: "Malo" },
+  { key: "muy_malo", label: "MM", title: "Muy malo" },
+];
+
+const accionKeys = [
+  { key: "limpieza", label: "L", title: "Limpieza" },
+  { key: "reparacion", label: "R", title: "Reparación" },
+  { key: "cambio", label: "C", title: "Cambio" },
+  { key: "aviso_sap", label: "SAP", title: "Aviso SAP" },
+];
+
+const pt100Keys = [
+  { key: "pt100_1", label: "N°1" },
+  { key: "pt100_2", label: "N°2" },
+  { key: "pt100_3", label: "N°3" },
+  { key: "pt100_4", label: "N°4" },
+];
+
 function FirmaBox({
   title,
   nombre,
@@ -518,7 +605,7 @@ export default function InformeSoftysPage() {
           supabase
             .from("ot_vw_checklist_resultados")
             .select(
-              "id,empresa_id,ot_id,plantilla_id,plantilla_codigo,plantilla_nombre,item_id,item_codigo,seccion,orden,actividad,tipo_respuesta,item_unidad,requerido,ayuda,estado,valor_texto,valor_numero,unidad,observacion,datos,created_at,updated_at",
+              "id,empresa_id,ot_id,plantilla_id,plantilla_codigo,plantilla_nombre,item_id,item_codigo,seccion,orden,actividad,tipo_respuesta,item_unidad,requerido,ayuda,estado,valor_texto,valor_numero,unidad,observacion,datos,item_config,plantilla_config,created_at,updated_at",
             )
             .eq("ot_id", otId)
             .order("orden", { ascending: true }),
@@ -567,11 +654,41 @@ export default function InformeSoftysPage() {
         const resumenRow = resumenResp.data as OTResumenConEquipo;
         const detalleRow = detalleResp.data as OTDetalle;
 
+        const tiemposRows = (tiemposResp.data ?? []) as TiempoTrabajo[];
+        const usuarioIds = Array.from(
+          new Set(tiemposRows.map((item) => item.usuario_id).filter(Boolean)),
+        );
+        const usuariosMap = new Map<string, string>();
+
+        if (usuarioIds.length > 0) {
+          const { data: perfilesData, error: perfilesError } = await supabase
+            .from("perfiles")
+            .select("id,email")
+            .in("id", usuarioIds);
+
+          if (perfilesError) {
+            throw new Error(
+              `No se pudieron cargar usuarios del equipo de trabajo: ${perfilesError.message}`,
+            );
+          }
+
+          (perfilesData ?? []).forEach((perfil) => {
+            if (perfil.id) {
+              usuariosMap.set(perfil.id, perfil.email || perfil.id);
+            }
+          });
+        }
+
         setResumen(resumenRow);
         setDetalle(detalleRow);
         setEvidencias((evidenciasResp.data ?? []) as Evidencia[]);
         setFirmas((firmasResp.data ?? []) as Firma[]);
-        setTiempos((tiemposResp.data ?? []) as TiempoTrabajo[]);
+        setTiempos(
+          tiemposRows.map((item) => ({
+            ...item,
+            usuario_nombre: usuariosMap.get(item.usuario_id) || item.usuario_id,
+          })),
+        );
         setChecklistResultados(
           (checklistResp.data ?? []) as ChecklistResultado[],
         );
@@ -600,6 +717,12 @@ export default function InformeSoftysPage() {
               descripcion_trabajo:
                 detalleRow.descripcion_solicitud || detalleRow.titulo || "",
               empresa_contratista: "DyF Ingeniería y Mantenimiento Industrial",
+              sistema: resumenRow.equipo_planta || "",
+              sub_sistema: resumenRow.equipo_area || "",
+              sub_equipo: resumenRow.equipo_tipo || "",
+              criticidad: "",
+              frecuencia: "",
+              codigo_sap: "",
               responsable_softys:
                 detalleRow.contacto_cliente_nombre ||
                 detalleRow.cliente_nombre_firma ||
@@ -719,6 +842,49 @@ export default function InformeSoftysPage() {
     );
   }
 
+  function setChecklistDato(
+    id: string,
+    campo: string,
+    valor: boolean | string,
+  ) {
+    setSaveOk("");
+    setSaveError("");
+    setChecklistResultados((prev) =>
+      prev.map((item) => {
+        if (item.id !== id) return item;
+
+        return {
+          ...item,
+          datos: {
+            ...(item.datos || {}),
+            [campo]: valor,
+          },
+        };
+      }),
+    );
+  }
+
+  function setEncontradoExclusivo(id: string, campo: string, checked: boolean) {
+    setSaveOk("");
+    setSaveError("");
+    setChecklistResultados((prev) =>
+      prev.map((item) => {
+        if (item.id !== id) return item;
+
+        const currentDatos = { ...(item.datos || {}) };
+        encontradoKeys.forEach((entry) => {
+          currentDatos[entry.key] = false;
+        });
+        currentDatos[campo] = checked;
+
+        return {
+          ...item,
+          datos: currentDatos,
+        };
+      }),
+    );
+  }
+
   async function generarChecklistMotorMt() {
     try {
       setSavingInforme(true);
@@ -739,7 +905,7 @@ export default function InformeSoftysPage() {
       const { data, error: checklistError } = await supabase
         .from("ot_vw_checklist_resultados")
         .select(
-          "id,empresa_id,ot_id,plantilla_id,plantilla_codigo,plantilla_nombre,item_id,item_codigo,seccion,orden,actividad,tipo_respuesta,item_unidad,requerido,ayuda,estado,valor_texto,valor_numero,unidad,observacion,datos,created_at,updated_at",
+          "id,empresa_id,ot_id,plantilla_id,plantilla_codigo,plantilla_nombre,item_id,item_codigo,seccion,orden,actividad,tipo_respuesta,item_unidad,requerido,ayuda,estado,valor_texto,valor_numero,unidad,observacion,datos,item_config,plantilla_config,created_at,updated_at",
         )
         .eq("ot_id", otId)
         .order("orden", { ascending: true });
@@ -922,6 +1088,14 @@ export default function InformeSoftysPage() {
   const recomendacionesSeguridad =
     informeDatos.recomendaciones_seguridad || detalle.recomendaciones;
 
+  const totalMinutosEquipo = tiempos.reduce(
+    (total, item) => total + (item.duracion_minutos || 0),
+    0,
+  );
+  const integrantesUnicos = new Set(
+    tiempos.map((item) => nombreUsuarioTiempo(item)).filter(Boolean),
+  ).size;
+
   const checklistPorSeccion = checklistResultados.reduce<
     Record<string, ChecklistResultado[]>
   >((acc, item) => {
@@ -1000,6 +1174,36 @@ export default function InformeSoftysPage() {
               }
             />
             <TextInput
+              label="Sistema"
+              value={informeDatos.sistema || ""}
+              onChange={(value) => setCampoInforme("sistema", value)}
+            />
+            <TextInput
+              label="Sub-sistema"
+              value={informeDatos.sub_sistema || ""}
+              onChange={(value) => setCampoInforme("sub_sistema", value)}
+            />
+            <TextInput
+              label="Sub-equipo"
+              value={informeDatos.sub_equipo || ""}
+              onChange={(value) => setCampoInforme("sub_equipo", value)}
+            />
+            <TextInput
+              label="Criticidad"
+              value={informeDatos.criticidad || ""}
+              onChange={(value) => setCampoInforme("criticidad", value)}
+            />
+            <TextInput
+              label="Frecuencia"
+              value={informeDatos.frecuencia || ""}
+              onChange={(value) => setCampoInforme("frecuencia", value)}
+            />
+            <TextInput
+              label="Código SAP"
+              value={informeDatos.codigo_sap || ""}
+              onChange={(value) => setCampoInforme("codigo_sap", value)}
+            />
+            <TextInput
               label="Evaluación general"
               value={informeDatos.evaluacion_general || ""}
               onChange={(value) => setCampoInforme("evaluacion_general", value)}
@@ -1039,7 +1243,7 @@ export default function InformeSoftysPage() {
               onChange={(value) => setCampoInforme("alcance", value)}
             />
             <TextAreaInput
-              label="Equipo de trabajo"
+              label="Equipo de trabajo / complemento manual"
               value={informeDatos.equipo_trabajo || ""}
               onChange={(value) => setCampoInforme("equipo_trabajo", value)}
             />
@@ -1142,102 +1346,115 @@ export default function InformeSoftysPage() {
 
             {checklistResultados.length > 0 ? (
               <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-                <table className="min-w-full text-left text-sm">
-                  <thead className="bg-slate-100 text-xs uppercase tracking-wide text-slate-500">
+                <table className="min-w-[1380px] text-left text-xs">
+                  <thead className="bg-slate-100 text-[10px] uppercase tracking-wide text-slate-500">
                     <tr>
-                      <th className="px-3 py-2">Código</th>
-                      <th className="px-3 py-2">Sección</th>
-                      <th className="px-3 py-2">Actividad</th>
-                      <th className="px-3 py-2">Estado</th>
-                      <th className="px-3 py-2">Medición / valor</th>
-                      <th className="px-3 py-2">Observación</th>
+                      <th rowSpan={2} className="px-2 py-2">Código</th>
+                      <th rowSpan={2} className="min-w-[280px] px-2 py-2">Actividad</th>
+                      <th rowSpan={2} className="px-2 py-2">Estado</th>
+                      <th colSpan={4} className="px-2 py-2 text-center">Encontrado</th>
+                      <th colSpan={4} className="px-2 py-2 text-center">Acciones</th>
+                      <th colSpan={4} className="px-2 py-2 text-center">PT-100</th>
+                      <th rowSpan={2} className="min-w-[120px] px-2 py-2">Valor / temp.</th>
+                      <th rowSpan={2} className="min-w-[240px] px-2 py-2">Observaciones / relatorio</th>
+                    </tr>
+                    <tr>
+                      {encontradoKeys.map((entry) => (
+                        <th key={entry.key} className="px-2 py-1 text-center" title={entry.title}>{entry.label}</th>
+                      ))}
+                      {accionKeys.map((entry) => (
+                        <th key={entry.key} className="px-2 py-1 text-center" title={entry.title}>{entry.label}</th>
+                      ))}
+                      {pt100Keys.map((entry) => (
+                        <th key={entry.key} className="px-2 py-1 text-center">{entry.label}</th>
+                      ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {checklistResultados.map((item) => (
-                      <tr
-                        key={item.id}
-                        className="border-t border-slate-100 align-top"
-                      >
-                        <td className="px-3 py-2 font-bold text-slate-700">
-                          {item.item_codigo}
-                        </td>
-                        <td className="px-3 py-2 text-slate-600">
-                          {item.seccion}
-                        </td>
-                        <td className="min-w-[280px] px-3 py-2 text-slate-800">
-                          {item.actividad}
-                        </td>
-                        <td className="px-3 py-2">
-                          <select
-                            value={item.estado || "pendiente"}
-                            onChange={(event) =>
-                              setChecklistTecnico(
-                                item.id,
-                                "estado",
-                                event.target.value,
-                              )
-                            }
-                            className="rounded-lg border border-slate-300 px-2 py-1 text-xs font-semibold"
-                          >
-                            <option value="pendiente">Pendiente</option>
-                            <option value="ok">OK</option>
-                            <option value="observado">Observado</option>
-                            <option value="no_aplica">No aplica</option>
-                          </select>
-                        </td>
-                        <td className="px-3 py-2">
-                          {item.tipo_respuesta === "medicion" ||
-                          item.item_unidad ? (
-                            <div className="flex min-w-[140px] items-center gap-2">
-                              <input
-                                type="number"
-                                value={item.valor_numero ?? ""}
-                                onChange={(event) =>
-                                  setChecklistTecnico(
-                                    item.id,
-                                    "valor_numero",
-                                    event.target.value,
-                                  )
-                                }
-                                className="w-24 rounded-lg border border-slate-300 px-2 py-1 text-sm"
-                              />
-                              <span className="text-xs font-bold text-slate-500">
-                                {item.unidad || item.item_unidad}
-                              </span>
-                            </div>
-                          ) : item.tipo_respuesta === "texto" ? (
-                            <input
-                              value={item.valor_texto || ""}
-                              onChange={(event) =>
-                                setChecklistTecnico(
-                                  item.id,
-                                  "valor_texto",
-                                  event.target.value,
-                                )
-                              }
-                              className="w-40 rounded-lg border border-slate-300 px-2 py-1 text-sm"
+                    {checklistResultados.map((item) => {
+                      const usaEncontrado = usesConfig(item, "usa_encontrado");
+                      const usaAcciones = usesConfig(item, "usa_acciones");
+                      const usaPt100 = usesConfig(item, "usa_pt100");
+                      const usaValorTexto = usesConfig(item, "usa_valor_texto");
+                      const usaTextoLargo = usesConfig(item, "usa_texto_largo");
+
+                      return (
+                        <tr key={item.id} className="border-t border-slate-100 align-top">
+                          <td className="px-2 py-2 font-bold text-slate-700">{item.item_codigo}</td>
+                          <td className="px-2 py-2 text-slate-800">
+                            <div className="font-semibold">{item.actividad}</div>
+                            <div className="mt-1 text-[10px] font-medium text-slate-400">{item.seccion}</div>
+                          </td>
+                          <td className="px-2 py-2">
+                            <select
+                              value={item.estado || "pendiente"}
+                              onChange={(event) => setChecklistTecnico(item.id, "estado", event.target.value)}
+                              className="rounded-lg border border-slate-300 px-2 py-1 text-xs font-semibold"
+                            >
+                              <option value="pendiente">Pendiente</option>
+                              <option value="ok">OK</option>
+                              <option value="observado">Observado</option>
+                              <option value="no_aplica">No aplica</option>
+                            </select>
+                          </td>
+                          {encontradoKeys.map((entry) => (
+                            <td key={entry.key} className="px-2 py-2 text-center">
+                              {usaEncontrado ? (
+                                <input
+                                  type="checkbox"
+                                  checked={datoBoolean(item, entry.key)}
+                                  onChange={(event) => setEncontradoExclusivo(item.id, entry.key, event.target.checked)}
+                                  title={entry.title}
+                                />
+                              ) : <span className="text-slate-300">-</span>}
+                            </td>
+                          ))}
+                          {accionKeys.map((entry) => (
+                            <td key={entry.key} className="px-2 py-2 text-center">
+                              {usaAcciones ? (
+                                <input
+                                  type="checkbox"
+                                  checked={datoBoolean(item, entry.key)}
+                                  onChange={(event) => setChecklistDato(item.id, entry.key, event.target.checked)}
+                                  title={entry.title}
+                                />
+                              ) : <span className="text-slate-300">-</span>}
+                            </td>
+                          ))}
+                          {pt100Keys.map((entry) => (
+                            <td key={entry.key} className="px-1 py-2 text-center">
+                              {usaPt100 ? (
+                                <input
+                                  value={datoTexto(item, entry.key)}
+                                  onChange={(event) => setChecklistDato(item.id, entry.key, event.target.value)}
+                                  className="w-16 rounded-lg border border-slate-300 px-1 py-1 text-center text-xs"
+                                />
+                              ) : <span className="text-slate-300">-</span>}
+                            </td>
+                          ))}
+                          <td className="px-2 py-2">
+                            {usaValorTexto ? (
+                              <div className="flex min-w-[110px] items-center gap-2">
+                                <input
+                                  value={item.valor_texto || ""}
+                                  onChange={(event) => setChecklistTecnico(item.id, "valor_texto", event.target.value)}
+                                  className="w-20 rounded-lg border border-slate-300 px-2 py-1 text-xs"
+                                />
+                                <span className="text-[10px] font-bold text-slate-500">{item.unidad || item.item_unidad}</span>
+                              </div>
+                            ) : <span className="text-slate-300">-</span>}
+                          </td>
+                          <td className="px-2 py-2">
+                            <textarea
+                              value={item.observacion || ""}
+                              onChange={(event) => setChecklistTecnico(item.id, "observacion", event.target.value)}
+                              rows={usaTextoLargo ? 5 : 2}
+                              className="min-w-[220px] rounded-lg border border-slate-300 px-2 py-1 text-xs"
                             />
-                          ) : (
-                            <span className="text-xs text-slate-400">-</span>
-                          )}
-                        </td>
-                        <td className="px-3 py-2">
-                          <textarea
-                            value={item.observacion || ""}
-                            onChange={(event) =>
-                              setChecklistTecnico(
-                                item.id,
-                                "observacion",
-                                event.target.value,
-                              )
-                            }
-                            rows={2}
-                            className="min-w-[220px] rounded-lg border border-slate-300 px-2 py-1 text-sm"
-                          />
-                        </td>
-                      </tr>
-                    ))}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -1526,6 +1743,25 @@ export default function InformeSoftysPage() {
             letter-spacing: 0.06em;
           }
 
+          .softys-matrix-table {
+            font-size: 8.5px;
+          }
+
+          .softys-matrix-table th,
+          .softys-matrix-table td {
+            padding: 4px;
+          }
+
+          .softys-matrix-table th {
+            text-align: center;
+            vertical-align: middle;
+          }
+
+          .matrix-center {
+            text-align: center !important;
+            white-space: nowrap;
+          }
+
           .status-pill {
             display: inline-block;
             border-radius: 999px;
@@ -1752,6 +1988,22 @@ export default function InformeSoftysPage() {
             </div>
           </Section>
 
+          <Section title="Encabezado técnico plantilla motor MT">
+            <div className="summary-grid">
+              <Field label="Fecha" value={formatDate(detalle.fecha_ot)} />
+              <Field label="Nombre" value={resumen.equipo_nombre || descripcionTrabajo} />
+              <Field label="Sistema" value={informeDatos.sistema || resumen.equipo_planta} />
+              <Field label="Sub-sistema" value={informeDatos.sub_sistema || resumen.equipo_area} />
+              <Field label="Equipo" value={resumen.equipo_nombre || resumen.equipo_descripcion} />
+              <Field label="Sub-equipo" value={informeDatos.sub_equipo || resumen.equipo_tipo} />
+              <Field label="N° TAG" value={resumen.equipo_tag} />
+              <Field label="Ubicación" value={equipoUbicacion} />
+              <Field label="Criticidad" value={informeDatos.criticidad} />
+              <Field label="Frecuencia" value={informeDatos.frecuencia} />
+              <Field label="Código SAP" value={informeDatos.codigo_sap} />
+            </div>
+          </Section>
+
           <Section title="Descripción y alcance del trabajo">
             <div className="two-col">
               <div>
@@ -1781,40 +2033,66 @@ export default function InformeSoftysPage() {
           </Section>
 
           <Section title="Equipo de trabajo / horas hombre">
-            {informeDatos.equipo_trabajo ? (
-              <div style={{ marginBottom: 12 }}>
-                <p className="label-title">Equipo de trabajo</p>
-                <TextBox value={informeDatos.equipo_trabajo} minHeight={60} />
-              </div>
-            ) : null}
-
             {tiempos.length > 0 ? (
-              <table className="reception-table">
-                <thead>
-                  <tr>
-                    <th>Fecha</th>
-                    <th>Tipo</th>
-                    <th>Inicio</th>
-                    <th>Término</th>
-                    <th>Duración</th>
-                    <th>Observación</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {tiempos.map((item) => (
-                    <tr key={item.id}>
-                      <td>{formatDate(item.fecha)}</td>
-                      <td>{labelOrDash(item.tipo_tiempo)}</td>
-                      <td>{formatDateTime(item.hora_inicio)}</td>
-                      <td>{formatDateTime(item.hora_termino)}</td>
-                      <td>{formatMinutes(item.duracion_minutos)}</td>
-                      <td>{labelOrDash(item.observacion)}</td>
+              <>
+                <table className="reception-table">
+                  <thead>
+                    <tr>
+                      <th>Integrante</th>
+                      <th>Fecha</th>
+                      <th>Tipo / función</th>
+                      <th>Inicio</th>
+                      <th>Término</th>
+                      <th>Duración</th>
+                      <th>HH</th>
+                      <th>Observación</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {tiempos.map((item) => (
+                      <tr key={item.id}>
+                        <td>{labelOrDash(nombreUsuarioTiempo(item))}</td>
+                        <td>{formatDate(item.fecha)}</td>
+                        <td>{labelOrDash(item.tipo_tiempo)}</td>
+                        <td>{formatDateTime(item.hora_inicio)}</td>
+                        <td>{formatDateTime(item.hora_termino)}</td>
+                        <td>{formatMinutes(item.duracion_minutos)}</td>
+                        <td>{formatHoursDecimal(item.duracion_minutos)}</td>
+                        <td>{labelOrDash(item.observacion)}</td>
+                      </tr>
+                    ))}
+                    <tr>
+                      <td colSpan={6} style={{ fontWeight: 900, textAlign: "right" }}>
+                        Total horas hombre calculadas
+                      </td>
+                      <td style={{ fontWeight: 900 }}>{formatHoursDecimal(totalMinutosEquipo)}</td>
+                      <td>
+                        {integrantesUnicos > 0
+                          ? `${integrantesUnicos} integrante${integrantesUnicos === 1 ? "" : "s"}`
+                          : "-"}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+
+                {informeDatos.equipo_trabajo ? (
+                  <div style={{ marginTop: 12 }}>
+                    <p className="label-title">Complemento manual</p>
+                    <TextBox value={informeDatos.equipo_trabajo} minHeight={45} />
+                  </div>
+                ) : null}
+              </>
             ) : (
-              <TextBox value={null} minHeight={60} />
+              <>
+                <p className="small-note">
+                  Sin registros automáticos de tiempo asociados a esta OT. Registrar tiempos permite calcular automáticamente las HH.
+                </p>
+                {informeDatos.equipo_trabajo ? (
+                  <TextBox value={informeDatos.equipo_trabajo} minHeight={60} />
+                ) : (
+                  <TextBox value={null} minHeight={60} />
+                )}
+              </>
             )}
           </Section>
 
@@ -1822,51 +2100,71 @@ export default function InformeSoftysPage() {
             <TextBox value={herramientasMateriales} minHeight={85} />
           </Section>
 
-          <Section title="Checklist técnico ejecutado">
+                    <Section title="Checklist técnico ejecutado - Formato oficial motor MT">
             {checklistResultados.length > 0 ? (
               <>
                 {Object.entries(checklistPorSeccion).map(([seccion, items]) => (
-                  <div key={seccion} style={{ marginBottom: 12 }}>
+                  <div key={seccion} style={{ marginBottom: 14 }}>
                     <p className="label-title">{seccion}</p>
-                    <table className="technical-checklist-table">
+                    <table className="technical-checklist-table softys-matrix-table">
                       <thead>
                         <tr>
-                          <th style={{ width: 70 }}>Código</th>
-                          <th>Actividad</th>
-                          <th style={{ width: 90 }}>Estado</th>
-                          <th style={{ width: 90 }}>Medición</th>
-                          <th>Observación</th>
+                          <th rowSpan={2} style={{ width: 42 }}>Cod.</th>
+                          <th rowSpan={2}>Actividad</th>
+                          <th rowSpan={2} style={{ width: 62 }}>Estado</th>
+                          <th colSpan={4}>Encontrado</th>
+                          <th colSpan={4}>Acciones</th>
+                          <th colSpan={4}>PT-100</th>
+                          <th rowSpan={2} style={{ width: 70 }}>Valor</th>
+                          <th rowSpan={2}>Obs.</th>
+                        </tr>
+                        <tr>
+                          <th title="Muy bueno">MB</th>
+                          <th title="Bueno">B</th>
+                          <th title="Malo">M</th>
+                          <th title="Muy malo">MM</th>
+                          <th title="Limpieza">L</th>
+                          <th title="Reparación">R</th>
+                          <th title="Cambio">C</th>
+                          <th title="Aviso SAP">SAP</th>
+                          <th>N°1</th>
+                          <th>N°2</th>
+                          <th>N°3</th>
+                          <th>N°4</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {items.map((item) => (
-                          <tr key={item.id}>
-                            <td>{item.item_codigo}</td>
-                            <td>{item.actividad}</td>
-                            <td>
-                              <span className="status-pill">
-                                {estadoChecklistLabel(item.estado)}
-                              </span>
-                            </td>
-                            <td>
-                              {item.valor_numero !== null &&
-                              item.valor_numero !== undefined
-                                ? `${item.valor_numero} ${item.unidad || item.item_unidad || ""}`
-                                : item.valor_texto || "-"}
-                            </td>
-                            <td>{item.observacion || "-"}</td>
-                          </tr>
-                        ))}
+                        {items.map((item) => {
+                          const usaEncontrado = usesConfig(item, "usa_encontrado");
+                          const usaAcciones = usesConfig(item, "usa_acciones");
+                          const usaPt100 = usesConfig(item, "usa_pt100");
+                          const usaValorTexto = usesConfig(item, "usa_valor_texto");
+                          return (
+                            <tr key={item.id}>
+                              <td>{item.item_codigo}</td>
+                              <td>{item.actividad}</td>
+                              <td>{estadoChecklistLabel(item.estado)}</td>
+                              {encontradoKeys.map((entry) => (
+                                <td key={entry.key} className="matrix-center">{usaEncontrado ? checkSymbol(datoBoolean(item, entry.key)) : "-"}</td>
+                              ))}
+                              {accionKeys.map((entry) => (
+                                <td key={entry.key} className="matrix-center">{usaAcciones ? checkSymbol(datoBoolean(item, entry.key)) : "-"}</td>
+                              ))}
+                              {pt100Keys.map((entry) => (
+                                <td key={entry.key} className="matrix-center">{usaPt100 ? labelOrDash(datoTexto(item, entry.key)) : "-"}</td>
+                              ))}
+                              <td>{usaValorTexto ? `${item.valor_texto || "-"}${item.valor_texto && (item.unidad || item.item_unidad) ? ` ${item.unidad || item.item_unidad}` : ""}` : "-"}</td>
+                              <td>{item.observacion || "-"}</td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
                 ))}
               </>
             ) : (
-              <TextBox
-                value="Checklist técnico pendiente de cargar para esta OT."
-                minHeight={60}
-              />
+              <TextBox value="Checklist técnico pendiente de cargar para esta OT." minHeight={60} />
             )}
           </Section>
 

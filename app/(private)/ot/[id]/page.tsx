@@ -1,4 +1,4 @@
-﻿'use client'
+'use client'
 
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
@@ -709,38 +709,100 @@ const isPreventiva = isPreventivaMespack || isPreventivaGeneral
           throw new Error('No tienes permisos para acceder a esta OT.')
         }
 
-        const perfilesResp = await supabase
-          .from('ot_tecnicos')
-          .select('user_id, nombre_completo, cargo, activo, puede_crear_ot, puede_cerrar_ot')
-          .eq('activo', true)
-          .order('nombre_completo', { ascending: true })
-
         let perfilesSelectData: PerfilOption[] = []
         let perfilesWarning = ''
         let nextMap: Record<string, string> = {}
 
-        if (perfilesResp.error) {
-          perfilesWarning = 'No se pudo cargar la lista de tÃ©cnicos OT.'
+        const usuariosEmpresaResp = await supabase
+          .from('usuario_empresas')
+          .select('usuario_id, rol')
+          .eq('empresa_id', detalleData.empresa_id)
+          .eq('activo', true)
+
+        if (usuariosEmpresaResp.error) {
+          perfilesWarning = 'No se pudo cargar la lista de usuarios de la empresa.'
         } else {
-          const tecnicosRaw =
-            (perfilesResp.data ?? []) as Array<{
-              user_id: string
-              nombre_completo: string
-              cargo: string
-              activo: boolean
-              puede_crear_ot: boolean
-              puede_cerrar_ot: boolean
+          const usuariosEmpresa =
+            (usuariosEmpresaResp.data ?? []) as Array<{
+              usuario_id: string
+              rol: string | null
             }>
 
-          perfilesSelectData = tecnicosRaw.map((item) => ({
-            id: item.user_id,
-            label: `${item.nombre_completo} - ${item.cargo}`,
-          }))
+          const userIds = Array.from(
+            new Set(
+              usuariosEmpresa
+                .map((item) => item.usuario_id)
+                .filter((value): value is string => !!value)
+            )
+          )
 
-          nextMap = tecnicosRaw.reduce<Record<string, string>>((acc, item) => {
-            acc[item.user_id] = item.nombre_completo
-            return acc
-          }, {})
+          if (userIds.length > 0) {
+            const perfilesEmpresaResp = await supabase
+              .from('perfiles')
+              .select('id, email')
+              .in('id', userIds)
+
+            if (perfilesEmpresaResp.error) {
+              perfilesWarning = 'No se pudieron cargar los perfiles asociados a la empresa.'
+            } else {
+              const perfilesEmpresa =
+                (perfilesEmpresaResp.data ?? []) as Array<{
+                  id: string
+                  email: string | null
+                }>
+
+              const perfilesById = perfilesEmpresa.reduce<
+                Record<string, { id: string; email: string | null }>
+              >((acc, item) => {
+                acc[item.id] = item
+                return acc
+              }, {})
+
+              perfilesSelectData = userIds.map((userId) => {
+                const perfil = perfilesById[userId]
+                const usuarioEmpresa = usuariosEmpresa.find(
+                  (item) => item.usuario_id === userId
+                )
+                const baseLabel = humanizePerson(perfil?.email || userId)
+                const rolLabel = usuarioEmpresa?.rol
+                  ? usuarioEmpresa.rol.replace(/_/g, ' ')
+                  : 'usuario'
+
+                return {
+                  id: userId,
+                  label: `${baseLabel} - ${rolLabel}`,
+                }
+              })
+
+              nextMap = perfilesSelectData.reduce<Record<string, string>>(
+                (acc, item) => {
+                  acc[item.id] = item.label
+                  return acc
+                },
+                {}
+              )
+            }
+          }
+        }
+
+        const allowedPerfilIds = new Set(perfilesSelectData.map((item) => item.id))
+        const tecnicoResponsableId = detalleData.tecnico_responsable_id || ''
+        const supervisorId = detalleData.supervisor_id || ''
+        const tecnicoAsignadoValido =
+          !!tecnicoResponsableId && allowedPerfilIds.has(tecnicoResponsableId)
+        const supervisorAsignadoValido =
+          !!supervisorId && allowedPerfilIds.has(supervisorId)
+
+        if (tecnicoResponsableId && !tecnicoAsignadoValido) {
+          perfilesWarning = perfilesWarning
+            ? `${perfilesWarning} AdemÃ¡s, el tÃ©cnico asignado no pertenece a la empresa de esta OT.`
+            : 'El tÃ©cnico asignado no pertenece a la empresa de esta OT. Debes reasignarlo antes de guardar.'
+        }
+
+        if (supervisorId && !supervisorAsignadoValido) {
+          perfilesWarning = perfilesWarning
+            ? `${perfilesWarning} AdemÃ¡s, el supervisor asignado no pertenece a la empresa de esta OT.`
+            : 'El supervisor asignado no pertenece a la empresa de esta OT. Debes reasignarlo antes de guardar.'
         }
 
         setResumen(resumenData)
@@ -766,8 +828,8 @@ const isPreventiva = isPreventivaMespack || isPreventivaGeneral
           causa_probable: detalleData.causa_probable || '',
           trabajo_realizado: detalleData.trabajo_realizado || '',
           recomendaciones: detalleData.recomendaciones || '',
-          tecnico_responsable_id: detalleData.tecnico_responsable_id || '',
-          supervisor_id: detalleData.supervisor_id || '',
+          tecnico_responsable_id: tecnicoAsignadoValido ? tecnicoResponsableId : '',
+          supervisor_id: supervisorAsignadoValido ? supervisorId : '',
           prioridad: detalleData.prioridad,
           requiere_checklist: detalleData.requiere_checklist,
           observaciones_cierre: detalleData.observaciones_cierre || '',
@@ -786,7 +848,7 @@ const isPreventiva = isPreventivaMespack || isPreventivaGeneral
 
        setTiempoForm((prev) => ({
   usuario_id:
-    prev.usuario_id || detalleData.tecnico_responsable_id || user.id || '',
+    prev.usuario_id || (tecnicoAsignadoValido ? tecnicoResponsableId : '') || (allowedPerfilIds.has(user.id) ? user.id : '') || '',
   fecha: prev.fecha || toDateInputValue(detalleData.fecha_ot) || todayLocalDate(),
   hora_inicio: prev.hora_inicio,
   hora_termino: prev.hora_termino,

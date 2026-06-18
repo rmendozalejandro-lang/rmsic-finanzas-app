@@ -12,6 +12,20 @@ type Props = {
   onToggleSelectAll?: () => void
 }
 
+type OTResumenConPlantilla = OTResumen & {
+  plantilla_id?: string | null
+  plantilla_codigo?: string | null
+  plantilla_nombre?: string | null
+  plantilla_vista_principal?: string | null
+  plantilla_ruta_principal?: string | null
+  plantilla_ruta_base?: string | null
+  plantilla_ruta_pdf?: string | null
+  plantilla_requiere_equipo?: boolean | null
+  plantilla_usa_checklist?: boolean | null
+  plantilla_checklist_codigo?: string | null
+  plantilla_informe_codigo?: string | null
+}
+
 function formatDate(value: string | null | undefined) {
   if (!value) return '-'
 
@@ -40,6 +54,24 @@ function formatDuration(minutes: number | null | undefined) {
 function labelOrDash(value: string | null | undefined) {
   if (!value || !value.trim()) return '-'
   return value
+}
+
+function buildOtMainHref(ot: OTResumenConPlantilla) {
+  const ruta = ot.plantilla_ruta_principal?.trim() || '/ot/{id}'
+
+  if (ruta.includes('{id}')) {
+    return ruta.replace('{id}', ot.id)
+  }
+
+  const cleanRuta = ruta.endsWith('/') ? ruta.slice(0, -1) : ruta
+  return `${cleanRuta}/${ot.id}`
+}
+
+function buildOtActionLabel(ot: OTResumenConPlantilla) {
+  const vista = ot.plantilla_vista_principal?.toLowerCase() || ''
+
+  if (vista.includes('informe')) return 'Informe'
+  return 'Detalle'
 }
 
 function toTitleCase(text: string) {
@@ -195,8 +227,14 @@ export function OTDataTable({
 
           <tbody>
             {data.map((ot) => {
+              const otConPlantilla = ot as OTResumenConPlantilla
               const checked = Boolean(selectedIds?.has(ot.id))
               const equipoSubtitle = buildEquipoSubtitle(ot)
+              const otMainHref = buildOtMainHref(otConPlantilla)
+              const otActionLabel = buildOtActionLabel(otConPlantilla)
+              const faltaEquipoRequerido = Boolean(
+                otConPlantilla.plantilla_requiere_equipo && !ot.equipo_id
+              )
 
               return (
                 <tr key={ot.id} className="border-t border-slate-100 text-slate-700">
@@ -249,7 +287,14 @@ export function OTDataTable({
                         ) : null}
                       </div>
                     ) : (
-                      <span className="text-slate-400">-</span>
+                      <div className="max-w-[240px] whitespace-normal break-words">
+                        <span className="text-slate-400">-</span>
+                        {faltaEquipoRequerido ? (
+                          <div className="mt-1 inline-flex rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
+                            Falta equipo/TAG
+                          </div>
+                        ) : null}
+                      </div>
                     )}
                   </td>
 
@@ -283,10 +328,11 @@ export function OTDataTable({
 
                   <td className="px-4 py-3 text-right">
                     <Link
-                      href={`/ot/${ot.id}`}
+                      href={otMainHref}
                       className="inline-flex items-center justify-center rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-100"
+                      title={otConPlantilla.plantilla_nombre || undefined}
                     >
-                      Detalle
+                      {otActionLabel}
                     </Link>
                   </td>
                 </tr>

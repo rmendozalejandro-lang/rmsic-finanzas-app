@@ -529,7 +529,7 @@ export default function CotizacionImprimirPage() {
                       <img
                         src={empresaLogoSrc}
                         alt="Logo empresa"
-                        className="max-h-9 w-auto object-contain"
+                        className="max-h-16 w-auto object-contain"
                       />
                     </div>
                   ) : null}
@@ -555,7 +555,9 @@ export default function CotizacionImprimirPage() {
                     ) : null}
 
                     <div className="mt-0.5 flex flex-wrap items-center justify-center gap-x-3 gap-y-0.5">
-                      {cotizacion.ejecutivo_email ? (
+                      {cotizacion.empresa_email ? (
+                        <span>{cotizacion.empresa_email}</span>
+                      ) : cotizacion.ejecutivo_email ? (
                         <span>{cotizacion.ejecutivo_email}</span>
                       ) : null}
                       {cotizacion.empresa_telefono ? (
@@ -798,7 +800,7 @@ export default function CotizacionImprimirPage() {
                   </h3>
                   <div className="mt-1 min-h-[42px] rounded-xl border border-slate-200 px-2.5 py-2">
                     <p className="whitespace-pre-wrap text-[11px] leading-4.5 text-slate-700">
-                      {cotizacion.observaciones || '-'}
+                      {cotizacion.observaciones || 'Sin observaciones adicionales.'}
                     </p>
                   </div>
                 </div>
@@ -809,7 +811,7 @@ export default function CotizacionImprimirPage() {
                   </h3>
                   <div className="mt-1 min-h-[42px] rounded-xl border border-slate-200 px-2.5 py-2">
                     <p className="whitespace-pre-wrap text-[11px] leading-4.5 text-slate-700">
-                      {cotizacion.condiciones_comerciales || '-'}
+                      {cotizacion.condiciones_comerciales || 'Sin condiciones comerciales adicionales.'}
                     </p>
                   </div>
                 </div>
@@ -817,17 +819,23 @@ export default function CotizacionImprimirPage() {
 
               <footer className="mt-2.5 border-t border-slate-200 pt-2.5">
                 <div className="text-center">
-                  <p className="text-[11px] font-medium text-slate-900">
-                    {cotizacion.ejecutivo_nombre || '-'}
-                  </p>
+                  {cotizacion.ejecutivo_nombre ? (
+                    <p className="text-[11px] font-medium text-slate-900">
+                      {cotizacion.ejecutivo_nombre}
+                    </p>
+                  ) : null}
                   <p className="mt-0.5 text-[11px] text-slate-600">
                     {cotizacion.empresa_nombre || empresaActivaNombre || 'Empresa'}
                   </p>
                   <div className="mt-1 flex flex-wrap items-center justify-center gap-x-3 gap-y-0.5 text-[10px] text-slate-500">
-                    {cotizacion.ejecutivo_email ? (
+                    {cotizacion.empresa_email ? (
+                      <span>{cotizacion.empresa_email}</span>
+                    ) : cotizacion.ejecutivo_email ? (
                       <span>{cotizacion.ejecutivo_email}</span>
                     ) : null}
-                    {cotizacion.ejecutivo_telefono ? (
+                    {cotizacion.empresa_telefono ? (
+                      <span>{cotizacion.empresa_telefono}</span>
+                    ) : cotizacion.ejecutivo_telefono ? (
                       <span>{cotizacion.ejecutivo_telefono}</span>
                     ) : null}
                   </div>

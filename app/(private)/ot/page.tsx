@@ -91,6 +91,60 @@ function OTPageContent() {
   const [otIdsSeleccionadas, setOtIdsSeleccionadas] = useState<Set<string>>(new Set())
   const [generandoPdfLote, setGenerandoPdfLote] = useState(false)
 
+  const [empresaActivaId, setEmpresaActivaId] = useState(() =>
+    typeof window !== 'undefined' ? window.localStorage.getItem(STORAGE_ID_KEY) || '' : ''
+  )
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    const syncEmpresaActiva = () => {
+      const nextEmpresaId = window.localStorage.getItem(STORAGE_ID_KEY) || ''
+
+      setEmpresaActivaId((prevEmpresaId) =>
+        prevEmpresaId === nextEmpresaId ? prevEmpresaId : nextEmpresaId
+      )
+    }
+
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === STORAGE_ID_KEY || event.key === null) {
+        syncEmpresaActiva()
+      }
+    }
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        syncEmpresaActiva()
+      }
+    }
+
+    window.addEventListener('storage', handleStorage)
+    window.addEventListener('focus', syncEmpresaActiva)
+    window.addEventListener('empresa-activa-change', syncEmpresaActiva)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    // El cambio de empresa ocurre en el mismo tab, y el evento storage no se dispara
+    // en el mismo documento. Este respaldo evita que el usuario tenga que refrescar.
+    const intervalId = window.setInterval(syncEmpresaActiva, 750)
+
+    syncEmpresaActiva()
+
+    return () => {
+      window.removeEventListener('storage', handleStorage)
+      window.removeEventListener('focus', syncEmpresaActiva)
+      window.removeEventListener('empresa-activa-change', syncEmpresaActiva)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      window.clearInterval(intervalId)
+    }
+  }, [])
+
+  useEffect(() => {
+    setFiltroCliente('')
+    setFechaDesde('')
+    setFechaHasta('')
+    setOtIdsSeleccionadas(new Set())
+  }, [empresaActivaId])
+
   useEffect(() => {
     let active = true
 
@@ -98,6 +152,7 @@ function OTPageContent() {
       try {
         setLoading(true)
         setError('')
+        setOts([])
 
         const {
           data: { session },
@@ -107,11 +162,6 @@ function OTPageContent() {
         if (sessionError || !session) {
           throw new Error('No se pudo validar la sesión actual.')
         }
-
-        const empresaActivaId =
-          typeof window !== 'undefined'
-            ? window.localStorage.getItem(STORAGE_ID_KEY) || ''
-            : ''
 
         if (!empresaActivaId) {
           throw new Error('No hay empresa activa seleccionada.')
@@ -196,7 +246,7 @@ function OTPageContent() {
     return () => {
       active = false
     }
-  }, [])
+  }, [empresaActivaId])
 
   useEffect(() => {
     let active = true
@@ -216,11 +266,6 @@ function OTPageContent() {
           }
           return
         }
-
-        const empresaActivaId =
-          typeof window !== 'undefined'
-            ? window.localStorage.getItem(STORAGE_ID_KEY) || ''
-            : ''
 
         if (!empresaActivaId) {
           if (active) {
@@ -261,7 +306,7 @@ function OTPageContent() {
     return () => {
       active = false
     }
-  }, [])
+  }, [empresaActivaId])
 
   const clientesFiltro = useMemo(() => {
     const mapaClientes = new Map<string, string>()
