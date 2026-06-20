@@ -144,6 +144,65 @@ function getClienteDisplayName(cliente: Cliente | null) {
     'Sin cliente'
   )
 }
+
+
+function normalizeLogoSrc(value: string | null | undefined) {
+  if (!value) return null
+
+  const cleaned = value.trim()
+  if (!cleaned) return null
+
+  if (cleaned.startsWith('http://') || cleaned.startsWith('https://')) {
+    return cleaned
+  }
+
+  if (cleaned.startsWith('/')) {
+    return cleaned
+  }
+
+  if (cleaned.startsWith('public/')) {
+    return `/${cleaned.replace(/^public\//, '')}`
+  }
+
+  if (cleaned.startsWith('logos/')) {
+    return `/${cleaned}`
+  }
+
+  return `/logos/${cleaned}`
+}
+
+function resolveCotizacionLogoSrc(params: {
+  cotizacion: Cotizacion | null
+  empresaActivaNombre: string | null
+}) {
+  const { cotizacion, empresaActivaNombre } = params
+
+  const logoDesdeHelper = normalizeLogoSrc(
+    getEmpresaLogoSrc({
+      empresaLogoUrl: cotizacion?.empresa_logo_url,
+      empresaNombre: cotizacion?.empresa_nombre,
+      empresaActivaNombre,
+    })
+  )
+
+  if (logoDesdeHelper) return logoDesdeHelper
+
+  const empresaNombre = `${cotizacion?.empresa_nombre || ''} ${empresaActivaNombre || ''}`.toLowerCase()
+
+  if (empresaNombre.includes('rukalaf')) {
+    return '/logos/rukalaf-logo.png'
+  }
+
+  if (empresaNombre.includes('dyf') || empresaNombre.includes('d&f')) {
+    return '/logos/dyf-logo-transparente.png'
+  }
+
+  if (empresaNombre.includes('rmsic')) {
+    return '/logos/rmsic-logo.png'
+  }
+
+  return '/logos/rmsic-logo.png'
+}
 function sanitizeFileName(value: string) {
   return value
     .normalize('NFD')
@@ -341,9 +400,8 @@ export default function CotizacionImprimirPage() {
   }, [cotizacion, empresaActivaNombre])
 
   const empresaLogoSrc = useMemo(() => {
-    return getEmpresaLogoSrc({
-      empresaLogoUrl: cotizacion?.empresa_logo_url,
-      empresaNombre: cotizacion?.empresa_nombre,
+    return resolveCotizacionLogoSrc({
+      cotizacion,
       empresaActivaNombre,
     })
   }, [cotizacion, empresaActivaNombre])

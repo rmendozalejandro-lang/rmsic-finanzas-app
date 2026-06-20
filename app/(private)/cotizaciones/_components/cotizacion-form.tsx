@@ -99,6 +99,46 @@ function formatCurrency(value: number, currency = "CLP") {
   }).format(value);
 }
 
+function getDefaultEmpresaLogoUrl(empresaNombre?: string | null) {
+  const nombre = (empresaNombre || "").toLowerCase();
+
+  if (nombre.includes("rukalaf")) return "/logos/rukalaf-logo.png";
+  if (nombre.includes("dyf")) return "/logos/dyf-logo-transparente.png";
+  if (nombre.includes("rmsic") || nombre.includes("rm servicios")) {
+    return "/logos/rmsic-logo.png";
+  }
+
+  return "/logos/rmsic-logo.png";
+}
+
+function normalizeEmpresaLogoUrl(value?: string | null) {
+  const logo = (value || "").trim();
+
+  if (!logo) return "";
+
+  if (logo.startsWith("http://") || logo.startsWith("https://")) {
+    return logo;
+  }
+
+  if (logo.startsWith("/")) {
+    return logo;
+  }
+
+  return `/${logo.replace(/^public\//, "")}`;
+}
+
+function withDefaultEmpresaLogo(
+  values: CotizacionFormValues
+): CotizacionFormValues {
+  const currentLogo = normalizeEmpresaLogoUrl(values.empresa_logo_url);
+  const fallbackLogo = getDefaultEmpresaLogoUrl(values.empresa_nombre);
+
+  return {
+    ...values,
+    empresa_logo_url: currentLogo || fallbackLogo,
+  };
+}
+
 function calculateItem(item: CotizacionFormItem) {
   const cantidad = Math.max(0, toNumber(item.cantidad));
   const precioUnitario = Math.max(0, toNumber(item.precio_unitario));
@@ -256,7 +296,9 @@ export default function CotizacionForm({
   backHref,
 }: Props) {
   const router = useRouter();
-  const [form, setForm] = useState<CotizacionFormValues>(initialValues);
+  const [form, setForm] = useState<CotizacionFormValues>(() =>
+    withDefaultEmpresaLogo(initialValues)
+  );
   const [items, setItems] = useState<CotizacionFormItem[]>(() => {
     const initial = initialItems && initialItems.length > 0
       ? deduplicateFormItems(initialItems)
@@ -418,7 +460,9 @@ export default function CotizacionForm({
           normalizeDiscountType(form.descuento_global_tipo) ?? null,
         descuento_global_valor: round2(descuentoGlobalValor),
         empresa_nombre: form.empresa_nombre.trim() || null,
-        empresa_logo_url: form.empresa_logo_url.trim() || null,
+        empresa_logo_url:
+          normalizeEmpresaLogoUrl(form.empresa_logo_url) ||
+          getDefaultEmpresaLogoUrl(form.empresa_nombre),
         empresa_email: form.empresa_email.trim() || null,
         empresa_telefono: form.empresa_telefono.trim() || null,
         empresa_web: form.empresa_web.trim() || null,
@@ -1080,10 +1124,18 @@ export default function CotizacionForm({
                 <input
                   value={form.empresa_logo_url}
                   onChange={(e) =>
-                    updateFormField("empresa_logo_url", e.target.value)
+                    updateFormField(
+                      "empresa_logo_url",
+                      normalizeEmpresaLogoUrl(e.target.value)
+                    )
                   }
+                  placeholder={getDefaultEmpresaLogoUrl(form.empresa_nombre)}
                   className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
                 />
+                <p className="mt-1 text-xs text-slate-500">
+                  Ruta sugerida según empresa:{" "}
+                  {getDefaultEmpresaLogoUrl(form.empresa_nombre)}
+                </p>
               </div>
 
               {form.empresa_logo_url ? (
