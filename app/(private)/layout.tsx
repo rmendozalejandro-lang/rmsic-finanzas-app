@@ -1,4 +1,4 @@
-﻿'use client'
+'use client'
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
@@ -8,6 +8,7 @@ import {
   MODULO_PRINCIPAL_LABELS,
   canAccessModuleByRoleAndCompany,
   getModuloPrincipal,
+  getRecursoTransversalFromModule,
   type ModuleKey,
   type ModuloPrincipal,
 } from '../../lib/auth/permissions'
@@ -39,8 +40,10 @@ type EmpresaModuloRow = {
   habilitado: boolean
 }
 
+type MenuGroupKey = ModuloPrincipal | 'general' | 'maestros'
+
 type MenuGroup = {
-  key: ModuloPrincipal | 'general'
+  key: MenuGroupKey
   label: string
   items: MenuItem[]
 }
@@ -48,47 +51,52 @@ type MenuGroup = {
 const menuItems: MenuItem[] = [
   { href: '/', label: 'Dashboard', moduleKey: 'dashboard' },
 
-  { href: '/clientes', label: 'Clientes', moduleKey: 'clientes' },
+  // Maestros transversales: no pertenecen a Comercial ni Financiero.
+  { href: '/clientes', label: 'Clientes / Mandantes', moduleKey: 'clientes' },
+  { href: '/proveedores', label: 'Proveedores', moduleKey: 'proveedores' },
+
+  // Comercial: funciones de venta y seguimiento comercial.
   { href: '/cotizaciones', label: 'Cotizaciones', moduleKey: 'cotizaciones' },
   { href: '/ingresos', label: 'Ingresos / Ventas', moduleKey: 'ingresos' },
   { href: '/cobranza', label: 'Cobranzas', moduleKey: 'cobranza' },
 
+  // Financiero / Tesorería.
   { href: '/bancos', label: 'Bancos', moduleKey: 'bancos' },
+  { href: '/bancos/importaciones', label: 'Historial de importaciones', moduleKey: 'bancos' },
   { href: '/egresos', label: 'Egresos', moduleKey: 'egresos' },
   { href: '/cuentas-por-pagar', label: 'Cuentas por pagar', moduleKey: 'egresos' },
   { href: '/documentos-sii', label: 'Documentos SII', moduleKey: 'egresos' },
-  { href: '/proveedores', label: 'Proveedores', moduleKey: 'proveedores' },
   { href: '/transferencias', label: 'Transferencias', moduleKey: 'transferencias' },
 
- { href: '/plan-cuentas', label: 'Plan de Cuentas', moduleKey: 'plan_cuentas' },
-{ href: '/asientos', label: 'Asientos contables', moduleKey: 'plan_cuentas' },
-{
-  label: 'Activos fijos',
-  href: '/activos-fijos',
-  moduleKey: 'plan_cuentas',
-},
-{ href: '/reportes', label: 'Reportes', moduleKey: 'reportes' },
+  // Contable.
+  { href: '/plan-cuentas', label: 'Plan de Cuentas', moduleKey: 'plan_cuentas' },
+  { href: '/asientos', label: 'Asientos contables', moduleKey: 'plan_cuentas' },
+  { href: '/activos-fijos', label: 'Activos fijos', moduleKey: 'plan_cuentas' },
+  { href: '/reportes', label: 'Reportes', moduleKey: 'reportes' },
 
+  // Operacional.
   { href: '/ot', label: 'OT', moduleKey: 'ot' },
   { href: '/ot/equipos', label: 'Equipos / Activos', moduleKey: 'ot' },
 
+  // Recursos Humanos.
   { href: '/remuneraciones', label: 'Remuneraciones', moduleKey: 'remuneraciones' },
-{ href: '/remuneraciones/prestamos', label: 'Prestamos y anticipos', moduleKey: 'remuneraciones' },
-{ href: '/remuneraciones/cotizaciones', label: 'Cotizaciones / Leyes sociales', moduleKey: 'remuneraciones' },
+  { href: '/remuneraciones/prestamos', label: 'Préstamos y anticipos', moduleKey: 'remuneraciones' },
+  { href: '/remuneraciones/cotizaciones', label: 'Cotizaciones / Leyes sociales', moduleKey: 'remuneraciones' },
 
+  // Configuración / administración.
   {
     href: '/configuracion/usuarios',
     label: 'Usuarios de mi empresa',
     moduleKey: 'configuracion_usuarios',
   },
-{
+  {
     href: '/configuracion/correos',
     label: 'Correos y notificaciones',
     moduleKey: 'configuracion_usuarios',
   },
   {
     href: '/configuracion/auditoria',
-    label: 'Auditori­a',
+    label: 'Auditoría',
     moduleKey: 'configuracion_auditoria',
   },
 ]
@@ -96,18 +104,20 @@ const menuItems: MenuItem[] = [
 const STORAGE_ID_KEY = 'empresa_activa_id'
 const STORAGE_NAME_KEY = 'empresa_activa_nombre'
 
-const MENU_GROUP_ORDER: Array<ModuloPrincipal | 'general'> = [
+const MENU_GROUP_ORDER: MenuGroupKey[] = [
   'general',
+  'maestros',
+  'operacional',
   'comercial',
   'financiero',
   'contable',
-  'operacional',
   'rrhh',
   'administracion',
 ]
 
-const MENU_GROUP_LABELS: Record<ModuloPrincipal | 'general', string> = {
+const MENU_GROUP_LABELS: Record<MenuGroupKey, string> = {
   general: 'General',
+  maestros: 'Maestros',
   ...MODULO_PRINCIPAL_LABELS,
 }
 
@@ -391,10 +401,17 @@ if (empresaGuardadaValida) {
   }, [usuarioRol, rolResuelto, modulosHabilitados])
 
   const visibleMenuGroups = useMemo<MenuGroup[]>(() => {
-    const grouped = new Map<ModuloPrincipal | 'general', MenuItem[]>()
+    const grouped = new Map<MenuGroupKey, MenuItem[]>()
 
     for (const item of visibleMenuItems) {
-      const groupKey = getModuloPrincipal(item.moduleKey) ?? 'general'
+      const isRecursoTransversal = Boolean(
+        getRecursoTransversalFromModule(item.moduleKey)
+      )
+
+      const groupKey: MenuGroupKey = isRecursoTransversal
+        ? 'maestros'
+        : getModuloPrincipal(item.moduleKey) ?? 'general'
+
       const currentItems = grouped.get(groupKey) ?? []
       grouped.set(groupKey, [...currentItems, item])
     }
@@ -439,7 +456,7 @@ if (empresaGuardadaValida) {
     empresaActiva?.nombre || empresaActivaNombreLocal || 'Sin empresa activa'
 
   const appTitle = isTecnicoOT
-    ? 'Modulo OT'
+    ? 'Módulo OT'
     : 'Plataforma financiera y administrativa'
 
   const appSubtitle = isTecnicoOT
@@ -447,8 +464,8 @@ if (empresaGuardadaValida) {
     : 'Plataforma financiera y administrativa'
 
   const sidebarSupportText = isTecnicoOT
-    ? 'Acceso restringido al modulo OT para ejecucion, firmas y evidencia en terreno.'
-    : 'Gestion multiempresa con modulos habilitados por empresa y permisos por rol.'
+    ? 'Acceso restringido al módulo OT para ejecucion, firmas y evidencia en terreno.'
+    : 'Gestion multiempresa con módulos habilitados por empresa y permisos por rol.'
 
   if (checkingSession) {
     return (
@@ -646,10 +663,10 @@ if (empresaGuardadaValida) {
               <section className="mx-auto max-w-3xl rounded-[28px] border border-amber-200 bg-amber-50 p-6 shadow-sm">
                 <p className="text-sm font-medium text-amber-700">Acceso restringido</p>
                 <h2 className="mt-2 text-2xl font-semibold tracking-tight text-amber-950">
-                  No tienes acceso a este modulo
+                  No tienes acceso a este módulo
                 </h2>
                 <p className="mt-3 text-sm leading-6 text-amber-800">
-                  El modulo solicitado no esta habilitado para la empresa activa o tu rol no tiene permiso para acceder.
+                  El módulo solicitado no está habilitado para la empresa activa o tu rol no tiene permiso para acceder.
                 </p>
                 <p className="mt-2 text-sm leading-6 text-amber-800">
                   Empresa activa: <span className="font-semibold">{empresaActivaNombreVisual}</span>

@@ -4,6 +4,9 @@ import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import ProtectedModuleRoute from '../../../../components/ProtectedModuleRoute'
+import ClienteQuickCreateModal, {
+  type ClienteQuickCreated,
+} from '../../../../components/maestros/ClienteQuickCreateModal'
 import { supabase } from '../../../../lib/supabase/client'
 
 type ClienteOption = {
@@ -134,6 +137,7 @@ function NuevaOTContent() {
   const [empresaActivaNombre, setEmpresaActivaNombre] = useState('')
 
   const [clientes, setClientes] = useState<ClienteOption[]>([])
+  const [showClienteModal, setShowClienteModal] = useState(false)
   const [equipos, setEquipos] = useState<EquipoOption[]>([])
   const [tiposServicio, setTiposServicio] = useState<TipoServicioOption[]>([])
   const [estados, setEstados] = useState<EstadoOption[]>([])
@@ -500,34 +504,59 @@ function NuevaOTContent() {
     }
 
     if (field === 'cliente_id') {
-  const clienteId = String(value || '')
+      const clienteId = String(value || '')
 
-  setForm((prev) => {
-    const equipoSeleccionado = equipos.find((item) => item.id === prev.equipo_id)
+      setForm((prev) => {
+        const equipoSeleccionado = equipos.find((item) => item.id === prev.equipo_id)
 
-    const equipoPerteneceCliente = Boolean(
-      equipoSeleccionado &&
-        (
-          !clienteId ||
-          !equipoSeleccionado.cliente_id ||
-          equipoSeleccionado.cliente_id === clienteId
+        const equipoPerteneceCliente = Boolean(
+          equipoSeleccionado &&
+            (
+              !clienteId ||
+              !equipoSeleccionado.cliente_id ||
+              equipoSeleccionado.cliente_id === clienteId
+            )
         )
-    )
 
-    return {
-      ...prev,
-      cliente_id: clienteId,
-      equipo_id: equipoPerteneceCliente ? prev.equipo_id : '',
+        return {
+          ...prev,
+          cliente_id: clienteId,
+          equipo_id: equipoPerteneceCliente ? prev.equipo_id : '',
+        }
+      })
+
+      return
     }
-  })
-
-  return
-}
 
     setForm((prev) => ({
       ...prev,
       [field]: value,
     }))
+  }
+
+  const openClienteModal = () => {
+    setShowClienteModal(true)
+  }
+
+  const closeClienteModal = () => {
+    setShowClienteModal(false)
+  }
+
+  const handleClienteCreado = (nuevoCliente: ClienteQuickCreated) => {
+    setClientes((prev) =>
+      [...prev.filter((cliente) => cliente.id !== nuevoCliente.id), nuevoCliente].sort(
+        (a, b) => a.nombre.localeCompare(b.nombre, 'es')
+      )
+    )
+
+    setForm((prev) => ({
+      ...prev,
+      cliente_id: nuevoCliente.id,
+      equipo_id: '',
+    }))
+
+    setSuccess(`Cliente ${nuevoCliente.nombre} creado y seleccionado para la OT.`)
+    setError('')
   }
 
   const validateForm = () => {
@@ -730,9 +759,18 @@ function NuevaOTContent() {
               </div>
 
               <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700">
-                  Cliente *
-                </label>
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <label className="block text-sm font-medium text-slate-700">
+                    Cliente / Mandante *
+                  </label>
+                  <button
+                    type="button"
+                    onClick={openClienteModal}
+                    className="inline-flex items-center rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                  >
+                    + Nuevo cliente
+                  </button>
+                </div>
                 <select
                   value={form.cliente_id}
                   onChange={(e) => handleChange('cliente_id', e.target.value)}
@@ -745,6 +783,9 @@ function NuevaOTContent() {
                     </option>
                   ))}
                 </select>
+                <p className="mt-1 text-xs text-slate-500">
+                  Puedes crear un cliente o mandante sin salir del flujo de la OT.
+                </p>
               </div>
 
               <div>
@@ -1070,6 +1111,16 @@ function NuevaOTContent() {
           </div>
         </form>
       )}
+
+      <ClienteQuickCreateModal
+        open={showClienteModal}
+        empresaId={form.empresa_id || empresaActivaId}
+        title="Nuevo cliente / mandante"
+        description="Crea el cliente para la empresa activa y selecciónalo automáticamente en esta OT."
+        defaultEstadoComercial="cliente_activo"
+        onClose={closeClienteModal}
+        onCreated={handleClienteCreado}
+      />
     </div>
   )
 }

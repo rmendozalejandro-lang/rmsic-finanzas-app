@@ -1,11 +1,14 @@
 'use client'
 
-import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import CotizacionForm from '../_components/cotizacion-form'
 import { supabase } from '@/lib/supabase/client'
 import { getEmpresaLogoSrc } from '@/lib/empresa-branding'
 import ProtectedCotizacionesRoute from '@/components/ProtectedCotizacionesRoute'
+import ClienteQuickCreateModal, {
+  type ClienteQuickCreated,
+} from '@/components/maestros/ClienteQuickCreateModal'
 
 const STORAGE_ID_KEY = 'empresa_activa_id'
 const STORAGE_NAME_KEY = 'empresa_activa_nombre'
@@ -115,18 +118,9 @@ export default function NuevaCotizacionPage() {
   const [error, setError] = useState('')
   const [usuarioRol, setUsuarioRol] = useState('')
   const [isAdmin, setIsAdmin] = useState(false)
-  const [showProspectoForm, setShowProspectoForm] = useState(false)
-  const [savingProspecto, setSavingProspecto] = useState(false)
-  const [prospectoError, setProspectoError] = useState('')
+  const [showClienteModal, setShowClienteModal] = useState(false)
   const [prospectoSuccess, setProspectoSuccess] = useState('')
   const [formVersion, setFormVersion] = useState(0)
-  const [prospectoForm, setProspectoForm] = useState({
-    nombre: '',
-    rut: '',
-    contacto: '',
-    email: '',
-    telefono: '',
-  })
 
   useEffect(() => {
     const syncEmpresaActiva = () => {
@@ -360,140 +354,34 @@ export default function NuevaCotizacionPage() {
   }, [empresaActivaId, empresaActivaNombre])
 
 
-  const handleProspectoChange = (event: ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = event.target
+  const handleClienteCreated = (cliente: ClienteQuickCreated) => {
+    const label = `${cliente.nombre} · Prospecto`
 
-    setProspectoForm((prev) => ({
-      ...prev,
-      [name]: value,
-    }))
-  }
-
-  const resetProspectoForm = () => {
-    setProspectoForm({
-      nombre: '',
-      rut: '',
-      contacto: '',
-      email: '',
-      telefono: '',
-    })
-  }
-
-  const handleCrearProspecto = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-
-    setProspectoError('')
-    setProspectoSuccess('')
-
-    if (!empresaActivaId) {
-      setProspectoError('Debes tener una empresa activa para crear el prospecto.')
-      return
+    const newOption: ClienteOption = {
+      id: cliente.id,
+      label,
+      estado_comercial: 'prospecto',
     }
 
-    if (!prospectoForm.nombre.trim()) {
-      setProspectoError('Debes ingresar el nombre o razón social del prospecto.')
-      return
-    }
-
-    try {
-      setSavingProspecto(true)
-
-      const { data, error: sessionError } = await supabase.auth.getSession()
-      const session = data.session
-
-      if (sessionError || !session) {
-        setProspectoError('No se pudo recuperar la sesión activa del navegador.')
-        return
-      }
-
-      const accessToken = session.access_token
-      const apiKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-      const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
-
-      if (!apiKey || !baseUrl) {
-        setProspectoError('Faltan variables públicas de Supabase.')
-        return
-      }
-
-      const payload = {
-        empresa_id: empresaActivaId,
-        nombre: prospectoForm.nombre.trim(),
-        rut: prospectoForm.rut.trim() || null,
-        contacto: prospectoForm.contacto.trim() || null,
-        email: prospectoForm.email.trim() || null,
-        telefono: prospectoForm.telefono.trim() || null,
-        direccion: null,
-        condicion_pago: 'contado',
-        dias_credito: 0,
-        estado_comercial: 'prospecto',
-        activo: true,
-      }
-
-      const resp = await fetch(`${baseUrl}/rest/v1/clientes`, {
-        method: 'POST',
-        headers: {
-          apikey: apiKey,
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-          Prefer: 'return=representation',
-        },
-        body: JSON.stringify(payload),
-      })
-
-      const json = await resp.json().catch(() => null)
-
-      if (!resp.ok) {
-        console.error('Error al crear prospecto:', json)
-        setProspectoError(
-          json?.message ||
-            json?.error_description ||
-            json?.error ||
-            'No se pudo crear el prospecto.'
-        )
-        return
-      }
-
-      const createdRow = Array.isArray(json) && json.length > 0 ? json[0] : null
-      const prospectoId = createdRow?.id ? String(createdRow.id) : ''
-      const prospectoLabel = createdRow
-        ? getClienteCotizacionLabel(createdRow as GenericRow)
-        : `${prospectoForm.nombre.trim()} · Prospecto`
-
-      if (prospectoId) {
-        const newOption: ClienteOption = {
-          id: prospectoId,
-          label: prospectoLabel,
-          estado_comercial: 'prospecto',
-        }
-
-        setClientes((prev) =>
-          [...prev.filter((item) => item.id !== prospectoId), newOption].sort(
-            (a, b) => a.label.localeCompare(b.label, 'es')
-          )
-        )
-
-        setInitialValues((prev) =>
-          prev
-            ? {
-                ...prev,
-                cliente_id: prospectoId,
-              }
-            : prev
-        )
-        setFormVersion((prev) => prev + 1)
-      }
-
-      setProspectoSuccess('Prospecto creado correctamente y disponible para esta cotización.')
-      resetProspectoForm()
-      setShowProspectoForm(false)
-    } catch (err) {
-      setProspectoError(
-        err instanceof Error ? err.message : 'Error desconocido al crear prospecto.'
+    setClientes((prev) =>
+      [...prev.filter((item) => item.id !== cliente.id), newOption].sort((a, b) =>
+        a.label.localeCompare(b.label, 'es')
       )
-    } finally {
-      setSavingProspecto(false)
-    }
+    )
+
+    setInitialValues((prev) =>
+      prev
+        ? {
+            ...prev,
+            cliente_id: cliente.id,
+          }
+        : prev
+    )
+
+    setProspectoSuccess('Prospecto creado correctamente y seleccionado para esta cotización.')
+    setFormVersion((prev) => prev + 1)
   }
+
 
   if (!empresaActivaId && !loading) {
     return (
@@ -601,23 +489,22 @@ export default function NuevaCotizacionPage() {
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
               <h2 className="text-lg font-semibold text-slate-900">
-                Prospecto rápido
+                Cliente / prospecto rápido
               </h2>
               <p className="mt-1 text-sm text-slate-700">
-                Crea un posible cliente solo para cotizar. Quedará marcado como
-                prospecto, no como cliente activo.
+                Crea un posible cliente sin salir de la cotización. Quedará marcado
+                como prospecto y seleccionado automáticamente.
               </p>
             </div>
             <button
               type="button"
               onClick={() => {
-                setShowProspectoForm((prev) => !prev)
-                setProspectoError('')
                 setProspectoSuccess('')
+                setShowClienteModal(true)
               }}
               className="inline-flex rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700"
             >
-              {showProspectoForm ? 'Ocultar formulario' : 'Crear prospecto rápido'}
+              + Nuevo cliente / prospecto
             </button>
           </div>
 
@@ -626,96 +513,17 @@ export default function NuevaCotizacionPage() {
               {prospectoSuccess}
             </div>
           ) : null}
-
-          {prospectoError ? (
-            <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-              {prospectoError}
-            </div>
-          ) : null}
-
-          {showProspectoForm ? (
-            <form onSubmit={handleCrearProspecto} className="mt-5 space-y-4">
-              <div className="grid gap-4 md:grid-cols-2">
-                <label className="block text-sm font-medium text-slate-700">
-                  Nombre / Razón social
-                  <input
-                    name="nombre"
-                    value={prospectoForm.nombre}
-                    onChange={handleProspectoChange}
-                    className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
-                    placeholder="Ej: Nueva Empresa SpA"
-                  />
-                </label>
-
-                <label className="block text-sm font-medium text-slate-700">
-                  RUT opcional
-                  <input
-                    name="rut"
-                    value={prospectoForm.rut}
-                    onChange={handleProspectoChange}
-                    className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
-                    placeholder="Ej: 76.000.000-0"
-                  />
-                </label>
-
-                <label className="block text-sm font-medium text-slate-700">
-                  Contacto
-                  <input
-                    name="contacto"
-                    value={prospectoForm.contacto}
-                    onChange={handleProspectoChange}
-                    className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
-                    placeholder="Nombre de contacto"
-                  />
-                </label>
-
-                <label className="block text-sm font-medium text-slate-700">
-                  Email
-                  <input
-                    name="email"
-                    type="email"
-                    value={prospectoForm.email}
-                    onChange={handleProspectoChange}
-                    className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
-                    placeholder="correo@empresa.cl"
-                  />
-                </label>
-
-                <label className="block text-sm font-medium text-slate-700 md:col-span-2">
-                  Teléfono
-                  <input
-                    name="telefono"
-                    value={prospectoForm.telefono}
-                    onChange={handleProspectoChange}
-                    className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
-                    placeholder="Teléfono de contacto"
-                  />
-                </label>
-              </div>
-
-              <div className="flex flex-wrap gap-3">
-                <button
-                  type="submit"
-                  disabled={savingProspecto}
-                  className="inline-flex rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {savingProspecto ? 'Guardando...' : 'Guardar prospecto'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    resetProspectoForm()
-                    setProspectoError('')
-                    setShowProspectoForm(false)
-                  }}
-                  className="inline-flex rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
-                >
-                  Cancelar
-                </button>
-              </div>
-            </form>
-          ) : null}
         </div>
+
+        <ClienteQuickCreateModal
+          open={showClienteModal}
+          empresaId={empresaActivaId}
+          title="Nuevo cliente / prospecto"
+          description="Crea el registro en Maestros y déjalo seleccionado automáticamente para esta cotización."
+          defaultEstadoComercial="prospecto"
+          onClose={() => setShowClienteModal(false)}
+          onCreated={handleClienteCreated}
+        />
 
         <CotizacionForm
           key={`nueva-cotizacion-${formVersion}`}

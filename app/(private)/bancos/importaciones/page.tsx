@@ -1,1027 +1,447 @@
 'use client'
 
-import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
-import ProtectedModuleRoute from '../../../../components/ProtectedModuleRoute'
-import EmpresaActivaBanner from '../../../../components/EmpresaActivaBanner'
-import { supabase } from '../../../../lib/supabase/client'
+import Link from 'next/link'
+import { supabase } from '@/lib/supabase/client'
 
-type Categoria = {
-  id: string
-  nombre: string
-  tipo: string
-  requiere_centro_costo: boolean
-}
+const STORAGE_ID_KEY = 'empresa_activa_id'
 
-type CentroCosto = {
-  id: string
-  nombre: string
-  codigo: string | null
-}
-
-type CuentaBancaria = {
-  id: string
-  banco: string
-  nombre_cuenta: string
-  numero_cuenta: string | null
-}
-
-type Cliente = {
-  id: string
-  nombre: string
-  rut: string | null
-}
-
-type Proveedor = {
-  id: string
-  nombre: string
-  rut: string | null
-}
-
-type ReglaBancaria = {
-  id: string
-  texto_busqueda: string | null
-  rut_detectado: string | null
-  tipo_movimiento: string | null
-  tercero_tipo: string | null
-  cliente_id: string | null
-  proveedor_id: string | null
-  categoria_id: string | null
-  centro_costo_id: string | null
-  descripcion_sugerida: string | null
-}
-
-type FilaImportada = {
-  id: string
+type UltimaImportacionRow = {
+  importacion_id: string
+  empresa_id: string
   cuenta_bancaria_id: string
-  fecha: string | null
-  descripcion_original: string
-  descripcion_editada: string | null
-  categoria_id: string | null
-  centro_costo_id: string | null
-  cliente_id: string | null
-  proveedor_id: string | null
-  rut_detectado: string | null
-  cargo: number
-  abono: number
-  saldo: number | null
-  tipo_sugerido: string | null
-  estado: string
-  movimiento_id: string | null
-  banco_importaciones: {
-    banco: string
-    nombre_archivo: string
-    created_at: string
-    cuentas_bancarias: {
-      banco: string
-      nombre_cuenta: string
-      numero_cuenta: string | null
-    } | null
-  } | null
+  banco: string | null
+  nombre_cuenta: string | null
+  numero_cuenta: string | null
+  tipo_cuenta: string | null
+  formato: string | null
+  nombre_archivo: string | null
+  hash_archivo: string | null
+  fecha_desde: string | null
+  fecha_hasta: string | null
+  fecha_minima_real?: string | null
+  fecha_maxima_real?: string | null
+  total_filas: number | null
+  total_validas: number | null
+  total_duplicadas: number | null
+  total_importadas: number | null
+  total_cargos: number | null
+  total_abonos: number | null
+  estado: string | null
+  observacion: string | null
+  created_at: string | null
+  filas_pendientes: number | null
+  filas_conciliadas: number | null
+  filas_marcadas_duplicadas: number | null
 }
 
-function formatCurrency(value: number | null | undefined) {
-  const amount = Number(value ?? 0)
+type ImportacionResumenRow = UltimaImportacionRow
 
-  return new Intl.NumberFormat('es-CL', {
-    style: 'currency',
-    currency: 'CLP',
-    maximumFractionDigits: 0,
-  }).format(amount)
+type EstadoCarga = 'idle' | 'loading' | 'ready' | 'error'
+
+function formatDate(value?: string | null) {
+  if (!value) return 'Sin fecha'
+
+  const [year, month, day] = value.slice(0, 10).split('-')
+  if (!year || !month || !day) return value
+
+  return `${day}-${month}-${year}`
 }
 
-function formatDate(value: string | null) {
-  if (!value) return '-'
+function formatDateTime(value?: string | null) {
+  if (!value) return 'Sin fecha'
 
-  const date = new Date(`${value}T00:00:00`)
+  const date = new Date(value)
   if (Number.isNaN(date.getTime())) return value
 
   return new Intl.DateTimeFormat('es-CL', {
     dateStyle: 'short',
+    timeStyle: 'short',
   }).format(date)
 }
 
-function normalizarRut(value: string | null | undefined) {
-  return String(value ?? '')
-    .replace(/\./g, '')
-    .replace(/\s/g, '')
-    .toUpperCase()
-    .trim()
+function formatNumber(value?: number | null) {
+  return new Intl.NumberFormat('es-CL').format(Number(value ?? 0))
 }
 
-function normalizarTexto(value: string | null | undefined) {
-  return String(value ?? '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/\s+/g, ' ')
-    .trim()
+function formatMoney(value?: number | null) {
+  return new Intl.NumberFormat('es-CL', {
+    style: 'currency',
+    currency: 'CLP',
+    maximumFractionDigits: 0,
+  }).format(Number(value ?? 0))
 }
 
-function buscarReglaParaFila(fila: FilaImportada, reglas: ReglaBancaria[]) {
-  const rutFila = normalizarRut(fila.rut_detectado)
-  const textoFila = normalizarTexto(fila.descripcion_original)
-  const tipoFila = fila.tipo_sugerido || ''
-
-  const reglaPorRut = reglas.find((regla) => {
-    const rutRegla = normalizarRut(regla.rut_detectado)
-
-    if (!rutFila || !rutRegla || rutFila !== rutRegla) return false
-    if (regla.tipo_movimiento && regla.tipo_movimiento !== tipoFila) return false
-
-    return true
-  })
-
-  if (reglaPorRut) return reglaPorRut
-
-  return reglas.find((regla) => {
-    const textoRegla = normalizarTexto(regla.texto_busqueda)
-
-    if (!textoRegla) return false
-    if (regla.tipo_movimiento && regla.tipo_movimiento !== tipoFila) return false
-
-    return textoFila.includes(textoRegla) || textoRegla.includes(textoFila)
-  })
+function getCuentaLabel(row: Pick<UltimaImportacionRow, 'banco' | 'nombre_cuenta' | 'numero_cuenta'>) {
+  const banco = row.banco || 'Banco sin identificar'
+  const cuenta = row.nombre_cuenta || 'Cuenta bancaria'
+  const numero = row.numero_cuenta ? ` · ${row.numero_cuenta}` : ''
+  return `${banco} · ${cuenta}${numero}`
 }
 
-function BancosImportacionesContent() {
-  const [empresaId, setEmpresaId] = useState('')
-  const [filas, setFilas] = useState<FilaImportada[]>([])
-  const [loading, setLoading] = useState(true)
-  const [procesandoId, setProcesandoId] = useState('')
-  const [guardandoReglaId, setGuardandoReglaId] = useState('')
-  const [descripcionesEditadas, setDescripcionesEditadas] = useState<Record<string, string>>({})
+function getFechaDesde(row: Pick<UltimaImportacionRow, 'fecha_desde' | 'fecha_minima_real'>) {
+  return row.fecha_desde || row.fecha_minima_real || null
+}
 
-  const [categorias, setCategorias] = useState<Categoria[]>([])
-  const [centrosCosto, setCentrosCosto] = useState<CentroCosto[]>([])
-  const [clientes, setClientes] = useState<Cliente[]>([])
-  const [proveedores, setProveedores] = useState<Proveedor[]>([])
-  const [cuentasBancarias, setCuentasBancarias] = useState<CuentaBancaria[]>([])
-  const [reglas, setReglas] = useState<ReglaBancaria[]>([])
+function getFechaHasta(row: Pick<UltimaImportacionRow, 'fecha_hasta' | 'fecha_maxima_real'>) {
+  return row.fecha_hasta || row.fecha_maxima_real || null
+}
 
-  const [categoriasPorFila, setCategoriasPorFila] = useState<Record<string, string>>({})
-  const [centrosPorFila, setCentrosPorFila] = useState<Record<string, string>>({})
-  const [clientesPorFila, setClientesPorFila] = useState<Record<string, string>>({})
-  const [proveedoresPorFila, setProveedoresPorFila] = useState<Record<string, string>>({})
-  const [cuentasContrapartePorFila, setCuentasContrapartePorFila] = useState<Record<string, string>>({})
-  const [descripcionesTransferenciaPorFila, setDescripcionesTransferenciaPorFila] = useState<Record<string, string>>({})
+function getEstadoLabel(estado?: string | null) {
+  if (!estado) return 'Sin estado'
 
-  const [filtroEstado, setFiltroEstado] = useState('pendiente')
+  const labels: Record<string, string> = {
+    vista_previa: 'Vista previa',
+    pendiente_revision: 'Pendiente revisión',
+    procesada: 'Procesada',
+    procesada_con_duplicados: 'Procesada con duplicados',
+    sin_movimientos: 'Sin movimientos',
+    rechazada: 'Rechazada',
+    anulada: 'Anulada',
+  }
+
+  return labels[estado] || estado.replaceAll('_', ' ')
+}
+
+function getEstadoClass(estado?: string | null) {
+  if (estado === 'procesada') return 'border-emerald-200 bg-emerald-50 text-emerald-700'
+  if (estado === 'sin_movimientos') return 'border-slate-200 bg-slate-50 text-slate-600'
+  if (estado === 'rechazada' || estado === 'anulada') return 'border-rose-200 bg-rose-50 text-rose-700'
+  if (estado === 'procesada_con_duplicados') return 'border-amber-200 bg-amber-50 text-amber-700'
+  return 'border-blue-200 bg-blue-50 text-blue-700'
+}
+
+export default function BancoImportacionesPage() {
+  const [empresaActivaId, setEmpresaActivaId] = useState('')
+  const [estadoCarga, setEstadoCarga] = useState<EstadoCarga>('idle')
   const [error, setError] = useState('')
-  const [success, setSuccess] = useState('')
+  const [ultimasImportaciones, setUltimasImportaciones] = useState<UltimaImportacionRow[]>([])
+  const [historial, setHistorial] = useState<ImportacionResumenRow[]>([])
 
-  useEffect(() => {
-    const activeEmpresa =
-      typeof window !== 'undefined'
-        ? window.localStorage.getItem('empresa_activa_id') || ''
-        : ''
+  const cargarDatos = async (empresaId: string) => {
+    if (!empresaId) return
 
-    setEmpresaId(activeEmpresa)
-  }, [])
+    setEstadoCarga('loading')
+    setError('')
 
-
-  useEffect(() => {
-    const loadCuentasBancarias = async () => {
-      if (!empresaId) {
-        setCuentasBancarias([])
-        return
-      }
-
-      const { data, error: cuentasError } = await supabase
-        .from('cuentas_bancarias')
-        .select('id, banco, nombre_cuenta, numero_cuenta')
+    const [ultimasResp, historialResp] = await Promise.all([
+      supabase
+        .from('v_banco_ultima_importacion_por_cuenta')
+        .select('*')
         .eq('empresa_id', empresaId)
-        .eq('activa', true)
-        .is('deleted_at', null)
         .order('banco', { ascending: true })
-        .order('nombre_cuenta', { ascending: true })
-
-      if (cuentasError) {
-        console.error(cuentasError)
-        setCuentasBancarias([])
-        return
-      }
-
-      setCuentasBancarias((data ?? []) as CuentaBancaria[])
-    }
-
-    void loadCuentasBancarias()
-  }, [empresaId])
-  const loadFilas = async () => {
-    try {
-      setLoading(true)
-      setError('')
-
-      if (!empresaId) return
-
-      let query = supabase
-        .from('banco_importacion_filas')
-        .select(
-          `
-            id,
-            fecha,
-            descripcion_original,
-            descripcion_editada,
-            categoria_id,
-            centro_costo_id,
-            cliente_id,
-            proveedor_id,
-            rut_detectado,
-            cargo,
-            abono,
-            saldo,
-            tipo_sugerido,
-            estado,
-            movimiento_id,
-            banco_importaciones (
-              banco,
-              nombre_archivo,
-              created_at,
-              cuentas_bancarias (
-                banco,
-                nombre_cuenta,
-                numero_cuenta
-              )
-            )
-          `
-        )
+        .order('nombre_cuenta', { ascending: true }),
+      supabase
+        .from('v_banco_importaciones_resumen')
+        .select('*')
         .eq('empresa_id', empresaId)
         .order('created_at', { ascending: false })
-        .limit(200)
+        .limit(100),
+    ])
 
-      if (filtroEstado !== 'todos') {
-        query = query.eq('estado', filtroEstado)
-      }
-
-      const [filasResp, categoriasResp, centrosResp, clientesResp, proveedoresResp, reglasResp] =
-        await Promise.all([
-          query,
-          supabase
-            .from('categorias')
-            .select('id, nombre, tipo, requiere_centro_costo')
-            .eq('empresa_id', empresaId)
-            .eq('activa', true)
-            .is('deleted_at', null)
-            .order('tipo', { ascending: true })
-            .order('orden', { ascending: true })
-            .order('nombre', { ascending: true }),
-          supabase
-            .from('centros_costo')
-            .select('id, nombre, codigo')
-            .eq('empresa_id', empresaId)
-            .eq('activo', true)
-            .is('deleted_at', null)
-            .order('orden', { ascending: true })
-            .order('nombre', { ascending: true }),
-          supabase
-            .from('clientes')
-            .select('id, nombre, rut')
-            .eq('empresa_id', empresaId)
-            .eq('activo', true)
-            .is('deleted_at', null)
-            .order('nombre', { ascending: true }),
-          supabase
-            .from('proveedores')
-            .select('id, nombre, rut')
-            .eq('empresa_id', empresaId)
-            .eq('activo', true)
-            .is('deleted_at', null)
-            .order('nombre', { ascending: true }),
-          supabase
-            .from('reglas_bancarias')
-            .select(
-              'id, texto_busqueda, rut_detectado, tipo_movimiento, tercero_tipo, cliente_id, proveedor_id, categoria_id, centro_costo_id, descripcion_sugerida'
-            )
-            .eq('empresa_id', empresaId)
-            .eq('activa', true)
-            .order('updated_at', { ascending: false }),
-        ])
-
-      if (filasResp?.error) throw new Error(filasResp.error.message)
-      if (categoriasResp?.error) throw new Error(categoriasResp.error.message)
-      if (centrosResp?.error) throw new Error(centrosResp.error.message)
-      if (clientesResp?.error) throw new Error(clientesResp.error.message)
-      if (proveedoresResp?.error) throw new Error(proveedoresResp.error.message)
-      if (reglasResp?.error) throw new Error(reglasResp.error.message)
-
-      const rows = (filasResp?.data ?? []) as unknown as FilaImportada[]
-      const categoriasData = (categoriasResp?.data ?? []) as Categoria[]
-      const centrosData = (centrosResp?.data ?? []) as CentroCosto[]
-      const clientesData = (clientesResp?.data ?? []) as Cliente[]
-      const proveedoresData = (proveedoresResp?.data ?? []) as Proveedor[]
-      const reglasData = (reglasResp?.data ?? []) as ReglaBancaria[]
-
-      setFilas(rows)
-      setCategorias(categoriasData)
-      setCentrosCosto(centrosData)
-      setClientes(clientesData)
-      setProveedores(proveedoresData)
-      setReglas(reglasData)
-
-      setDescripcionesEditadas((prev) => {
-        const next = { ...prev }
-
-        rows.forEach((fila) => {
-          if (fila.id in next) return
-
-          const regla = buscarReglaParaFila(fila, reglasData)
-
-          next[fila.id] =
-            fila.descripcion_editada ||
-            regla?.descripcion_sugerida ||
-            fila.descripcion_original
-        })
-
-        return next
-      })
-
-      setCategoriasPorFila((prev) => {
-        const next = { ...prev }
-
-        rows.forEach((fila) => {
-          if (fila.id in next) return
-
-          const regla = buscarReglaParaFila(fila, reglasData)
-          next[fila.id] = fila.categoria_id || regla?.categoria_id || ''
-        })
-
-        return next
-      })
-
-      setCentrosPorFila((prev) => {
-        const next = { ...prev }
-
-        rows.forEach((fila) => {
-          if (fila.id in next) return
-
-          const regla = buscarReglaParaFila(fila, reglasData)
-          next[fila.id] = fila.centro_costo_id || regla?.centro_costo_id || ''
-        })
-
-        return next
-      })
-
-      setClientesPorFila((prev) => {
-        const next = { ...prev }
-
-        rows.forEach((fila) => {
-          if (fila.id in next) return
-
-          const regla = buscarReglaParaFila(fila, reglasData)
-
-          if (fila.cliente_id) {
-            next[fila.id] = fila.cliente_id
-            return
-          }
-
-          if (regla?.cliente_id) {
-            next[fila.id] = regla.cliente_id
-            return
-          }
-
-          if (fila.tipo_sugerido !== 'ingreso') {
-            next[fila.id] = ''
-            return
-          }
-
-          const rutFila = normalizarRut(fila.rut_detectado)
-          const match = clientesData.find(
-            (cliente) => normalizarRut(cliente.rut) === rutFila && rutFila
-          )
-
-          next[fila.id] = match?.id || ''
-        })
-
-        return next
-      })
-
-      setProveedoresPorFila((prev) => {
-        const next = { ...prev }
-
-        rows.forEach((fila) => {
-          if (fila.id in next) return
-
-          const regla = buscarReglaParaFila(fila, reglasData)
-
-          if (fila.proveedor_id) {
-            next[fila.id] = fila.proveedor_id
-            return
-          }
-
-          if (regla?.proveedor_id) {
-            next[fila.id] = regla.proveedor_id
-            return
-          }
-
-          if (fila.tipo_sugerido !== 'egreso') {
-            next[fila.id] = ''
-            return
-          }
-
-          const rutFila = normalizarRut(fila.rut_detectado)
-          const match = proveedoresData.find(
-            (proveedor) => normalizarRut(proveedor.rut) === rutFila && rutFila
-          )
-
-          next[fila.id] = match?.id || ''
-        })
-
-        return next
-      })
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'No se pudieron cargar las filas importadas.')
-    } finally {
-      setLoading(false)
+    if (ultimasResp.error || historialResp.error) {
+      const message = ultimasResp.error?.message || historialResp.error?.message || 'No se pudo cargar el historial.'
+      setError(message)
+      setEstadoCarga('error')
+      return
     }
+
+    setUltimasImportaciones((ultimasResp.data ?? []) as UltimaImportacionRow[])
+    setHistorial((historialResp.data ?? []) as ImportacionResumenRow[])
+    setEstadoCarga('ready')
   }
 
   useEffect(() => {
-    void loadFilas()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [empresaId, filtroEstado])
+    const storedEmpresaId = window.localStorage.getItem(STORAGE_ID_KEY) || ''
+    setEmpresaActivaId(storedEmpresaId)
 
-  const resumen = useMemo(() => {
-    return filas.reduce(
-      (acc, fila) => {
-        acc.total += 1
-        acc.cargos += Number(fila.cargo || 0)
-        acc.abonos += Number(fila.abono || 0)
+    if (storedEmpresaId) {
+      void cargarDatos(storedEmpresaId)
+    } else {
+      setEstadoCarga('ready')
+    }
+  }, [])
+
+  const resumenGlobal = useMemo(() => {
+    return historial.reduce(
+      (acc, row) => {
+        acc.totalArchivos += 1
+        acc.totalFilas += Number(row.total_filas ?? 0)
+        acc.totalDuplicadas += Number(row.total_duplicadas ?? row.filas_marcadas_duplicadas ?? 0)
+        acc.totalPendientes += Number(row.filas_pendientes ?? 0)
+        acc.totalConciliadas += Number(row.filas_conciliadas ?? 0)
         return acc
       },
-      { total: 0, cargos: 0, abonos: 0 }
+      {
+        totalArchivos: 0,
+        totalFilas: 0,
+        totalDuplicadas: 0,
+        totalPendientes: 0,
+        totalConciliadas: 0,
+      }
     )
-  }, [filas])
+  }, [historial])
 
-  const crearMovimiento = async (filaId: string) => {
-    try {
-      setProcesandoId(filaId)
-      setError('')
-      setSuccess('')
+  const hayDuplicados = resumenGlobal.totalDuplicadas > 0
+  const hayPendientes = resumenGlobal.totalPendientes > 0
 
-      const { data: sessionData } = await supabase.auth.getSession()
-      const token = sessionData.session?.access_token
-
-      if (!token) {
-        throw new Error('No hay sesión activa.')
-      }
-
-      const response = await fetch('/api/bancos/crear-movimiento-desde-fila', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          filaId,
-          descripcionEditada: descripcionesEditadas[filaId] || '',
-          categoriaId: categoriasPorFila[filaId] || '',
-          centroCostoId: centrosPorFila[filaId] || '',
-          clienteId: clientesPorFila[filaId] || '',
-          proveedorId: proveedoresPorFila[filaId] || '',
-        }),
-      })
-
-      const json = await response.json()
-
-      if (!response.ok) {
-        throw new Error(json.error || 'No se pudo crear el movimiento.')
-      }
-
-      setSuccess('Movimiento creado correctamente desde la cartola.')
-      await loadFilas()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'No se pudo crear el movimiento.')
-    } finally {
-      setProcesandoId('')
-    }
-  }
-
-  const guardarRegla = async (filaId: string) => {
-    try {
-      setGuardandoReglaId(filaId)
-      setError('')
-      setSuccess('')
-
-      const { data: sessionData } = await supabase.auth.getSession()
-      const token = sessionData.session?.access_token
-
-      if (!token) {
-        throw new Error('No hay sesión activa.')
-      }
-
-      const response = await fetch('/api/bancos/guardar-regla-bancaria', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          filaId,
-          descripcionSugerida: descripcionesEditadas[filaId] || '',
-          categoriaId: categoriasPorFila[filaId] || '',
-          centroCostoId: centrosPorFila[filaId] || '',
-          clienteId: clientesPorFila[filaId] || '',
-          proveedorId: proveedoresPorFila[filaId] || '',
-        }),
-      })
-
-      const json = await response.json()
-
-      if (!response.ok) {
-        throw new Error(json.error || 'No se pudo guardar la regla bancaria.')
-      }
-
-      setSuccess(
-        json.accion === 'actualizada'
-          ? 'Regla bancaria actualizada correctamente.'
-          : 'Regla bancaria guardada correctamente.'
-      )
-
-      await loadFilas()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'No se pudo guardar la regla bancaria.')
-    } finally {
-      setGuardandoReglaId('')
-    }
-  }
-
-  const registrarTransferencia = async (filaId: string) => {
-    try {
-      setProcesandoId(filaId)
-      setError('')
-      setSuccess('')
-
-      const cuentaContraparteId = cuentasContrapartePorFila[filaId] || ''
-
-      if (!cuentaContraparteId) {
-        throw new Error('Debes seleccionar la cuenta contraparte de la transferencia.')
-      }
-
-      const { data: sessionData } = await supabase.auth.getSession()
-      const token = sessionData.session?.access_token
-
-      if (!token) {
-        throw new Error('No hay sesión activa.')
-      }
-
-      const response = await fetch('/api/bancos/registrar-transferencia-desde-fila', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          filaId,
-          cuentaContraparteId,
-          descripcion: descripcionesTransferenciaPorFila[filaId] || '',
-        }),
-      })
-
-      const json = await response.json()
-
-      if (!response.ok) {
-        throw new Error(json.error || 'No se pudo registrar la transferencia interna.')
-      }
-
-      setSuccess('Transferencia interna registrada correctamente.')
-      await loadFilas()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'No se pudo registrar la transferencia interna.')
-    } finally {
-      setProcesandoId('')
-    }
-  }
   return (
-    <div className="space-y-6">
-      <EmpresaActivaBanner modulo="Bancos" />
+    <main className="min-h-screen bg-slate-50 px-4 py-6 sm:px-6 lg:px-8">
+      <div className="mx-auto flex max-w-7xl flex-col gap-6">
+        <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <p className="text-sm font-medium uppercase tracking-[0.18em] text-slate-500">
+                Bancos
+              </p>
+              <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">
+                Historial de importaciones bancarias
+              </h1>
+              <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
+                Revisa qué archivos bancarios fueron cargados, qué rango de fechas contienen,
+                cuántos movimientos quedaron pendientes, conciliados o marcados como duplicados.
+              </p>
+            </div>
 
-      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-          <div>
-            <p className="text-sm font-medium text-slate-500">Bancos</p>
-            <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900">
-              Bandeja de importaciones bancarias
-            </h1>
-            <p className="mt-2 text-sm text-slate-500">
-              Revisa las filas importadas desde cartolas y crea movimientos
-              bancarios pagados.
+            <div className="flex flex-wrap gap-2">
+              <Link
+                href="/bancos"
+                className="rounded-2xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+              >
+                Volver a bancos
+              </Link>
+              <button
+                type="button"
+                onClick={() => empresaActivaId && cargarDatos(empresaActivaId)}
+                disabled={estadoCarga === 'loading' || !empresaActivaId}
+                className="rounded-2xl bg-slate-950 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {estadoCarga === 'loading' ? 'Actualizando...' : 'Actualizar'}
+              </button>
+            </div>
+          </div>
+        </section>
+
+        {!empresaActivaId && (
+          <section className="rounded-3xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-800">
+            No hay empresa activa seleccionada. Selecciona una empresa para ver sus importaciones bancarias.
+          </section>
+        )}
+
+        {error && (
+          <section className="rounded-3xl border border-rose-200 bg-rose-50 p-5 text-sm text-rose-700">
+            {error}
+          </section>
+        )}
+
+        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+          <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Archivos</p>
+            <p className="mt-3 text-3xl font-semibold text-slate-950">{formatNumber(resumenGlobal.totalArchivos)}</p>
+            <p className="mt-1 text-xs text-slate-500">Últimos 100 registros</p>
+          </div>
+          <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Movimientos</p>
+            <p className="mt-3 text-3xl font-semibold text-slate-950">{formatNumber(resumenGlobal.totalFilas)}</p>
+            <p className="mt-1 text-xs text-slate-500">Filas importadas o revisadas</p>
+          </div>
+          <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Duplicados</p>
+            <p className={hayDuplicados ? 'mt-3 text-3xl font-semibold text-amber-600' : 'mt-3 text-3xl font-semibold text-slate-950'}>
+              {formatNumber(resumenGlobal.totalDuplicadas)}
+            </p>
+            <p className="mt-1 text-xs text-slate-500">Detectados por importación</p>
+          </div>
+          <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Pendientes</p>
+            <p className={hayPendientes ? 'mt-3 text-3xl font-semibold text-blue-600' : 'mt-3 text-3xl font-semibold text-slate-950'}>
+              {formatNumber(resumenGlobal.totalPendientes)}
+            </p>
+            <p className="mt-1 text-xs text-slate-500">Por conciliar</p>
+          </div>
+          <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Conciliados</p>
+            <p className="mt-3 text-3xl font-semibold text-emerald-600">{formatNumber(resumenGlobal.totalConciliadas)}</p>
+            <p className="mt-1 text-xs text-slate-500">Ya vinculados</p>
+          </div>
+        </section>
+
+        {hayDuplicados && (
+          <section className="rounded-3xl border border-amber-200 bg-amber-50 p-5 text-sm leading-6 text-amber-800">
+            Hay movimientos marcados como duplicados en el historial. Antes de volver a subir una cartola,
+            revisa el rango de fechas de la última carga por cuenta para evitar reprocesar archivos antiguos.
+          </section>
+        )}
+
+        <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h2 className="text-xl font-semibold tracking-tight text-slate-950">
+                Última importación válida por cuenta
+              </h2>
+              <p className="mt-1 text-sm text-slate-500">
+                Úsalo como referencia antes de descargar o subir nuevas cartolas.
+              </p>
+            </div>
+          </div>
+
+          {estadoCarga === 'loading' ? (
+            <p className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">Cargando información...</p>
+          ) : ultimasImportaciones.length === 0 ? (
+            <p className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">
+              Todavía no hay importaciones bancarias registradas para esta empresa.
+            </p>
+          ) : (
+            <div className="grid gap-4 lg:grid-cols-2">
+              {ultimasImportaciones.map((row) => {
+                const fechaDesde = getFechaDesde(row)
+                const fechaHasta = getFechaHasta(row)
+                const duplicadas = Number(row.total_duplicadas ?? row.filas_marcadas_duplicadas ?? 0)
+
+                return (
+                  <article
+                    key={row.importacion_id}
+                    className="rounded-3xl border border-slate-200 bg-slate-50 p-5"
+                  >
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <h3 className="text-base font-semibold text-slate-950">
+                          {getCuentaLabel(row)}
+                        </h3>
+                        <p className="mt-1 text-xs text-slate-500">
+                          Última carga: {formatDateTime(row.created_at)}
+                        </p>
+                      </div>
+                      <span className={`inline-flex w-fit rounded-full border px-3 py-1 text-xs font-semibold ${getEstadoClass(row.estado)}`}>
+                        {getEstadoLabel(row.estado)}
+                      </span>
+                    </div>
+
+                    <dl className="mt-5 grid gap-3 sm:grid-cols-2">
+                      <div className="rounded-2xl bg-white p-3">
+                        <dt className="text-xs text-slate-500">Rango cargado</dt>
+                        <dd className="mt-1 text-sm font-semibold text-slate-900">
+                          {formatDate(fechaDesde)} al {formatDate(fechaHasta)}
+                        </dd>
+                      </div>
+                      <div className="rounded-2xl bg-white p-3">
+                        <dt className="text-xs text-slate-500">Archivo</dt>
+                        <dd className="mt-1 truncate text-sm font-semibold text-slate-900" title={row.nombre_archivo || ''}>
+                          {row.nombre_archivo || 'Sin nombre de archivo'}
+                        </dd>
+                      </div>
+                      <div className="rounded-2xl bg-white p-3">
+                        <dt className="text-xs text-slate-500">Movimientos</dt>
+                        <dd className="mt-1 text-sm font-semibold text-slate-900">
+                          {formatNumber(row.total_filas)} filas · {formatNumber(row.filas_conciliadas)} conciliadas · {formatNumber(row.filas_pendientes)} pendientes
+                        </dd>
+                      </div>
+                      <div className="rounded-2xl bg-white p-3">
+                        <dt className="text-xs text-slate-500">Duplicados</dt>
+                        <dd className={duplicadas > 0 ? 'mt-1 text-sm font-semibold text-amber-700' : 'mt-1 text-sm font-semibold text-slate-900'}>
+                          {formatNumber(duplicadas)} detectados
+                        </dd>
+                      </div>
+                    </dl>
+                  </article>
+                )
+              })}
+            </div>
+          )}
+        </section>
+
+        <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+          <div className="border-b border-slate-200 p-6">
+            <h2 className="text-xl font-semibold tracking-tight text-slate-950">
+              Historial de archivos importados
+            </h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Revisión de las últimas 100 importaciones registradas en la empresa activa.
             </p>
           </div>
 
-          <div className="flex flex-wrap gap-3">
-            <Link
-              href="/bancos/importar"
-              className="inline-flex items-center justify-center rounded-xl border border-[#163A5F] bg-white px-4 py-2 text-sm font-semibold text-[#163A5F] hover:bg-blue-50"
-            >
-              Importar nueva cartola
-            </Link>
-
-            <Link
-              href="/bancos"
-              className="inline-flex items-center justify-center rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
-            >
-              Volver a bancos
-            </Link>
-          </div>
-        </div>
-      </div>
-
-      {error ? (
-        <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {error}
-        </div>
-      ) : null}
-
-      {success ? (
-        <div className="rounded-2xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
-          {success}
-        </div>
-      ) : null}
-
-      <div className="grid gap-4 md:grid-cols-4">
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-sm text-slate-500">Filas</p>
-          <p className="mt-2 text-xl font-bold text-slate-900">{resumen.total}</p>
-        </div>
-
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-sm text-slate-500">Abonos</p>
-          <p className="mt-2 text-xl font-bold text-slate-900">
-            {formatCurrency(resumen.abonos)}
-          </p>
-        </div>
-
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-sm text-slate-500">Cargos</p>
-          <p className="mt-2 text-xl font-bold text-slate-900">
-            {formatCurrency(resumen.cargos)}
-          </p>
-        </div>
-
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <label className="mb-2 block text-sm font-medium text-slate-700">
-            Estado
-          </label>
-          <select
-            value={filtroEstado}
-            onChange={(event) => setFiltroEstado(event.target.value)}
-            className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
-          >
-            <option value="pendiente">Pendientes</option>
-            <option value="importada">Importadas</option>
-            <option value="omitida">Omitidas</option>
-            <option value="todos">Todos</option>
-          </select>
-        </div>
-      </div>
-
-      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="mb-4">
-          <h2 className="text-lg font-semibold text-slate-900">
-            Filas importadas
-          </h2>
-          <p className="mt-1 text-sm text-slate-500">
-            Edita la descripción, selecciona categoría, centro de costo, tercero y guarda reglas para futuras cartolas.
-          </p>
-        </div>
-
-        {loading ? (
-          <div className="rounded-2xl border border-dashed border-slate-300 p-8 text-sm text-slate-500">
-            Cargando filas importadas...
-          </div>
-        ) : filas.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-slate-300 p-8 text-sm text-slate-500">
-            No hay filas para el filtro seleccionado.
-          </div>
-        ) : (
-          <div className="overflow-hidden rounded-2xl border border-slate-200">
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-sm">
-                <thead className="bg-slate-50">
-                  <tr className="text-left text-slate-600">
-                    <th className="px-4 py-3 font-semibold">Fecha</th>
-                    <th className="px-4 py-3 font-semibold">Cuenta</th>
-                    <th className="px-4 py-3 font-semibold">Descripción</th>
-                    <th className="px-4 py-3 font-semibold">RUT</th>
-                    <th className="px-4 py-3 font-semibold text-right">Cargo</th>
-                    <th className="px-4 py-3 font-semibold text-right">Abono</th>
-                    <th className="px-4 py-3 font-semibold">Estado</th>
-                    <th className="px-4 py-3 font-semibold text-right">Acciones</th>
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-slate-200 text-sm">
+              <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                <tr>
+                  <th className="px-5 py-3">Fecha carga</th>
+                  <th className="px-5 py-3">Cuenta</th>
+                  <th className="px-5 py-3">Archivo</th>
+                  <th className="px-5 py-3">Rango</th>
+                  <th className="px-5 py-3 text-right">Filas</th>
+                  <th className="px-5 py-3 text-right">Duplicadas</th>
+                  <th className="px-5 py-3 text-right">Pendientes</th>
+                  <th className="px-5 py-3 text-right">Conciliadas</th>
+                  <th className="px-5 py-3 text-right">Cargos</th>
+                  <th className="px-5 py-3 text-right">Abonos</th>
+                  <th className="px-5 py-3">Estado</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 bg-white">
+                {estadoCarga === 'loading' ? (
+                  <tr>
+                    <td className="px-5 py-6 text-slate-500" colSpan={11}>Cargando historial...</td>
                   </tr>
-                </thead>
-
-                <tbody>
-                  {filas.map((fila) => {
-                    const cuenta = fila.banco_importaciones?.cuentas_bancarias
-                    const esIngreso = fila.tipo_sugerido === 'ingreso'
-                    const esEgreso = fila.tipo_sugerido === 'egreso'
-                    const reglaAplicada = buscarReglaParaFila(fila, reglas)
+                ) : historial.length === 0 ? (
+                  <tr>
+                    <td className="px-5 py-6 text-slate-500" colSpan={11}>No hay importaciones registradas.</td>
+                  </tr>
+                ) : (
+                  historial.map((row) => {
+                    const fechaDesde = getFechaDesde(row)
+                    const fechaHasta = getFechaHasta(row)
+                    const duplicadas = Number(row.total_duplicadas ?? row.filas_marcadas_duplicadas ?? 0)
 
                     return (
-                      <tr key={fila.id} className="border-t border-slate-100 text-slate-700">
-                        <td className="whitespace-nowrap px-4 py-3">
-                          {formatDate(fila.fecha)}
+                      <tr key={row.importacion_id} className="align-top hover:bg-slate-50/70">
+                        <td className="whitespace-nowrap px-5 py-4 text-slate-600">
+                          {formatDateTime(row.created_at)}
                         </td>
-
-                        <td className="min-w-[220px] px-4 py-3">
-                          <div className="font-medium text-slate-900">
-                            {cuenta?.banco || fila.banco_importaciones?.banco || '-'}
-                          </div>
-                          <div className="mt-1 text-xs text-slate-500">
-                            {cuenta?.nombre_cuenta || '-'}
-                            {cuenta?.numero_cuenta ? ` (${cuenta.numero_cuenta})` : ''}
-                          </div>
+                        <td className="min-w-64 px-5 py-4">
+                          <div className="font-medium text-slate-900">{row.banco || 'Banco sin identificar'}</div>
+                          <div className="text-xs text-slate-500">{row.nombre_cuenta || 'Cuenta bancaria'} {row.numero_cuenta ? `· ${row.numero_cuenta}` : ''}</div>
                         </td>
-
-                        <td className="min-w-[440px] px-4 py-3">
-                          <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-                            Glosa banco
+                        <td className="max-w-72 px-5 py-4">
+                          <div className="truncate font-medium text-slate-900" title={row.nombre_archivo || ''}>
+                            {row.nombre_archivo || 'Sin nombre'}
                           </div>
-
-                          <div className="mt-1 text-xs text-slate-600">
-                            {fila.descripcion_original}
-                          </div>
-
-                          {reglaAplicada ? (
-                            <div className="mt-2 rounded-xl bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
-                              Regla aplicada automáticamente.
-                            </div>
-                          ) : null}
-
-                          <textarea
-                            value={descripcionesEditadas[fila.id] || ''}
-                            onChange={(event) =>
-                              setDescripcionesEditadas((prev) => ({
-                                ...prev,
-                                [fila.id]: event.target.value,
-                              }))
-                            }
-                            rows={2}
-                            disabled={Boolean(fila.movimiento_id)}
-                            placeholder="Descripción clara para el movimiento"
-                            className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-[#163A5F] disabled:bg-slate-50 disabled:text-slate-500"
-                          />
-
-                          <div className="mt-3 grid gap-2 md:grid-cols-2">
-                            <div>
-                              <label className="mb-1 block text-xs font-semibold text-slate-500">
-                                Categoría
-                              </label>
-                              <select
-                                value={categoriasPorFila[fila.id] || ''}
-                                onChange={(event) =>
-                                  setCategoriasPorFila((prev) => ({
-                                    ...prev,
-                                    [fila.id]: event.target.value,
-                                  }))
-                                }
-                                disabled={Boolean(fila.movimiento_id)}
-                                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 outline-none focus:border-[#163A5F] disabled:bg-slate-50 disabled:text-slate-500"
-                              >
-                                <option value="">Sin categoría</option>
-                                {categorias
-                                  .filter((categoria) => {
-                                    if (!fila.tipo_sugerido) return true
-                                    return categoria.tipo === fila.tipo_sugerido
-                                  })
-                                  .map((categoria) => (
-                                    <option key={categoria.id} value={categoria.id}>
-                                      {categoria.nombre}
-                                    </option>
-                                  ))}
-                              </select>
-                            </div>
-
-                            <div>
-                              <label className="mb-1 block text-xs font-semibold text-slate-500">
-                                Centro de costo
-                              </label>
-                              <select
-                                value={centrosPorFila[fila.id] || ''}
-                                onChange={(event) =>
-                                  setCentrosPorFila((prev) => ({
-                                    ...prev,
-                                    [fila.id]: event.target.value,
-                                  }))
-                                }
-                                disabled={Boolean(fila.movimiento_id)}
-                                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 outline-none focus:border-[#163A5F] disabled:bg-slate-50 disabled:text-slate-500"
-                              >
-                                <option value="">Sin centro</option>
-                                {centrosCosto.map((centro) => (
-                                  <option key={centro.id} value={centro.id}>
-                                    {centro.codigo ? `${centro.codigo} - ` : ''}
-                                    {centro.nombre}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-                          </div>
-
-                          <div className="mt-3 grid gap-2 md:grid-cols-2">
-                            <div>
-                              <label className="mb-1 block text-xs font-semibold text-slate-500">
-                                Cliente
-                              </label>
-                              <select
-                                value={clientesPorFila[fila.id] || ''}
-                                onChange={(event) =>
-                                  setClientesPorFila((prev) => ({
-                                    ...prev,
-                                    [fila.id]: event.target.value,
-                                  }))
-                                }
-                                disabled={Boolean(fila.movimiento_id) || esEgreso}
-                                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 outline-none focus:border-[#163A5F] disabled:bg-slate-50 disabled:text-slate-500"
-                              >
-                                <option value="">
-                                  {esEgreso ? 'No aplica para egreso' : 'Sin cliente'}
-                                </option>
-                                {clientes.map((cliente) => (
-                                  <option key={cliente.id} value={cliente.id}>
-                                    {cliente.rut ? `${cliente.rut} - ` : ''}
-                                    {cliente.nombre}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-
-                            <div>
-                              <label className="mb-1 block text-xs font-semibold text-slate-500">
-                                Proveedor
-                              </label>
-                              <select
-                                value={proveedoresPorFila[fila.id] || ''}
-                                onChange={(event) =>
-                                  setProveedoresPorFila((prev) => ({
-                                    ...prev,
-                                    [fila.id]: event.target.value,
-                                  }))
-                                }
-                                disabled={Boolean(fila.movimiento_id) || esIngreso}
-                                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 outline-none focus:border-[#163A5F] disabled:bg-slate-50 disabled:text-slate-500"
-                              >
-                                <option value="">
-                                  {esIngreso ? 'No aplica para ingreso' : 'Sin proveedor'}
-                                </option>
-                                {proveedores.map((proveedor) => (
-                                  <option key={proveedor.id} value={proveedor.id}>
-                                    {proveedor.rut ? `${proveedor.rut} - ` : ''}
-                                    {proveedor.nombre}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-                          </div>
-                          <div className="mt-3 rounded-2xl border border-purple-200 bg-purple-50 p-3">
-                            <div className="text-xs font-semibold uppercase tracking-wide text-purple-700">
-                              Transferencia interna
-                            </div>
-
-                            <div className="mt-2 grid gap-2 md:grid-cols-2">
-                              <div>
-                                <label className="mb-1 block text-xs font-semibold text-slate-500">
-                                  Cuenta contraparte
-                                </label>
-                                <select
-                                  value={cuentasContrapartePorFila[fila.id] || ''}
-                                  onChange={(event) =>
-                                    setCuentasContrapartePorFila((prev) => ({
-                                      ...prev,
-                                      [fila.id]: event.target.value,
-                                    }))
-                                  }
-                                  disabled={Boolean(fila.movimiento_id) || fila.estado !== 'pendiente'}
-                                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 outline-none focus:border-[#163A5F] disabled:bg-slate-50 disabled:text-slate-500"
-                                >
-                                  <option value="">Seleccionar cuenta</option>
-                                  {cuentasBancarias
-                                    .filter((cuentaBanco) => cuentaBanco.id !== fila.cuenta_bancaria_id)
-                                    .map((cuentaBanco) => (
-                                      <option key={cuentaBanco.id} value={cuentaBanco.id}>
-                                        {cuentaBanco.banco} - {cuentaBanco.nombre_cuenta}
-                                        {cuentaBanco.numero_cuenta ? ` (${cuentaBanco.numero_cuenta})` : ''}
-                                      </option>
-                                    ))}
-                                </select>
-                              </div>
-
-                              <div>
-                                <label className="mb-1 block text-xs font-semibold text-slate-500">
-                                  Descripción transferencia
-                                </label>
-                                <input
-                                  value={descripcionesTransferenciaPorFila[fila.id] || ''}
-                                  onChange={(event) =>
-                                    setDescripcionesTransferenciaPorFila((prev) => ({
-                                      ...prev,
-                                      [fila.id]: event.target.value,
-                                    }))
-                                  }
-                                  disabled={Boolean(fila.movimiento_id) || fila.estado !== 'pendiente'}
-                                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 outline-none focus:border-[#163A5F] disabled:bg-slate-50 disabled:text-slate-500"
-                                />
-                              </div>
-                            </div>
-                          </div>
-                          {fila.rut_detectado ? (
-                            <div className="mt-2 rounded-xl bg-blue-50 px-3 py-2 text-xs text-blue-700">
-                              RUT detectado en cartola: {fila.rut_detectado}
-                            </div>
-                          ) : null}
-
-                          <div className="mt-1 text-xs text-slate-500">
-                            Archivo: {fila.banco_importaciones?.nombre_archivo || '-'}
-                          </div>
+                          <div className="text-xs text-slate-500">{row.formato || 'Formato no definido'}</div>
                         </td>
-
-                        <td className="whitespace-nowrap px-4 py-3">
-                          {fila.rut_detectado || '-'}
+                        <td className="whitespace-nowrap px-5 py-4 text-slate-600">
+                          {formatDate(fechaDesde)} al {formatDate(fechaHasta)}
                         </td>
-
-                        <td className="whitespace-nowrap px-4 py-3 text-right">
-                          {fila.cargo > 0 ? formatCurrency(fila.cargo) : '-'}
+                        <td className="whitespace-nowrap px-5 py-4 text-right font-medium text-slate-900">
+                          {formatNumber(row.total_filas)}
                         </td>
-
-                        <td className="whitespace-nowrap px-4 py-3 text-right">
-                          {fila.abono > 0 ? formatCurrency(fila.abono) : '-'}
+                        <td className={duplicadas > 0 ? 'whitespace-nowrap px-5 py-4 text-right font-semibold text-amber-700' : 'whitespace-nowrap px-5 py-4 text-right text-slate-600'}>
+                          {formatNumber(duplicadas)}
                         </td>
-
-                        <td className="whitespace-nowrap px-4 py-3">
-                          <span
-                            className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
-                              fila.estado === 'importada'
-                                ? 'bg-green-50 text-green-700'
-                                : fila.estado === 'omitida'
-                                  ? 'bg-amber-50 text-amber-700'
-                                  : 'bg-blue-50 text-blue-700'
-                            }`}
-                          >
-                            {fila.estado}
+                        <td className="whitespace-nowrap px-5 py-4 text-right text-slate-600">
+                          {formatNumber(row.filas_pendientes)}
+                        </td>
+                        <td className="whitespace-nowrap px-5 py-4 text-right text-slate-600">
+                          {formatNumber(row.filas_conciliadas)}
+                        </td>
+                        <td className="whitespace-nowrap px-5 py-4 text-right text-slate-600">
+                          {formatMoney(row.total_cargos)}
+                        </td>
+                        <td className="whitespace-nowrap px-5 py-4 text-right text-slate-600">
+                          {formatMoney(row.total_abonos)}
+                        </td>
+                        <td className="whitespace-nowrap px-5 py-4">
+                          <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${getEstadoClass(row.estado)}`}>
+                            {getEstadoLabel(row.estado)}
                           </span>
-                        </td>
-
-                        <td className="whitespace-nowrap px-4 py-3 text-right">
-                          <div className="flex flex-col items-end gap-2">
-                            <button
-                              type="button"
-                              onClick={() => guardarRegla(fila.id)}
-                              disabled={guardandoReglaId === fila.id}
-                              className="rounded-xl border border-emerald-600 bg-white px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-70"
-                            >
-                              {guardandoReglaId === fila.id
-                                ? 'Guardando...'
-                                : 'Guardar regla'}
-                            </button>
-
-                            {fila.estado === 'pendiente' ? (
-                              <button
-                                type="button"
-                                onClick={() => registrarTransferencia(fila.id)}
-                                disabled={procesandoId === fila.id}
-                                className="rounded-xl border border-purple-600 bg-white px-3 py-2 text-xs font-semibold text-purple-700 hover:bg-purple-50 disabled:cursor-not-allowed disabled:opacity-70"
-                              >
-                                {procesandoId === fila.id
-                                  ? 'Procesando...'
-                                  : 'Registrar transferencia'}
-                              </button>
-                            ) : null}
-
-                            {fila.movimiento_id || fila.estado !== 'pendiente' ? (
-                              <span className="text-xs text-slate-500">
-                                {fila.estado === 'importada' ? 'Registro procesado' : 'Movimiento creado'}
-                              </span>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => crearMovimiento(fila.id)}
-                                disabled={procesandoId === fila.id}
-                                className="rounded-xl border border-[#163A5F] bg-white px-3 py-2 text-xs font-semibold text-[#163A5F] hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-70"
-                              >
-                                {procesandoId === fila.id
-                                  ? 'Creando...'
-                                  : 'Crear movimiento'}
-                              </button>
-                            )}
-                          </div>
                         </td>
                       </tr>
                     )
-                  })}
-                </tbody>
-              </table>
-            </div>
+                  })
+                )}
+              </tbody>
+            </table>
           </div>
-        )}
+        </section>
       </div>
-    </div>
-  )
-}
-
-export default function BancosImportacionesPage() {
-  return (
-    <ProtectedModuleRoute moduleKey="bancos">
-      <BancosImportacionesContent />
-    </ProtectedModuleRoute>
+    </main>
   )
 }
