@@ -174,8 +174,46 @@ export default function AdminEmpresaUsuariosPage() {
       if (rpcError) throw new Error(rpcError.message)
 
       const result = Array.isArray(data) ? data[0] : data
+      const mensajeBase = result?.mensaje || 'Usuario o invitación procesada correctamente.'
 
-      setSuccess(result?.mensaje || 'Usuario/invitación procesada correctamente.')
+      let mensajeFinal = mensajeBase
+
+      try {
+        const { data: sessionData } = await supabase.auth.getSession()
+        const token = sessionData.session?.access_token
+
+        if (token) {
+          const emailResp = await fetch('/api/invitaciones/enviar-email', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              empresaId,
+              email: email.trim().toLowerCase(),
+              rol,
+            }),
+          })
+
+          const emailJson = await emailResp.json()
+
+          if (!emailResp.ok) {
+            mensajeFinal = `${mensajeBase} Pero no se pudo enviar el correo: ${
+              emailJson.error || 'error desconocido'
+            }`
+          } else {
+            mensajeFinal = `${mensajeBase} Correo de invitación enviado.`
+          }
+        } else {
+          mensajeFinal = `${mensajeBase} Pero no se pudo enviar el correo: sesión no disponible.`
+        }
+      } catch (emailError) {
+        mensajeFinal = `${mensajeBase} Pero no se pudo enviar el correo de invitación.`
+        console.warn(emailError)
+      }
+
+      setSuccess(mensajeFinal)
       setEmail('')
       setRol('admin')
       await loadData()
@@ -390,10 +428,10 @@ export default function AdminEmpresaUsuariosPage() {
           </div>
         </div>
 
-        <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-          Esta pantalla todavía no envía correos automáticamente. Si se crea una invitación
-          pendiente, el usuario deberá registrarse primero y luego se podrá vincular o aceptar
-          la invitación en una etapa posterior.
+        <div className="mt-5 rounded-2xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-800">
+          El usuario invitado recibirá un correo desde Tralixia. Para activar el acceso, debe
+          registrarse usando exactamente el mismo email de la invitación. Si el correo no llega,
+          revisa Resend y las carpetas de spam/no deseado.
         </div>
       </section>
 
