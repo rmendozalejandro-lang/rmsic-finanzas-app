@@ -261,7 +261,7 @@ export default function CotizacionesPage() {
 
         const [cotizacionesResp, clientesResp, rolResp] = await Promise.all([
           fetch(
-            `${baseUrl}/rest/v1/cotizaciones?empresa_id=eq.${empresaActivaId}&select=id,empresa_id,cliente_id,folio,codigo,estado,titulo,fecha_emision,fecha_vencimiento,moneda,porcentaje_iva,descuento_global_tipo,descuento_global_valor,subtotal_neto,subtotal_exento,monto_iva,total,created_at&order=created_at.desc`,
+            `${baseUrl}/rest/v1/cotizaciones?empresa_id=eq.${empresaActivaId}&activo=eq.true&deleted_at=is.null&select=id,empresa_id,cliente_id,folio,codigo,estado,titulo,fecha_emision,fecha_vencimiento,moneda,porcentaje_iva,descuento_global_tipo,descuento_global_valor,subtotal_neto,subtotal_exento,monto_iva,total,created_at&order=created_at.desc`,
             {
               headers: {
                 apikey: apiKey,

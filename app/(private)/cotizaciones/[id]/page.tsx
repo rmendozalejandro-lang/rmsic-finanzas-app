@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
-import { useParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 import { getEmpresaLogoSrc } from '@/lib/empresa-branding'
 import ProtectedCotizacionesRoute from '@/components/ProtectedCotizacionesRoute'
@@ -250,6 +250,7 @@ function calcularResumenEconomico(
 
 export default function CotizacionDetallePage() {
   const params = useParams<{ id: string }>()
+  const router = useRouter()
   const cotizacionId = String(params?.id || '')
 
   const [empresaActivaId, setEmpresaActivaId] = useState('')
@@ -261,6 +262,12 @@ export default function CotizacionDetallePage() {
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+
+  const [isAdmin, setIsAdmin] = useState(false)
+  const [deleteOpen, setDeleteOpen] = useState(false)
+  const [deleteMotivo, setDeleteMotivo] = useState('')
+  const [deleteError, setDeleteError] = useState('')
+  const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
     const syncEmpresaActiva = () => {
@@ -309,8 +316,24 @@ export default function CotizacionDetallePage() {
           return
         }
 
+        const { data: rolData, error: rolError } = await supabase
+          .from('usuario_empresas')
+          .select('rol')
+          .eq('usuario_id', session.user.id)
+          .eq('empresa_id', empresaActivaId)
+          .eq('activo', true)
+          .maybeSingle()
+
+        if (rolError) {
+          setError('No se pudo cargar el rol del usuario.')
+          setLoading(false)
+          return
+        }
+
+        setIsAdmin(rolData?.rol === 'admin')
+
         const cotizacionResp = await fetch(
-          `${baseUrl}/rest/v1/cotizaciones?id=eq.${cotizacionId}&empresa_id=eq.${empresaActivaId}&select=*`,
+          `${baseUrl}/rest/v1/cotizaciones?id=eq.${cotizacionId}&empresa_id=eq.${empresaActivaId}&activo=eq.true&deleted_at=is.null&select=*`,
           {
             headers: {
               apikey: apiKey,
@@ -416,6 +439,44 @@ export default function CotizacionDetallePage() {
 
     return calcularResumenEconomico(cotizacion, items)
   }, [cotizacion, items])
+
+  async function handleEliminarCotizacion() {
+    if (!cotizacion || deleting) return
+
+    const motivo = deleteMotivo.trim()
+
+    if (!motivo) {
+      setDeleteError('Debe indicar un motivo para eliminar la cotización.')
+      return
+    }
+
+    setDeleting(true)
+    setDeleteError('')
+
+    try {
+      const { error: rpcError } = await supabase.rpc('eliminar_cotizacion_admin', {
+        p_cotizacion_id: cotizacion.id,
+        p_motivo: motivo,
+      })
+
+      if (rpcError) {
+        setDeleteError(rpcError.message || 'No se pudo eliminar la cotización.')
+        return
+      }
+
+      setDeleteOpen(false)
+      router.push('/cotizaciones')
+      router.refresh()
+    } catch (err) {
+      setDeleteError(
+        err instanceof Error
+          ? err.message
+          : 'No se pudo eliminar la cotización.'
+      )
+    } finally {
+      setDeleting(false)
+    }
+  }
 
   if (!empresaActivaId && !loading) {
     return (
@@ -543,8 +604,95 @@ export default function CotizacionDetallePage() {
             >
               Imprimir / PDF
             </Link>
+
+            {isAdmin ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setDeleteOpen(true)
+                  setDeleteMotivo('')
+                  setDeleteError('')
+                }}
+                className="inline-flex items-center rounded-xl border border-rose-300 px-4 py-2 text-sm font-medium text-rose-700 transition hover:bg-rose-50"
+              >
+                Eliminar cotización
+              </button>
+            ) : null}
           </div>
         </header>
+
+        {deleteOpen ? (
+          <div className="rounded-2xl border border-rose-200 bg-rose-50 p-5 shadow-sm">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <h2 className="text-base font-semibold text-rose-900">
+                  Eliminar cotización
+                </h2>
+                <p className="mt-1 text-sm text-rose-800">
+                  Esta acción ocultará la cotización del listado normal, pero conservará
+                  el registro para auditoría. No se eliminarán los datos físicamente.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!deleting) {
+                    setDeleteOpen(false)
+                    setDeleteError('')
+                  }
+                }}
+                className="text-sm font-medium text-rose-700 hover:text-rose-900"
+              >
+                Cancelar
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-3">
+              <label className="block text-sm font-medium text-rose-900">
+                Motivo de eliminación
+              </label>
+              <textarea
+                value={deleteMotivo}
+                onChange={(event) => {
+                  setDeleteMotivo(event.target.value)
+                  if (deleteError) setDeleteError('')
+                }}
+                rows={3}
+                className="w-full rounded-xl border border-rose-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none ring-0 transition focus:border-rose-400 focus:ring-2 focus:ring-rose-100"
+                placeholder="Ejemplo: cotización de prueba, duplicada o creada por error."
+                disabled={deleting}
+              />
+
+              {deleteError ? (
+                <p className="text-sm font-medium text-rose-700">{deleteError}</p>
+              ) : null}
+
+              <div className="flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  onClick={handleEliminarCotizacion}
+                  disabled={deleting}
+                  className="inline-flex items-center rounded-xl bg-rose-700 px-4 py-2 text-sm font-medium text-white transition hover:bg-rose-800 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {deleting ? 'Eliminando...' : 'Confirmar eliminación'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!deleting) {
+                      setDeleteOpen(false)
+                      setDeleteError('')
+                    }
+                  }}
+                  disabled={deleting}
+                  className="inline-flex items-center rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Mantener cotización
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
 
         <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
           <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
