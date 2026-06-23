@@ -27,6 +27,7 @@ type Proveedor = {
   condicion_pago: CondicionPago | null
   dias_credito: number | null
   activo: boolean
+  deleted_at?: string | null
   created_at: string
 }
 
@@ -73,6 +74,10 @@ export default function ProveedoresPage() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const [isAdmin, setIsAdmin] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState<Proveedor | null>(null)
+  const [deleteMotivo, setDeleteMotivo] = useState('')
+  const [deleting, setDeleting] = useState(false)
 
   const [form, setForm] = useState({
     nombre: '',
@@ -132,15 +137,25 @@ export default function ProveedoresPage() {
       const accessToken = sessionData.session.access_token
       const apiKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
       const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+      const headers = {
+        apikey: apiKey,
+        Authorization: `Bearer ${accessToken}`,
+      }
+
+      const rolResp = await fetch(
+        `${baseUrl}/rest/v1/usuario_empresas?usuario_id=eq.${sessionData.session.user.id}&empresa_id=eq.${empresaActivaId}&activo=eq.true&select=rol&limit=1`,
+        { headers }
+      )
+      const rolJson = await rolResp.json().catch(() => [])
+      setIsAdmin(
+        rolResp.ok &&
+          Array.isArray(rolJson) &&
+          rolJson.some((item) => item.rol === 'admin')
+      )
 
       const resp = await fetch(
-        `${baseUrl}/rest/v1/proveedores?empresa_id=eq.${empresaActivaId}&select=*&order=nombre.asc`,
-        {
-          headers: {
-            apikey: apiKey,
-            Authorization: `Bearer ${accessToken}`,
-          },
-        }
+        `${baseUrl}/rest/v1/proveedores?empresa_id=eq.${empresaActivaId}&deleted_at=is.null&select=*&order=nombre.asc`,
+        { headers }
       )
 
       const json = await resp.json()
@@ -373,6 +388,64 @@ export default function ProveedoresPage() {
     }
   }
 
+
+  const openDeleteProveedor = (proveedor: Proveedor) => {
+    setDeleteTarget(proveedor)
+    setDeleteMotivo('')
+    setError('')
+    setSuccess('')
+  }
+
+  const closeDeleteModal = () => {
+    if (deleting) return
+    setDeleteTarget(null)
+    setDeleteMotivo('')
+  }
+
+  const handleDeleteProveedor = async () => {
+    if (!deleteTarget) return
+
+    if (!deleteMotivo.trim()) {
+      setError('Debes indicar un motivo para eliminar el proveedor.')
+      return
+    }
+
+    try {
+      setDeleting(true)
+      setUpdatingId(deleteTarget.id)
+      setError('')
+      setSuccess('')
+
+      const { error: rpcError } = await supabase.rpc('eliminar_proveedor_admin', {
+        p_proveedor_id: deleteTarget.id,
+        p_motivo: deleteMotivo.trim(),
+      })
+
+      if (rpcError) {
+        setError(rpcError.message || 'No se pudo eliminar el proveedor.')
+        return
+      }
+
+      if (editingId === deleteTarget.id) {
+        resetForm()
+      }
+
+      setSuccess('Proveedor eliminado correctamente.')
+      setDeleteTarget(null)
+      setDeleteMotivo('')
+      await fetchProveedores()
+    } catch (err) {
+      if (err instanceof Error) {
+        setError(err.message)
+      } else {
+        setError('Error desconocido al eliminar.')
+      }
+    } finally {
+      setDeleting(false)
+      setUpdatingId('')
+    }
+  }
+
   return (
     <ProtectedModuleRoute moduleKey="proveedores">
       <main className="space-y-6">
@@ -451,6 +524,17 @@ export default function ProveedoresPage() {
                                 ? 'Inactivar'
                                 : 'Activar'}
                             </button>
+
+                            {isAdmin && (
+                              <button
+                                type="button"
+                                onClick={() => openDeleteProveedor(item)}
+                                disabled={updatingId === item.id || deleting}
+                                className="rounded-xl border border-red-200 px-3 py-2 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-60"
+                              >
+                                Eliminar
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -629,6 +713,58 @@ export default function ProveedoresPage() {
             </form>
           </div>
         </div>
+
+        {deleteTarget && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
+            <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl border border-slate-200">
+              <h2 className="text-2xl font-semibold text-slate-900">
+                Eliminar proveedor
+              </h2>
+              <p className="mt-2 text-sm text-slate-600">
+                Esta acción no borra físicamente el registro. El proveedor quedará
+                oculto del listado normal y no se podrá usar en nuevos registros.
+              </p>
+
+              <div className="mt-4 rounded-xl bg-slate-50 border border-slate-200 p-4 text-sm text-slate-700">
+                <div className="font-semibold">{deleteTarget.nombre}</div>
+                <div>RUT: {deleteTarget.rut || '-'}</div>
+                <div>Email: {deleteTarget.email || '-'}</div>
+              </div>
+
+              <div className="mt-4">
+                <label className="block text-sm text-slate-600 mb-2">
+                  Motivo de eliminación
+                </label>
+                <textarea
+                  value={deleteMotivo}
+                  onChange={(e) => setDeleteMotivo(e.target.value)}
+                  rows={3}
+                  className="w-full rounded-xl border border-slate-300 px-4 py-3"
+                  placeholder="Ejemplo: proveedor ingresado por error o duplicado."
+                />
+              </div>
+
+              <div className="mt-6 flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={closeDeleteModal}
+                  disabled={deleting}
+                  className="rounded-xl border border-slate-300 px-4 py-3 font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDeleteProveedor}
+                  disabled={deleting}
+                  className="rounded-xl bg-red-600 px-4 py-3 font-medium text-white hover:bg-red-700 disabled:opacity-60"
+                >
+                  {deleting ? 'Eliminando...' : 'Eliminar proveedor'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
     </ProtectedModuleRoute>
   )
