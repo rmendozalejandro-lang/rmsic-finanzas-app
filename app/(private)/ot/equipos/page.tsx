@@ -1,4 +1,4 @@
-﻿'use client'
+'use client'
 
 import { type ChangeEvent, type FormEvent, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
@@ -121,6 +121,7 @@ export default function OTEquiposPage() {
   const [empresaActivaId, setEmpresaActivaId] = useState('')
   const [clientes, setClientes] = useState<Cliente[]>([])
   const [equipos, setEquipos] = useState<Equipo[]>([])
+  const [usuarioRol, setUsuarioRol] = useState('')
 
   const [form, setForm] = useState<EquipoForm>(initialForm)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -129,6 +130,9 @@ export default function OTEquiposPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [updatingId, setUpdatingId] = useState('')
+  const [deleting, setDeleting] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState<Equipo | null>(null)
+  const [deleteMotivo, setDeleteMotivo] = useState('')
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
 
@@ -154,6 +158,9 @@ export default function OTEquiposPage() {
 
   const fetchData = async () => {
     if (!empresaActivaId) {
+      setClientes([])
+      setEquipos([])
+      setUsuarioRol('')
       setLoading(false)
       return
     }
@@ -173,7 +180,7 @@ export default function OTEquiposPage() {
       const apiKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
       const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
 
-      const [clientesResp, equiposResp] = await Promise.all([
+      const [clientesResp, equiposResp, rolResp] = await Promise.all([
         fetch(
           `${baseUrl}/rest/v1/clientes?empresa_id=eq.${empresaActivaId}&activo=eq.true&deleted_at=is.null&select=id,nombre,rut&order=nombre.asc`,
           {
@@ -192,10 +199,20 @@ export default function OTEquiposPage() {
             },
           }
         ),
+        fetch(
+          `${baseUrl}/rest/v1/usuario_empresas?empresa_id=eq.${empresaActivaId}&usuario_id=eq.${sessionData.session.user.id}&activo=eq.true&select=rol&limit=1`,
+          {
+            headers: {
+              apikey: apiKey,
+              Authorization: `Bearer ${accessToken}`,
+            },
+          }
+        ),
       ])
 
       const clientesJson = await clientesResp.json()
       const equiposJson = await equiposResp.json()
+      const rolJson = await rolResp.json()
 
       if (!clientesResp.ok) {
         console.error(clientesJson)
@@ -207,8 +224,14 @@ export default function OTEquiposPage() {
         throw new Error('No se pudieron cargar los equipos.')
       }
 
+      if (!rolResp.ok) {
+        console.error(rolJson)
+        throw new Error('No se pudo validar el rol del usuario en la empresa.')
+      }
+
       setClientes(clientesJson ?? [])
       setEquipos(equiposJson ?? [])
+      setUsuarioRol(rolJson?.[0]?.rol || '')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo cargar la información.')
     } finally {
@@ -248,6 +271,7 @@ export default function OTEquiposPage() {
 
   const totalActivos = equipos.filter((item) => item.activo && item.estado === 'activo').length
   const totalInactivos = equipos.filter((item) => !item.activo || item.estado !== 'activo').length
+  const esAdmin = usuarioRol === 'admin'
 
   const handleChange = (
     e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
@@ -438,6 +462,63 @@ export default function OTEquiposPage() {
     }
   }
 
+
+  const openDeleteModal = (equipo: Equipo) => {
+    setDeleteTarget(equipo)
+    setDeleteMotivo('')
+    setError('')
+    setSuccess('')
+  }
+
+  const closeDeleteModal = () => {
+    if (deleting) return
+
+    setDeleteTarget(null)
+    setDeleteMotivo('')
+  }
+
+  const handleDeleteEquipo = async (e: FormEvent) => {
+    e.preventDefault()
+
+    if (!deleteTarget) return
+
+    const motivo = deleteMotivo.trim()
+
+    if (!motivo) {
+      setError('Debes indicar un motivo para eliminar el equipo.')
+      return
+    }
+
+    try {
+      setDeleting(true)
+      setError('')
+      setSuccess('')
+
+      const { data, error: rpcError } = await supabase.rpc('eliminar_ot_equipo_admin', {
+        p_equipo_id: deleteTarget.id,
+        p_motivo: motivo,
+      })
+
+      if (rpcError) {
+        console.error(data, rpcError)
+        throw new Error(rpcError.message || 'No se pudo eliminar el equipo.')
+      }
+
+      if (editingId === deleteTarget.id) {
+        resetForm()
+      }
+
+      setSuccess(`Equipo ${deleteTarget.tag} eliminado correctamente.`)
+      setDeleteTarget(null)
+      setDeleteMotivo('')
+      await fetchData()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudo eliminar el equipo.')
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   return (
     <ProtectedModuleRoute moduleKey="ot">
       <main className="space-y-6">
@@ -602,6 +683,16 @@ export default function OTEquiposPage() {
                                 ? 'Inactivar'
                                 : 'Activar'}
                             </button>
+
+                            {esAdmin && (
+                              <button
+                                type="button"
+                                onClick={() => openDeleteModal(equipo)}
+                                className="rounded-xl border border-red-200 px-3 py-2 text-xs font-medium text-red-700 hover:bg-red-50"
+                              >
+                                Eliminar
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -892,6 +983,69 @@ export default function OTEquiposPage() {
             </form>
           </section>
         </div>
+
+        {deleteTarget && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 px-4 py-6">
+            <div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl">
+              <div>
+                <p className="text-sm font-medium uppercase tracking-[0.18em] text-red-600">
+                  Eliminar equipo
+                </p>
+                <h2 className="mt-2 text-2xl font-semibold text-slate-900">
+                  ¿Eliminar {deleteTarget.tag}?
+                </h2>
+                <p className="mt-2 text-sm text-slate-600">
+                  Esta acción no borra físicamente el registro. El equipo quedará oculto
+                  del maestro y no estará disponible para nuevas OT.
+                </p>
+              </div>
+
+              <form onSubmit={handleDeleteEquipo} className="mt-5 space-y-4">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                  <div className="font-semibold text-slate-900">
+                    {deleteTarget.nombre || deleteTarget.descripcion || 'Equipo sin nombre'}
+                  </div>
+                  <div className="mt-1">
+                    TAG: {deleteTarget.tag}
+                    {deleteTarget.cliente_nombre ? ` · Cliente: ${deleteTarget.cliente_nombre}` : ''}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-slate-700">
+                    Motivo de eliminación
+                  </label>
+                  <textarea
+                    value={deleteMotivo}
+                    onChange={(event) => setDeleteMotivo(event.target.value)}
+                    rows={3}
+                    className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm"
+                    placeholder="Ej: Equipo ingresado por error o prueba previa a entrega."
+                    required
+                  />
+                </div>
+
+                <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+                  <button
+                    type="button"
+                    onClick={closeDeleteModal}
+                    disabled={deleting}
+                    className="rounded-xl border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={deleting || !deleteMotivo.trim()}
+                    className="rounded-xl bg-red-600 px-4 py-3 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60"
+                  >
+                    {deleting ? 'Eliminando...' : 'Eliminar equipo'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
       </main>
     </ProtectedModuleRoute>
   )
