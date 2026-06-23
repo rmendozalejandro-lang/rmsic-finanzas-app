@@ -583,14 +583,14 @@ export default function CotizacionImprimirPage() {
               <header className="border-b border-slate-200 pb-2.5">
                 <div className="flex flex-col items-center text-center">
                   {empresaLogoSrc ? (
-                    <div className="mb-1">
-                      <img
-                        src={empresaLogoSrc}
-                        alt="Logo empresa"
-                        className="max-h-16 w-auto object-contain"
-                      />
-                    </div>
-                  ) : null}
+  <div className="mb-2 flex min-h-[72px] items-center justify-center rounded-md bg-white px-3 py-2">
+    <img
+      src={`${empresaLogoSrc}?v=2`}
+      alt="Logo empresa"
+      className="block h-auto max-h-20 w-auto max-w-[220px] object-contain"
+    />
+  </div>
+) : null}
 
                   <h1 className="text-[16px] font-bold tracking-tight text-slate-900">
                     {cotizacion.empresa_nombre || empresaActivaNombre || 'Empresa'}

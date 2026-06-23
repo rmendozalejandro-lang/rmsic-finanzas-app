@@ -509,7 +509,7 @@ function FirmaClienteView() {
           <div className="flex items-start gap-4">
             <div className="flex h-20 w-28 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-white p-3">
               <img
-                src="/rmsic-logo.png"
+                src="/logos/rmsic-logo.png"
                 alt="RMSIC"
                 className="max-h-full max-w-full object-contain"
               />

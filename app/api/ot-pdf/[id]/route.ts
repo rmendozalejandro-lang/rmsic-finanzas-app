@@ -598,7 +598,7 @@ const supabaseServiceRoleKeySafe = supabaseServiceRoleKey as string
     const evidencias = (evidenciasResp.data ?? []) as Evidencia[]
     const firmas = (firmasResp.data ?? []) as Firma[]
     const tiposServicio = (tiposResp.data ?? []) as TipoServicioOption[]
-    const logoUrl = new URL('/rmsic-logo.png', request.url).toString()
+    const logoUrl = new URL('/logos/rmsic-logo.png', request.url).toString()
 
     const resumenPdf = horarioDesdeTiempos
       ? ({

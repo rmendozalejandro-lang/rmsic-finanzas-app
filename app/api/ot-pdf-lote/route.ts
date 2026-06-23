@@ -669,7 +669,7 @@ export async function GET(request: NextRequest) {
     }, {})
 
     const tiposServicio = (tiposResp.data ?? []) as TipoServicioOption[]
-    const logoUrl = new URL('/rmsic-logo.png', request.url).toString()
+    const logoUrl = new URL('/logos/rmsic-logo.png', request.url).toString()
 
     const mergedPdf = await PDFLibDocument.create()
 
