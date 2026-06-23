@@ -382,6 +382,8 @@ function OTDetalleContent() {
   const [cierreError, setCierreError] = useState('')
   const [cierreSuccess, setCierreSuccess] = useState('')
   const [deleteError, setDeleteError] = useState('')
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [deleteMotivo, setDeleteMotivo] = useState('')
 
   const [resumen, setResumen] = useState<OTResumenConEquipo | null>(null)
   const [detalle, setDetalle] = useState<OTDetalle | null>(null)
@@ -1270,7 +1272,21 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
     }
   }
 
-  const handleDeleteOt = async () => {
+  const handleOpenDeleteModal = () => {
+    setDeleteError('')
+    setCierreError('')
+    setCierreSuccess('')
+
+    if (currentRole !== 'admin') {
+      setDeleteError('Solo un administrador puede eliminar la OT.')
+      return
+    }
+
+    setDeleteMotivo('')
+    setShowDeleteModal(true)
+  }
+
+  const handleConfirmDeleteOt = async () => {
     try {
       setDeletingOt(true)
       setDeleteError('')
@@ -1278,42 +1294,30 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
       setCierreSuccess('')
 
       if (currentRole !== 'admin') {
-        throw new Error('Solo un administrador puede archivar la OT.')
+        throw new Error('Solo un administrador puede eliminar la OT.')
       }
 
-      const confirmar = window.confirm(
-        'Â¿Seguro que deseas archivar esta OT? No se borrarÃ¡ la informaciÃ³n histÃ³rica.'
-      )
+      const motivo = deleteMotivo.trim()
 
-      if (!confirmar) return
+      if (!motivo) {
+        throw new Error('Debes indicar un motivo para eliminar la OT.')
+      }
 
-      const {
-        data: { user: currentUser },
-      } = await supabase.auth.getUser()
-
-      const deletedAt = new Date().toISOString()
-
-      const { error } = await supabase
-        .from('ot_ordenes_trabajo')
-        .update({
-          activo: false,
-          deleted_at: deletedAt,
-          deleted_by: currentUser?.id ?? null,
-          updated_by: currentUser?.id ?? null,
-          updated_at: deletedAt,
-        })
-        .eq('id', otId)
-        .eq('activo', true)
-        .is('deleted_at', null)
+      const { error } = await supabase.rpc('eliminar_ot_admin', {
+        p_ot_id: otId,
+        p_motivo: motivo,
+      })
 
       if (error) {
-        throw new Error(`No se pudo archivar la OT: ${error.message}`)
+        throw new Error(`No se pudo eliminar la OT: ${error.message}`)
       }
 
+      setShowDeleteModal(false)
+      setDeleteMotivo('')
       router.push('/ot')
       router.refresh()
     } catch (err) {
-      setDeleteError(err instanceof Error ? err.message : 'No se pudo archivar la OT.')
+      setDeleteError(err instanceof Error ? err.message : 'No se pudo eliminar la OT.')
     } finally {
       setDeletingOt(false)
     }
@@ -2452,15 +2456,75 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
           {currentRole === 'admin' ? (
             <button
               type="button"
-              onClick={handleDeleteOt}
+              onClick={handleOpenDeleteModal}
               disabled={deletingOt}
               className="inline-flex items-center justify-center rounded-xl border border-red-300 bg-red-50 px-5 py-3 text-sm font-semibold text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-70"
             >
-              {deletingOt ? 'Archivando OT...' : 'Archivar OT'}
+              {deletingOt ? 'Eliminando OT...' : 'Eliminar OT'}
             </button>
           ) : null}
         </div>
       </div>
+
+      {showDeleteModal ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 px-4 py-6">
+          <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-6 shadow-xl">
+            <div className="space-y-2">
+              <p className="text-sm font-semibold uppercase tracking-wide text-red-600">
+                Eliminacion de OT
+              </p>
+              <h2 className="text-xl font-bold text-slate-900">
+                Eliminar {resumen.folio || 'OT'}
+              </h2>
+              <p className="text-sm text-slate-600">
+                Esta accion ocultara la orden del listado normal, pero conservara
+                su historial, checklist, evidencias, tiempos e informes para auditoria.
+              </p>
+            </div>
+
+            <label className="mt-5 block text-sm font-medium text-slate-700">
+              Motivo de eliminacion *
+              <textarea
+                value={deleteMotivo}
+                onChange={(event) => setDeleteMotivo(event.target.value)}
+                rows={4}
+                className="mt-2 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-red-500 focus:ring-2 focus:ring-red-100"
+                placeholder="Ejemplo: OT creada como prueba, duplicada o ingresada por error."
+              />
+            </label>
+
+            {deleteError ? (
+              <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                {deleteError}
+              </div>
+            ) : null}
+
+            <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={() => {
+                  if (deletingOt) return
+                  setShowDeleteModal(false)
+                  setDeleteMotivo('')
+                }}
+                disabled={deletingOt}
+                className="inline-flex items-center justify-center rounded-xl border border-slate-300 px-5 py-3 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-70"
+              >
+                Cancelar
+              </button>
+
+              <button
+                type="button"
+                onClick={() => void handleConfirmDeleteOt()}
+                disabled={deletingOt || !deleteMotivo.trim()}
+                className="inline-flex items-center justify-center rounded-xl bg-red-600 px-5 py-3 text-sm font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-70"
+              >
+                {deletingOt ? 'Eliminando OT...' : 'Confirmar eliminacion'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }
