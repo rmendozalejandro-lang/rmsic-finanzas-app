@@ -2203,7 +2203,7 @@ export default function ConciliacionBancariaPage() {
 
                     <div className="rounded-xl bg-blue-50 p-4">
                       <p className="text-xs font-medium uppercase text-blue-700">
-                        Movimiento Auren
+                        Movimiento Tralixia
                       </p>
 
                       <p className="mt-2 font-semibold text-slate-900">
@@ -2712,7 +2712,7 @@ export default function ConciliacionBancariaPage() {
 
               <div className="rounded-2xl border bg-amber-50 p-4 text-sm text-amber-800">
                 Usa esta opción solo cuando el ingreso o egreso ya existe en
-                Auren y quieres vincularlo con la cartola. No crea documentos
+                Tralixia y quieres vincularlo con la cartola. No crea documentos
                 nuevos.
               </div>
 

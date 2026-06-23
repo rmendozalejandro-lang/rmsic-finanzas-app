@@ -10,10 +10,10 @@ const inter = Inter({
 
 export const metadata: Metadata = {
   title: {
-    default: 'Auren',
-    template: '%s | Auren',
+    default: 'Tralixia',
+    template: '%s | Tralixia',
   },
-  description: 'Plataforma de gestión financiera y administrativa',
+  description: 'Tralixia, plataforma modular de gestión empresarial desarrollada por RM Servicios de Ingeniería y Construcción',
 }
 
 export default function RootLayout({

@@ -700,7 +700,7 @@ setUltimosMovimientos([])
     if (!resumen) return
 
     const originalTitle = document.title
-    document.title = `Auren - Dashboard - ${empresaActivaNombre || 'Empresa'} - ${rangoActual.from} a ${rangoActual.to}`
+    document.title = `Tralixia - Dashboard - ${empresaActivaNombre || 'Empresa'} - ${rangoActual.from} a ${rangoActual.to}`
 
     window.print()
 
@@ -714,12 +714,17 @@ setUltimosMovimientos([])
       <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm md:p-8 print:hidden">
         <div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
           <div>
-            <p className="text-sm font-medium text-slate-500">Auren</p>
-            <h1 className="mt-1 text-3xl font-semibold tracking-tight text-slate-900 md:text-4xl">
-              Dashboard financiero
+            <div className="inline-flex items-center gap-2 rounded-full border border-[#18B7A8]/25 bg-[#18B7A8]/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-[#103B66]">
+              Tralixia
+            </div>
+            <h1 className="mt-3 text-3xl font-semibold tracking-tight text-slate-900 md:text-4xl">
+              Centro de control empresarial
             </h1>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-500">
-              Resumen general de la operación y estado financiero de la empresa activa.
+              Plataforma modular de gestión empresarial para operación, finanzas y trazabilidad de la empresa activa.
+            </p>
+            <p className="mt-2 text-xs font-medium text-slate-400">
+              Desarrollado por RM Servicios de Ingeniería y Construcción
             </p>
 
             {empresaActivaNombre ? (
@@ -792,7 +797,7 @@ setUltimosMovimientos([])
 
       {loading && (
         <div className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
-          <p className="text-sm font-medium text-slate-500">Auren</p>
+          <p className="text-sm font-medium text-slate-500">Tralixia</p>
           <h2 className="mt-2 text-xl font-semibold text-slate-900">
             Cargando datos
           </h2>
@@ -813,10 +818,13 @@ setUltimosMovimientos([])
           <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm md:p-8">
             <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
               <div>
-                <p className="text-sm font-medium text-slate-500">Auren</p>
+                <p className="text-sm font-medium text-slate-500">Tralixia</p>
                 <h2 className="mt-1 text-3xl font-semibold tracking-tight text-slate-900">
                   Dashboard financiero
                 </h2>
+                <p className="mt-2 text-xs font-medium text-slate-400">
+                  Desarrollado por RM Servicios de Ingeniería y Construcción
+                </p>
                 <p className="mt-2 text-sm text-slate-500">
                   Empresa: <span className="font-medium text-slate-700">{empresaActivaNombre || 'Sin empresa activa'}</span>
                 </p>

@@ -2296,7 +2296,7 @@ export default function InformeSoftysPage() {
           </Section>
 
           <p className="footer-note">
-            Informe generado desde Auren OT. Este documento respalda
+            Informe generado desde Tralixia. Este documento respalda
             técnicamente la intervención indicada y debe ser revisado por el
             responsable del trabajo.
           </p>

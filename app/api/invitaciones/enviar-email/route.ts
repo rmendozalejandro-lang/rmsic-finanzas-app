@@ -115,12 +115,12 @@ export async function POST(request: Request) {
     const registroUrl = `${appUrl.replace(/\/$/, '')}/registro`
     const rolLabel = ROLE_LABELS[rol] || rol
     const fromEmail =
-      process.env.RESEND_FROM_EMAIL || 'Auren <onboarding@resend.dev>'
+      process.env.RESEND_FROM_EMAIL || 'Tralixia <onboarding@resend.dev>'
 
     const html = `
       <div style="font-family: Arial, sans-serif; color: #0f172a; line-height: 1.6; max-width: 620px; margin: 0 auto;">
         <div style="background: #163A5F; color: white; padding: 24px; border-radius: 18px 18px 0 0;">
-          <h1 style="margin: 0; font-size: 24px;">Auren</h1>
+          <h1 style="margin: 0; font-size: 24px;">Tralixia</h1>
           <p style="margin: 8px 0 0;">Invitación a plataforma empresarial</p>
         </div>
 
@@ -128,7 +128,7 @@ export async function POST(request: Request) {
           <p>Hola,</p>
 
           <p>
-            Has sido invitado a participar en la plataforma <strong>Auren</strong>
+            Has sido invitado a participar en la plataforma <strong>Tralixia</strong>
             para la empresa:
           </p>
 
@@ -157,6 +157,10 @@ export async function POST(request: Request) {
           <p style="font-size: 13px; color: #64748b;">
             Si no esperabas esta invitación, puedes ignorar este correo.
           </p>
+
+          <p style="margin-top: 22px; border-top: 1px solid #e2e8f0; padding-top: 14px; font-size: 12px; color: #64748b;">
+            Tralixia es una plataforma desarrollada por RM Servicios de Ingeniería y Construcción.
+          </p>
         </div>
       </div>
     `
@@ -164,7 +168,7 @@ export async function POST(request: Request) {
     const { data, error } = await resend.emails.send({
       from: fromEmail,
       to: [email],
-      subject: `Invitación a Auren - ${empresa.nombre}`,
+      subject: `Invitación a Tralixia - ${empresa.nombre}`,
       html,
     })
 

@@ -122,7 +122,7 @@ export async function POST(request: NextRequest) {
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
     const resendApiKey = process.env.RESEND_API_KEY
     const resendFromEmail =
-      process.env.RESEND_FROM_EMAIL || 'Auren <noreply@mail.rmsic.cl>'
+      process.env.RESEND_FROM_EMAIL || 'Tralixia <noreply@mail.rmsic.cl>'
 
     if (!supabaseUrl || !supabaseAnonKey || !serviceRoleKey) {
       return jsonError('Faltan variables de entorno Supabase.', 500)
@@ -259,8 +259,8 @@ export async function POST(request: NextRequest) {
 
     const empresaNombre =
       empresaResp.data && 'nombre' in empresaResp.data
-        ? String(empresaResp.data.nombre || 'Auren')
-        : 'Auren'
+        ? String(empresaResp.data.nombre || 'Tralixia')
+        : 'Tralixia'
 
     const configResp = await adminClient
       .from('empresa_config_correo')
@@ -288,7 +288,7 @@ export async function POST(request: NextRequest) {
 
     const pieCorreo =
       config?.texto_pie_correo?.trim() ||
-      'Correo enviado automáticamente desde Auren, sistema de gestión financiera de la empresa.'
+      'Correo enviado automáticamente desde Tralixia, plataforma modular de gestión empresarial desarrollada por RM Servicios de Ingeniería y Construcción.'
 
     const telefono = config?.telefono_contacto?.trim()
     const sitioWeb = config?.sitio_web?.trim()

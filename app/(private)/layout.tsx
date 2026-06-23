@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
@@ -8,7 +8,6 @@ import {
   MODULO_PRINCIPAL_LABELS,
   canAccessModuleByRoleAndCompany,
   getModuloPrincipal,
-  getRecursoTransversalFromModule,
   type ModuleKey,
   type ModuloPrincipal,
 } from '../../lib/auth/permissions'
@@ -40,10 +39,8 @@ type EmpresaModuloRow = {
   habilitado: boolean
 }
 
-type MenuGroupKey = ModuloPrincipal | 'general' | 'maestros'
-
 type MenuGroup = {
-  key: MenuGroupKey
+  key: ModuloPrincipal | 'general'
   label: string
   items: MenuItem[]
 }
@@ -51,52 +48,47 @@ type MenuGroup = {
 const menuItems: MenuItem[] = [
   { href: '/', label: 'Dashboard', moduleKey: 'dashboard' },
 
-  // Maestros transversales: no pertenecen a Comercial ni Financiero.
-  { href: '/clientes', label: 'Clientes / Mandantes', moduleKey: 'clientes' },
-  { href: '/proveedores', label: 'Proveedores', moduleKey: 'proveedores' },
-
-  // Comercial: funciones de venta y seguimiento comercial.
+  { href: '/clientes', label: 'Clientes', moduleKey: 'clientes' },
   { href: '/cotizaciones', label: 'Cotizaciones', moduleKey: 'cotizaciones' },
   { href: '/ingresos', label: 'Ingresos / Ventas', moduleKey: 'ingresos' },
   { href: '/cobranza', label: 'Cobranzas', moduleKey: 'cobranza' },
 
-  // Financiero / Tesorería.
   { href: '/bancos', label: 'Bancos', moduleKey: 'bancos' },
-  { href: '/bancos/importaciones', label: 'Historial de importaciones', moduleKey: 'bancos' },
   { href: '/egresos', label: 'Egresos', moduleKey: 'egresos' },
   { href: '/cuentas-por-pagar', label: 'Cuentas por pagar', moduleKey: 'egresos' },
   { href: '/documentos-sii', label: 'Documentos SII', moduleKey: 'egresos' },
+  { href: '/proveedores', label: 'Proveedores', moduleKey: 'proveedores' },
   { href: '/transferencias', label: 'Transferencias', moduleKey: 'transferencias' },
 
-  // Contable.
-  { href: '/plan-cuentas', label: 'Plan de Cuentas', moduleKey: 'plan_cuentas' },
-  { href: '/asientos', label: 'Asientos contables', moduleKey: 'plan_cuentas' },
-  { href: '/activos-fijos', label: 'Activos fijos', moduleKey: 'plan_cuentas' },
-  { href: '/reportes', label: 'Reportes', moduleKey: 'reportes' },
+ { href: '/plan-cuentas', label: 'Plan de Cuentas', moduleKey: 'plan_cuentas' },
+{ href: '/asientos', label: 'Asientos contables', moduleKey: 'plan_cuentas' },
+{
+  label: 'Activos fijos',
+  href: '/activos-fijos',
+  moduleKey: 'plan_cuentas',
+},
+{ href: '/reportes', label: 'Reportes', moduleKey: 'reportes' },
 
-  // Operacional.
   { href: '/ot', label: 'OT', moduleKey: 'ot' },
   { href: '/ot/equipos', label: 'Equipos / Activos', moduleKey: 'ot' },
 
-  // Recursos Humanos.
   { href: '/remuneraciones', label: 'Remuneraciones', moduleKey: 'remuneraciones' },
-  { href: '/remuneraciones/prestamos', label: 'Préstamos y anticipos', moduleKey: 'remuneraciones' },
-  { href: '/remuneraciones/cotizaciones', label: 'Cotizaciones / Leyes sociales', moduleKey: 'remuneraciones' },
+{ href: '/remuneraciones/prestamos', label: 'Prestamos y anticipos', moduleKey: 'remuneraciones' },
+{ href: '/remuneraciones/cotizaciones', label: 'Cotizaciones / Leyes sociales', moduleKey: 'remuneraciones' },
 
-  // Configuración / administración.
   {
     href: '/configuracion/usuarios',
     label: 'Usuarios de mi empresa',
     moduleKey: 'configuracion_usuarios',
   },
-  {
+{
     href: '/configuracion/correos',
     label: 'Correos y notificaciones',
     moduleKey: 'configuracion_usuarios',
   },
   {
     href: '/configuracion/auditoria',
-    label: 'Auditoría',
+    label: 'Auditori­a',
     moduleKey: 'configuracion_auditoria',
   },
 ]
@@ -104,20 +96,18 @@ const menuItems: MenuItem[] = [
 const STORAGE_ID_KEY = 'empresa_activa_id'
 const STORAGE_NAME_KEY = 'empresa_activa_nombre'
 
-const MENU_GROUP_ORDER: MenuGroupKey[] = [
+const MENU_GROUP_ORDER: Array<ModuloPrincipal | 'general'> = [
   'general',
-  'maestros',
-  'operacional',
   'comercial',
   'financiero',
   'contable',
+  'operacional',
   'rrhh',
   'administracion',
 ]
 
-const MENU_GROUP_LABELS: Record<MenuGroupKey, string> = {
+const MENU_GROUP_LABELS: Record<ModuloPrincipal | 'general', string> = {
   general: 'General',
-  maestros: 'Maestros',
   ...MODULO_PRINCIPAL_LABELS,
 }
 
@@ -401,17 +391,10 @@ if (empresaGuardadaValida) {
   }, [usuarioRol, rolResuelto, modulosHabilitados])
 
   const visibleMenuGroups = useMemo<MenuGroup[]>(() => {
-    const grouped = new Map<MenuGroupKey, MenuItem[]>()
+    const grouped = new Map<ModuloPrincipal | 'general', MenuItem[]>()
 
     for (const item of visibleMenuItems) {
-      const isRecursoTransversal = Boolean(
-        getRecursoTransversalFromModule(item.moduleKey)
-      )
-
-      const groupKey: MenuGroupKey = isRecursoTransversal
-        ? 'maestros'
-        : getModuloPrincipal(item.moduleKey) ?? 'general'
-
+      const groupKey = getModuloPrincipal(item.moduleKey) ?? 'general'
       const currentItems = grouped.get(groupKey) ?? []
       grouped.set(groupKey, [...currentItems, item])
     }
@@ -456,23 +439,23 @@ if (empresaGuardadaValida) {
     empresaActiva?.nombre || empresaActivaNombreLocal || 'Sin empresa activa'
 
   const appTitle = isTecnicoOT
-    ? 'Módulo OT'
-    : 'Plataforma financiera y administrativa'
+    ? 'Modulo OT'
+    : 'Plataforma modular de gestion empresarial'
 
   const appSubtitle = isTecnicoOT
     ? 'Ordenes de trabajo y gestion en terreno'
-    : 'Plataforma financiera y administrativa'
+    : 'Control, trazabilidad y crecimiento en una sola plataforma'
 
   const sidebarSupportText = isTecnicoOT
-    ? 'Acceso restringido al módulo OT para ejecucion, firmas y evidencia en terreno.'
-    : 'Gestion multiempresa con módulos habilitados por empresa y permisos por rol.'
+    ? 'Acceso restringido al modulo OT para ejecucion, firmas y evidencia en terreno.'
+    : 'Gestion multiempresa con modulos habilitados por empresa, roles y recursos transversales.'
 
   if (checkingSession) {
     return (
       <main className="min-h-screen bg-[#F6F8FB] p-6">
         <div className="mx-auto max-w-7xl rounded-[28px] border border-slate-200 bg-white p-8 shadow-sm">
           <div className="space-y-2">
-            <p className="text-sm font-medium text-slate-500">Auren</p>
+            <p className="text-sm font-medium text-slate-500">Tralixia</p>
             <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
               Verificando sesión
             </h1>
@@ -493,13 +476,16 @@ if (empresaGuardadaValida) {
           <div className="px-5 py-5">
             <div className="flex items-center gap-3">
               <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#163A5F] text-white shadow-sm">
-                <span className="text-lg font-semibold tracking-tight">A</span>
+                <span className="text-lg font-semibold tracking-tight">T</span>
               </div>
               <div>
                 <div className="text-xl font-semibold tracking-tight text-slate-900">
-                  Auren
+                  Tralixia
                 </div>
                 <div className="text-xs text-slate-500">{appSubtitle}</div>
+                <div className="mt-1 text-[11px] text-slate-400">
+                  Desarrollado por RM Servicios de Ingenieria y Construccion
+                </div>
               </div>
             </div>
           </div>
@@ -560,6 +546,11 @@ if (empresaGuardadaValida) {
               </div>
             )}
           </nav>
+
+          <div className="border-t border-slate-100 px-5 py-4 text-[11px] leading-5 text-slate-400">
+            <p>Tralixia Suite</p>
+            <p>Desarrollado por RM Servicios de Ingenieria y Construccion</p>
+          </div>
         </aside>
 
         <div className="flex min-h-screen flex-col">
@@ -567,10 +558,13 @@ if (empresaGuardadaValida) {
             <div className="px-4 py-4 sm:px-6 lg:px-8">
               <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
                 <div>
-                  <p className="text-sm font-medium text-slate-500">Auren</p>
+                  <p className="text-sm font-medium text-slate-500">Tralixia</p>
                   <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
                     {appTitle}
                   </h1>
+                  <p className="mt-1 text-xs text-slate-400">
+                    Desarrollado por RM Servicios de Ingenieria y Construccion
+                  </p>
                 </div>
 
                 <div className="flex flex-col gap-4 md:flex-row md:items-end xl:items-center">
@@ -663,10 +657,10 @@ if (empresaGuardadaValida) {
               <section className="mx-auto max-w-3xl rounded-[28px] border border-amber-200 bg-amber-50 p-6 shadow-sm">
                 <p className="text-sm font-medium text-amber-700">Acceso restringido</p>
                 <h2 className="mt-2 text-2xl font-semibold tracking-tight text-amber-950">
-                  No tienes acceso a este módulo
+                  No tienes acceso a este modulo
                 </h2>
                 <p className="mt-3 text-sm leading-6 text-amber-800">
-                  El módulo solicitado no está habilitado para la empresa activa o tu rol no tiene permiso para acceder.
+                  El modulo solicitado no esta habilitado para la empresa activa o tu rol no tiene permiso para acceder.
                 </p>
                 <p className="mt-2 text-sm leading-6 text-amber-800">
                   Empresa activa: <span className="font-semibold">{empresaActivaNombreVisual}</span>

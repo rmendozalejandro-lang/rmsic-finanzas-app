@@ -4,7 +4,7 @@ type SidebarItem = {
   moduleKey: string
 }
 
-type AurenSidebarProps = {
+type TralixiaSidebarProps = {
   items: SidebarItem[]
   pathname: string
   onNavigate: (href: string) => void

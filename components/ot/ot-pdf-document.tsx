@@ -913,8 +913,8 @@ export function OTPdfDocument({
       title={`${detalle.folio || 'OT'} - ${resumen.cliente_nombre || 'Cliente'} - ${detalle.titulo}`}
       author="RM Servicios de Ingeniería y Construcción SpA"
       subject="Informe técnico de servicio en terreno"
-      creator="Auren / RMSIC"
-      producer="Auren / RMSIC"
+      creator="Tralixia / RMSIC"
+      producer="Tralixia / RMSIC"
     >
       <Page size="A4" style={styles.page} wrap>
         <View style={styles.header}>
@@ -1119,7 +1119,7 @@ export function OTPdfDocument({
         </View>
 
         <View style={styles.footer} fixed>
-          <Text style={styles.footerText}>RM Servicios de Ingeniería y Construcción SpA · Informe generado desde Auren OT</Text>
+          <Text style={styles.footerText}>RM Servicios de Ingeniería y Construcción SpA · Informe generado desde Tralixia</Text>
           <Text style={styles.footerText}>{detalle.folio || 'OT'}</Text>
         </View>
       </Page>

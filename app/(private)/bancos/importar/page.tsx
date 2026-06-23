@@ -628,7 +628,7 @@ function BancosImportarContent() {
                   .
                 </p>
                 <p className="mt-1 text-xs">
-                  Revisa la columna Estado antes de confirmar. Auren omitirá las
+                  Revisa la columna Estado antes de confirmar. Tralixia omitirá las
                   filas detectadas como duplicadas, pero lo recomendado es
                   descargar la cartola desde{" "}
                   <span className="font-semibold">

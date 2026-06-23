@@ -3,7 +3,7 @@ type EmpresaOption = {
   nombre: string
 }
 
-type AurenHeaderProps = {
+type TralixiaHeaderProps = {
   empresaActivaId: string
   empresaActivaNombre: string
   empresas: EmpresaOption[]

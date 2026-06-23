@@ -106,7 +106,7 @@ export default function RegistroPage() {
     <main className="min-h-screen bg-[#F6F8FB] px-4 py-10 text-slate-900">
       <section className="mx-auto max-w-xl rounded-[28px] border border-slate-200 bg-white p-8 shadow-sm">
         <div className="mb-6">
-          <p className="text-sm font-medium text-slate-500">Auren</p>
+          <p className="text-sm font-medium text-[#18B7A8]">Tralixia</p>
           <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
             Crear cuenta
           </h1>
@@ -114,6 +114,9 @@ export default function RegistroPage() {
             Regístrate usando exactamente el mismo email con el que fuiste invitado.
             La plataforma asociará automáticamente tu empresa y rol cuando confirmes
             tu correo e inicies sesión.
+          </p>
+          <p className="mt-3 text-xs font-medium text-slate-500">
+            Desarrollado por RM Servicios de Ingeniería y Construcción
           </p>
         </div>
 

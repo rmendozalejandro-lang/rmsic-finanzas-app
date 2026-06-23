@@ -28,7 +28,7 @@ const defaultConfig = (empresaId: string, empresaNombre: string): ConfigCorreo =
   sitio_web: '',
   firma_correo: `Área de Administración y Finanzas
 ${empresaNombre || 'Empresa'}`,
-  texto_pie_correo: 'Correo enviado automáticamente desde Auren, sistema de gestión financiera de la empresa.',
+  texto_pie_correo: 'Correo enviado automáticamente desde Tralixia, plataforma modular de gestión empresarial desarrollada por RM Servicios de Ingeniería y Construcción.',
   activo: true,
 })
 
