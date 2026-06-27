@@ -687,7 +687,6 @@ export default function CotizacionesPage() {
                           <div className="font-medium text-slate-900">
                             {row.titulo}
                           </div>
-                          <div className="text-xs text-slate-500">{row.id}</div>
                         </td>
                         <td className="px-5 py-4 text-slate-700">
                           {getClienteDisplayName(cliente)}
