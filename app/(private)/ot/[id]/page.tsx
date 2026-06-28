@@ -26,6 +26,19 @@ type OTDetalle = {
   titulo: string
   descripcion_solicitud: string | null
   problema_reportado: string | null
+  numero_om_cliente: string | null
+  cantidad_tecnicos: number | null
+  horas_hombre_utilizadas: number | null
+  responsable_cliente_rut: string | null
+  supervisor_contratista_nombre: string | null
+  supervisor_contratista_rut: string | null
+  supervisor_contratista_cargo: string | null
+  herramientas_materiales_utilizados: string | null
+  recomendaciones_seguridad: string | null
+  alcance_trabajo_ejecutado: boolean | null
+  alcance_trabajo_observacion: string | null
+  ejecutado_segun_programa: boolean | null
+  ejecutado_segun_programa_observacion: string | null
   diagnostico: string | null
   causa_probable: string | null
   trabajo_realizado: string | null
@@ -118,6 +131,21 @@ type FormState = {
   titulo: string
   descripcion_solicitud: string
   problema_reportado: string
+  numero_om_cliente: string
+  hora_inicio: string
+  hora_termino: string
+  cantidad_tecnicos: string
+  horas_hombre_utilizadas: string
+  responsable_cliente_rut: string
+  supervisor_contratista_nombre: string
+  supervisor_contratista_rut: string
+  supervisor_contratista_cargo: string
+  herramientas_materiales_utilizados: string
+  recomendaciones_seguridad: string
+  alcance_trabajo_ejecutado: '' | 'si' | 'no'
+  alcance_trabajo_observacion: string
+  ejecutado_segun_programa: '' | 'si' | 'no'
+  ejecutado_segun_programa_observacion: string
   diagnostico: string
   causa_probable: string
   trabajo_realizado: string
@@ -276,6 +304,61 @@ function toDateInputValue(value: string | null | undefined) {
   return value.slice(0, 10)
 }
 
+function toDateTimeLocalInputValue(value: string | null | undefined) {
+  if (!value) return ''
+
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  const hour = String(date.getHours()).padStart(2, '0')
+  const minute = String(date.getMinutes()).padStart(2, '0')
+
+  return `${year}-${month}-${day}T${hour}:${minute}`
+}
+
+function dateTimeLocalToISOString(value: string) {
+  if (!value) return null
+
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return null
+
+  return date.toISOString()
+}
+
+function calculateDurationMinutes(startValue: string, endValue: string) {
+  if (!startValue || !endValue) return null
+
+  const start = new Date(startValue)
+  const end = new Date(endValue)
+
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null
+  if (end <= start) return null
+
+  return Math.round((end.getTime() - start.getTime()) / 60000)
+}
+
+function parsePositiveNumber(value: string) {
+  if (!value.trim()) return null
+
+  const parsed = Number(value)
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null
+}
+
+function booleanFromSiNo(value: '' | 'si' | 'no') {
+  if (value === 'si') return true
+  if (value === 'no') return false
+  return null
+}
+
+function siNoFromBoolean(value: boolean | null | undefined): '' | 'si' | 'no' {
+  if (value === true) return 'si'
+  if (value === false) return 'no'
+  return ''
+}
+
 function combineDateAndTimeToISOString(
   dateValue: string,
   timeValue: string,
@@ -406,6 +489,21 @@ function OTDetalleContent() {
     titulo: '',
     descripcion_solicitud: '',
     problema_reportado: '',
+    numero_om_cliente: '',
+    hora_inicio: '',
+    hora_termino: '',
+    cantidad_tecnicos: '',
+    horas_hombre_utilizadas: '',
+    responsable_cliente_rut: '',
+    supervisor_contratista_nombre: '',
+    supervisor_contratista_rut: '',
+    supervisor_contratista_cargo: '',
+    herramientas_materiales_utilizados: '',
+    recomendaciones_seguridad: '',
+    alcance_trabajo_ejecutado: '',
+    alcance_trabajo_observacion: '',
+    ejecutado_segun_programa: '',
+    ejecutado_segun_programa_observacion: '',
     diagnostico: '',
     causa_probable: '',
     trabajo_realizado: '',
@@ -460,6 +558,20 @@ const isPreventiva = isPreventivaMespack || isPreventivaGeneral
   const isClosed = useMemo(() => {
     return resumen?.estado_nombre?.toLowerCase() === 'cerrada'
   }, [resumen])
+
+  const duracionOmMinutos = useMemo(() => {
+    return calculateDurationMinutes(form.hora_inicio, form.hora_termino)
+  }, [form.hora_inicio, form.hora_termino])
+
+  const horasHombreSugeridas = useMemo(() => {
+    const cantidadTecnicos = parsePositiveNumber(form.cantidad_tecnicos)
+
+    if (duracionOmMinutos == null || cantidadTecnicos == null || cantidadTecnicos <= 0) {
+      return null
+    }
+
+    return Number(((duracionOmMinutos / 60) * cantidadTecnicos).toFixed(2))
+  }, [duracionOmMinutos, form.cantidad_tecnicos])
 
   const totalTiempoRegistrado = useMemo(() => {
     return tiempos.reduce((acc, item) => acc + (item.duracion_minutos ?? 0), 0)
@@ -590,6 +702,19 @@ const isPreventiva = isPreventivaMespack || isPreventivaGeneral
                 titulo,
                 descripcion_solicitud,
                 problema_reportado,
+                numero_om_cliente,
+                cantidad_tecnicos,
+                horas_hombre_utilizadas,
+                responsable_cliente_rut,
+                supervisor_contratista_nombre,
+                supervisor_contratista_rut,
+                supervisor_contratista_cargo,
+                herramientas_materiales_utilizados,
+                recomendaciones_seguridad,
+                alcance_trabajo_ejecutado,
+                alcance_trabajo_observacion,
+                ejecutado_segun_programa,
+                ejecutado_segun_programa_observacion,
                 diagnostico,
                 causa_probable,
                 trabajo_realizado,
@@ -826,6 +951,23 @@ const isPreventiva = isPreventivaMespack || isPreventivaGeneral
           titulo: detalleData.titulo || '',
           descripcion_solicitud: detalleData.descripcion_solicitud || '',
           problema_reportado: detalleData.problema_reportado || '',
+          numero_om_cliente: detalleData.numero_om_cliente || '',
+          hora_inicio: toDateTimeLocalInputValue(detalleData.hora_inicio),
+          hora_termino: toDateTimeLocalInputValue(detalleData.hora_termino),
+          cantidad_tecnicos:
+            detalleData.cantidad_tecnicos != null ? String(detalleData.cantidad_tecnicos) : '',
+          horas_hombre_utilizadas:
+            detalleData.horas_hombre_utilizadas != null ? String(detalleData.horas_hombre_utilizadas) : '',
+          responsable_cliente_rut: detalleData.responsable_cliente_rut || '',
+          supervisor_contratista_nombre: detalleData.supervisor_contratista_nombre || '',
+          supervisor_contratista_rut: detalleData.supervisor_contratista_rut || '',
+          supervisor_contratista_cargo: detalleData.supervisor_contratista_cargo || '',
+          herramientas_materiales_utilizados: detalleData.herramientas_materiales_utilizados || '',
+          recomendaciones_seguridad: detalleData.recomendaciones_seguridad || '',
+          alcance_trabajo_ejecutado: siNoFromBoolean(detalleData.alcance_trabajo_ejecutado),
+          alcance_trabajo_observacion: detalleData.alcance_trabajo_observacion || '',
+          ejecutado_segun_programa: siNoFromBoolean(detalleData.ejecutado_segun_programa),
+          ejecutado_segun_programa_observacion: detalleData.ejecutado_segun_programa_observacion || '',
           diagnostico: detalleData.diagnostico || '',
           causa_probable: detalleData.causa_probable || '',
           trabajo_realizado: detalleData.trabajo_realizado || '',
@@ -921,6 +1063,14 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
       }
     }
 
+    if (form.hora_inicio && form.hora_termino) {
+      const duracion = calculateDurationMinutes(form.hora_inicio, form.hora_termino)
+
+      if (duracion == null) {
+        return 'La fecha y hora de término de la OM debe ser mayor que la fecha y hora de inicio.'
+      }
+    }
+
     return ''
   }
 
@@ -957,6 +1107,25 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
     descripcion_solicitud: form.descripcion_solicitud.trim() || null,
 
     problema_reportado: form.problema_reportado.trim() || null,
+    numero_om_cliente: form.numero_om_cliente.trim() || null,
+    hora_inicio: dateTimeLocalToISOString(form.hora_inicio),
+    hora_termino: dateTimeLocalToISOString(form.hora_termino),
+    duracion_minutos: duracionOmMinutos ?? detalle?.duracion_minutos ?? null,
+    cantidad_tecnicos: parsePositiveNumber(form.cantidad_tecnicos),
+    horas_hombre_utilizadas:
+      parsePositiveNumber(form.horas_hombre_utilizadas) ?? horasHombreSugeridas,
+    responsable_cliente_rut: form.responsable_cliente_rut.trim() || null,
+    supervisor_contratista_nombre: form.supervisor_contratista_nombre.trim() || null,
+    supervisor_contratista_rut: form.supervisor_contratista_rut.trim() || null,
+    supervisor_contratista_cargo: form.supervisor_contratista_cargo.trim() || null,
+    herramientas_materiales_utilizados:
+      form.herramientas_materiales_utilizados.trim() || null,
+    recomendaciones_seguridad: form.recomendaciones_seguridad.trim() || null,
+    alcance_trabajo_ejecutado: booleanFromSiNo(form.alcance_trabajo_ejecutado),
+    alcance_trabajo_observacion: form.alcance_trabajo_observacion.trim() || null,
+    ejecutado_segun_programa: booleanFromSiNo(form.ejecutado_segun_programa),
+    ejecutado_segun_programa_observacion:
+      form.ejecutado_segun_programa_observacion.trim() || null,
     diagnostico: form.diagnostico.trim() || null,
     causa_probable: form.causa_probable.trim() || null,
     trabajo_realizado: form.trabajo_realizado.trim() || null,
@@ -1511,7 +1680,11 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
         <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           <DetailField label="Empresa" value={resumen.empresa_nombre} />
           <DetailField label="Cliente" value={resumen.cliente_nombre} />
-          <DetailField label="Folio" value={detalle.folio} />
+          <DetailField label="Folio Tralixia" value={detalle.folio} />
+          <DetailField label="N° OM / N° Orden cliente" value={form.numero_om_cliente} />
+          <DetailField label="Inicio OM" value={formatDateTime(detalle.hora_inicio)} />
+          <DetailField label="Término OM" value={formatDateTime(detalle.hora_termino)} />
+          <DetailField label="Horas hombre utilizadas" value={detalle.horas_hombre_utilizadas} />
           <DetailField label="Contacto cliente" value={form.contacto_cliente_nombre} />
           <DetailField label="Cargo contacto" value={form.contacto_cliente_cargo} />
           <DetailField label="Area / sector trabajo" value={form.area_trabajo} />
@@ -1728,6 +1901,210 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
               En mantenimiento preventivo el checklist queda marcado automaticamente.
             </div>
           ) : null}
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <SectionTitle
+            title="Formato OM Softys"
+            subtitle="Campos de la portada principal del informe OM. Se registran una sola vez por orden principal."
+          />
+
+          <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-700">
+                N° OM / N° Orden cliente
+              </label>
+              <input
+                type="text"
+                value={form.numero_om_cliente}
+                onChange={(e) => handleChange('numero_om_cliente', e.target.value)}
+                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
+              />
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-700">
+                Fecha y hora de inicio OM
+              </label>
+              <input
+                type="datetime-local"
+                value={form.hora_inicio}
+                onChange={(e) => handleChange('hora_inicio', e.target.value)}
+                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
+              />
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-700">
+                Fecha y hora de término OM
+              </label>
+              <input
+                type="datetime-local"
+                value={form.hora_termino}
+                onChange={(e) => handleChange('hora_termino', e.target.value)}
+                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
+              />
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-700">
+                Cantidad de técnicos
+              </label>
+              <input
+                type="number"
+                min="0"
+                step="1"
+                value={form.cantidad_tecnicos}
+                onChange={(e) => handleChange('cantidad_tecnicos', e.target.value)}
+                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
+              />
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-700">
+                Horas hombre utilizadas
+              </label>
+              <input
+                type="number"
+                min="0"
+                step="0.25"
+                value={form.horas_hombre_utilizadas}
+                onChange={(e) => handleChange('horas_hombre_utilizadas', e.target.value)}
+                placeholder={horasHombreSugeridas != null ? String(horasHombreSugeridas) : ''}
+                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
+              />
+              <p className="mt-1 text-xs text-slate-500">
+                {duracionOmMinutos != null
+                  ? `Duración calculada: ${Math.round(duracionOmMinutos / 60 * 100) / 100} h${horasHombreSugeridas != null ? ` · HH sugeridas: ${horasHombreSugeridas}` : ''}`
+                  : 'Se calcula si ingresas inicio, término y cantidad de técnicos.'}
+              </p>
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-700">
+                RUT responsable cliente
+              </label>
+              <input
+                type="text"
+                value={form.responsable_cliente_rut}
+                onChange={(e) => handleChange('responsable_cliente_rut', e.target.value)}
+                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
+              />
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-700">
+                Supervisor contratista
+              </label>
+              <input
+                type="text"
+                value={form.supervisor_contratista_nombre}
+                onChange={(e) => handleChange('supervisor_contratista_nombre', e.target.value)}
+                placeholder="Nombre supervisor DyF / contratista"
+                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
+              />
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-700">
+                RUT supervisor contratista
+              </label>
+              <input
+                type="text"
+                value={form.supervisor_contratista_rut}
+                onChange={(e) => handleChange('supervisor_contratista_rut', e.target.value)}
+                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
+              />
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-700">
+                Cargo supervisor contratista
+              </label>
+              <input
+                type="text"
+                value={form.supervisor_contratista_cargo}
+                onChange={(e) => handleChange('supervisor_contratista_cargo', e.target.value)}
+                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
+              />
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-4">
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-700">
+                Herramientas y materiales utilizados
+              </label>
+              <textarea
+                value={form.herramientas_materiales_utilizados}
+                onChange={(e) => handleChange('herramientas_materiales_utilizados', e.target.value)}
+                rows={3}
+                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-500"
+              />
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-700">
+                Recomendaciones de seguridad para la ejecución del trabajo
+              </label>
+              <textarea
+                value={form.recomendaciones_seguridad}
+                onChange={(e) => handleChange('recomendaciones_seguridad', e.target.value)}
+                rows={3}
+                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-500"
+              />
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-4 md:grid-cols-2">
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-700">
+                ¿Se ejecutó todo lo solicitado?
+              </label>
+              <select
+                value={form.alcance_trabajo_ejecutado}
+                onChange={(e) =>
+                  handleChange('alcance_trabajo_ejecutado', e.target.value as FormState['alcance_trabajo_ejecutado'])
+                }
+                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
+              >
+                <option value="">Sin definir</option>
+                <option value="si">Sí</option>
+                <option value="no">No</option>
+              </select>
+              <textarea
+                value={form.alcance_trabajo_observacion}
+                onChange={(e) => handleChange('alcance_trabajo_observacion', e.target.value)}
+                rows={3}
+                placeholder="Observación de alcance, si corresponde."
+                className="mt-3 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-500"
+              />
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-700">
+                ¿Se ejecutó de acuerdo al programa?
+              </label>
+              <select
+                value={form.ejecutado_segun_programa}
+                onChange={(e) =>
+                  handleChange('ejecutado_segun_programa', e.target.value as FormState['ejecutado_segun_programa'])
+                }
+                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
+              >
+                <option value="">Sin definir</option>
+                <option value="si">Sí</option>
+                <option value="no">No</option>
+              </select>
+              <textarea
+                value={form.ejecutado_segun_programa_observacion}
+                onChange={(e) => handleChange('ejecutado_segun_programa_observacion', e.target.value)}
+                rows={3}
+                placeholder="Indica el motivo si no se ejecutó según programa."
+                className="mt-3 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-500"
+              />
+            </div>
+          </div>
         </div>
 
         {isPreventiva ? (

@@ -91,6 +91,24 @@ type FormDataState = {
   titulo: string
   descripcion_solicitud: string
   problema_reportado: string
+  numero_om_cliente: string
+  hora_inicio: string
+  hora_termino: string
+  cantidad_tecnicos: string
+  horas_hombre_utilizadas: string
+  contacto_cliente_nombre: string
+  contacto_cliente_cargo: string
+  responsable_cliente_rut: string
+  area_trabajo: string
+  supervisor_contratista_nombre: string
+  supervisor_contratista_rut: string
+  supervisor_contratista_cargo: string
+  herramientas_materiales_utilizados: string
+  recomendaciones_seguridad: string
+  alcance_trabajo_ejecutado: '' | 'si' | 'no'
+  alcance_trabajo_observacion: string
+  ejecutado_segun_programa: '' | 'si' | 'no'
+  ejecutado_segun_programa_observacion: string
   tecnico_responsable_id: string
   supervisor_id: string
   prioridad: 'baja' | 'media' | 'alta' | 'critica'
@@ -106,6 +124,40 @@ function todayLocalDate() {
   const month = String(now.getMonth() + 1).padStart(2, '0')
   const day = String(now.getDate()).padStart(2, '0')
   return `${year}-${month}-${day}`
+}
+
+function dateTimeLocalToISOString(value: string) {
+  if (!value) return null
+
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return null
+
+  return date.toISOString()
+}
+
+function calculateDurationMinutes(startValue: string, endValue: string) {
+  if (!startValue || !endValue) return null
+
+  const start = new Date(startValue)
+  const end = new Date(endValue)
+
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null
+  if (end <= start) return null
+
+  return Math.round((end.getTime() - start.getTime()) / 60000)
+}
+
+function parsePositiveNumber(value: string) {
+  if (!value.trim()) return null
+
+  const parsed = Number(value)
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null
+}
+
+function booleanFromSiNo(value: '' | 'si' | 'no') {
+  if (value === 'si') return true
+  if (value === 'no') return false
+  return null
 }
 
 function buildSupervisorLabel(item: PerfilRow) {
@@ -157,6 +209,24 @@ function NuevaOTContent() {
     titulo: '',
     descripcion_solicitud: '',
     problema_reportado: '',
+    numero_om_cliente: '',
+    hora_inicio: '',
+    hora_termino: '',
+    cantidad_tecnicos: '',
+    horas_hombre_utilizadas: '',
+    contacto_cliente_nombre: '',
+    contacto_cliente_cargo: '',
+    responsable_cliente_rut: '',
+    area_trabajo: '',
+    supervisor_contratista_nombre: '',
+    supervisor_contratista_rut: '',
+    supervisor_contratista_cargo: '',
+    herramientas_materiales_utilizados: '',
+    recomendaciones_seguridad: '',
+    alcance_trabajo_ejecutado: '',
+    alcance_trabajo_observacion: '',
+    ejecutado_segun_programa: '',
+    ejecutado_segun_programa_observacion: '',
     tecnico_responsable_id: '',
     supervisor_id: '',
     prioridad: 'media',
@@ -186,6 +256,20 @@ function NuevaOTContent() {
   }, [equipos, form.equipo_id])
 
   const isPreventivaMespack = selectedTipo?.codigo === 'preventiva'
+
+  const duracionOmMinutos = useMemo(() => {
+    return calculateDurationMinutes(form.hora_inicio, form.hora_termino)
+  }, [form.hora_inicio, form.hora_termino])
+
+  const horasHombreSugeridas = useMemo(() => {
+    const cantidadTecnicos = parsePositiveNumber(form.cantidad_tecnicos)
+
+    if (duracionOmMinutos == null || cantidadTecnicos == null || cantidadTecnicos <= 0) {
+      return null
+    }
+
+    return Number(((duracionOmMinutos / 60) * cantidadTecnicos).toFixed(2))
+  }, [duracionOmMinutos, form.cantidad_tecnicos])
 
   useEffect(() => {
     const storedEmpresaId = window.localStorage.getItem(STORAGE_ID_KEY) || ''
@@ -588,6 +672,14 @@ function NuevaOTContent() {
       return 'Debes ingresar un título para la OT.'
     }
 
+    if (form.hora_inicio && form.hora_termino) {
+      const duracion = calculateDurationMinutes(form.hora_inicio, form.hora_termino)
+
+      if (duracion == null) {
+        return 'La fecha y hora de término de la OM debe ser mayor que la fecha y hora de inicio.'
+      }
+    }
+
     return ''
   }
 
@@ -637,6 +729,28 @@ function NuevaOTContent() {
         titulo: form.titulo.trim(),
         descripcion_solicitud: form.descripcion_solicitud.trim() || null,
         problema_reportado: form.problema_reportado.trim() || null,
+        numero_om_cliente: form.numero_om_cliente.trim() || null,
+        hora_inicio: dateTimeLocalToISOString(form.hora_inicio),
+        hora_termino: dateTimeLocalToISOString(form.hora_termino),
+        duracion_minutos: duracionOmMinutos,
+        cantidad_tecnicos: parsePositiveNumber(form.cantidad_tecnicos),
+        horas_hombre_utilizadas:
+          parsePositiveNumber(form.horas_hombre_utilizadas) ?? horasHombreSugeridas,
+        contacto_cliente_nombre: form.contacto_cliente_nombre.trim() || null,
+        contacto_cliente_cargo: form.contacto_cliente_cargo.trim() || null,
+        responsable_cliente_rut: form.responsable_cliente_rut.trim() || null,
+        area_trabajo: form.area_trabajo.trim() || null,
+        supervisor_contratista_nombre: form.supervisor_contratista_nombre.trim() || null,
+        supervisor_contratista_rut: form.supervisor_contratista_rut.trim() || null,
+        supervisor_contratista_cargo: form.supervisor_contratista_cargo.trim() || null,
+        herramientas_materiales_utilizados:
+          form.herramientas_materiales_utilizados.trim() || null,
+        recomendaciones_seguridad: form.recomendaciones_seguridad.trim() || null,
+        alcance_trabajo_ejecutado: booleanFromSiNo(form.alcance_trabajo_ejecutado),
+        alcance_trabajo_observacion: form.alcance_trabajo_observacion.trim() || null,
+        ejecutado_segun_programa: booleanFromSiNo(form.ejecutado_segun_programa),
+        ejecutado_segun_programa_observacion:
+          form.ejecutado_segun_programa_observacion.trim() || null,
         tecnico_responsable_id: form.tecnico_responsable_id || null,
         supervisor_id: form.supervisor_id || null,
         prioridad: form.prioridad,
@@ -976,6 +1090,256 @@ function NuevaOTContent() {
                 No se cargaron correctamente los catálogos de tipo de servicio o estado.
               </div>
             ) : null}
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div>
+              <h2 className="text-lg font-semibold text-slate-900">
+                Formato OM Softys
+              </h2>
+              <p className="mt-1 text-sm text-slate-500">
+                Datos generales del informe de OM. Esta información se registra una sola vez por orden principal.
+              </p>
+            </div>
+
+            <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  N° OM / N° Orden cliente
+                </label>
+                <input
+                  type="text"
+                  value={form.numero_om_cliente}
+                  onChange={(e) => handleChange('numero_om_cliente', e.target.value)}
+                  placeholder="Ejemplo: OM Softys 123456"
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  Inicio OM
+                </label>
+                <input
+                  type="datetime-local"
+                  value={form.hora_inicio}
+                  onChange={(e) => handleChange('hora_inicio', e.target.value)}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  Término OM
+                </label>
+                <input
+                  type="datetime-local"
+                  value={form.hora_termino}
+                  onChange={(e) => handleChange('hora_termino', e.target.value)}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  Cantidad de técnicos
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={form.cantidad_tecnicos}
+                  onChange={(e) => handleChange('cantidad_tecnicos', e.target.value)}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  Horas hombre utilizadas
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.25"
+                  value={form.horas_hombre_utilizadas}
+                  onChange={(e) => handleChange('horas_hombre_utilizadas', e.target.value)}
+                  placeholder={horasHombreSugeridas != null ? String(horasHombreSugeridas) : ''}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
+                />
+                <p className="mt-1 text-xs text-slate-500">
+                  {duracionOmMinutos != null
+                    ? `Duración calculada: ${Math.round(duracionOmMinutos / 60 * 100) / 100} h${horasHombreSugeridas != null ? ` · HH sugeridas: ${horasHombreSugeridas}` : ''}`
+                    : 'Se puede calcular automáticamente si ingresas inicio, término y cantidad de técnicos.'}
+                </p>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  Área / sector de trabajo
+                </label>
+                <input
+                  type="text"
+                  value={form.area_trabajo}
+                  onChange={(e) => handleChange('area_trabajo', e.target.value)}
+                  placeholder="Ejemplo: Línea MP1 / Conversión / Servicios industriales"
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  Responsable cliente / Softys
+                </label>
+                <input
+                  type="text"
+                  value={form.contacto_cliente_nombre}
+                  onChange={(e) => handleChange('contacto_cliente_nombre', e.target.value)}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  Cargo responsable cliente
+                </label>
+                <input
+                  type="text"
+                  value={form.contacto_cliente_cargo}
+                  onChange={(e) => handleChange('contacto_cliente_cargo', e.target.value)}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  RUT responsable cliente
+                </label>
+                <input
+                  type="text"
+                  value={form.responsable_cliente_rut}
+                  onChange={(e) => handleChange('responsable_cliente_rut', e.target.value)}
+                  placeholder="Ejemplo: 12.345.678-9"
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  Supervisor contratista
+                </label>
+                <input
+                  type="text"
+                  value={form.supervisor_contratista_nombre}
+                  onChange={(e) => handleChange('supervisor_contratista_nombre', e.target.value)}
+                  placeholder="Nombre supervisor DyF / contratista"
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  RUT supervisor contratista
+                </label>
+                <input
+                  type="text"
+                  value={form.supervisor_contratista_rut}
+                  onChange={(e) => handleChange('supervisor_contratista_rut', e.target.value)}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  Cargo supervisor contratista
+                </label>
+                <input
+                  type="text"
+                  value={form.supervisor_contratista_cargo}
+                  onChange={(e) => handleChange('supervisor_contratista_cargo', e.target.value)}
+                  placeholder="Ejemplo: Supervisor"
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
+                />
+              </div>
+            </div>
+
+            <div className="mt-5 grid gap-4">
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  Herramientas y materiales utilizados
+                </label>
+                <textarea
+                  value={form.herramientas_materiales_utilizados}
+                  onChange={(e) => handleChange('herramientas_materiales_utilizados', e.target.value)}
+                  rows={3}
+                  placeholder="Registra herramientas, instrumentos e insumos utilizados en la OM."
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-500"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  Recomendaciones de seguridad para la ejecución del trabajo
+                </label>
+                <textarea
+                  value={form.recomendaciones_seguridad}
+                  onChange={(e) => handleChange('recomendaciones_seguridad', e.target.value)}
+                  rows={3}
+                  placeholder="Indica recomendaciones o condiciones de seguridad generales de la OM."
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-500"
+                />
+              </div>
+            </div>
+
+            <div className="mt-5 grid gap-4 md:grid-cols-2">
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  ¿Se ejecutó todo lo solicitado?
+                </label>
+                <select
+                  value={form.alcance_trabajo_ejecutado}
+                  onChange={(e) =>
+                    handleChange('alcance_trabajo_ejecutado', e.target.value as FormDataState['alcance_trabajo_ejecutado'])
+                  }
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
+                >
+                  <option value="">Sin definir</option>
+                  <option value="si">Sí</option>
+                  <option value="no">No</option>
+                </select>
+                <textarea
+                  value={form.alcance_trabajo_observacion}
+                  onChange={(e) => handleChange('alcance_trabajo_observacion', e.target.value)}
+                  rows={3}
+                  placeholder="Observación de alcance, si corresponde."
+                  className="mt-3 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-500"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  ¿Se ejecutó de acuerdo al programa?
+                </label>
+                <select
+                  value={form.ejecutado_segun_programa}
+                  onChange={(e) =>
+                    handleChange('ejecutado_segun_programa', e.target.value as FormDataState['ejecutado_segun_programa'])
+                  }
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
+                >
+                  <option value="">Sin definir</option>
+                  <option value="si">Sí</option>
+                  <option value="no">No</option>
+                </select>
+                <textarea
+                  value={form.ejecutado_segun_programa_observacion}
+                  onChange={(e) => handleChange('ejecutado_segun_programa_observacion', e.target.value)}
+                  rows={3}
+                  placeholder="Indica el motivo si no se ejecutó según programa."
+                  className="mt-3 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-500"
+                />
+              </div>
+            </div>
           </div>
 
           <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">

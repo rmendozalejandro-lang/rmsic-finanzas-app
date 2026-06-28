@@ -25,6 +25,19 @@ type OTDetalle = {
   titulo: string
   descripcion_solicitud: string | null
   problema_reportado: string | null
+  numero_om_cliente: string | null
+  cantidad_tecnicos: number | null
+  horas_hombre_utilizadas: number | null
+  responsable_cliente_rut: string | null
+  supervisor_contratista_nombre: string | null
+  supervisor_contratista_rut: string | null
+  supervisor_contratista_cargo: string | null
+  herramientas_materiales_utilizados: string | null
+  recomendaciones_seguridad: string | null
+  alcance_trabajo_ejecutado: boolean | null
+  alcance_trabajo_observacion: string | null
+  ejecutado_segun_programa: boolean | null
+  ejecutado_segun_programa_observacion: string | null
   diagnostico: string | null
   causa_probable: string | null
   trabajo_realizado: string | null
@@ -356,6 +369,19 @@ const supabaseServiceRoleKeySafe = supabaseServiceRoleKey as string
             titulo,
             descripcion_solicitud,
             problema_reportado,
+            numero_om_cliente,
+            cantidad_tecnicos,
+            horas_hombre_utilizadas,
+            responsable_cliente_rut,
+            supervisor_contratista_nombre,
+            supervisor_contratista_rut,
+            supervisor_contratista_cargo,
+            herramientas_materiales_utilizados,
+            recomendaciones_seguridad,
+            alcance_trabajo_ejecutado,
+            alcance_trabajo_observacion,
+            ejecutado_segun_programa,
+            ejecutado_segun_programa_observacion,
             diagnostico,
             causa_probable,
             trabajo_realizado,
@@ -575,6 +601,38 @@ const supabaseServiceRoleKeySafe = supabaseServiceRoleKey as string
       }
     }
 
+    const siNoPdf = (value: boolean | null | undefined) => {
+      if (value === true) return 'Sí'
+      if (value === false) return 'No'
+      return '-'
+    }
+
+    const omSoftysTextoPdf = [
+      'DATOS PRINCIPALES INFORME OM',
+      `N° OM / Orden cliente: ${detalle.numero_om_cliente || '-'}`,
+      `Responsable cliente / Softys: ${detalle.contacto_cliente_nombre || '-'}${detalle.contacto_cliente_cargo ? ` - ${detalle.contacto_cliente_cargo}` : ''}${detalle.responsable_cliente_rut ? ` - RUT ${detalle.responsable_cliente_rut}` : ''}`,
+      `Supervisor contratista: ${detalle.supervisor_contratista_nombre || '-'}${detalle.supervisor_contratista_cargo ? ` - ${detalle.supervisor_contratista_cargo}` : ''}${detalle.supervisor_contratista_rut ? ` - RUT ${detalle.supervisor_contratista_rut}` : ''}`,
+      `Área / sector de trabajo: ${detalle.area_trabajo || '-'}`,
+      `Cantidad de técnicos: ${detalle.cantidad_tecnicos ?? '-'}`,
+      `Horas hombre utilizadas: ${detalle.horas_hombre_utilizadas ?? '-'}`,
+      `¿Se ejecutó todo lo solicitado?: ${siNoPdf(detalle.alcance_trabajo_ejecutado)}`,
+      detalle.alcance_trabajo_observacion
+        ? `Observación alcance: ${detalle.alcance_trabajo_observacion}`
+        : '',
+      `¿Se ejecutó de acuerdo al programa?: ${siNoPdf(detalle.ejecutado_segun_programa)}`,
+      detalle.ejecutado_segun_programa_observacion
+        ? `Observación programa: ${detalle.ejecutado_segun_programa_observacion}`
+        : '',
+      detalle.herramientas_materiales_utilizados
+        ? `Herramientas y materiales utilizados:\n${detalle.herramientas_materiales_utilizados}`
+        : '',
+      detalle.recomendaciones_seguridad
+        ? `Recomendaciones de seguridad:\n${detalle.recomendaciones_seguridad}`
+        : '',
+    ]
+      .filter((value) => value && value.trim())
+      .join('\n')
+
     const detallePdf: OTDetalle = {
       ...detalle,
       ...(horarioDesdeTiempos
@@ -588,6 +646,7 @@ const supabaseServiceRoleKeySafe = supabaseServiceRoleKey as string
         : {}),
       observaciones_cierre: [
         detalle.observaciones_cierre,
+        omSoftysTextoPdf,
         checklistTextoPdf
           ? `CHECKLIST DE MANTENIMIENTO\n${checklistTextoPdf}`
           : '',
