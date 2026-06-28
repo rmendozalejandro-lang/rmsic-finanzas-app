@@ -61,7 +61,7 @@ function getSenderEmail(fromValue: string) {
 }
 
 async function registrarEnvio(params: {
-  adminClient: ReturnType<typeof createClient>
+  adminClient: any
   empresaId: string
   otId: string
   contactoClienteId: string | null
