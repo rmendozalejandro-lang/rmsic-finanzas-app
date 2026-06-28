@@ -1174,12 +1174,15 @@ export default function ClientesPage() {
                 {contactoEditingId ? "Editar contacto" : "Nuevo contacto"}
               </h3>
 
-              <form onSubmit={handleContactoSubmit} className="mt-4 space-y-4">
+              <form onSubmit={handleContactoSubmit} autoComplete="off" className="mt-4 space-y-4">
                 <div>
                   <label className="block text-sm text-slate-600 mb-2">Nombre</label>
                   <input
                     type="text"
                     name="nombre"
+                    autoComplete="new-password"
+                    data-lpignore="true"
+                    data-1p-ignore="true"
                     value={contactoForm.nombre}
                     onChange={handleContactoChange}
                     className="w-full rounded-xl border border-slate-300 px-4 py-3"
@@ -1192,6 +1195,9 @@ export default function ClientesPage() {
                   <input
                     type="text"
                     name="cargo"
+                    autoComplete="new-password"
+                    data-lpignore="true"
+                    data-1p-ignore="true"
                     value={contactoForm.cargo}
                     onChange={handleContactoChange}
                     className="w-full rounded-xl border border-slate-300 px-4 py-3"
@@ -1204,6 +1210,9 @@ export default function ClientesPage() {
                     <input
                       type="text"
                       name="area"
+                      autoComplete="new-password"
+                      data-lpignore="true"
+                      data-1p-ignore="true"
                       value={contactoForm.area}
                       onChange={handleContactoChange}
                       className="w-full rounded-xl border border-slate-300 px-4 py-3"
@@ -1215,6 +1224,9 @@ export default function ClientesPage() {
                     <input
                       type="text"
                       name="linea"
+                      autoComplete="new-password"
+                      data-lpignore="true"
+                      data-1p-ignore="true"
                       value={contactoForm.linea}
                       onChange={handleContactoChange}
                       className="w-full rounded-xl border border-slate-300 px-4 py-3"
@@ -1227,6 +1239,9 @@ export default function ClientesPage() {
                   <input
                     type="email"
                     name="email"
+                    autoComplete="new-password"
+                    data-lpignore="true"
+                    data-1p-ignore="true"
                     value={contactoForm.email}
                     onChange={handleContactoChange}
                     className="w-full rounded-xl border border-slate-300 px-4 py-3"
@@ -1238,6 +1253,9 @@ export default function ClientesPage() {
                   <input
                     type="text"
                     name="telefono"
+                    autoComplete="new-password"
+                    data-lpignore="true"
+                    data-1p-ignore="true"
                     value={contactoForm.telefono}
                     onChange={handleContactoChange}
                     className="w-full rounded-xl border border-slate-300 px-4 py-3"
