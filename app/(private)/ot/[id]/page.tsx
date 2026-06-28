@@ -1331,11 +1331,29 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
         throw new Error(validationError)
       }
 
-      await saveOtDraft()
+      if (!form.hora_inicio) {
+        throw new Error('Debes ingresar la hora inicio OM antes de cerrar.')
+      }
+
+      if (!form.hora_termino) {
+        throw new Error('Debes ingresar la hora término OM para cerrar o entregar el trabajo.')
+      }
+
+      const duracionCierreMinutos = calculateDurationMinutes(
+        form.hora_inicio,
+        form.hora_termino,
+        form.fecha_ot || todayLocalDate()
+      )
+
+      if (duracionCierreMinutos == null) {
+        throw new Error('La hora término OM debe ser mayor que la hora inicio OM.')
+      }
+
+      const payloadBorrador = await saveOtDraft()
 
       if (!estadoCerrada) {
         throw new Error(
-          'El avance quedÃ³ guardado, pero no se pudo cerrar: no se encontrÃ³ el estado "cerrada" en la base.'
+          'El avance quedó guardado, pero no se pudo cerrar: no se encontró el estado "cerrada" en la base.'
         )
       }
 
@@ -1374,62 +1392,17 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
         }
       }
 
-      type TiempoCierreRow = {
-        id: string
-        hora_inicio: string | null
-        hora_termino: string | null
-      }
-
-      const { data: tiemposActuales, error: tiemposError } = await supabase
-        .from('ot_tiempos_trabajo')
-        .select('id, hora_inicio, hora_termino')
-        .eq('ot_id', otId)
-        .eq('activo', true)
-        .is('deleted_at', null)
-
-      if (tiemposError) {
-        throw new Error(
-          `El avance quedÃ³ guardado, pero no se pudieron revisar los tiempos: ${tiemposError.message}`
-        )
-      }
-
-      const tiemposValidos = ((tiemposActuales ?? []) as TiempoCierreRow[]).filter(
-        (item) => item.hora_inicio && item.hora_termino
-      )
-
       const nowIso = new Date().toISOString()
 
-      let horaInicio = detalle?.hora_inicio || nowIso
-      let horaTermino = nowIso
-
-      if (tiemposValidos.length > 0) {
-        const orderedStarts = tiemposValidos
-          .map((item) => item.hora_inicio as string)
-          .sort((a, b) => new Date(a).getTime() - new Date(b).getTime())
-
-        const orderedEnds = tiemposValidos
-          .map((item) => item.hora_termino as string)
-          .sort((a, b) => new Date(a).getTime() - new Date(b).getTime())
-
-        horaInicio = orderedStarts[0]
-        horaTermino = orderedEnds[orderedEnds.length - 1]
-      }
-
-      const inicioMs = new Date(horaInicio).getTime()
-      const terminoMs = new Date(horaTermino).getTime()
-
-      const duracionMinutos =
-        Number.isFinite(inicioMs) && Number.isFinite(terminoMs)
-          ? Math.max(0, Math.round((terminoMs - inicioMs) / 60000))
-          : null
-
       const payload = {
-        ...buildOtDraftPayload(),
+        ...payloadBorrador,
         estado_id: estadoCerrada.id,
         fecha_cierre: nowIso,
-        hora_inicio: horaInicio,
-        hora_termino: horaTermino,
-        duracion_minutos: duracionMinutos,
+        hora_inicio: payloadBorrador.hora_inicio,
+        hora_termino: payloadBorrador.hora_termino,
+        duracion_minutos: duracionCierreMinutos,
+        horas_hombre_utilizadas:
+          parsePositiveNumber(form.horas_hombre_utilizadas) ?? horasHombreSugeridas,
       }
 
       const { error: updateError } = await supabase
@@ -1950,52 +1923,6 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
 
             <div>
               <label className="mb-2 block text-sm font-medium text-slate-700">
-                Hora término OM
-              </label>
-              <input
-                type="time"
-                value={form.hora_termino}
-                onChange={(e) => handleChange('hora_termino', e.target.value)}
-                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
-              />
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm font-medium text-slate-700">
-                Cantidad de técnicos
-              </label>
-              <input
-                type="number"
-                min="0"
-                step="1"
-                value={form.cantidad_tecnicos}
-                onChange={(e) => handleChange('cantidad_tecnicos', e.target.value)}
-                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
-              />
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm font-medium text-slate-700">
-                Horas hombre utilizadas
-              </label>
-              <input
-                type="number"
-                min="0"
-                step="0.25"
-                value={form.horas_hombre_utilizadas}
-                onChange={(e) => handleChange('horas_hombre_utilizadas', e.target.value)}
-                placeholder={horasHombreSugeridas != null ? String(horasHombreSugeridas) : ''}
-                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
-              />
-              <p className="mt-1 text-xs text-slate-500">
-                {duracionOmMinutos != null
-                  ? `Duración calculada: ${Math.round(duracionOmMinutos / 60 * 100) / 100} h${horasHombreSugeridas != null ? ` · HH sugeridas: ${horasHombreSugeridas}` : ''}`
-                  : 'Se calcula si ingresas inicio, término y cantidad de técnicos.'}
-              </p>
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm font-medium text-slate-700">
                 RUT responsable cliente
               </label>
               <input
@@ -2070,55 +1997,6 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
             </div>
           </div>
 
-          <div className="mt-5 grid gap-4 md:grid-cols-2">
-            <div>
-              <label className="mb-2 block text-sm font-medium text-slate-700">
-                ¿Se ejecutó todo lo solicitado?
-              </label>
-              <select
-                value={form.alcance_trabajo_ejecutado}
-                onChange={(e) =>
-                  handleChange('alcance_trabajo_ejecutado', e.target.value as FormState['alcance_trabajo_ejecutado'])
-                }
-                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
-              >
-                <option value="">Sin definir</option>
-                <option value="si">Sí</option>
-                <option value="no">No</option>
-              </select>
-              <textarea
-                value={form.alcance_trabajo_observacion}
-                onChange={(e) => handleChange('alcance_trabajo_observacion', e.target.value)}
-                rows={3}
-                placeholder="Observación de alcance, si corresponde."
-                className="mt-3 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-500"
-              />
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm font-medium text-slate-700">
-                ¿Se ejecutó de acuerdo al programa?
-              </label>
-              <select
-                value={form.ejecutado_segun_programa}
-                onChange={(e) =>
-                  handleChange('ejecutado_segun_programa', e.target.value as FormState['ejecutado_segun_programa'])
-                }
-                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
-              >
-                <option value="">Sin definir</option>
-                <option value="si">Sí</option>
-                <option value="no">No</option>
-              </select>
-              <textarea
-                value={form.ejecutado_segun_programa_observacion}
-                onChange={(e) => handleChange('ejecutado_segun_programa_observacion', e.target.value)}
-                rows={3}
-                placeholder="Indica el motivo si no se ejecutó según programa."
-                className="mt-3 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-500"
-              />
-            </div>
-          </div>
         </div>
 
         {isPreventiva ? (
@@ -2742,9 +2620,147 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
 
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <SectionTitle
-          title="Cierre rapido de OT"
-          subtitle="Guarda el avance y luego intenta cerrar la orden sin perder el texto escrito."
+          title="Cierre / entrega de OM"
+          subtitle="Completa estos datos al entregar el trabajo. La hora término, duración y horas hombre se registran al cierre, no al crear la OM."
         />
+
+        <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <div>
+            <label className="mb-2 block text-sm font-medium text-slate-700">
+              Hora término OM *
+            </label>
+            <input
+              type="time"
+              value={form.hora_termino}
+              onChange={(e) => handleChange('hora_termino', e.target.value)}
+              disabled={isClosed}
+              className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500 disabled:bg-slate-100"
+            />
+            <p className="mt-1 text-xs text-slate-500">
+              Se ingresa al finalizar o entregar el trabajo.
+            </p>
+          </div>
+
+          <div>
+            <label className="mb-2 block text-sm font-medium text-slate-700">
+              Cantidad de técnicos
+            </label>
+            <input
+              type="number"
+              min="0"
+              step="1"
+              value={form.cantidad_tecnicos}
+              onChange={(e) => handleChange('cantidad_tecnicos', e.target.value)}
+              disabled={isClosed}
+              className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500 disabled:bg-slate-100"
+            />
+          </div>
+
+          <div>
+            <label className="mb-2 block text-sm font-medium text-slate-700">
+              Horas hombre utilizadas
+            </label>
+            <input
+              type="number"
+              min="0"
+              step="0.25"
+              value={form.horas_hombre_utilizadas}
+              onChange={(e) => handleChange('horas_hombre_utilizadas', e.target.value)}
+              disabled={isClosed}
+              placeholder={horasHombreSugeridas != null ? String(horasHombreSugeridas) : ''}
+              className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500 disabled:bg-slate-100"
+            />
+            <p className="mt-1 text-xs text-slate-500">
+              {duracionOmMinutos != null
+                ? `Duración calculada: ${Math.round(duracionOmMinutos / 60 * 100) / 100} h${horasHombreSugeridas != null ? ` · HH sugeridas: ${horasHombreSugeridas}` : ''}`
+                : 'Se calcula si ingresas hora inicio, hora término y cantidad de técnicos.'}
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-5 grid gap-4 md:grid-cols-2">
+          <div>
+            <label className="mb-2 block text-sm font-medium text-slate-700">
+              ¿Se ejecutó todo lo solicitado?
+            </label>
+            <select
+              value={form.alcance_trabajo_ejecutado}
+              onChange={(e) =>
+                handleChange('alcance_trabajo_ejecutado', e.target.value as FormState['alcance_trabajo_ejecutado'])
+              }
+              disabled={isClosed}
+              className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500 disabled:bg-slate-100"
+            >
+              <option value="">Sin definir</option>
+              <option value="si">Sí</option>
+              <option value="no">No</option>
+            </select>
+            <textarea
+              value={form.alcance_trabajo_observacion}
+              onChange={(e) => handleChange('alcance_trabajo_observacion', e.target.value)}
+              rows={3}
+              disabled={isClosed}
+              placeholder="Observación de alcance, si corresponde."
+              className="mt-3 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-500 disabled:bg-slate-100"
+            />
+          </div>
+
+          <div>
+            <label className="mb-2 block text-sm font-medium text-slate-700">
+              ¿Se ejecutó de acuerdo al programa?
+            </label>
+            <select
+              value={form.ejecutado_segun_programa}
+              onChange={(e) =>
+                handleChange('ejecutado_segun_programa', e.target.value as FormState['ejecutado_segun_programa'])
+              }
+              disabled={isClosed}
+              className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500 disabled:bg-slate-100"
+            >
+              <option value="">Sin definir</option>
+              <option value="si">Sí</option>
+              <option value="no">No</option>
+            </select>
+            <textarea
+              value={form.ejecutado_segun_programa_observacion}
+              onChange={(e) => handleChange('ejecutado_segun_programa_observacion', e.target.value)}
+              rows={3}
+              disabled={isClosed}
+              placeholder="Indica el motivo si no se ejecutó según programa."
+              className="mt-3 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-500 disabled:bg-slate-100"
+            />
+          </div>
+        </div>
+
+        <div className="mt-5 grid gap-4 md:grid-cols-2">
+          <div>
+            <label className="mb-2 block text-sm font-medium text-slate-700">
+              Resultado del servicio
+            </label>
+            <textarea
+              value={form.resultado_servicio}
+              onChange={(e) => handleChange('resultado_servicio', e.target.value)}
+              rows={4}
+              disabled={isClosed}
+              placeholder="Resumen del resultado final entregado al cliente."
+              className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-500 disabled:bg-slate-100"
+            />
+          </div>
+
+          <div>
+            <label className="mb-2 block text-sm font-medium text-slate-700">
+              Observaciones de cierre
+            </label>
+            <textarea
+              value={form.observaciones_cierre}
+              onChange={(e) => handleChange('observaciones_cierre', e.target.value)}
+              rows={4}
+              disabled={isClosed}
+              placeholder="Observaciones finales de entrega, pendientes o comentarios del cierre."
+              className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-500 disabled:bg-slate-100"
+            />
+          </div>
+        </div>
 
         <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           <CierreStatusItem
@@ -2762,12 +2778,22 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
           />
 
           <CierreStatusItem
+            label="Hora término OM"
+            ok={!!form.hora_termino || isClosed}
+            detail={
+              form.hora_termino || isClosed
+                ? `Hora término registrada: ${form.hora_termino || formatTimeOnly(detalle.hora_termino)}.`
+                : 'Debes ingresar la hora término real antes de cerrar o entregar la OM.'
+            }
+          />
+
+          <CierreStatusItem
             label="Tiempos registrados (opcional)"
             ok={true}
             detail={
               hasTiempos
-                ? `Hay ${tiempos.length} registro(s) de tiempo en la OT.`
-                : 'Opcional: puedes registrar tiempos para calcular duracion exacta. Si no hay tiempos, se usara la hora actual como cierre.'
+                ? `Hay ${tiempos.length} registro(s) de tiempo en la OT. Sirven como respaldo, pero no reemplazan la hora término de la OM.`
+                : 'Opcional: puedes registrar bloques de tiempo como respaldo operativo.'
             }
           />
 

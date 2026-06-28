@@ -511,6 +511,14 @@ const supabaseServiceRoleKeySafe = supabaseServiceRoleKey as string
     const tiempos = (tiemposResp.data ?? []) as TiempoTrabajo[]
     const horarioDesdeTiempos = obtenerHorarioDesdeTiempos(tiempos)
 
+    const detalleHorarioBase: OTDetalle = {
+      ...detalle,
+      hora_inicio: detalle.hora_inicio || horarioDesdeTiempos?.hora_inicio || null,
+      hora_termino: detalle.hora_termino || horarioDesdeTiempos?.hora_termino || null,
+      duracion_minutos:
+        detalle.duracion_minutos ?? horarioDesdeTiempos?.duracion_minutos ?? null,
+    }
+
     const checklistResp = await adminClient
       .from('ot_respuestas_checklist')
       .select('id, plantilla_item_id, respuesta_texto, observacion')
@@ -619,8 +627,8 @@ const supabaseServiceRoleKeySafe = supabaseServiceRoleKey as string
       `Responsable cliente / Softys: ${detalle.contacto_cliente_nombre || '-'}${detalle.contacto_cliente_cargo ? ` - ${detalle.contacto_cliente_cargo}` : ''}${detalle.responsable_cliente_rut ? ` - RUT ${detalle.responsable_cliente_rut}` : ''}`,
       `Supervisor contratista: ${detalle.supervisor_contratista_nombre || '-'}${detalle.supervisor_contratista_cargo ? ` - ${detalle.supervisor_contratista_cargo}` : ''}${detalle.supervisor_contratista_rut ? ` - RUT ${detalle.supervisor_contratista_rut}` : ''}`,
       `Área / sector de trabajo: ${detalle.area_trabajo || '-'}`,
-      `Hora inicio OM: ${toChileTimeOnly(detalle.hora_inicio) || '-'}`,
-      `Hora término OM: ${toChileTimeOnly(detalle.hora_termino) || '-'}`,
+      `Hora inicio OM: ${toChileTimeOnly(detalleHorarioBase.hora_inicio) || '-'}`,
+      `Hora término OM: ${toChileTimeOnly(detalleHorarioBase.hora_termino) || '-'}`,
       `Cantidad de técnicos: ${detalle.cantidad_tecnicos ?? '-'}`,
       `Horas hombre utilizadas: ${detalle.horas_hombre_utilizadas ?? '-'}`,
       `¿Se ejecutó todo lo solicitado?: ${siNoPdf(detalle.alcance_trabajo_ejecutado)}`,
@@ -642,16 +650,7 @@ const supabaseServiceRoleKeySafe = supabaseServiceRoleKey as string
       .join('\n')
 
     const detallePdf: OTDetalle = {
-      ...detalle,
-      ...(horarioDesdeTiempos
-        ? {
-            fecha_ot: horarioDesdeTiempos.fecha_ot || detalle.fecha_ot,
-            hora_inicio: horarioDesdeTiempos.hora_inicio || detalle.hora_inicio,
-            hora_termino: horarioDesdeTiempos.hora_termino || detalle.hora_termino,
-            duracion_minutos:
-              horarioDesdeTiempos.duracion_minutos ?? detalle.duracion_minutos,
-          }
-        : {}),
+      ...detalleHorarioBase,
       observaciones_cierre: [
         detalle.observaciones_cierre,
         omSoftysTextoPdf,
@@ -667,17 +666,15 @@ const supabaseServiceRoleKeySafe = supabaseServiceRoleKey as string
     const tiposServicio = (tiposResp.data ?? []) as TipoServicioOption[]
     const logoUrl = new URL('/logos/rmsic-logo.png', request.url).toString()
 
-    const resumenPdf = horarioDesdeTiempos
-      ? ({
-          ...resumen,
-          fecha_ot: horarioDesdeTiempos.fecha_ot || (resumen as any).fecha_ot,
-          fecha_visita: horarioDesdeTiempos.fecha_ot || (resumen as any).fecha_visita,
-          hora_inicio: horarioDesdeTiempos.hora_inicio || (resumen as any).hora_inicio,
-          hora_termino: horarioDesdeTiempos.hora_termino || (resumen as any).hora_termino,
-          duracion_minutos:
-            horarioDesdeTiempos.duracion_minutos ?? (resumen as any).duracion_minutos,
-        } as OTResumen)
-      : resumen
+    const resumenPdf = {
+      ...resumen,
+      fecha_ot: detalleHorarioBase.fecha_ot || (resumen as any).fecha_ot,
+      fecha_visita: detalleHorarioBase.fecha_ot || (resumen as any).fecha_visita,
+      hora_inicio: detalleHorarioBase.hora_inicio || (resumen as any).hora_inicio,
+      hora_termino: detalleHorarioBase.hora_termino || (resumen as any).hora_termino,
+      duracion_minutos:
+        detalleHorarioBase.duracion_minutos ?? (resumen as any).duracion_minutos,
+    } as OTResumen
 
  const pdfElement = React.createElement(OTPdfDocument, {
   resumen: resumenPdf,
