@@ -186,6 +186,12 @@ function toChileFloatingDateTime(value: string | null | undefined) {
   return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:${parts.second}`
 }
 
+function toChileTimeOnly(value: string | null | undefined) {
+  const parts = getChileDateTimeParts(value)
+  if (!parts) return null
+  return `${parts.hour}:${parts.minute}`
+}
+
 type TiempoTrabajo = {
   id: string
   ot_id: string
@@ -613,6 +619,8 @@ const supabaseServiceRoleKeySafe = supabaseServiceRoleKey as string
       `Responsable cliente / Softys: ${detalle.contacto_cliente_nombre || '-'}${detalle.contacto_cliente_cargo ? ` - ${detalle.contacto_cliente_cargo}` : ''}${detalle.responsable_cliente_rut ? ` - RUT ${detalle.responsable_cliente_rut}` : ''}`,
       `Supervisor contratista: ${detalle.supervisor_contratista_nombre || '-'}${detalle.supervisor_contratista_cargo ? ` - ${detalle.supervisor_contratista_cargo}` : ''}${detalle.supervisor_contratista_rut ? ` - RUT ${detalle.supervisor_contratista_rut}` : ''}`,
       `Área / sector de trabajo: ${detalle.area_trabajo || '-'}`,
+      `Hora inicio OM: ${toChileTimeOnly(detalle.hora_inicio) || '-'}`,
+      `Hora término OM: ${toChileTimeOnly(detalle.hora_termino) || '-'}`,
       `Cantidad de técnicos: ${detalle.cantidad_tecnicos ?? '-'}`,
       `Horas hombre utilizadas: ${detalle.horas_hombre_utilizadas ?? '-'}`,
       `¿Se ejecutó todo lo solicitado?: ${siNoPdf(detalle.alcance_trabajo_ejecutado)}`,

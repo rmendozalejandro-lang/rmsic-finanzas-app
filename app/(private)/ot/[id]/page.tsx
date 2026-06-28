@@ -229,6 +229,16 @@ function formatDateTime(value: string | null) {
   }).format(date)
 }
 
+function formatTimeOnly(value: string | null) {
+  const date = parseDateValue(value)
+  if (!date) return '-'
+
+  return new Intl.DateTimeFormat('es-CL', {
+    timeStyle: 'short',
+    timeZone: CHILE_TIME_ZONE,
+  }).format(date)
+}
+
 function formatDuration(minutes: number | null) {
   if (minutes == null) return '-'
 
@@ -304,36 +314,40 @@ function toDateInputValue(value: string | null | undefined) {
   return value.slice(0, 10)
 }
 
-function toDateTimeLocalInputValue(value: string | null | undefined) {
+function toTimeInputValue(value: string | null | undefined) {
   if (!value) return ''
 
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return ''
 
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
   const hour = String(date.getHours()).padStart(2, '0')
   const minute = String(date.getMinutes()).padStart(2, '0')
 
-  return `${year}-${month}-${day}T${hour}:${minute}`
+  return `${hour}:${minute}`
 }
 
-function dateTimeLocalToISOString(value: string) {
-  if (!value) return null
+function dateAndTimeToISOString(dateValue: string, timeValue: string) {
+  if (!dateValue || !timeValue) return null
 
-  const date = new Date(value)
+  const date = new Date(`${dateValue}T${timeValue}`)
   if (Number.isNaN(date.getTime())) return null
 
   return date.toISOString()
 }
 
-function calculateDurationMinutes(startValue: string, endValue: string) {
+function normalizeDateTimeForDuration(value: string, dateValue: string) {
+  if (!value) return null
+  if (/^\d{2}:\d{2}$/.test(value)) return new Date(`${dateValue}T${value}`)
+  return new Date(value)
+}
+
+function calculateDurationMinutes(startValue: string, endValue: string, dateValue = todayLocalDate()) {
   if (!startValue || !endValue) return null
 
-  const start = new Date(startValue)
-  const end = new Date(endValue)
+  const start = normalizeDateTimeForDuration(startValue, dateValue)
+  const end = normalizeDateTimeForDuration(endValue, dateValue)
 
+  if (!start || !end) return null
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null
   if (end <= start) return null
 
@@ -560,8 +574,8 @@ const isPreventiva = isPreventivaMespack || isPreventivaGeneral
   }, [resumen])
 
   const duracionOmMinutos = useMemo(() => {
-    return calculateDurationMinutes(form.hora_inicio, form.hora_termino)
-  }, [form.hora_inicio, form.hora_termino])
+    return calculateDurationMinutes(form.hora_inicio, form.hora_termino, form.fecha_ot || todayLocalDate())
+  }, [form.hora_inicio, form.hora_termino, form.fecha_ot])
 
   const horasHombreSugeridas = useMemo(() => {
     const cantidadTecnicos = parsePositiveNumber(form.cantidad_tecnicos)
@@ -952,8 +966,8 @@ const isPreventiva = isPreventivaMespack || isPreventivaGeneral
           descripcion_solicitud: detalleData.descripcion_solicitud || '',
           problema_reportado: detalleData.problema_reportado || '',
           numero_om_cliente: detalleData.numero_om_cliente || '',
-          hora_inicio: toDateTimeLocalInputValue(detalleData.hora_inicio),
-          hora_termino: toDateTimeLocalInputValue(detalleData.hora_termino),
+          hora_inicio: toTimeInputValue(detalleData.hora_inicio),
+          hora_termino: toTimeInputValue(detalleData.hora_termino),
           cantidad_tecnicos:
             detalleData.cantidad_tecnicos != null ? String(detalleData.cantidad_tecnicos) : '',
           horas_hombre_utilizadas:
@@ -1064,7 +1078,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
     }
 
     if (form.hora_inicio && form.hora_termino) {
-      const duracion = calculateDurationMinutes(form.hora_inicio, form.hora_termino)
+      const duracion = calculateDurationMinutes(form.hora_inicio, form.hora_termino, form.fecha_ot || todayLocalDate())
 
       if (duracion == null) {
         return 'La fecha y hora de término de la OM debe ser mayor que la fecha y hora de inicio.'
@@ -1108,8 +1122,8 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
 
     problema_reportado: form.problema_reportado.trim() || null,
     numero_om_cliente: form.numero_om_cliente.trim() || null,
-    hora_inicio: dateTimeLocalToISOString(form.hora_inicio),
-    hora_termino: dateTimeLocalToISOString(form.hora_termino),
+    hora_inicio: dateAndTimeToISOString(form.fecha_ot || todayLocalDate(), form.hora_inicio),
+    hora_termino: dateAndTimeToISOString(form.fecha_ot || todayLocalDate(), form.hora_termino),
     duracion_minutos: duracionOmMinutos ?? detalle?.duracion_minutos ?? null,
     cantidad_tecnicos: parsePositiveNumber(form.cantidad_tecnicos),
     horas_hombre_utilizadas:
@@ -1682,8 +1696,8 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
           <DetailField label="Cliente" value={resumen.cliente_nombre} />
           <DetailField label="Folio Tralixia" value={detalle.folio} />
           <DetailField label="N° OM / N° Orden cliente" value={form.numero_om_cliente} />
-          <DetailField label="Inicio OM" value={formatDateTime(detalle.hora_inicio)} />
-          <DetailField label="Término OM" value={formatDateTime(detalle.hora_termino)} />
+          <DetailField label="Hora inicio OM" value={formatTimeOnly(detalle.hora_inicio)} />
+          <DetailField label="Hora término OM" value={formatTimeOnly(detalle.hora_termino)} />
           <DetailField label="Horas hombre utilizadas" value={detalle.horas_hombre_utilizadas} />
           <DetailField label="Contacto cliente" value={form.contacto_cliente_nombre} />
           <DetailField label="Cargo contacto" value={form.contacto_cliente_cargo} />
@@ -1924,10 +1938,10 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
 
             <div>
               <label className="mb-2 block text-sm font-medium text-slate-700">
-                Fecha y hora de inicio OM
+                Hora inicio OM
               </label>
               <input
-                type="datetime-local"
+                type="time"
                 value={form.hora_inicio}
                 onChange={(e) => handleChange('hora_inicio', e.target.value)}
                 className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
@@ -1936,10 +1950,10 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
 
             <div>
               <label className="mb-2 block text-sm font-medium text-slate-700">
-                Fecha y hora de término OM
+                Hora término OM
               </label>
               <input
-                type="datetime-local"
+                type="time"
                 value={form.hora_termino}
                 onChange={(e) => handleChange('hora_termino', e.target.value)}
                 className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"

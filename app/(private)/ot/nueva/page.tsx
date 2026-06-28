@@ -126,25 +126,13 @@ function todayLocalDate() {
   return `${year}-${month}-${day}`
 }
 
-function dateTimeLocalToISOString(value: string) {
-  if (!value) return null
+function dateAndTimeToISOString(dateValue: string, timeValue: string) {
+  if (!dateValue || !timeValue) return null
 
-  const date = new Date(value)
+  const date = new Date(`${dateValue}T${timeValue}`)
   if (Number.isNaN(date.getTime())) return null
 
   return date.toISOString()
-}
-
-function calculateDurationMinutes(startValue: string, endValue: string) {
-  if (!startValue || !endValue) return null
-
-  const start = new Date(startValue)
-  const end = new Date(endValue)
-
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null
-  if (end <= start) return null
-
-  return Math.round((end.getTime() - start.getTime()) / 60000)
 }
 
 function parsePositiveNumber(value: string) {
@@ -257,19 +245,8 @@ function NuevaOTContent() {
 
   const isPreventivaMespack = selectedTipo?.codigo === 'preventiva'
 
-  const duracionOmMinutos = useMemo(() => {
-    return calculateDurationMinutes(form.hora_inicio, form.hora_termino)
-  }, [form.hora_inicio, form.hora_termino])
-
-  const horasHombreSugeridas = useMemo(() => {
-    const cantidadTecnicos = parsePositiveNumber(form.cantidad_tecnicos)
-
-    if (duracionOmMinutos == null || cantidadTecnicos == null || cantidadTecnicos <= 0) {
-      return null
-    }
-
-    return Number(((duracionOmMinutos / 60) * cantidadTecnicos).toFixed(2))
-  }, [duracionOmMinutos, form.cantidad_tecnicos])
+  const duracionOmMinutos = null
+  const horasHombreSugeridas = null
 
   useEffect(() => {
     const storedEmpresaId = window.localStorage.getItem(STORAGE_ID_KEY) || ''
@@ -672,14 +649,6 @@ function NuevaOTContent() {
       return 'Debes ingresar un título para la OT.'
     }
 
-    if (form.hora_inicio && form.hora_termino) {
-      const duracion = calculateDurationMinutes(form.hora_inicio, form.hora_termino)
-
-      if (duracion == null) {
-        return 'La fecha y hora de término de la OM debe ser mayor que la fecha y hora de inicio.'
-      }
-    }
-
     return ''
   }
 
@@ -730,12 +699,11 @@ function NuevaOTContent() {
         descripcion_solicitud: form.descripcion_solicitud.trim() || null,
         problema_reportado: form.problema_reportado.trim() || null,
         numero_om_cliente: form.numero_om_cliente.trim() || null,
-        hora_inicio: dateTimeLocalToISOString(form.hora_inicio),
-        hora_termino: dateTimeLocalToISOString(form.hora_termino),
-        duracion_minutos: duracionOmMinutos,
+        hora_inicio: dateAndTimeToISOString(form.fecha_ot || todayLocalDate(), form.hora_inicio),
+        hora_termino: null,
+        duracion_minutos: null,
         cantidad_tecnicos: parsePositiveNumber(form.cantidad_tecnicos),
-        horas_hombre_utilizadas:
-          parsePositiveNumber(form.horas_hombre_utilizadas) ?? horasHombreSugeridas,
+        horas_hombre_utilizadas: null,
         contacto_cliente_nombre: form.contacto_cliente_nombre.trim() || null,
         contacto_cliente_cargo: form.contacto_cliente_cargo.trim() || null,
         responsable_cliente_rut: form.responsable_cliente_rut.trim() || null,
@@ -1118,26 +1086,17 @@ function NuevaOTContent() {
 
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-700">
-                  Inicio OM
+                  Hora inicio OM
                 </label>
                 <input
-                  type="datetime-local"
+                  type="time"
                   value={form.hora_inicio}
                   onChange={(e) => handleChange('hora_inicio', e.target.value)}
                   className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
                 />
-              </div>
-
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700">
-                  Término OM
-                </label>
-                <input
-                  type="datetime-local"
-                  value={form.hora_termino}
-                  onChange={(e) => handleChange('hora_termino', e.target.value)}
-                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
-                />
+                <p className="mt-1 text-xs text-slate-500">
+                  La fecha se toma desde la fecha OT. El término se registra al cerrar o entregar el trabajo.
+                </p>
               </div>
 
               <div>
@@ -1152,26 +1111,6 @@ function NuevaOTContent() {
                   onChange={(e) => handleChange('cantidad_tecnicos', e.target.value)}
                   className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
                 />
-              </div>
-
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700">
-                  Horas hombre utilizadas
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.25"
-                  value={form.horas_hombre_utilizadas}
-                  onChange={(e) => handleChange('horas_hombre_utilizadas', e.target.value)}
-                  placeholder={horasHombreSugeridas != null ? String(horasHombreSugeridas) : ''}
-                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
-                />
-                <p className="mt-1 text-xs text-slate-500">
-                  {duracionOmMinutos != null
-                    ? `Duración calculada: ${Math.round(duracionOmMinutos / 60 * 100) / 100} h${horasHombreSugeridas != null ? ` · HH sugeridas: ${horasHombreSugeridas}` : ''}`
-                    : 'Se puede calcular automáticamente si ingresas inicio, término y cantidad de técnicos.'}
-                </p>
               </div>
 
               <div>
