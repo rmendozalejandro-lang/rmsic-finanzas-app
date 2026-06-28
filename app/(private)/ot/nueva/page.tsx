@@ -831,8 +831,10 @@ function NuevaOTContent() {
       setSuccess(`OT creada correctamente${data?.folio ? ` (${data.folio})` : ''}.`)
 
       if (data?.id) {
-        const rutaPrincipal = selectedPlantilla?.ruta_principal || '/ot/{id}'
-        router.push(rutaPrincipal.replace('{id}', data.id))
+        // Después de crear la OM, volver siempre al detalle normal de la OT.
+        // La vista Informe DyF / Softys queda disponible como acción desde el detalle,
+        // pero no debe reemplazar el flujo de cierre, contacto, envío e historial.
+        router.push(`/ot/${data.id}`)
         router.refresh()
       }
     } catch (err) {
