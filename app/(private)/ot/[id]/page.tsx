@@ -59,6 +59,8 @@ type OTDetalle = {
   created_by: string | null
   created_at: string
   updated_at: string
+  contacto_cliente_id: string | null
+  contacto_cliente_email: string | null
   contacto_cliente_nombre: string | null
   contacto_cliente_cargo: string | null
   area_trabajo: string | null
@@ -83,6 +85,34 @@ type OTResumenConEquipo = OTResumen & {
   equipo_modelo: string | null
   equipo_serie: string | null
   equipo_potencia: string | null
+}
+
+type ClienteContactoOption = {
+  id: string
+  cliente_id: string
+  nombre: string
+  cargo: string | null
+  area: string | null
+  linea: string | null
+  email: string | null
+  telefono: string | null
+  tipo_contacto: string | null
+  recibe_informes_ot: boolean | null
+}
+
+type EnvioEmail = {
+  id: string
+  contacto_cliente_id: string | null
+  destinatario_nombre: string | null
+  destinatario_cargo: string | null
+  destinatario_email: string
+  asunto: string
+  estado: 'pendiente' | 'enviado' | 'error'
+  proveedor_message_id: string | null
+  error_mensaje: string | null
+  enviado_at: string | null
+  enviado_por: string | null
+  created_at: string
 }
 
 type EstadoOption = {
@@ -155,6 +185,8 @@ type FormState = {
   prioridad: 'baja' | 'media' | 'alta' | 'critica'
   requiere_checklist: boolean
   observaciones_cierre: string
+  contacto_cliente_id: string
+  contacto_cliente_email: string
   contacto_cliente_nombre: string
   contacto_cliente_cargo: string
   area_trabajo: string
@@ -469,6 +501,7 @@ function OTDetalleContent() {
   const [saving, setSaving] = useState(false)
   const [savingTiempo, setSavingTiempo] = useState(false)
   const [closingOt, setClosingOt] = useState(false)
+  const [sendingInforme, setSendingInforme] = useState(false)
   const [deletingOt, setDeletingOt] = useState(false)
 
   const [error, setError] = useState('')
@@ -476,6 +509,8 @@ function OTDetalleContent() {
   const [warning, setWarning] = useState('')
   const [tiempoError, setTiempoError] = useState('')
   const [tiempoSuccess, setTiempoSuccess] = useState('')
+  const [emailError, setEmailError] = useState('')
+  const [emailSuccess, setEmailSuccess] = useState('')
   const [cierreError, setCierreError] = useState('')
   const [cierreSuccess, setCierreSuccess] = useState('')
   const [deleteError, setDeleteError] = useState('')
@@ -486,6 +521,8 @@ function OTDetalleContent() {
   const [detalle, setDetalle] = useState<OTDetalle | null>(null)
   const [tiempos, setTiempos] = useState<TiempoTrabajo[]>([])
   const [firmas, setFirmas] = useState<FirmaMini[]>([])
+  const [contactosCliente, setContactosCliente] = useState<ClienteContactoOption[]>([])
+  const [enviosEmail, setEnviosEmail] = useState<EnvioEmail[]>([])
   const [checklistResponsesCount, setChecklistResponsesCount] = useState(0)
   const [perfilesMap, setPerfilesMap] = useState<Record<string, string>>({})
 
@@ -527,6 +564,8 @@ function OTDetalleContent() {
     prioridad: 'media',
     requiere_checklist: false,
     observaciones_cierre: '',
+    contacto_cliente_id: '',
+    contacto_cliente_email: '',
     contacto_cliente_nombre: '',
     contacto_cliente_cargo: '',
     area_trabajo: '',
@@ -627,6 +666,14 @@ const isPreventiva = isPreventivaMespack || isPreventivaGeneral
     if (!requiresChecklistForClose) return true
     return checklistResponsesCount > 0
   }, [requiresChecklistForClose, checklistResponsesCount])
+
+  const selectedContactoCliente = useMemo(() => {
+    return contactosCliente.find((item) => item.id === form.contacto_cliente_id) ?? null
+  }, [contactosCliente, form.contacto_cliente_id])
+
+  const contactoEmailParaEnvio = useMemo(() => {
+    return selectedContactoCliente?.email || form.contacto_cliente_email || ''
+  }, [selectedContactoCliente, form.contacto_cliente_email])
 
   const getUserLabel = useCallback(
     (userId: string | null | undefined) => {
@@ -749,6 +796,8 @@ const isPreventiva = isPreventivaMespack || isPreventivaGeneral
                 created_by,
                 created_at,
                 updated_at,
+                contacto_cliente_id,
+                contacto_cliente_email,
                 contacto_cliente_nombre,
                 contacto_cliente_cargo,
                 area_trabajo,
@@ -841,6 +890,33 @@ const isPreventiva = isPreventivaMespack || isPreventivaGeneral
         const tiemposData = (tiemposResp.data ?? []) as TiempoTrabajo[]
         const firmasData = (firmasResp.data ?? []) as FirmaMini[]
         const checklistData = checklistResp.data ?? []
+
+        const [contactosResp, enviosEmailResp] = await Promise.all([
+          supabase
+            .from('cliente_contactos')
+            .select('id, cliente_id, nombre, cargo, area, linea, email, telefono, tipo_contacto, recibe_informes_ot')
+            .eq('empresa_id', detalleData.empresa_id)
+            .eq('cliente_id', detalleData.cliente_id)
+            .eq('activo', true)
+            .order('nombre', { ascending: true }),
+          supabase
+            .from('ot_envios_email')
+            .select('id, contacto_cliente_id, destinatario_nombre, destinatario_cargo, destinatario_email, asunto, estado, proveedor_message_id, error_mensaje, enviado_at, enviado_por, created_at')
+            .eq('empresa_id', detalleData.empresa_id)
+            .eq('ot_id', otId)
+            .order('created_at', { ascending: false }),
+        ])
+
+        if (contactosResp.error) {
+          throw new Error(`No se pudieron cargar los contactos del cliente: ${contactosResp.error.message}`)
+        }
+
+        if (enviosEmailResp.error) {
+          throw new Error(`No se pudo cargar el historial de envíos: ${enviosEmailResp.error.message}`)
+        }
+
+        const contactosData = (contactosResp.data ?? []) as ClienteContactoOption[]
+        const enviosEmailData = (enviosEmailResp.data ?? []) as EnvioEmail[]
 
         if (
           rolActual === 'tecnico_ot' &&
@@ -952,6 +1028,8 @@ const isPreventiva = isPreventivaMespack || isPreventivaGeneral
         setTiposServicio(tiposData)
         setTiempos(tiemposData)
         setFirmas(firmasData)
+        setContactosCliente(contactosData)
+        setEnviosEmail(enviosEmailData)
         setChecklistResponsesCount(checklistData.length)
         setPerfiles(perfilesSelectData)
         setPerfilesMap(nextMap)
@@ -991,6 +1069,8 @@ const isPreventiva = isPreventivaMespack || isPreventivaGeneral
           prioridad: detalleData.prioridad,
           requiere_checklist: detalleData.requiere_checklist,
           observaciones_cierre: detalleData.observaciones_cierre || '',
+          contacto_cliente_id: detalleData.contacto_cliente_id || '',
+          contacto_cliente_email: detalleData.contacto_cliente_email || '',
           contacto_cliente_nombre: detalleData.contacto_cliente_nombre || '',
           contacto_cliente_cargo: detalleData.contacto_cliente_cargo || '',
           area_trabajo: detalleData.area_trabajo || '',
@@ -1048,6 +1128,22 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
   }, [form.tipo_servicio_id, tipoPreventivaId])
 
   const handleChange = <K extends keyof FormState>(field: K, value: FormState[K]) => {
+    if (field === 'contacto_cliente_id') {
+      const contactoId = String(value || '')
+      const contacto = contactosCliente.find((item) => item.id === contactoId)
+
+      setForm((prev) => ({
+        ...prev,
+        contacto_cliente_id: contactoId,
+        contacto_cliente_email: contacto?.email || '',
+        contacto_cliente_nombre: contacto?.nombre || '',
+        contacto_cliente_cargo: contacto?.cargo || '',
+        area_trabajo: contacto?.area || prev.area_trabajo,
+      }))
+
+      return
+    }
+
     setForm((prev) => ({
       ...prev,
       [field]: value,
@@ -1149,8 +1245,10 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
     prioridad: form.prioridad,
     requiere_checklist: form.requiere_checklist,
     observaciones_cierre: form.observaciones_cierre.trim() || null,
-    contacto_cliente_nombre: form.contacto_cliente_nombre.trim() || null,
-    contacto_cliente_cargo: form.contacto_cliente_cargo.trim() || null,
+    contacto_cliente_id: form.contacto_cliente_id || null,
+    contacto_cliente_email: form.contacto_cliente_email.trim() || selectedContactoCliente?.email || null,
+    contacto_cliente_nombre: form.contacto_cliente_nombre.trim() || selectedContactoCliente?.nombre || null,
+    contacto_cliente_cargo: form.contacto_cliente_cargo.trim() || selectedContactoCliente?.cargo || null,
     area_trabajo: form.area_trabajo.trim() || null,
 
     resultado_servicio: form.resultado_servicio.trim() || null,
@@ -1318,17 +1416,91 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
     }
   }
 
-  const handleCerrarOT = async () => {
+  const enviarInformeEmail = async (showStandaloneMessages = true) => {
+    if (!form.contacto_cliente_id) {
+      throw new Error('Debes seleccionar un contacto de cliente desde la base de datos antes de enviar el informe.')
+    }
+
+    if (!contactoEmailParaEnvio.trim()) {
+      throw new Error('El contacto seleccionado no tiene email registrado.')
+    }
+
+    const { data: sessionData } = await supabase.auth.getSession()
+
+    if (!sessionData.session) {
+      throw new Error('La sesión expiró. Vuelve a iniciar sesión para enviar el informe.')
+    }
+
+    if (showStandaloneMessages) {
+      setSendingInforme(true)
+      setEmailError('')
+      setEmailSuccess('')
+    }
+
+    try {
+      await saveOtDraft()
+
+      const response = await fetch(`/api/ot/${otId}/enviar-email`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${sessionData.session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({}),
+      })
+
+      const json = await response.json().catch(() => null)
+
+      if (!response.ok) {
+        throw new Error(json?.error || 'No se pudo enviar el informe OM por email.')
+      }
+
+      await loadData(false)
+
+      if (showStandaloneMessages) {
+        setEmailSuccess(`Informe enviado a ${json?.contacto || form.contacto_cliente_nombre} <${json?.destinatario || contactoEmailParaEnvio}>.`)
+      }
+
+      return true
+    } finally {
+      if (showStandaloneMessages) {
+        setSendingInforme(false)
+      }
+    }
+  }
+
+  const handleEnviarInformeEmail = async () => {
+    try {
+      await enviarInformeEmail(true)
+      router.refresh()
+    } catch (err) {
+      setEmailError(err instanceof Error ? err.message : 'No se pudo enviar el informe OM.')
+    } finally {
+      setSendingInforme(false)
+    }
+  }
+
+  const handleCerrarOT = async (enviarEmail = false) => {
     try {
       setClosingOt(true)
       setCierreError('')
       setCierreSuccess('')
+      setEmailError('')
+      setEmailSuccess('')
       setError('')
       setSuccess('')
 
       const validationError = validateForm()
       if (validationError) {
         throw new Error(validationError)
+      }
+
+      if (enviarEmail && !form.contacto_cliente_id) {
+        throw new Error('Debes seleccionar un contacto de cliente antes de cerrar y enviar el informe.')
+      }
+
+      if (enviarEmail && !contactoEmailParaEnvio.trim()) {
+        throw new Error('El contacto seleccionado no tiene email registrado.')
       }
 
       if (!form.hora_inicio) {
@@ -1419,7 +1591,19 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
       }
 
       await loadData(false)
-      setCierreSuccess('OT guardada y cerrada correctamente.')
+
+      if (enviarEmail) {
+        try {
+          await enviarInformeEmail(false)
+          setCierreSuccess('OT guardada, cerrada e informe enviado correctamente.')
+        } catch (emailErr) {
+          setCierreSuccess('OT guardada y cerrada correctamente, pero el informe no pudo enviarse.')
+          setEmailError(emailErr instanceof Error ? emailErr.message : 'No se pudo enviar el informe OM.')
+        }
+      } else {
+        setCierreSuccess('OT guardada y cerrada correctamente.')
+      }
+
       router.refresh()
     } catch (err) {
       setCierreError(err instanceof Error ? err.message : 'No se pudo cerrar la OT.')
@@ -1674,6 +1858,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
           <DetailField label="Horas hombre utilizadas" value={detalle.horas_hombre_utilizadas} />
           <DetailField label="Contacto cliente" value={form.contacto_cliente_nombre} />
           <DetailField label="Cargo contacto" value={form.contacto_cliente_cargo} />
+          <DetailField label="Email contacto" value={form.contacto_cliente_email} />
           <DetailField label="Area / sector trabajo" value={form.area_trabajo} />
           <DetailField label="Ubicacion base" value={resumen.ubicacion_nombre} />
           <DetailField label="Activo base" value={resumen.activo_nombre} />
@@ -1794,14 +1979,30 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
           <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             <div>
               <label className="mb-2 block text-sm font-medium text-slate-700">
-                Contacto cliente
+                Contacto cliente / Softys
               </label>
-              <input
-                type="text"
-                value={form.contacto_cliente_nombre}
-                onChange={(e) => handleChange('contacto_cliente_nombre', e.target.value)}
-                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
-              />
+              <select
+                value={form.contacto_cliente_id}
+                onChange={(e) => handleChange('contacto_cliente_id', e.target.value)}
+                disabled={isClosed}
+                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500 disabled:bg-slate-100"
+              >
+                <option value="">
+                  {contactosCliente.length === 0
+                    ? 'Cliente sin contactos registrados'
+                    : 'Selecciona contacto'}
+                </option>
+                {contactosCliente.map((contacto) => (
+                  <option key={contacto.id} value={contacto.id}>
+                    {contacto.nombre}{contacto.cargo ? ` - ${contacto.cargo}` : ''}{contacto.email ? ` - ${contacto.email}` : ''}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1 text-xs text-slate-500">
+                {contactoEmailParaEnvio
+                  ? `Informe OM dirigido a: ${contactoEmailParaEnvio}`
+                  : 'Registra contactos desde Clientes para habilitar envío de informe.'}
+              </p>
             </div>
 
             <div>
@@ -1812,7 +2013,8 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
                 type="text"
                 value={form.contacto_cliente_cargo}
                 onChange={(e) => handleChange('contacto_cliente_cargo', e.target.value)}
-                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
+                disabled={isClosed}
+                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500 disabled:bg-slate-100"
               />
             </div>
 
@@ -2788,6 +2990,16 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
           />
 
           <CierreStatusItem
+            label="Contacto envío informe"
+            ok={!!form.contacto_cliente_id && !!contactoEmailParaEnvio}
+            detail={
+              form.contacto_cliente_id && contactoEmailParaEnvio
+                ? `Informe dirigido a ${form.contacto_cliente_nombre || 'contacto seleccionado'} <${contactoEmailParaEnvio}>.`
+                : 'Selecciona un contacto con email para cerrar y enviar informe en el mismo paso.'
+            }
+          />
+
+          <CierreStatusItem
             label="Tiempos registrados (opcional)"
             ok={true}
             detail={
@@ -2842,6 +3054,18 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
           </div>
         ) : null}
 
+        {emailError ? (
+          <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {emailError}
+          </div>
+        ) : null}
+
+        {emailSuccess ? (
+          <div className="mt-5 rounded-2xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+            {emailSuccess}
+          </div>
+        ) : null}
+
         {deleteError ? (
           <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             {deleteError}
@@ -2859,7 +3083,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
 
           <button
             type="button"
-            onClick={handleCerrarOT}
+            onClick={() => void handleCerrarOT(false)}
             disabled={closingOt || isClosed}
             className="inline-flex items-center justify-center rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70"
           >
@@ -2869,6 +3093,28 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
                 ? 'Guardando y cerrando OT...'
                 : 'Guardar y cerrar OT'}
           </button>
+
+          {!isClosed ? (
+            <button
+              type="button"
+              onClick={() => void handleCerrarOT(true)}
+              disabled={closingOt || sendingInforme || !form.contacto_cliente_id || !contactoEmailParaEnvio}
+              className="inline-flex items-center justify-center rounded-xl border border-blue-300 bg-blue-50 px-5 py-3 text-sm font-semibold text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              {closingOt || sendingInforme
+                ? 'Cerrando y enviando...'
+                : 'Cerrar OT y enviar informe'}
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => void handleEnviarInformeEmail()}
+              disabled={sendingInforme || !form.contacto_cliente_id || !contactoEmailParaEnvio}
+              className="inline-flex items-center justify-center rounded-xl border border-blue-300 bg-blue-50 px-5 py-3 text-sm font-semibold text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              {sendingInforme ? 'Enviando informe...' : 'Enviar / reenviar informe'}
+            </button>
+          )}
 
           {currentRole === 'admin' ? (
             <button
@@ -2881,6 +3127,69 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
             </button>
           ) : null}
         </div>
+      </div>
+
+      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <SectionTitle
+          title="Historial de envíos de informe OM"
+          subtitle="Registro de fecha, hora, contacto, correo y estado de cada envío o reenvío."
+        />
+
+        {enviosEmail.length === 0 ? (
+          <div className="mt-5 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-600">
+            Aún no hay envíos registrados para esta OM.
+          </div>
+        ) : (
+          <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200">
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead className="bg-slate-50">
+                  <tr className="text-left text-slate-600">
+                    <th className="px-4 py-3 font-semibold">Fecha / hora</th>
+                    <th className="px-4 py-3 font-semibold">Contacto</th>
+                    <th className="px-4 py-3 font-semibold">Correo</th>
+                    <th className="px-4 py-3 font-semibold">Estado</th>
+                    <th className="px-4 py-3 font-semibold">Enviado por</th>
+                    <th className="px-4 py-3 font-semibold">Detalle</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {enviosEmail.map((envio) => (
+                    <tr key={envio.id} className="border-t border-slate-100 text-slate-700">
+                      <td className="px-4 py-3">{formatDateTime(envio.enviado_at || envio.created_at)}</td>
+                      <td className="px-4 py-3">
+                        {labelOrDash(envio.destinatario_nombre)}
+                        {envio.destinatario_cargo ? ` - ${envio.destinatario_cargo}` : ''}
+                      </td>
+                      <td className="px-4 py-3">{envio.destinatario_email}</td>
+                      <td className="px-4 py-3">
+                        <span
+                          className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${
+                            envio.estado === 'enviado'
+                              ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                              : envio.estado === 'error'
+                                ? 'border-red-200 bg-red-50 text-red-700'
+                                : 'border-amber-200 bg-amber-50 text-amber-700'
+                          }`}
+                        >
+                          {envio.estado}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">{getUserLabel(envio.enviado_por)}</td>
+                      <td className="px-4 py-3">
+                        <div className="max-w-[360px] whitespace-pre-wrap">
+                          {envio.estado === 'error'
+                            ? labelOrDash(envio.error_mensaje)
+                            : labelOrDash(envio.proveedor_message_id || envio.asunto)}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </div>
 
       {showDeleteModal ? (

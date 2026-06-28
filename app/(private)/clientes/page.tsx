@@ -33,6 +33,44 @@ type Cliente = {
   created_at: string;
 };
 
+type ClienteContacto = {
+  id: string;
+  empresa_id: string;
+  cliente_id: string;
+  nombre: string;
+  cargo: string | null;
+  area: string | null;
+  linea: string | null;
+  email: string | null;
+  telefono: string | null;
+  tipo_contacto: string | null;
+  recibe_informes_ot: boolean | null;
+  activo: boolean;
+  created_at: string;
+};
+
+type ContactoForm = {
+  nombre: string;
+  cargo: string;
+  area: string;
+  linea: string;
+  email: string;
+  telefono: string;
+  tipo_contacto: string;
+  recibe_informes_ot: boolean;
+};
+
+const emptyContactoForm: ContactoForm = {
+  nombre: "",
+  cargo: "",
+  area: "",
+  linea: "",
+  email: "",
+  telefono: "",
+  tipo_contacto: "responsable_trabajo",
+  recibe_informes_ot: true,
+};
+
 const STORAGE_KEY = "empresa_activa_id";
 
 const condicionesPago = [
@@ -112,6 +150,16 @@ export default function ClientesPage() {
   const [deleteMotivo, setDeleteMotivo] = useState("");
   const [deleting, setDeleting] = useState(false);
 
+  const [contactoCliente, setContactoCliente] = useState<Cliente | null>(null);
+  const [contactosCliente, setContactosCliente] = useState<ClienteContacto[]>([]);
+  const [contactosLoading, setContactosLoading] = useState(false);
+  const [contactosError, setContactosError] = useState("");
+  const [contactosSuccess, setContactosSuccess] = useState("");
+  const [contactoEditingId, setContactoEditingId] = useState<string | null>(null);
+  const [savingContacto, setSavingContacto] = useState(false);
+  const [updatingContactoId, setUpdatingContactoId] = useState("");
+  const [contactoForm, setContactoForm] = useState<ContactoForm>(emptyContactoForm);
+
   const [form, setForm] = useState({
     nombre: "",
     rut: "",
@@ -129,6 +177,10 @@ export default function ClientesPage() {
     const syncEmpresaActiva = () => {
       const empresaId = window.localStorage.getItem(STORAGE_KEY) || "";
       setEmpresaActivaId(empresaId);
+      setContactoCliente(null);
+      setContactosCliente([]);
+      setContactoEditingId(null);
+      setContactoForm(emptyContactoForm);
     };
 
     syncEmpresaActiva();
@@ -433,6 +485,211 @@ export default function ClientesPage() {
   };
 
 
+  const resetContactoForm = () => {
+    setContactoEditingId(null);
+    setContactoForm(emptyContactoForm);
+  };
+
+  const fetchContactosCliente = async (clienteId = contactoCliente?.id || "") => {
+    if (!empresaActivaId || !clienteId) return;
+
+    try {
+      setContactosLoading(true);
+      setContactosError("");
+
+      const { data, error: contactosErrorResp } = await supabase
+        .from("cliente_contactos")
+        .select(
+          "id, empresa_id, cliente_id, nombre, cargo, area, linea, email, telefono, tipo_contacto, recibe_informes_ot, activo, created_at",
+        )
+        .eq("empresa_id", empresaActivaId)
+        .eq("cliente_id", clienteId)
+        .eq("activo", true)
+        .order("nombre", { ascending: true });
+
+      if (contactosErrorResp) {
+        setContactosError(contactosErrorResp.message);
+        return;
+      }
+
+      setContactosCliente((data ?? []) as ClienteContacto[]);
+    } catch (err) {
+      setContactosError(
+        err instanceof Error ? err.message : "No se pudieron cargar los contactos.",
+      );
+    } finally {
+      setContactosLoading(false);
+    }
+  };
+
+  const openContactosCliente = async (cliente: Cliente) => {
+    setContactoCliente(cliente);
+    setContactosCliente([]);
+    setContactosError("");
+    setContactosSuccess("");
+    resetContactoForm();
+    await fetchContactosCliente(cliente.id);
+  };
+
+  const handleContactoChange = (
+    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>,
+  ) => {
+    const { name, value } = e.target;
+
+    if (name === "recibe_informes_ot") {
+      setContactoForm((prev) => ({
+        ...prev,
+        recibe_informes_ot: value === "true",
+      }));
+      return;
+    }
+
+    setContactoForm((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const startEditContacto = (contacto: ClienteContacto) => {
+    setContactoEditingId(contacto.id);
+    setContactosError("");
+    setContactosSuccess("");
+    setContactoForm({
+      nombre: contacto.nombre || "",
+      cargo: contacto.cargo || "",
+      area: contacto.area || "",
+      linea: contacto.linea || "",
+      email: contacto.email || "",
+      telefono: contacto.telefono || "",
+      tipo_contacto: contacto.tipo_contacto || "responsable_trabajo",
+      recibe_informes_ot: contacto.recibe_informes_ot !== false,
+    });
+  };
+
+  const handleContactoSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!contactoCliente) {
+      setContactosError("Debes seleccionar un cliente para administrar contactos.");
+      return;
+    }
+
+    if (!contactoForm.nombre.trim()) {
+      setContactosError("Debes ingresar el nombre del contacto.");
+      return;
+    }
+
+    if (contactoForm.recibe_informes_ot && !contactoForm.email.trim()) {
+      setContactosError("Para recibir informes OM el contacto debe tener email.");
+      return;
+    }
+
+    try {
+      setSavingContacto(true);
+      setContactosError("");
+      setContactosSuccess("");
+
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError || !user) {
+        throw new Error("No se pudo validar el usuario actual.");
+      }
+
+      const payload = {
+        empresa_id: empresaActivaId,
+        cliente_id: contactoCliente.id,
+        nombre: contactoForm.nombre.trim(),
+        cargo: contactoForm.cargo.trim() || null,
+        area: contactoForm.area.trim() || null,
+        linea: contactoForm.linea.trim() || null,
+        email: contactoForm.email.trim() || null,
+        telefono: contactoForm.telefono.trim() || null,
+        tipo_contacto: contactoForm.tipo_contacto.trim() || null,
+        recibe_informes_ot: contactoForm.recibe_informes_ot,
+        updated_by: user.id,
+        ...(contactoEditingId ? {} : { created_by: user.id }),
+      };
+
+      const query = contactoEditingId
+        ? supabase
+            .from("cliente_contactos")
+            .update(payload)
+            .eq("id", contactoEditingId)
+            .eq("empresa_id", empresaActivaId)
+            .eq("cliente_id", contactoCliente.id)
+        : supabase.from("cliente_contactos").insert(payload);
+
+      const { error: saveContactoError } = await query;
+
+      if (saveContactoError) {
+        throw new Error(saveContactoError.message);
+      }
+
+      setContactosSuccess(
+        contactoEditingId
+          ? "Contacto actualizado correctamente."
+          : "Contacto agregado correctamente.",
+      );
+      resetContactoForm();
+      await fetchContactosCliente(contactoCliente.id);
+    } catch (err) {
+      setContactosError(
+        err instanceof Error ? err.message : "No se pudo guardar el contacto.",
+      );
+    } finally {
+      setSavingContacto(false);
+    }
+  };
+
+  const desactivarContacto = async (contacto: ClienteContacto) => {
+    if (!contactoCliente) return;
+
+    const confirmar = window.confirm(
+      `¿Deseas desactivar el contacto ${contacto.nombre}?`,
+    );
+
+    if (!confirmar) return;
+
+    try {
+      setUpdatingContactoId(contacto.id);
+      setContactosError("");
+      setContactosSuccess("");
+
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      const { error: updateContactoError } = await supabase
+        .from("cliente_contactos")
+        .update({
+          activo: false,
+          updated_by: user?.id ?? null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", contacto.id)
+        .eq("empresa_id", empresaActivaId)
+        .eq("cliente_id", contactoCliente.id);
+
+      if (updateContactoError) {
+        throw new Error(updateContactoError.message);
+      }
+
+      if (contactoEditingId === contacto.id) {
+        resetContactoForm();
+      }
+
+      setContactosSuccess("Contacto desactivado correctamente.");
+      await fetchContactosCliente(contactoCliente.id);
+    } catch (err) {
+      setContactosError(
+        err instanceof Error ? err.message : "No se pudo desactivar el contacto.",
+      );
+    } finally {
+      setUpdatingContactoId("");
+    }
+  };
+
+
   const openDeleteCliente = (cliente: Cliente) => {
     setDeleteTarget(cliente);
     setDeleteMotivo("");
@@ -472,6 +729,12 @@ export default function ClientesPage() {
 
       if (editingId === deleteTarget.id) {
         resetForm();
+      }
+
+      if (contactoCliente?.id === deleteTarget.id) {
+        setContactoCliente(null);
+        setContactosCliente([]);
+        resetContactoForm();
       }
 
       setSuccess("Cliente eliminado correctamente.");
@@ -570,6 +833,14 @@ export default function ClientesPage() {
                             className="rounded-xl border border-slate-300 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
                           >
                             Editar
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => void openContactosCliente(item)}
+                            className="rounded-xl border border-blue-200 px-3 py-2 text-xs font-medium text-blue-700 hover:bg-blue-50"
+                          >
+                            Contactos
                           </button>
 
                           <button
@@ -804,6 +1075,247 @@ export default function ClientesPage() {
           </form>
         </div>
       </div>
+
+      {contactoCliente && (
+        <div className="rounded-2xl bg-white p-6 shadow-sm border border-slate-200">
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div>
+              <h2 className="text-2xl font-semibold text-slate-900">
+                Contactos de {contactoCliente.nombre}
+              </h2>
+              <p className="mt-1 text-sm text-slate-500">
+                Estos contactos podrán seleccionarse en una OM y recibir el informe por correo.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                setContactoCliente(null);
+                setContactosCliente([]);
+                resetContactoForm();
+              }}
+              className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            >
+              Cerrar contactos
+            </button>
+          </div>
+
+          <div className="mt-5 grid grid-cols-1 gap-6 lg:grid-cols-3">
+            <div className="lg:col-span-2">
+              {contactosLoading ? (
+                <div className="text-sm text-slate-500">Cargando contactos...</div>
+              ) : contactosCliente.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-600">
+                  Este cliente aún no tiene contactos registrados.
+                </div>
+              ) : (
+                <div className="overflow-x-auto rounded-2xl border border-slate-200">
+                  <table className="w-full text-sm">
+                    <thead className="bg-slate-50">
+                      <tr className="text-left text-slate-500">
+                        <th className="px-4 py-3">Nombre</th>
+                        <th className="px-4 py-3">Cargo</th>
+                        <th className="px-4 py-3">Área / línea</th>
+                        <th className="px-4 py-3">Email</th>
+                        <th className="px-4 py-3">Recibe informes</th>
+                        <th className="px-4 py-3">Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {contactosCliente.map((contacto) => (
+                        <tr key={contacto.id} className="border-t border-slate-100">
+                          <td className="px-4 py-3 font-medium text-slate-900">
+                            {contacto.nombre}
+                          </td>
+                          <td className="px-4 py-3 text-slate-700">
+                            {contacto.cargo || "-"}
+                          </td>
+                          <td className="px-4 py-3 text-slate-700">
+                            {[contacto.area, contacto.linea].filter(Boolean).join(" / ") || "-"}
+                          </td>
+                          <td className="px-4 py-3 text-slate-700">
+                            {contacto.email || "-"}
+                          </td>
+                          <td className="px-4 py-3">
+                            <StatusBadge
+                              status={contacto.recibe_informes_ot === false ? "inactivo" : "activo"}
+                            />
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex gap-2">
+                              <button
+                                type="button"
+                                onClick={() => startEditContacto(contacto)}
+                                className="rounded-xl border border-slate-300 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                              >
+                                Editar
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => void desactivarContacto(contacto)}
+                                disabled={updatingContactoId === contacto.id}
+                                className="rounded-xl border border-red-200 px-3 py-2 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-60"
+                              >
+                                Desactivar
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <h3 className="text-lg font-semibold text-slate-900">
+                {contactoEditingId ? "Editar contacto" : "Nuevo contacto"}
+              </h3>
+
+              <form onSubmit={handleContactoSubmit} className="mt-4 space-y-4">
+                <div>
+                  <label className="block text-sm text-slate-600 mb-2">Nombre</label>
+                  <input
+                    type="text"
+                    name="nombre"
+                    value={contactoForm.nombre}
+                    onChange={handleContactoChange}
+                    className="w-full rounded-xl border border-slate-300 px-4 py-3"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm text-slate-600 mb-2">Cargo</label>
+                  <input
+                    type="text"
+                    name="cargo"
+                    value={contactoForm.cargo}
+                    onChange={handleContactoChange}
+                    className="w-full rounded-xl border border-slate-300 px-4 py-3"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="block text-sm text-slate-600 mb-2">Área</label>
+                    <input
+                      type="text"
+                      name="area"
+                      value={contactoForm.area}
+                      onChange={handleContactoChange}
+                      className="w-full rounded-xl border border-slate-300 px-4 py-3"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm text-slate-600 mb-2">Línea</label>
+                    <input
+                      type="text"
+                      name="linea"
+                      value={contactoForm.linea}
+                      onChange={handleContactoChange}
+                      className="w-full rounded-xl border border-slate-300 px-4 py-3"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm text-slate-600 mb-2">Email</label>
+                  <input
+                    type="email"
+                    name="email"
+                    value={contactoForm.email}
+                    onChange={handleContactoChange}
+                    className="w-full rounded-xl border border-slate-300 px-4 py-3"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm text-slate-600 mb-2">Teléfono</label>
+                  <input
+                    type="text"
+                    name="telefono"
+                    value={contactoForm.telefono}
+                    onChange={handleContactoChange}
+                    className="w-full rounded-xl border border-slate-300 px-4 py-3"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm text-slate-600 mb-2">Tipo contacto</label>
+                  <select
+                    name="tipo_contacto"
+                    value={contactoForm.tipo_contacto}
+                    onChange={handleContactoChange}
+                    className="w-full rounded-xl border border-slate-300 px-4 py-3 bg-white"
+                  >
+                    <option value="responsable_trabajo">Responsable trabajo</option>
+                    <option value="solicitante">Solicitante</option>
+                    <option value="recepcion">Recepción informe</option>
+                    <option value="mantenimiento">Mantenimiento</option>
+                    <option value="seguridad">Seguridad</option>
+                    <option value="otro">Otro</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm text-slate-600 mb-2">
+                    Recibe informes OM
+                  </label>
+                  <select
+                    name="recibe_informes_ot"
+                    value={contactoForm.recibe_informes_ot ? "true" : "false"}
+                    onChange={handleContactoChange}
+                    className="w-full rounded-xl border border-slate-300 px-4 py-3 bg-white"
+                  >
+                    <option value="true">Sí</option>
+                    <option value="false">No</option>
+                  </select>
+                </div>
+
+                {contactosError && (
+                  <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+                    {contactosError}
+                  </div>
+                )}
+
+                {contactosSuccess && (
+                  <div className="rounded-xl bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-700">
+                    {contactosSuccess}
+                  </div>
+                )}
+
+                <div className="flex gap-3">
+                  <button
+                    type="submit"
+                    disabled={savingContacto}
+                    className="flex-1 rounded-xl bg-slate-900 text-white py-3 font-medium disabled:opacity-60"
+                  >
+                    {savingContacto
+                      ? "Guardando..."
+                      : contactoEditingId
+                        ? "Actualizar contacto"
+                        : "Guardar contacto"}
+                  </button>
+
+                  {contactoEditingId && (
+                    <button
+                      type="button"
+                      onClick={resetContactoForm}
+                      className="rounded-xl border border-slate-300 px-4 py-3 font-medium"
+                    >
+                      Cancelar
+                    </button>
+                  )}
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
 
       {deleteTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">

@@ -14,6 +14,19 @@ type ClienteOption = {
   nombre: string
 }
 
+type ClienteContactoOption = {
+  id: string
+  cliente_id: string
+  nombre: string
+  cargo: string | null
+  area: string | null
+  linea: string | null
+  email: string | null
+  telefono: string | null
+  tipo_contacto: string | null
+  recibe_informes_ot: boolean | null
+}
+
 type EquipoOption = {
   id: string
   cliente_id: string | null
@@ -96,6 +109,8 @@ type FormDataState = {
   hora_termino: string
   cantidad_tecnicos: string
   horas_hombre_utilizadas: string
+  contacto_cliente_id: string
+  contacto_cliente_email: string
   contacto_cliente_nombre: string
   contacto_cliente_cargo: string
   responsable_cliente_rut: string
@@ -177,6 +192,7 @@ function NuevaOTContent() {
   const [empresaActivaNombre, setEmpresaActivaNombre] = useState('')
 
   const [clientes, setClientes] = useState<ClienteOption[]>([])
+  const [contactosCliente, setContactosCliente] = useState<ClienteContactoOption[]>([])
   const [showClienteModal, setShowClienteModal] = useState(false)
   const [equipos, setEquipos] = useState<EquipoOption[]>([])
   const [tiposServicio, setTiposServicio] = useState<TipoServicioOption[]>([])
@@ -202,6 +218,8 @@ function NuevaOTContent() {
     hora_termino: '',
     cantidad_tecnicos: '',
     horas_hombre_utilizadas: '',
+    contacto_cliente_id: '',
+    contacto_cliente_email: '',
     contacto_cliente_nombre: '',
     contacto_cliente_cargo: '',
     responsable_cliente_rut: '',
@@ -242,6 +260,16 @@ function NuevaOTContent() {
   const selectedEquipo = useMemo(() => {
     return equipos.find((item) => item.id === form.equipo_id) ?? null
   }, [equipos, form.equipo_id])
+
+  const contactosDelCliente = useMemo(() => {
+    if (!form.cliente_id) return []
+
+    return contactosCliente.filter((item) => item.cliente_id === form.cliente_id)
+  }, [contactosCliente, form.cliente_id])
+
+  const selectedContactoCliente = useMemo(() => {
+    return contactosCliente.find((item) => item.id === form.contacto_cliente_id) ?? null
+  }, [contactosCliente, form.contacto_cliente_id])
 
   const isPreventivaMespack = selectedTipo?.codigo === 'preventiva'
 
@@ -290,11 +318,18 @@ function NuevaOTContent() {
           throw new Error('No hay usuario autenticado.')
         }
 
-        const [clientesResp, equiposResp, tiposResp, estadosResp, plantillasResp] = await Promise.all([
+        const [clientesResp, contactosResp, equiposResp, tiposResp, estadosResp, plantillasResp] = await Promise.all([
           supabase
             .from('clientes')
             .select('id, nombre')
             .eq('empresa_id', storedEmpresaId)
+            .order('nombre', { ascending: true }),
+
+          supabase
+            .from('cliente_contactos')
+            .select('id, cliente_id, nombre, cargo, area, linea, email, telefono, tipo_contacto, recibe_informes_ot')
+            .eq('empresa_id', storedEmpresaId)
+            .eq('activo', true)
             .order('nombre', { ascending: true }),
 
           supabase
@@ -338,6 +373,10 @@ function NuevaOTContent() {
 
         if (clientesResp.error) {
           throw new Error(`No se pudieron cargar los clientes: ${clientesResp.error.message}`)
+        }
+
+        if (contactosResp.error) {
+          throw new Error(`No se pudieron cargar los contactos de clientes: ${contactosResp.error.message}`)
         }
 
         if (equiposResp.error) {
@@ -394,6 +433,19 @@ function NuevaOTContent() {
         const clientesData: ClienteOption[] = (clientesResp.data ?? []).map((item) => ({
           id: item.id,
           nombre: item.nombre,
+        }))
+
+        const contactosData: ClienteContactoOption[] = (contactosResp.data ?? []).map((item) => ({
+          id: item.id,
+          cliente_id: item.cliente_id,
+          nombre: item.nombre,
+          cargo: item.cargo,
+          area: item.area,
+          linea: item.linea,
+          email: item.email,
+          telefono: item.telefono,
+          tipo_contacto: item.tipo_contacto,
+          recibe_informes_ot: item.recibe_informes_ot,
         }))
 
         const equiposData: EquipoOption[] = (equiposResp.data ?? []).map((item) => ({
@@ -461,6 +513,7 @@ function NuevaOTContent() {
         if (!active) return
 
         setClientes(clientesData)
+        setContactosCliente(contactosData)
         setEquipos(equiposData)
         setTiposServicio(tiposData)
         setEstados(estadosData)
@@ -583,8 +636,28 @@ function NuevaOTContent() {
           ...prev,
           cliente_id: clienteId,
           equipo_id: equipoPerteneceCliente ? prev.equipo_id : '',
+          contacto_cliente_id: '',
+          contacto_cliente_email: '',
+          contacto_cliente_nombre: '',
+          contacto_cliente_cargo: '',
         }
       })
+
+      return
+    }
+
+    if (field === 'contacto_cliente_id') {
+      const contactoId = String(value || '')
+      const contacto = contactosCliente.find((item) => item.id === contactoId)
+
+      setForm((prev) => ({
+        ...prev,
+        contacto_cliente_id: contactoId,
+        contacto_cliente_email: contacto?.email || '',
+        contacto_cliente_nombre: contacto?.nombre || '',
+        contacto_cliente_cargo: contacto?.cargo || '',
+        area_trabajo: contacto?.area || prev.area_trabajo,
+      }))
 
       return
     }
@@ -614,6 +687,10 @@ function NuevaOTContent() {
       ...prev,
       cliente_id: nuevoCliente.id,
       equipo_id: '',
+      contacto_cliente_id: '',
+      contacto_cliente_email: '',
+      contacto_cliente_nombre: '',
+      contacto_cliente_cargo: '',
     }))
 
     setSuccess(`Cliente ${nuevoCliente.nombre} creado y seleccionado para la OT.`)
@@ -704,6 +781,8 @@ function NuevaOTContent() {
         duracion_minutos: null,
         cantidad_tecnicos: parsePositiveNumber(form.cantidad_tecnicos),
         horas_hombre_utilizadas: null,
+        contacto_cliente_id: form.contacto_cliente_id || null,
+        contacto_cliente_email: form.contacto_cliente_email.trim() || null,
         contacto_cliente_nombre: form.contacto_cliente_nombre.trim() || null,
         contacto_cliente_cargo: form.contacto_cliente_cargo.trim() || null,
         responsable_cliente_rut: form.responsable_cliente_rut.trim() || null,
@@ -1130,12 +1209,34 @@ function NuevaOTContent() {
                 <label className="mb-2 block text-sm font-medium text-slate-700">
                   Responsable cliente / Softys
                 </label>
-                <input
-                  type="text"
-                  value={form.contacto_cliente_nombre}
-                  onChange={(e) => handleChange('contacto_cliente_nombre', e.target.value)}
-                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
-                />
+                <select
+                  value={form.contacto_cliente_id}
+                  onChange={(e) => handleChange('contacto_cliente_id', e.target.value)}
+                  disabled={!form.cliente_id}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500 disabled:bg-slate-100"
+                >
+                  <option value="">
+                    {!form.cliente_id
+                      ? 'Selecciona primero un cliente'
+                      : contactosDelCliente.length === 0
+                        ? 'Cliente sin contactos registrados'
+                        : 'Selecciona contacto'}
+                  </option>
+                  {contactosDelCliente.map((contacto) => (
+                    <option key={contacto.id} value={contacto.id}>
+                      {contacto.nombre}{contacto.cargo ? ` - ${contacto.cargo}` : ''}{contacto.email ? ` - ${contacto.email}` : ''}
+                    </option>
+                  ))}
+                </select>
+                {selectedContactoCliente ? (
+                  <p className="mt-1 text-xs text-slate-500">
+                    Se enviará el informe a: {selectedContactoCliente.email || 'sin email registrado'}
+                  </p>
+                ) : (
+                  <p className="mt-1 text-xs text-slate-500">
+                    Los contactos se administran desde Clientes.
+                  </p>
+                )}
               </div>
 
               <div>
