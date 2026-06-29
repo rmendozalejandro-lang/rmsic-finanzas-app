@@ -133,6 +133,28 @@ function hasValue(value: string | number | null | undefined) {
   return value !== null && value !== undefined && String(value).trim() !== "";
 }
 
+function normalizarUrlEvidencia(url: string | null | undefined) {
+  const value = String(url || "").trim();
+  if (!value) return "";
+
+  if (
+    value.startsWith("http://") ||
+    value.startsWith("https://") ||
+    value.startsWith("data:") ||
+    value.startsWith("blob:") ||
+    value.startsWith("/")
+  ) {
+    return value;
+  }
+
+  const cleanPath = value
+    .replace(/^ot-evidencias\//, "")
+    .replace(/^storage\/v1\/object\/public\/ot-evidencias\//, "");
+
+  const { data } = supabase.storage.from("ot-evidencias").getPublicUrl(cleanPath);
+  return data.publicUrl || value;
+}
+
 function formatDate(value: string | null | undefined) {
   if (!value) return "-";
   const date = new Date(value);
@@ -1176,11 +1198,29 @@ export default function ChecklistsIndividualesPage() {
                             <div className="evidence-grid">
                               <div className="evidence-card">
                                 <p>Foto antes</p>
-                                {item.evidencia_antes_url ? <img src={item.evidencia_antes_url} alt="Foto antes" /> : <div className="no-image">Sin foto antes</div>}
+                                {item.evidencia_antes_url ? (
+                                  <img
+                                    src={normalizarUrlEvidencia(item.evidencia_antes_url)}
+                                    alt="Foto antes"
+                                    loading="eager"
+                                    referrerPolicy="no-referrer"
+                                  />
+                                ) : (
+                                  <div className="no-image">Sin foto antes</div>
+                                )}
                               </div>
                               <div className="evidence-card">
                                 <p>Foto después</p>
-                                {item.evidencia_despues_url ? <img src={item.evidencia_despues_url} alt="Foto después" /> : <div className="no-image">Sin foto después</div>}
+                                {item.evidencia_despues_url ? (
+                                  <img
+                                    src={normalizarUrlEvidencia(item.evidencia_despues_url)}
+                                    alt="Foto después"
+                                    loading="eager"
+                                    referrerPolicy="no-referrer"
+                                  />
+                                ) : (
+                                  <div className="no-image">Sin foto después</div>
+                                )}
                               </div>
                             </div>
                           ) : null}
@@ -1197,7 +1237,14 @@ export default function ChecklistsIndividualesPage() {
                   <div className="firma-box">
                     <p className="firma-title">Responsable Softys</p>
                     <div className="firma-area">
-                      {firmaCliente?.firma_url ? <img src={firmaCliente.firma_url} alt="Firma responsable Softys" /> : null}
+                      {firmaCliente?.firma_url ? (
+                        <img
+                          src={normalizarUrlEvidencia(firmaCliente.firma_url)}
+                          alt="Firma responsable Softys"
+                          loading="eager"
+                          referrerPolicy="no-referrer"
+                        />
+                      ) : null}
                     </div>
                     <p className="firma-name">{labelOrDash(firmaCliente?.nombre_firmante || responsableSoftys)}</p>
                     <p className="firma-role">{labelOrDash(firmaCliente?.cargo_firmante || cargoResponsableSoftys)}</p>
@@ -1206,7 +1253,14 @@ export default function ChecklistsIndividualesPage() {
                   <div className="firma-box">
                     <p className="firma-title">Supervisor contratista</p>
                     <div className="firma-area">
-                      {(firmaSupervisor?.firma_url || firmaTecnico?.firma_url) ? <img src={firmaSupervisor?.firma_url || firmaTecnico?.firma_url || ""} alt="Firma supervisor contratista" /> : null}
+                      {(firmaSupervisor?.firma_url || firmaTecnico?.firma_url) ? (
+                        <img
+                          src={normalizarUrlEvidencia(firmaSupervisor?.firma_url || firmaTecnico?.firma_url || "")}
+                          alt="Firma supervisor contratista"
+                          loading="eager"
+                          referrerPolicy="no-referrer"
+                        />
+                      ) : null}
                     </div>
                     <p className="firma-name">{labelOrDash(firmaSupervisor?.nombre_firmante || firmaTecnico?.nombre_firmante || informeDatos.supervisor_contratista)}</p>
                     <p className="firma-role">{labelOrDash(firmaSupervisor?.cargo_firmante || firmaTecnico?.cargo_firmante || informeDatos.cargo_supervisor_contratista || "Supervisor / Técnico DyF")}</p>

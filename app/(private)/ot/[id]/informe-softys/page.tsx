@@ -262,6 +262,28 @@ function hasValue(value: string | number | null | undefined) {
   return value !== null && value !== undefined && String(value).trim() !== "";
 }
 
+function normalizarUrlEvidencia(url: string | null | undefined) {
+  const value = String(url || "").trim();
+  if (!value) return "";
+
+  if (
+    value.startsWith("http://") ||
+    value.startsWith("https://") ||
+    value.startsWith("data:") ||
+    value.startsWith("blob:") ||
+    value.startsWith("/")
+  ) {
+    return value;
+  }
+
+  const cleanPath = value
+    .replace(/^ot-evidencias\//, "")
+    .replace(/^storage\/v1\/object\/public\/ot-evidencias\//, "");
+
+  const { data } = supabase.storage.from("ot-evidencias").getPublicUrl(cleanPath);
+  return data.publicUrl || value;
+}
+
 function formatDate(value: string | null | undefined) {
   if (!value) return "-";
   const date = new Date(value);
@@ -2744,7 +2766,12 @@ export default function InformeSoftysPage() {
                                   <div className="checklist-evidence-card">
                                     <p>Foto antes</p>
                                     {item.evidencia_antes_url ? (
-                                      <img src={item.evidencia_antes_url} alt="Foto antes" />
+                                      <img
+                                        src={normalizarUrlEvidencia(item.evidencia_antes_url)}
+                                        alt="Foto antes"
+                                        loading="eager"
+                                        referrerPolicy="no-referrer"
+                                      />
                                     ) : (
                                       <div className="no-image">Sin foto antes</div>
                                     )}
@@ -2752,7 +2779,12 @@ export default function InformeSoftysPage() {
                                   <div className="checklist-evidence-card">
                                     <p>Foto después</p>
                                     {item.evidencia_despues_url ? (
-                                      <img src={item.evidencia_despues_url} alt="Foto después" />
+                                      <img
+                                        src={normalizarUrlEvidencia(item.evidencia_despues_url)}
+                                        alt="Foto después"
+                                        loading="eager"
+                                        referrerPolicy="no-referrer"
+                                      />
                                     ) : (
                                       <div className="no-image">Sin foto después</div>
                                     )}
@@ -2898,10 +2930,12 @@ export default function InformeSoftysPage() {
                   <div className="evidence-card" key={item.id}>
                     {item.archivo_url ? (
                       <img
-                        src={item.archivo_url}
+                        src={normalizarUrlEvidencia(item.archivo_url)}
                         alt={
                           item.descripcion || item.archivo_nombre || "Evidencia"
                         }
+                        loading="eager"
+                        referrerPolicy="no-referrer"
                       />
                     ) : null}
                     <p>
