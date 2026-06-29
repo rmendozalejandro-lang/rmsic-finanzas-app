@@ -32,7 +32,6 @@ type OTDetalle = {
   numero_om_cliente: string | null
   cantidad_tecnicos: number | null
   horas_hombre_utilizadas: number | null
-  responsable_cliente_rut: string | null
   supervisor_contratista_nombre: string | null
   supervisor_contratista_rut: string | null
   supervisor_contratista_cargo: string | null
@@ -159,6 +158,12 @@ type EquipoAsociadoFormState = {
   observacion: string
 }
 
+type PlantillaChecklistInfo = {
+  id: string
+  nombre: string | null
+  tipo_activo: string | null
+}
+
 type EstadoOption = {
   id: string
   codigo: string
@@ -224,7 +229,6 @@ type FormState = {
   hora_termino: string
   cantidad_tecnicos: string
   horas_hombre_utilizadas: string
-  responsable_cliente_rut: string
   supervisor_contratista_nombre: string
   supervisor_contratista_rut: string
   supervisor_contratista_cargo: string
@@ -562,6 +566,66 @@ function equipoCaracteristicasDisplay(equipo: EquipoDisponible | null | undefine
   return partes.length > 0 ? partes.join(' · ') : '-'
 }
 
+function normalizeChecklistText(value: string | null | undefined) {
+  return (value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim()
+}
+
+function getTiposEquipoPermitidos(info: PlantillaChecklistInfo | null) {
+  const raw = normalizeChecklistText([info?.tipo_activo, info?.nombre].filter(Boolean).join(' '))
+
+  if (!raw) return []
+
+  if (raw.includes('valvula control') || raw.includes('valvula_control') || raw.includes('control')) {
+    return ['valvula_control']
+  }
+
+  if (raw.includes('valvula') || raw.includes('valvulas')) {
+    return ['valvula', 'valvula_control']
+  }
+
+  if (raw.includes('motor') || raw.includes('motores')) {
+    return ['motor']
+  }
+
+  if (raw.includes('bomba') || raw.includes('bombas')) {
+    return ['bomba']
+  }
+
+  if (raw.includes('variador') || raw.includes('vdf')) {
+    return ['vdf']
+  }
+
+  if (raw.includes('flujo')) {
+    return ['transmisor_flujo']
+  }
+
+  if (raw.includes('presion') || raw.includes('presión')) {
+    return ['transmisor_presion']
+  }
+
+  return []
+}
+
+function tiposEquipoPermitidosLabel(tipos: string[]) {
+  if (tipos.length === 0) return ''
+
+  const labels: Record<string, string> = {
+    motor: 'motores',
+    valvula: 'válvulas',
+    valvula_control: 'válvulas de control',
+    bomba: 'bombas',
+    vdf: 'variadores de frecuencia',
+    transmisor_flujo: 'transmisores de flujo',
+    transmisor_presion: 'transmisores de presión',
+  }
+
+  return tipos.map((tipo) => labels[tipo] || tipo).join(' / ')
+}
+
 function prioridadEquipoClass(criticidad: string | null | undefined) {
   if (criticidad === 'critica') return 'border-red-200 bg-red-50 text-red-800'
   if (criticidad === 'alta') return 'border-orange-200 bg-orange-50 text-orange-800'
@@ -608,6 +672,7 @@ function OTDetalleContent() {
   const [enviosEmail, setEnviosEmail] = useState<EnvioEmail[]>([])
   const [equiposDisponibles, setEquiposDisponibles] = useState<EquipoDisponible[]>([])
   const [equiposAsociados, setEquiposAsociados] = useState<EquipoAsociado[]>([])
+  const [plantillaChecklistInfo, setPlantillaChecklistInfo] = useState<PlantillaChecklistInfo | null>(null)
   const [equipoForm, setEquipoForm] = useState<EquipoAsociadoFormState>({
     equipo_id: '',
     descripcion_trabajo: '',
@@ -638,7 +703,6 @@ function OTDetalleContent() {
     hora_termino: '',
     cantidad_tecnicos: '',
     horas_hombre_utilizadas: '',
-    responsable_cliente_rut: '',
     supervisor_contratista_nombre: '',
     supervisor_contratista_rut: '',
     supervisor_contratista_cargo: '',
@@ -772,13 +836,25 @@ const isPreventiva = isPreventivaMespack || isPreventivaGeneral
     return new Set(equiposAsociados.filter((item) => item.activo).map((item) => item.equipo_id))
   }, [equiposAsociados])
 
+  const tiposEquipoPermitidos = useMemo(() => {
+    return getTiposEquipoPermitidos(plantillaChecklistInfo)
+  }, [plantillaChecklistInfo])
+
+  const filtroTipoEquipoLabel = useMemo(() => {
+    return tiposEquipoPermitidosLabel(tiposEquipoPermitidos)
+  }, [tiposEquipoPermitidos])
+
   const equiposDisponiblesParaAgregar = useMemo(() => {
     return equiposDisponibles
       .filter((equipo) => equipo.activo !== false && equipo.estado !== 'baja')
       .filter((equipo) => !equiposAsociadosIds.has(equipo.id))
       .filter((equipo) => !detalle?.cliente_id || !equipo.cliente_id || equipo.cliente_id === detalle.cliente_id)
+      .filter((equipo) => {
+        if (tiposEquipoPermitidos.length === 0) return true
+        return tiposEquipoPermitidos.includes((equipo.tipo_equipo || '').toLowerCase())
+      })
       .sort((a, b) => (a.tag || '').localeCompare(b.tag || '', 'es'))
-  }, [equiposDisponibles, equiposAsociadosIds, detalle?.cliente_id])
+  }, [equiposDisponibles, equiposAsociadosIds, detalle?.cliente_id, tiposEquipoPermitidos])
 
   const equiposDisponiblesMap = useMemo(() => {
     return equiposDisponibles.reduce<Record<string, EquipoDisponible>>((acc, item) => {
@@ -896,7 +972,6 @@ const isPreventiva = isPreventivaMespack || isPreventivaGeneral
                 numero_om_cliente,
                 cantidad_tecnicos,
                 horas_hombre_utilizadas,
-                responsable_cliente_rut,
                 supervisor_contratista_nombre,
                 supervisor_contratista_rut,
                 supervisor_contratista_cargo,
@@ -1021,7 +1096,16 @@ const isPreventiva = isPreventivaMespack || isPreventivaGeneral
         const firmasData = (firmasResp.data ?? []) as FirmaMini[]
         const checklistData = checklistResp.data ?? []
 
-        const [contactosResp, enviosEmailResp, equiposAsociadosResp, equiposDisponiblesResp] = await Promise.all([
+        const plantillaChecklistPromise = detalleData.plantilla_checklist_id
+          ? (supabase as any)
+              .from('ot_plantillas_checklist')
+              .select('id, nombre, tipo_activo')
+              .eq('id', detalleData.plantilla_checklist_id)
+              .maybeSingle()
+          : Promise.resolve({ data: null, error: null })
+
+        const [plantillaChecklistResp, contactosResp, enviosEmailResp, equiposAsociadosResp, equiposDisponiblesResp] = await Promise.all([
+          plantillaChecklistPromise,
           supabase
             .from('cliente_contactos')
             .select('id, cliente_id, nombre, cargo, area, linea, email, telefono, tipo_contacto, recibe_informes_ot')
@@ -1052,6 +1136,10 @@ const isPreventiva = isPreventivaMespack || isPreventivaGeneral
             .order('tag', { ascending: true }),
         ])
 
+        if (plantillaChecklistResp.error) {
+          throw new Error(`No se pudo cargar la plantilla de checklist: ${plantillaChecklistResp.error.message}`)
+        }
+
         if (contactosResp.error) {
           throw new Error(`No se pudieron cargar los contactos del cliente: ${contactosResp.error.message}`)
         }
@@ -1068,6 +1156,7 @@ const isPreventiva = isPreventivaMespack || isPreventivaGeneral
           throw new Error(`No se pudieron cargar los equipos disponibles: ${equiposDisponiblesResp.error.message}`)
         }
 
+        const plantillaChecklistData = (plantillaChecklistResp.data ?? null) as PlantillaChecklistInfo | null
         const contactosData = (contactosResp.data ?? []) as ClienteContactoOption[]
         const enviosEmailData = (enviosEmailResp.data ?? []) as EnvioEmail[]
         const equiposAsociadosData = (equiposAsociadosResp.data ?? []) as EquipoAsociado[]
@@ -1198,6 +1287,7 @@ const isPreventiva = isPreventivaMespack || isPreventivaGeneral
         setEnviosEmail(enviosEmailData)
         setEquiposAsociados(equiposAsociadosData)
         setEquiposDisponibles(equiposDisponiblesData)
+        setPlantillaChecklistInfo(plantillaChecklistData)
         setChecklistResponsesCount(checklistData.length)
         setPerfiles(perfilesSelectData)
         setPerfilesMap(nextMap)
@@ -1218,7 +1308,6 @@ const isPreventiva = isPreventivaMespack || isPreventivaGeneral
             detalleData.cantidad_tecnicos != null ? String(detalleData.cantidad_tecnicos) : '',
           horas_hombre_utilizadas:
             detalleData.horas_hombre_utilizadas != null ? String(detalleData.horas_hombre_utilizadas) : '',
-          responsable_cliente_rut: detalleData.responsable_cliente_rut || '',
           supervisor_contratista_nombre: detalleData.supervisor_contratista_nombre || '',
           supervisor_contratista_rut: detalleData.supervisor_contratista_rut || '',
           supervisor_contratista_cargo: detalleData.supervisor_contratista_cargo || '',
@@ -1402,7 +1491,6 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
     cantidad_tecnicos: parsePositiveNumber(form.cantidad_tecnicos),
     horas_hombre_utilizadas:
       parsePositiveNumber(form.horas_hombre_utilizadas) ?? horasHombreSugeridas,
-    responsable_cliente_rut: form.responsable_cliente_rut.trim() || null,
     supervisor_contratista_nombre: form.supervisor_contratista_nombre.trim() || null,
     supervisor_contratista_rut: form.supervisor_contratista_rut.trim() || null,
     supervisor_contratista_cargo: form.supervisor_contratista_cargo.trim() || null,
@@ -2582,10 +2670,15 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
                   <option value="">Seleccionar equipo...</option>
                   {equiposDisponiblesParaAgregar.map((equipo) => (
                     <option key={equipo.id} value={equipo.id}>
-                      {equipoDisplayName(equipo)}
+                      {equipoDisplayName(equipo)}{equipo.tipo_equipo ? ` / ${equipo.tipo_equipo}` : ''}
                     </option>
                   ))}
                 </select>
+                {filtroTipoEquipoLabel ? (
+                  <p className="mt-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800">
+                    Filtro aplicado por plantilla: se muestran solo {filtroTipoEquipoLabel}.
+                  </p>
+                ) : null}
                 {equiposDisponiblesParaAgregar.length === 0 ? (
                   <p className="mt-2 text-xs text-amber-700">
                     No hay equipos disponibles para agregar. Revisa el maestro de equipos o si todos ya fueron asociados.
@@ -2939,17 +3032,6 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
               />
             </div>
 
-            <div>
-              <label className="mb-2 block text-sm font-medium text-slate-700">
-                RUT responsable cliente
-              </label>
-              <input
-                type="text"
-                value={form.responsable_cliente_rut}
-                onChange={(e) => handleChange('responsable_cliente_rut', e.target.value)}
-                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
-              />
-            </div>
 
             <div>
               <label className="mb-2 block text-sm font-medium text-slate-700">
