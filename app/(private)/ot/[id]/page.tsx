@@ -2026,10 +2026,18 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
     'jefe_mantenimiento',
     'responsable_ot',
   ])
+  const technicianRoles = new Set([
+    'tecnico_ot',
+    'tecnico',
+    'técnico',
+    'tecnico_mantencion',
+    'mantenedor',
+    'operador_ot',
+  ])
   const isAssignedTechnician = Boolean(currentUserId && form.tecnico_responsable_id === currentUserId)
   const isAssignedSupervisor = Boolean(currentUserId && form.supervisor_id === currentUserId)
   const canManageOt = adminRoles.has(currentRole) || supervisorRoles.has(currentRole) || isAssignedSupervisor
-  const isTechnicianOnly = !canManageOt && (isAssignedTechnician || currentRole === 'tecnico_ot')
+  const isTechnicianOnly = !canManageOt && (isAssignedTechnician || technicianRoles.has(currentRole))
   const hasTechnicalChecklistFlow = Boolean(form.requiere_checklist || isPreventiva || equiposAsociados.length > 0)
 
   if (isTechnicianOnly && hasTechnicalChecklistFlow) {
@@ -2399,7 +2407,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <SectionTitle
           title="Equipos / motores asociados a la OM"
-          subtitle="Asocia aquí todos los equipos solicitados por Softys. Esta será la base para el informe único consolidado y para el checklist técnico por equipo."
+          subtitle={canManageOt ? 'Asocia aquí todos los equipos solicitados por Softys. El técnico trabajará solo con esta lista.' : 'Equipos definidos por el administrador o supervisor para esta OM.'}
         />
 
         {equipoAsociadoError ? (
@@ -2414,69 +2422,71 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
           </div>
         ) : null}
 
-        <form onSubmit={handleAddEquipoAsociado} className="mt-5 space-y-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-          <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr_1fr]">
-            <div>
-              <label className="mb-2 block text-sm font-medium text-slate-700">
-                Equipo / motor
-              </label>
-              <select
-                value={equipoForm.equipo_id}
-                onChange={(e) => handleEquipoAsociadoChange('equipo_id', e.target.value)}
-                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
+        {canManageOt ? (
+          <form onSubmit={handleAddEquipoAsociado} className="mt-5 space-y-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr_1fr]">
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  Equipo / motor
+                </label>
+                <select
+                  value={equipoForm.equipo_id}
+                  onChange={(e) => handleEquipoAsociadoChange('equipo_id', e.target.value)}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
+                >
+                  <option value="">Seleccionar equipo...</option>
+                  {equiposDisponiblesParaAgregar.map((equipo) => (
+                    <option key={equipo.id} value={equipo.id}>
+                      {equipoDisplayName(equipo)}
+                    </option>
+                  ))}
+                </select>
+                {equiposDisponiblesParaAgregar.length === 0 ? (
+                  <p className="mt-2 text-xs text-amber-700">
+                    No hay equipos disponibles para agregar. Revisa el maestro de equipos o si todos ya fueron asociados.
+                  </p>
+                ) : null}
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  Trabajo solicitado para este equipo
+                </label>
+                <input
+                  value={equipoForm.descripcion_trabajo}
+                  onChange={(e) => handleEquipoAsociadoChange('descripcion_trabajo', e.target.value)}
+                  placeholder="Ej: Mantención motor línea 2"
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  Observación interna
+                </label>
+                <input
+                  value={equipoForm.observacion}
+                  onChange={(e) => handleEquipoAsociadoChange('observacion', e.target.value)}
+                  placeholder="Opcional"
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-xs text-slate-500">
+                Esta asociación la define el administrador o supervisor antes de asignar el trabajo al técnico.
+              </p>
+              <button
+                type="submit"
+                disabled={savingEquipoAsociado || !equipoForm.equipo_id}
+                className="inline-flex w-full items-center justify-center rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
               >
-                <option value="">Seleccionar equipo...</option>
-                {equiposDisponiblesParaAgregar.map((equipo) => (
-                  <option key={equipo.id} value={equipo.id}>
-                    {equipoDisplayName(equipo)}
-                  </option>
-                ))}
-              </select>
-              {equiposDisponiblesParaAgregar.length === 0 ? (
-                <p className="mt-2 text-xs text-amber-700">
-                  No hay equipos disponibles para agregar. Revisa el maestro de equipos o si todos ya fueron asociados.
-                </p>
-              ) : null}
+                {savingEquipoAsociado ? 'Asociando...' : 'Agregar equipo a OM'}
+              </button>
             </div>
-
-            <div>
-              <label className="mb-2 block text-sm font-medium text-slate-700">
-                Trabajo solicitado para este equipo
-              </label>
-              <input
-                value={equipoForm.descripcion_trabajo}
-                onChange={(e) => handleEquipoAsociadoChange('descripcion_trabajo', e.target.value)}
-                placeholder="Ej: Mantención motor línea 2"
-                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
-              />
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm font-medium text-slate-700">
-                Observación interna
-              </label>
-              <input
-                value={equipoForm.observacion}
-                onChange={(e) => handleEquipoAsociadoChange('observacion', e.target.value)}
-                placeholder="Opcional"
-                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
-              />
-            </div>
-          </div>
-
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-xs text-slate-500">
-              Esta asociación no elimina ni modifica el maestro de equipos; solo vincula el equipo a esta OM.
-            </p>
-            <button
-              type="submit"
-              disabled={savingEquipoAsociado || !equipoForm.equipo_id}
-              className="inline-flex w-full items-center justify-center rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
-            >
-              {savingEquipoAsociado ? 'Asociando...' : 'Agregar equipo a OM'}
-            </button>
-          </div>
-        </form>
+          </form>
+        ) : null}
 
         <div className="mt-5 space-y-3">
           {equiposAsociados.length === 0 ? (
@@ -2521,13 +2531,15 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
                       ) : null}
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={() => void handleRemoveEquipoAsociado(item)}
-                      className="inline-flex w-full items-center justify-center rounded-xl border border-red-300 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50 lg:w-auto"
-                    >
-                      Quitar de la OM
-                    </button>
+                    {canManageOt ? (
+                      <button
+                        type="button"
+                        onClick={() => void handleRemoveEquipoAsociado(item)}
+                        className="inline-flex w-full items-center justify-center rounded-xl border border-red-300 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50 lg:w-auto"
+                      >
+                        Quitar de la OM
+                      </button>
+                    ) : null}
                   </div>
                 </div>
               )

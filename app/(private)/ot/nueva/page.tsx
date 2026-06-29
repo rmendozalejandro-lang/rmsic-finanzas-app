@@ -203,6 +203,8 @@ function NuevaOTContent() {
   const [plantillas, setPlantillas] = useState<PlantillaOption[]>([])
   const [tecnicos, setTecnicos] = useState<SelectOption[]>([])
   const [supervisores, setSupervisores] = useState<SelectOption[]>([])
+  const [equipoSelectorId, setEquipoSelectorId] = useState('')
+  const [equiposSeleccionadosIds, setEquiposSeleccionadosIds] = useState<string[]>([])
 
   const [form, setForm] = useState<FormDataState>({
     empresa_id: '',
@@ -260,9 +262,19 @@ function NuevaOTContent() {
     return equipos.filter((item) => !item.cliente_id || item.cliente_id === form.cliente_id)
   }, [equipos, form.cliente_id])
 
-  const selectedEquipo = useMemo(() => {
-    return equipos.find((item) => item.id === form.equipo_id) ?? null
-  }, [equipos, form.equipo_id])
+  const equiposSeleccionados = useMemo(() => {
+    const map = new Map(equipos.map((item) => [item.id, item]))
+
+    return equiposSeleccionadosIds
+      .map((id) => map.get(id))
+      .filter((item): item is EquipoOption => Boolean(item))
+  }, [equipos, equiposSeleccionadosIds])
+
+  const equiposDisponiblesParaSeleccionar = useMemo(() => {
+    const seleccionados = new Set(equiposSeleccionadosIds)
+
+    return equiposCliente.filter((item) => !seleccionados.has(item.id))
+  }, [equiposCliente, equiposSeleccionadosIds])
 
   const contactosDelCliente = useMemo(() => {
     if (!form.cliente_id) return []
@@ -674,21 +686,22 @@ function NuevaOTContent() {
       const clienteId = String(value || '')
 
       setForm((prev) => {
-        const equipoSeleccionado = equipos.find((item) => item.id === prev.equipo_id)
+        const equiposPermitidos = equiposSeleccionadosIds.filter((id) => {
+          const equipo = equipos.find((item) => item.id === id)
 
-        const equipoPerteneceCliente = Boolean(
-          equipoSeleccionado &&
-            (
-              !clienteId ||
-              !equipoSeleccionado.cliente_id ||
-              equipoSeleccionado.cliente_id === clienteId
-            )
-        )
+          return Boolean(
+            equipo &&
+              (!clienteId || !equipo.cliente_id || equipo.cliente_id === clienteId)
+          )
+        })
+
+        setEquiposSeleccionadosIds(equiposPermitidos)
+        setEquipoSelectorId('')
 
         return {
           ...prev,
           cliente_id: clienteId,
-          equipo_id: equipoPerteneceCliente ? prev.equipo_id : '',
+          equipo_id: equiposPermitidos[0] || '',
           contacto_cliente_id: '',
           contacto_cliente_email: '',
           contacto_cliente_nombre: '',
@@ -736,6 +749,9 @@ function NuevaOTContent() {
       )
     )
 
+    setEquiposSeleccionadosIds([])
+    setEquipoSelectorId('')
+
     setForm((prev) => ({
       ...prev,
       cliente_id: nuevoCliente.id,
@@ -748,6 +764,46 @@ function NuevaOTContent() {
 
     setSuccess(`Cliente ${nuevoCliente.nombre} creado y seleccionado para la OT.`)
     setError('')
+  }
+
+  const handleAddEquipoSeleccionado = (equipoId: string) => {
+    if (!equipoId) return
+
+    const equipo = equipos.find((item) => item.id === equipoId)
+
+    if (!equipo) return
+
+    if (form.cliente_id && equipo.cliente_id && equipo.cliente_id !== form.cliente_id) {
+      setError('El equipo seleccionado pertenece a otro cliente.')
+      return
+    }
+
+    setEquiposSeleccionadosIds((prev) => {
+      const next = prev.includes(equipoId) ? prev : [...prev, equipoId]
+
+      setForm((formPrev) => ({
+        ...formPrev,
+        equipo_id: next[0] || '',
+      }))
+
+      return next
+    })
+
+    setEquipoSelectorId('')
+    setError('')
+  }
+
+  const handleRemoveEquipoSeleccionado = (equipoId: string) => {
+    setEquiposSeleccionadosIds((prev) => {
+      const next = prev.filter((id) => id !== equipoId)
+
+      setForm((formPrev) => ({
+        ...formPrev,
+        equipo_id: next[0] || '',
+      }))
+
+      return next
+    })
   }
 
   const validateForm = () => {
@@ -763,8 +819,14 @@ function NuevaOTContent() {
       return 'No se detectó una plantilla OT para la empresa activa.'
     }
 
-    if (selectedPlantilla?.requiere_equipo && !form.equipo_id) {
-      return `La plantilla ${selectedPlantilla.nombre} requiere seleccionar un equipo/TAG.`
+    const equiposSeleccionadosParaCrear = equiposSeleccionadosIds.length > 0
+      ? equiposSeleccionadosIds
+      : form.equipo_id
+        ? [form.equipo_id]
+        : []
+
+    if (selectedPlantilla?.requiere_equipo && equiposSeleccionadosParaCrear.length === 0) {
+      return `La plantilla ${selectedPlantilla.nombre} requiere seleccionar al menos un equipo/TAG.`
     }
 
     if (!form.tipo_servicio_id) {
@@ -816,10 +878,16 @@ function NuevaOTContent() {
             ? false
             : form.requiere_checklist
 
+      const equiposSeleccionadosParaCrear = equiposSeleccionadosIds.length > 0
+        ? equiposSeleccionadosIds
+        : form.equipo_id
+          ? [form.equipo_id]
+          : []
+
       const payload = {
         empresa_id: form.empresa_id,
         cliente_id: form.cliente_id,
-        equipo_id: form.equipo_id || null,
+        equipo_id: equiposSeleccionadosParaCrear[0] || null,
         plantilla_id: form.plantilla_id || null,
         tipo_servicio_id: form.tipo_servicio_id,
         estado_id: form.estado_id || estadoAsignadaId,
@@ -865,6 +933,30 @@ function NuevaOTContent() {
 
       if (insertError) {
         throw new Error(`No se pudo crear la OT: ${insertError.message}`)
+      }
+
+      if (data?.id && equiposSeleccionadosParaCrear.length > 0) {
+        const equiposPayload = equiposSeleccionadosParaCrear.map((equipoId, index) => ({
+          empresa_id: form.empresa_id,
+          ot_id: data.id,
+          equipo_id: equipoId,
+          descripcion_trabajo: form.titulo.trim() || null,
+          observacion: null,
+          orden: index + 1,
+          activo: true,
+          created_by: user.id,
+          updated_by: user.id,
+        }))
+
+        const { error: equiposInsertError } = await supabase
+          .from('ot_orden_equipos')
+          .insert(equiposPayload)
+
+        if (equiposInsertError) {
+          throw new Error(
+            `OT creada, pero no se pudieron asociar los equipos seleccionados: ${equiposInsertError.message}`
+          )
+        }
       }
 
       if (data?.id && selectedPlantilla?.usa_checklist) {
@@ -1003,66 +1095,101 @@ function NuevaOTContent() {
                 </p>
               </div>
 
-              <div>
+              <div className="md:col-span-2">
                 <label className="mb-2 block text-sm font-medium text-slate-700">
-                  Equipo / TAG{selectedPlantilla?.requiere_equipo ? ' *' : ''}
+                  Equipos / TAG a intervenir{selectedPlantilla?.requiere_equipo ? ' *' : ''}
                 </label>
-                <select
-                  value={form.equipo_id}
-                  onChange={(e) => handleChange('equipo_id', e.target.value)}
-                  disabled={!form.cliente_id && equiposCliente.length === 0}
-                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500 disabled:bg-slate-100 disabled:text-slate-500"
-                >
-                  <option value="">
-                    {equiposCliente.length === 0
-                      ? 'Sin equipos registrados'
-                      : 'Sin equipo asociado'}
-                  </option>
-                  {equiposCliente.map((equipo) => (
-                    <option key={equipo.id} value={equipo.id}>
-                      {equipo.tag}
-                      {equipo.nombre ? ` - ${equipo.nombre}` : ''}
-                      {equipo.descripcion && !equipo.nombre ? ` - ${equipo.descripcion}` : ''}
+
+                <div className="grid gap-3 md:grid-cols-[1fr_auto]">
+                  <select
+                    value={equipoSelectorId}
+                    onChange={(e) => {
+                      const equipoId = e.target.value
+                      setEquipoSelectorId(equipoId)
+                      handleAddEquipoSeleccionado(equipoId)
+                    }}
+                    disabled={!form.cliente_id && equiposCliente.length === 0}
+                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500 disabled:bg-slate-100 disabled:text-slate-500"
+                  >
+                    <option value="">
+                      {equiposDisponiblesParaSeleccionar.length === 0
+                        ? 'Sin equipos disponibles'
+                        : 'Buscar y seleccionar equipo/TAG'}
                     </option>
-                  ))}
-                </select>
+                    {equiposDisponiblesParaSeleccionar.map((equipo) => (
+                      <option key={equipo.id} value={equipo.id}>
+                        {equipo.tag}
+                        {equipo.nombre ? ` - ${equipo.nombre}` : ''}
+                        {equipo.descripcion && !equipo.nombre ? ` - ${equipo.descripcion}` : ''}
+                      </option>
+                    ))}
+                  </select>
+
+                  <button
+                    type="button"
+                    onClick={() => handleAddEquipoSeleccionado(equipoSelectorId)}
+                    disabled={!equipoSelectorId}
+                    className="inline-flex items-center justify-center rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Agregar
+                  </button>
+                </div>
+
                 <p className="mt-1 text-xs text-slate-500">
                   {selectedPlantilla?.requiere_equipo
-                    ? 'Obligatorio para esta plantilla. Selecciona el motor, equipo o activo por TAG.'
-                    : 'Opcional para plantillas estándar. Permite asociar la OT a un motor o activo por TAG.'}
+                    ? 'Obligatorio para esta plantilla. El administrador o supervisor debe dejar definidos todos los motores/equipos que trabajará el técnico.'
+                    : 'Opcional para plantillas estándar. Puedes asociar uno o varios equipos por TAG.'}
                 </p>
-              </div>
 
-              {selectedEquipo ? (
-                <div className="md:col-span-2 rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900">
-                  <div className="font-semibold">
-                    Equipo seleccionado: {selectedEquipo.tag}
-                    {selectedEquipo.nombre ? ` - ${selectedEquipo.nombre}` : ''}
+                {equiposSeleccionados.length === 0 ? (
+                  <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                    Aún no hay equipos seleccionados para esta OT.
                   </div>
-                  <div className="mt-1 grid gap-1 md:grid-cols-2">
-                    <div>
-                      <span className="font-medium">Descripción:</span>{' '}
-                      {selectedEquipo.descripcion || 'Sin descripción'}
-                    </div>
-                    <div>
-                      <span className="font-medium">Tipo:</span>{' '}
-                      {selectedEquipo.tipo_equipo || 'Sin tipo'}
-                    </div>
-                    <div>
-                      <span className="font-medium">Ubicación:</span>{' '}
-                      {[selectedEquipo.planta, selectedEquipo.area, selectedEquipo.linea, selectedEquipo.ubicacion]
-                        .filter(Boolean)
-                        .join(' / ') || 'Sin ubicación'}
-                    </div>
-                    <div>
-                      <span className="font-medium">Datos técnicos:</span>{' '}
-                      {[selectedEquipo.marca, selectedEquipo.modelo, selectedEquipo.potencia]
-                        .filter(Boolean)
-                        .join(' · ') || 'Sin datos técnicos'}
-                    </div>
+                ) : (
+                  <div className="mt-3 space-y-3">
+                    {equiposSeleccionados.map((equipo, index) => (
+                      <div key={equipo.id} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="rounded-full bg-slate-900 px-2.5 py-1 text-xs font-semibold text-white">
+                                Equipo {index + 1}
+                              </span>
+                              {index === 0 ? (
+                                <span className="rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">
+                                  Equipo principal
+                                </span>
+                              ) : null}
+                              {equipo.tipo_equipo ? (
+                                <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-600">
+                                  {equipo.tipo_equipo}
+                                </span>
+                              ) : null}
+                            </div>
+                            <div className="mt-2 text-sm font-semibold text-slate-900">
+                              {equipo.tag}
+                              {equipo.nombre ? ` - ${equipo.nombre}` : ''}
+                              {equipo.descripcion && !equipo.nombre ? ` - ${equipo.descripcion}` : ''}
+                            </div>
+                            <div className="mt-1 text-xs text-slate-500">
+                              {[equipo.planta, equipo.area, equipo.linea, equipo.ubicacion]
+                                .filter(Boolean)
+                                .join(' / ') || 'Sin ubicación'}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveEquipoSeleccionado(equipo.id)}
+                            className="inline-flex w-full items-center justify-center rounded-xl border border-red-300 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-50 lg:w-auto"
+                          >
+                            Quitar
+                          </button>
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                </div>
-              ) : null}
+                )}
+              </div>
 
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-700">
@@ -1168,9 +1295,9 @@ function NuevaOTContent() {
               </div>
             </div>
 
-            {selectedPlantilla?.requiere_equipo && !form.equipo_id ? (
+            {selectedPlantilla?.requiere_equipo && equiposSeleccionados.length === 0 ? (
               <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                Esta plantilla requiere equipo/TAG. No podrás crear la OT hasta seleccionar uno.
+                Esta plantilla requiere al menos un equipo/TAG. El técnico trabajará solo con los equipos que queden seleccionados aquí.
               </div>
             ) : null}
 
