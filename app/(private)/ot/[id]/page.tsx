@@ -1854,7 +1854,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
           <DetailField label="Folio Tralixia" value={detalle.folio} />
           <DetailField label="N° OM / N° Orden cliente" value={form.numero_om_cliente} />
           <DetailField label="Hora inicio OM" value={formatTimeOnly(detalle.hora_inicio)} />
-          <DetailField label="Hora término OM" value={formatTimeOnly(detalle.hora_termino)} />
+          <DetailField label="Cierre oficial de OM" value={formatTimeOnly(detalle.hora_termino)} />
           <DetailField label="Horas hombre utilizadas" value={detalle.horas_hombre_utilizadas} />
           <DetailField label="Contacto cliente" value={form.contacto_cliente_nombre} />
           <DetailField label="Cargo contacto" value={form.contacto_cliente_cargo} />
@@ -2599,8 +2599,8 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
 
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <SectionTitle
-          title="Registrar tiempo de trabajo"
-          subtitle="Agrega bloques de tiempo para trabajo, traslado, espera o supervision."
+          title="Bitácora opcional de tiempos"
+          subtitle="Registra bloques de trabajo, traslado, espera o supervisión como respaldo operativo. No reemplaza la hora oficial de cierre de la OM."
         />
 
         <form onSubmit={handleAddTiempo} className="mt-5 space-y-5">
@@ -2658,7 +2658,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
 
             <div>
               <label className="mb-2 block text-sm font-medium text-slate-700">
-                Hora inicio *
+                Inicio bloque *
               </label>
               <input
                 type="time"
@@ -2670,7 +2670,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
 
             <div>
               <label className="mb-2 block text-sm font-medium text-slate-700">
-                Hora termino *
+                Fin bloque *
               </label>
               <input
                 type="time"
@@ -2741,8 +2741,8 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
 
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <SectionTitle
-          title="Tiempos registrados"
-          subtitle="Historial de bloques de tiempo asociados a esta OT."
+          title="Bitácora de tiempos registrada"
+          subtitle="Historial opcional de bloques de tiempo asociados a esta OT. La hora oficial de cierre se ingresa solo en Cierre / entrega de OM."
         />
 
         {tiempos.length === 0 ? (
@@ -2758,8 +2758,8 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
                     <th className="px-4 py-3 font-semibold">Fecha</th>
                     <th className="px-4 py-3 font-semibold">Usuario</th>
                     <th className="px-4 py-3 font-semibold">Tipo</th>
-                    <th className="px-4 py-3 font-semibold">Inicio</th>
-                    <th className="px-4 py-3 font-semibold">Termino</th>
+                    <th className="px-4 py-3 font-semibold">Inicio bloque</th>
+                    <th className="px-4 py-3 font-semibold">Fin bloque</th>
                     <th className="px-4 py-3 font-semibold">Duracion</th>
                     <th className="px-4 py-3 font-semibold">Observacion</th>
                     <th className="px-4 py-3 font-semibold text-right">Acciones</th>
@@ -2826,10 +2826,58 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
           subtitle="Completa estos datos al entregar el trabajo. La hora término, duración y horas hombre se registran al cierre, no al crear la OM."
         />
 
+        <div className="mt-5 rounded-2xl border border-blue-100 bg-blue-50 p-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="text-sm font-semibold text-slate-900">Acciones de cierre</p>
+              <p className="mt-1 text-xs text-slate-600">
+                Primero completa los datos de entrega. Luego puedes cerrar sin enviar o cerrar y enviar el informe al contacto seleccionado.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <button
+                type="button"
+                onClick={() => void handleCerrarOT(false)}
+                disabled={closingOt || isClosed}
+                className="inline-flex items-center justify-center rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70"
+              >
+                {isClosed
+                  ? 'OT ya cerrada'
+                  : closingOt
+                    ? 'Guardando y cerrando OT...'
+                    : 'Cerrar sin enviar'}
+              </button>
+
+              {!isClosed ? (
+                <button
+                  type="button"
+                  onClick={() => void handleCerrarOT(true)}
+                  disabled={closingOt || sendingInforme || !form.contacto_cliente_id || !contactoEmailParaEnvio}
+                  className="inline-flex items-center justify-center rounded-xl border border-blue-300 bg-white px-5 py-3 text-sm font-semibold text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-70"
+                >
+                  {closingOt || sendingInforme
+                    ? 'Cerrando y enviando...'
+                    : 'Cerrar y enviar informe'}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => void handleEnviarInformeEmail()}
+                  disabled={sendingInforme || !form.contacto_cliente_id || !contactoEmailParaEnvio}
+                  className="inline-flex items-center justify-center rounded-xl border border-blue-300 bg-white px-5 py-3 text-sm font-semibold text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-70"
+                >
+                  {sendingInforme ? 'Enviando informe...' : 'Enviar / reenviar informe'}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+
         <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           <div>
             <label className="mb-2 block text-sm font-medium text-slate-700">
-              Hora término OM *
+              Hora oficial de término OM *
             </label>
             <input
               type="time"
@@ -2839,7 +2887,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
               className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500 disabled:bg-slate-100"
             />
             <p className="mt-1 text-xs text-slate-500">
-              Se ingresa al finalizar o entregar el trabajo.
+              Esta es la hora oficial de cierre para el informe OM.
             </p>
           </div>
 
@@ -2980,12 +3028,12 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
           />
 
           <CierreStatusItem
-            label="Hora término OM"
+            label="Cierre oficial de OM"
             ok={!!form.hora_termino || isClosed}
             detail={
               form.hora_termino || isClosed
-                ? `Hora término registrada: ${form.hora_termino || formatTimeOnly(detalle.hora_termino)}.`
-                : 'Debes ingresar la hora término real antes de cerrar o entregar la OM.'
+                ? `Cierre registrado: ${form.hora_termino || formatTimeOnly(detalle.hora_termino)}.`
+                : 'Debes ingresar la hora oficial de cierre antes de cerrar o entregar la OM.'
             }
           />
 
@@ -3000,11 +3048,11 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
           />
 
           <CierreStatusItem
-            label="Tiempos registrados (opcional)"
+            label="Bitácora de tiempos (opcional)"
             ok={true}
             detail={
               hasTiempos
-                ? `Hay ${tiempos.length} registro(s) de tiempo en la OT. Sirven como respaldo, pero no reemplazan la hora término de la OM.`
+                ? `Hay ${tiempos.length} registro(s) de tiempo en la OT. Sirven como respaldo operativo.`
                 : 'Opcional: puedes registrar bloques de tiempo como respaldo operativo.'
             }
           />
