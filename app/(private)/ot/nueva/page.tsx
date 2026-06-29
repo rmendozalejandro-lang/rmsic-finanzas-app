@@ -166,12 +166,6 @@ function parsePositiveNumber(value: string) {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : null
 }
 
-function booleanFromSiNo(value: '' | 'si' | 'no') {
-  if (value === 'si') return true
-  if (value === 'no') return false
-  return null
-}
-
 function buildSupervisorLabel(item: PerfilRow) {
   if (item.nombre_completo?.trim() && item.email?.trim()) {
     return `${item.nombre_completo} - ${item.email}`
@@ -852,11 +846,10 @@ function NuevaOTContent() {
         herramientas_materiales_utilizados:
           form.herramientas_materiales_utilizados.trim() || null,
         recomendaciones_seguridad: form.recomendaciones_seguridad.trim() || null,
-        alcance_trabajo_ejecutado: booleanFromSiNo(form.alcance_trabajo_ejecutado),
-        alcance_trabajo_observacion: form.alcance_trabajo_observacion.trim() || null,
-        ejecutado_segun_programa: booleanFromSiNo(form.ejecutado_segun_programa),
-        ejecutado_segun_programa_observacion:
-          form.ejecutado_segun_programa_observacion.trim() || null,
+        alcance_trabajo_ejecutado: null,
+        alcance_trabajo_observacion: null,
+        ejecutado_segun_programa: null,
+        ejecutado_segun_programa_observacion: null,
         tecnico_responsable_id: form.tecnico_responsable_id || null,
         supervisor_id: form.supervisor_id || null,
         prioridad: form.prioridad,
@@ -1392,55 +1385,6 @@ function NuevaOTContent() {
               </div>
             </div>
 
-            <div className="mt-5 grid gap-4 md:grid-cols-2">
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700">
-                  ¿Se ejecutó todo lo solicitado?
-                </label>
-                <select
-                  value={form.alcance_trabajo_ejecutado}
-                  onChange={(e) =>
-                    handleChange('alcance_trabajo_ejecutado', e.target.value as FormDataState['alcance_trabajo_ejecutado'])
-                  }
-                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
-                >
-                  <option value="">Sin definir</option>
-                  <option value="si">Sí</option>
-                  <option value="no">No</option>
-                </select>
-                <textarea
-                  value={form.alcance_trabajo_observacion}
-                  onChange={(e) => handleChange('alcance_trabajo_observacion', e.target.value)}
-                  rows={3}
-                  placeholder="Observación de alcance, si corresponde."
-                  className="mt-3 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-500"
-                />
-              </div>
-
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700">
-                  ¿Se ejecutó de acuerdo al programa?
-                </label>
-                <select
-                  value={form.ejecutado_segun_programa}
-                  onChange={(e) =>
-                    handleChange('ejecutado_segun_programa', e.target.value as FormDataState['ejecutado_segun_programa'])
-                  }
-                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
-                >
-                  <option value="">Sin definir</option>
-                  <option value="si">Sí</option>
-                  <option value="no">No</option>
-                </select>
-                <textarea
-                  value={form.ejecutado_segun_programa_observacion}
-                  onChange={(e) => handleChange('ejecutado_segun_programa_observacion', e.target.value)}
-                  rows={3}
-                  placeholder="Indica el motivo si no se ejecutó según programa."
-                  className="mt-3 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-500"
-                />
-              </div>
-            </div>
           </div>
 
           <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
