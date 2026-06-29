@@ -55,6 +55,8 @@ type RespuestaRow = {
   observacion_despues: string | null
   accion_realizada: string | null
   recomendacion_tecnica: string | null
+  condicion_equipo: string | null
+  accion_checklist: string | null
   evidencia_antes_url: string | null
   evidencia_despues_url: string | null
 }
@@ -65,6 +67,8 @@ type RespuestaState = {
   observacion_despues: string
   accion_realizada: string
   recomendacion_tecnica: string
+  condicion_equipo: string
+  accion_checklist: string
   evidencia_antes_url: string
   evidencia_despues_url: string
 }
@@ -75,6 +79,8 @@ const EMPTY_RESPUESTA: RespuestaState = {
   observacion_despues: '',
   accion_realizada: '',
   recomendacion_tecnica: '',
+  condicion_equipo: '',
+  accion_checklist: '',
   evidencia_antes_url: '',
   evidencia_despues_url: '',
 }
@@ -96,6 +102,26 @@ function estadoClass(value: string) {
   if (value === 'no_ok') return 'border-rose-200 bg-rose-50 text-rose-700'
   if (value === 'na') return 'border-slate-200 bg-slate-50 text-slate-600'
   return 'border-amber-200 bg-amber-50 text-amber-700'
+}
+
+function condicionEquipoLabel(value: string | null | undefined) {
+  if (value === 'muy_bueno') return 'Muy bueno'
+  if (value === 'bueno') return 'Bueno'
+  if (value === 'regular') return 'Regular'
+  if (value === 'malo') return 'Malo'
+  if (value === 'muy_malo') return 'Muy malo'
+  if (value === 'no_aplica') return 'No aplica'
+  return ''
+}
+
+function accionChecklistLabel(value: string | null | undefined) {
+  if (value === 'check') return 'Check'
+  if (value === 'limpieza') return 'Limpieza'
+  if (value === 'reparacion') return 'Reparación'
+  if (value === 'cambio') return 'Cambio'
+  if (value === 'aviso_sap') return 'Aviso SAP'
+  if (value === 'no_aplica') return 'No aplica'
+  return ''
 }
 
 function normalizeText(value: string) {
@@ -182,6 +208,7 @@ export function OTEquipoChecklistPanel({
 
   const [items, setItems] = useState<ChecklistItem[]>([])
   const [respuestas, setRespuestas] = useState<Record<string, RespuestaState>>({})
+  const [mostrarGenerales, setMostrarGenerales] = useState(false)
   const [loading, setLoading] = useState(true)
   const [savingEquipoId, setSavingEquipoId] = useState('')
   const [uploadingKey, setUploadingKey] = useState('')
@@ -200,8 +227,9 @@ export function OTEquipoChecklistPanel({
   }, [equipos])
 
   const itemsTecnicos = useMemo(() => {
+    if (mostrarGenerales) return items
     return items.filter((item) => !esItemGeneralOm(item))
-  }, [items])
+  }, [items, mostrarGenerales])
 
   const groupedItems = useMemo(() => {
     const groups = new Map<string, ChecklistItem[]>()
@@ -235,10 +263,6 @@ export function OTEquipoChecklistPanel({
 
         const plantillas = (plantillasData || []) as PlantillaChecklist[]
         const plantillaElegida =
-          plantillas.find((item) =>
-            normalizeText(item.nombre).includes('motor') &&
-            normalizeText(item.nombre).includes('en servicio')
-          ) ||
           plantillas.find((item) => normalizeText(item.nombre).includes('motor')) ||
           plantillas.find((item) => normalizeText(item.nombre).includes('mespack')) ||
           plantillas.find((item) => normalizeText(item.tipo_activo || '').includes('motor')) ||
@@ -285,7 +309,7 @@ export function OTEquipoChecklistPanel({
         db
           .from('ot_equipo_checklist_resultados')
           .select(
-            'id, ot_orden_equipo_id, plantilla_item_id, respuesta_texto, respuesta_boolean, observacion_antes, observacion_despues, accion_realizada, recomendacion_tecnica, evidencia_antes_url, evidencia_despues_url'
+            'id, ot_orden_equipo_id, plantilla_item_id, respuesta_texto, respuesta_boolean, observacion_antes, observacion_despues, accion_realizada, recomendacion_tecnica, condicion_equipo, accion_checklist, evidencia_antes_url, evidencia_despues_url'
           )
           .eq('ot_id', otId),
       ])
@@ -304,6 +328,8 @@ export function OTEquipoChecklistPanel({
             observacion_despues: row.observacion_despues || '',
             accion_realizada: row.accion_realizada || '',
             recomendacion_tecnica: row.recomendacion_tecnica || '',
+            condicion_equipo: row.condicion_equipo || '',
+            accion_checklist: row.accion_checklist || '',
             evidencia_antes_url: row.evidencia_antes_url || '',
             evidencia_despues_url: row.evidencia_despues_url || '',
           }
@@ -444,6 +470,8 @@ export function OTEquipoChecklistPanel({
           respuesta.observacion_despues.trim() ||
           respuesta.accion_realizada.trim() ||
           respuesta.recomendacion_tecnica.trim() ||
+          respuesta.condicion_equipo.trim() ||
+          respuesta.accion_checklist.trim() ||
           respuesta.evidencia_antes_url.trim() ||
           respuesta.evidencia_despues_url.trim()
 
@@ -467,6 +495,8 @@ export function OTEquipoChecklistPanel({
           observacion_despues: respuesta.observacion_despues.trim() || null,
           accion_realizada: respuesta.accion_realizada.trim() || null,
           recomendacion_tecnica: respuesta.recomendacion_tecnica.trim() || null,
+          condicion_equipo: respuesta.condicion_equipo.trim() || null,
+          accion_checklist: respuesta.accion_checklist.trim() || null,
           evidencia_antes_url: respuesta.evidencia_antes_url.trim() || null,
           evidencia_despues_url: respuesta.evidencia_despues_url.trim() || null,
           usuario_id: currentUserId || null,
@@ -525,10 +555,18 @@ export function OTEquipoChecklistPanel({
             Revisión por motor / equipo asociado
           </h2>
           <p className="mt-1 text-sm text-slate-500">
-            Cada equipo de la OM tiene su propia planilla de inspección técnica. Los requerimientos generales de seguridad y herramientas se mantienen fuera de la revisión por motor para no repetirlos.
+            Cada equipo de la OM tiene su propio checklist técnico. Los ítems generales de seguridad y herramientas se mantienen fuera de esta revisión para no repetirlos por motor.
           </p>
         </div>
 
+        <label className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+          <input
+            type="checkbox"
+            checked={mostrarGenerales}
+            onChange={(event) => setMostrarGenerales(event.target.checked)}
+          />
+          Mostrar ítems generales
+        </label>
       </div>
 
       {!requiereChecklist ? (
@@ -569,7 +607,7 @@ export function OTEquipoChecklistPanel({
 
       {selectedPlantillaId && itemsTecnicos.length === 0 ? (
         <div className="mt-5 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-500">
-          No hay ítems técnicos configurados para esta plantilla. Revisa la plantilla de mantenimiento si esperabas preguntas técnicas.
+          No hay ítems técnicos para mostrar con el filtro actual. Activa “Mostrar ítems generales” si necesitas ver la plantilla completa.
         </div>
       ) : null}
 
@@ -650,6 +688,16 @@ export function OTEquipoChecklistPanel({
                                 <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${estadoClass(respuesta.respuesta_texto)}`}>
                                   {estadoLabel(respuesta.respuesta_texto)}
                                 </span>
+                                {respuesta.condicion_equipo ? (
+                                  <span className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-700">
+                                    Condición: {condicionEquipoLabel(respuesta.condicion_equipo)}
+                                  </span>
+                                ) : null}
+                                {respuesta.accion_checklist ? (
+                                  <span className="rounded-full border border-violet-200 bg-violet-50 px-2.5 py-1 text-xs font-semibold text-violet-700">
+                                    Acción: {accionChecklistLabel(respuesta.accion_checklist)}
+                                  </span>
+                                ) : null}
                               </div>
 
                               {item.categoria ? (
@@ -683,7 +731,7 @@ export function OTEquipoChecklistPanel({
                                   value={respuesta.accion_realizada}
                                   onChange={(event) => setRespuesta(equipo.id, item.id, 'accion_realizada', event.target.value)}
                                   rows={2}
-                                  placeholder="Acción realizada por el técnico"
+                                  placeholder="Detalle adicional de la acción, si corresponde"
                                   className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
                                 />
                                 <textarea
@@ -817,23 +865,63 @@ export function OTEquipoChecklistPanel({
                               </div>
                             </div>
 
-                            <div>
-                              <label className="mb-2 block text-sm font-medium text-slate-700">
-                                Resultado
-                              </label>
-                              <select
-                                value={respuesta.respuesta_texto}
-                                onChange={(event) => setRespuesta(equipo.id, item.id, 'respuesta_texto', event.target.value)}
-                                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
-                              >
-                                <option value="">Sin responder</option>
-                                <option value="ok">OK</option>
-                                <option value="no_ok">No OK</option>
-                                <option value="na">No aplica</option>
-                              </select>
+                            <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                              <div>
+                                <label className="mb-2 block text-sm font-medium text-slate-700">
+                                  Resultado checklist
+                                </label>
+                                <select
+                                  value={respuesta.respuesta_texto}
+                                  onChange={(event) => setRespuesta(equipo.id, item.id, 'respuesta_texto', event.target.value)}
+                                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
+                                >
+                                  <option value="">Sin responder</option>
+                                  <option value="ok">OK</option>
+                                  <option value="no_ok">No OK</option>
+                                  <option value="na">No aplica</option>
+                                </select>
+                              </div>
+
+                              <div>
+                                <label className="mb-2 block text-sm font-medium text-slate-700">
+                                  Condición encontrada
+                                </label>
+                                <select
+                                  value={respuesta.condicion_equipo}
+                                  onChange={(event) => setRespuesta(equipo.id, item.id, 'condicion_equipo', event.target.value)}
+                                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
+                                >
+                                  <option value="">Sin clasificar</option>
+                                  <option value="muy_bueno">Muy bueno</option>
+                                  <option value="bueno">Bueno</option>
+                                  <option value="regular">Regular</option>
+                                  <option value="malo">Malo</option>
+                                  <option value="muy_malo">Muy malo</option>
+                                  <option value="no_aplica">No aplica</option>
+                                </select>
+                              </div>
+
+                              <div>
+                                <label className="mb-2 block text-sm font-medium text-slate-700">
+                                  Acción / gestión
+                                </label>
+                                <select
+                                  value={respuesta.accion_checklist}
+                                  onChange={(event) => setRespuesta(equipo.id, item.id, 'accion_checklist', event.target.value)}
+                                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
+                                >
+                                  <option value="">Sin acción</option>
+                                  <option value="check">Check</option>
+                                  <option value="limpieza">Limpieza</option>
+                                  <option value="reparacion">Reparación</option>
+                                  <option value="cambio">Cambio</option>
+                                  <option value="aviso_sap">Aviso SAP</option>
+                                  <option value="no_aplica">No aplica</option>
+                                </select>
+                              </div>
 
                               {item.requiere_observacion_si_no_ok && respuesta.respuesta_texto === 'no_ok' && !respuesta.observacion_antes.trim() ? (
-                                <p className="mt-2 text-xs text-amber-700">
+                                <p className="text-xs text-amber-700">
                                   Agrega observación cuando el resultado sea No OK.
                                 </p>
                               ) : null}
