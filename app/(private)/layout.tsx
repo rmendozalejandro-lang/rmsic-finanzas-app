@@ -1,4 +1,4 @@
-﻿'use client'
+'use client'
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
@@ -385,6 +385,10 @@ if (empresaGuardadaValida) {
   const visibleMenuItems = useMemo(() => {
     if (!rolResuelto) return []
 
+    if (usuarioRol === 'tecnico_ot') {
+      return menuItems.filter((item) => item.href === '/ot')
+    }
+
     return menuItems.filter((item) =>
       canAccessModuleByRoleAndCompany(usuarioRol, item.moduleKey, modulosHabilitados)
     )
@@ -447,7 +451,7 @@ if (empresaGuardadaValida) {
     : 'Control, trazabilidad y crecimiento en una sola plataforma'
 
   const sidebarSupportText = isTecnicoOT
-    ? 'Acceso restringido al modulo OT para ejecucion, firmas y evidencia en terreno.'
+    ? 'Acceso operativo al modulo OT para ejecutar trabajos, registrar evidencias y revisar informes autorizados.'
     : 'Gestion multiempresa con modulos habilitados por empresa, roles y recursos transversales.'
 
   if (checkingSession) {
@@ -526,7 +530,7 @@ if (empresaGuardadaValida) {
               </div>
             ))}
 
-            {isSuperAdmin && (
+            {isSuperAdmin && !isTecnicoOT && (
               <div>
                 <div className="mb-2 px-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
                   Administracion
@@ -635,7 +639,7 @@ if (empresaGuardadaValida) {
                   )
                 })}
 
-                {isSuperAdmin && (
+                {isSuperAdmin && !isTecnicoOT && (
                   <Link
                     href="/admin/empresas"
                     style={isActiveRoute('/admin/empresas') ? { color: '#ffffff' } : undefined}
@@ -673,7 +677,7 @@ if (empresaGuardadaValida) {
                     Volver al dashboard
                   </Link>
 
-                  {isSuperAdmin && (
+                  {isSuperAdmin && !isTecnicoOT && (
                     <Link
                       href="/admin/empresas"
                       className="rounded-2xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 no-underline transition hover:bg-slate-50"
