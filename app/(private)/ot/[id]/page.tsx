@@ -172,6 +172,8 @@ type TipoServicioOption = {
 type PerfilOption = {
   id: string
   label: string
+  cargo?: string | null
+  puedeCerrarOt?: boolean | null
 }
 
 
@@ -788,6 +790,19 @@ const isPreventiva = isPreventivaMespack || isPreventivaGeneral
     [perfilesMap]
   )
 
+  const perfilesSupervisores = useMemo(() => {
+    return perfiles.filter((perfil) => {
+      const label = `${perfil.label} ${perfil.cargo ?? ''}`.toLowerCase()
+      return (
+        perfil.puedeCerrarOt === true ||
+        label.includes('supervisor') ||
+        label.includes('jefe') ||
+        label.includes('administrador') ||
+        label.includes('ingeniero de proyecto')
+      )
+    })
+  }, [perfiles])
+
   const loadData = useCallback(
     async (withLoader = true) => {
       try {
@@ -1125,6 +1140,8 @@ const isPreventiva = isPreventivaMespack || isPreventivaGeneral
                 return {
                   id: userId,
                   label: labelParts.join(' - '),
+                  cargo,
+                  puedeCerrarOt: tecnico.puede_cerrar_ot,
                 }
               })
               .filter((item) => Boolean(item.id))
@@ -1996,6 +2013,303 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
     )
   }
 
+  const adminRoles = new Set([
+    'super_admin',
+    'admin',
+    'admin_empresa',
+    'admin_operacional',
+    'administrador',
+  ])
+  const supervisorRoles = new Set([
+    'supervisor_ot',
+    'jefe_ot',
+    'jefe_mantenimiento',
+    'responsable_ot',
+  ])
+  const isAssignedTechnician = Boolean(currentUserId && form.tecnico_responsable_id === currentUserId)
+  const isAssignedSupervisor = Boolean(currentUserId && form.supervisor_id === currentUserId)
+  const canManageOt = adminRoles.has(currentRole) || supervisorRoles.has(currentRole) || isAssignedSupervisor
+  const isTechnicianOnly = !canManageOt && (isAssignedTechnician || currentRole === 'tecnico_ot')
+  const hasTechnicalChecklistFlow = Boolean(form.requiere_checklist || isPreventiva || equiposAsociados.length > 0)
+
+  if (isTechnicianOnly && hasTechnicalChecklistFlow) {
+    return (
+      <div className="space-y-6">
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
+          <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-slate-500">
+                {resumen.folio || 'Sin folio'}
+              </p>
+              <h1 className="mt-1 text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">
+                {detalle.titulo}
+              </h1>
+              <p className="mt-2 text-sm text-slate-600">
+                Trabajo técnico asignado. Completa checklist, evidencias, término y firma de recepción.
+              </p>
+            </div>
+
+            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:justify-end">
+              <Link
+                href={`/ot/${otId}/informe-softys`}
+                className="inline-flex w-full items-center justify-center rounded-xl border border-slate-300 px-4 py-3 text-sm font-medium text-slate-700 hover:bg-slate-100 sm:w-auto sm:py-2"
+              >
+                Ver informe
+              </Link>
+              <Link
+                href="/ot"
+                className="inline-flex w-full items-center justify-center rounded-xl border border-slate-300 px-4 py-3 text-sm font-medium text-slate-700 hover:bg-slate-100 sm:w-auto sm:py-2"
+              >
+                Volver a OT
+              </Link>
+            </div>
+          </div>
+        </div>
+
+        {error ? (
+          <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {error}
+          </div>
+        ) : null}
+
+        {success ? (
+          <div className="rounded-2xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+            {success}
+          </div>
+        ) : null}
+
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <SectionTitle
+            title="Resumen del trabajo"
+            subtitle="Información principal para ejecutar la OT en terreno."
+          />
+
+          <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <DetailField label="Cliente" value={resumen.cliente_nombre} />
+            <DetailField label="N° OM / Orden cliente" value={form.numero_om_cliente} />
+            <DetailField label="Servicio" value={resumen.tipo_servicio_nombre} />
+            <DetailField label="Área / sector" value={form.area_trabajo} />
+            <DetailField label="Fecha programada" value={formatDate(detalle.fecha_programada)} />
+            <DetailField label="Técnico asignado" value={getUserLabel(form.tecnico_responsable_id)} />
+            <DetailField label="Supervisor" value={supervisorLabel} />
+            <DetailField label="Contacto cliente" value={form.contacto_cliente_nombre} />
+            <DetailField label="Hora inicio OM" value={formatTimeOnly(detalle.hora_inicio)} />
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <SectionTitle
+            title="Seguridad, herramientas y alcance"
+            subtitle="Datos de apoyo para realizar el trabajo."
+          />
+
+          <div className="mt-5 grid gap-4 md:grid-cols-2">
+            <DetailField
+              label="Herramientas y materiales"
+              value={form.herramientas_materiales_utilizados}
+            />
+            <DetailField
+              label="Recomendaciones de seguridad"
+              value={form.recomendaciones_seguridad}
+            />
+            <DetailField
+              label="Solicitud / objetivo"
+              value={form.descripcion_solicitud || form.problema_reportado || form.titulo}
+            />
+            <DetailField label="Equipos asociados" value={equiposAsociados.length || 0} />
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <SectionTitle
+            title="Bitácora opcional de tiempo"
+            subtitle="Registra tu bloque de trabajo si corresponde. El usuario queda fijo para evitar registros a nombre de otra persona."
+          />
+
+          <form onSubmit={handleAddTiempo} className="mt-5 space-y-5">
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+              Usuario: <span className="font-semibold text-slate-900">{getUserLabel(tiempoForm.usuario_id || currentUserId)}</span>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">Fecha *</label>
+                <input
+                  type="date"
+                  value={tiempoForm.fecha}
+                  onChange={(e) => handleTiempoChange('fecha', e.target.value)}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">Tipo de tiempo</label>
+                <select
+                  value={tiempoForm.tipo_tiempo}
+                  onChange={(e) => handleTiempoChange('tipo_tiempo', e.target.value as TiempoFormState['tipo_tiempo'])}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
+                >
+                  <option value="trabajo">Trabajo</option>
+                  <option value="traslado">Traslado</option>
+                  <option value="espera">Espera</option>
+                  <option value="supervision">Supervisión</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">Inicio bloque *</label>
+                <input
+                  type="time"
+                  value={tiempoForm.hora_inicio}
+                  onChange={(e) => handleTiempoChange('hora_inicio', e.target.value)}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">Fin bloque *</label>
+                <input
+                  type="time"
+                  value={tiempoForm.hora_termino}
+                  onChange={(e) => handleTiempoChange('hora_termino', e.target.value)}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-700">Observación</label>
+              <textarea
+                value={tiempoForm.observacion}
+                onChange={(e) => handleTiempoChange('observacion', e.target.value)}
+                rows={2}
+                placeholder="Opcional: actividad realizada, espera, traslado, etc."
+                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-500"
+              />
+            </div>
+
+            {tiempoError ? (
+              <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                {tiempoError}
+              </div>
+            ) : null}
+
+            {tiempoSuccess ? (
+              <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+                {tiempoSuccess}
+              </div>
+            ) : null}
+
+            <button
+              type="submit"
+              disabled={savingTiempo || !(tiempoForm.usuario_id || currentUserId)}
+              className="inline-flex w-full items-center justify-center rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70 sm:w-auto"
+            >
+              {savingTiempo ? 'Registrando tiempo...' : 'Agregar tiempo'}
+            </button>
+          </form>
+        </div>
+
+        <OTEquipoChecklistPanel
+          otId={otId}
+          empresaId={detalle.empresa_id}
+          currentUserId={currentUserId}
+          plantillaId={detalle.plantilla_checklist_id}
+          requiereChecklist={form.requiere_checklist || isPreventivaMespack}
+          equipos={equiposAsociados.map((item, index) => {
+            const equipo = equiposDisponiblesMap[item.equipo_id]
+            return {
+              id: item.id,
+              equipo_id: item.equipo_id,
+              orden: item.orden ?? index + 1,
+              descripcion_trabajo: item.descripcion_trabajo,
+              observacion: item.observacion,
+              tag: equipo?.tag ?? null,
+              nombre: equipo?.nombre ?? null,
+              descripcion: equipo?.descripcion ?? null,
+              tipo_equipo: equipo?.tipo_equipo ?? null,
+              planta: equipo?.planta ?? null,
+              area: equipo?.area ?? null,
+              linea: equipo?.linea ?? null,
+              ubicacion: equipo?.ubicacion ?? null,
+              marca: equipo?.marca ?? null,
+              modelo: equipo?.modelo ?? null,
+              potencia: equipo?.potencia ?? null,
+              criticidad: equipo?.criticidad ?? null,
+            }
+          })}
+          onChanged={() => void loadData(false)}
+        />
+
+        <form onSubmit={handleSave} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <SectionTitle
+            title="Término del trabajo"
+            subtitle="Registra la hora oficial de término y una observación final antes de solicitar la firma de recepción."
+          />
+
+          <div className="mt-5 grid gap-4 md:grid-cols-2">
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-700">
+                Hora oficial de término OM *
+              </label>
+              <input
+                type="time"
+                value={form.hora_termino}
+                onChange={(e) => handleChange('hora_termino', e.target.value)}
+                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
+              />
+              <p className="mt-1 text-xs text-slate-500">
+                Esta hora aparecerá en el informe OM.
+              </p>
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-700">
+                Observación final del técnico
+              </label>
+              <textarea
+                value={form.observaciones_cierre}
+                onChange={(e) => handleChange('observaciones_cierre', e.target.value)}
+                rows={3}
+                placeholder="Opcional: pendientes, condición final o comentarios de entrega."
+                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-500"
+              />
+            </div>
+          </div>
+
+          {cierreError ? (
+            <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {cierreError}
+            </div>
+          ) : null}
+
+          {cierreSuccess ? (
+            <div className="mt-4 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+              {cierreSuccess}
+            </div>
+          ) : null}
+
+          <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+            <button
+              type="submit"
+              disabled={saving}
+              className="inline-flex items-center justify-center rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              {saving ? 'Guardando...' : 'Guardar término'}
+            </button>
+          </div>
+        </form>
+
+        <OTFirmasPanel
+          otId={otId}
+          empresaId={detalle.empresa_id}
+          currentUserId={currentUserId}
+        />
+      </div>
+    )
+  }
+
+
   return (
     <div className="space-y-6">
       <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
@@ -2454,7 +2768,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
                   className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
                 >
                   <option value="">Sin asignar</option>
-                  {perfiles.map((perfil) => (
+                  {perfilesSupervisores.map((perfil) => (
                     <option key={perfil.id} value={perfil.id}>
                       {perfil.label}
                     </option>

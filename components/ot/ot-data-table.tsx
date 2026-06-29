@@ -57,21 +57,13 @@ function labelOrDash(value: string | null | undefined) {
 }
 
 function buildOtMainHref(ot: OTResumenConPlantilla) {
-  const ruta = ot.plantilla_ruta_principal?.trim() || '/ot/{id}'
-
-  if (ruta.includes('{id}')) {
-    return ruta.replace('{id}', ot.id)
-  }
-
-  const cleanRuta = ruta.endsWith('/') ? ruta.slice(0, -1) : ruta
-  return `${cleanRuta}/${ot.id}`
+  // La acción principal del listado debe abrir la OT para trabajarla.
+  // El informe final queda disponible dentro del detalle, una vez revisado/cerrado.
+  return `/ot/${ot.id}`
 }
 
-function buildOtActionLabel(ot: OTResumenConPlantilla) {
-  const vista = ot.plantilla_vista_principal?.toLowerCase() || ''
-
-  if (vista.includes('informe')) return 'Informe'
-  return 'Detalle'
+function buildOtActionLabel(_ot: OTResumenConPlantilla) {
+  return 'Trabajar OT'
 }
 
 function toTitleCase(text: string) {
