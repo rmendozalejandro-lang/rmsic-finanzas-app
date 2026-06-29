@@ -182,7 +182,6 @@ export function OTEquipoChecklistPanel({
 
   const [items, setItems] = useState<ChecklistItem[]>([])
   const [respuestas, setRespuestas] = useState<Record<string, RespuestaState>>({})
-  const [mostrarGenerales, setMostrarGenerales] = useState(false)
   const [loading, setLoading] = useState(true)
   const [savingEquipoId, setSavingEquipoId] = useState('')
   const [uploadingKey, setUploadingKey] = useState('')
@@ -201,9 +200,8 @@ export function OTEquipoChecklistPanel({
   }, [equipos])
 
   const itemsTecnicos = useMemo(() => {
-    if (mostrarGenerales) return items
     return items.filter((item) => !esItemGeneralOm(item))
-  }, [items, mostrarGenerales])
+  }, [items])
 
   const groupedItems = useMemo(() => {
     const groups = new Map<string, ChecklistItem[]>()
@@ -527,14 +525,6 @@ export function OTEquipoChecklistPanel({
           </p>
         </div>
 
-        <label className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-          <input
-            type="checkbox"
-            checked={mostrarGenerales}
-            onChange={(event) => setMostrarGenerales(event.target.checked)}
-          />
-          Mostrar ítems generales
-        </label>
       </div>
 
       {!requiereChecklist ? (
@@ -575,7 +565,7 @@ export function OTEquipoChecklistPanel({
 
       {selectedPlantillaId && itemsTecnicos.length === 0 ? (
         <div className="mt-5 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-500">
-          No hay ítems técnicos para mostrar con el filtro actual. Activa “Mostrar ítems generales” si necesitas ver la plantilla completa.
+          No hay ítems técnicos configurados para esta plantilla. Revisa la plantilla de mantenimiento si esperabas preguntas técnicas.
         </div>
       ) : null}
 
