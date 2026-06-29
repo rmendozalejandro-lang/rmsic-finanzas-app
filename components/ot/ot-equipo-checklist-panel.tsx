@@ -235,6 +235,10 @@ export function OTEquipoChecklistPanel({
 
         const plantillas = (plantillasData || []) as PlantillaChecklist[]
         const plantillaElegida =
+          plantillas.find((item) =>
+            normalizeText(item.nombre).includes('motor') &&
+            normalizeText(item.nombre).includes('en servicio')
+          ) ||
           plantillas.find((item) => normalizeText(item.nombre).includes('motor')) ||
           plantillas.find((item) => normalizeText(item.nombre).includes('mespack')) ||
           plantillas.find((item) => normalizeText(item.tipo_activo || '').includes('motor')) ||
@@ -521,7 +525,7 @@ export function OTEquipoChecklistPanel({
             Revisión por motor / equipo asociado
           </h2>
           <p className="mt-1 text-sm text-slate-500">
-            Cada equipo de la OM tiene su propio checklist técnico. Los ítems generales de seguridad y herramientas se mantienen fuera de esta revisión para no repetirlos por motor.
+            Cada equipo de la OM tiene su propia planilla de inspección técnica. Los requerimientos generales de seguridad y herramientas se mantienen fuera de la revisión por motor para no repetirlos.
           </p>
         </div>
 
