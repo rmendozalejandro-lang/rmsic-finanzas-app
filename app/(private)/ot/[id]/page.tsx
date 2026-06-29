@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import ProtectedModuleRoute from '../../../../components/ProtectedModuleRoute'
 import { OTEvidenciasPanel } from '../../../../components/ot/ot-evidencias-panel'
 import { OTFirmasPanel } from '../../../../components/ot/ot-firmas-panel'
-import { OTChecklistPanel } from '../../../../components/ot/ot-checklist-panel'
+import { OTEquipoChecklistPanel } from '../../../../components/ot/ot-equipo-checklist-panel'
 import { supabase } from '../../../../lib/supabase/client'
 import type { OTResumen } from '../../../../lib/ot/types'
 
@@ -943,8 +943,8 @@ const isPreventiva = isPreventivaMespack || isPreventivaGeneral
             .select('id, tipo_firma, fecha_firma')
             .eq('ot_id', otId)
             .order('fecha_firma', { ascending: false }),
-          supabase
-            .from('ot_respuestas_checklist')
+          (supabase as any)
+            .from('ot_equipo_checklist_resultados')
             .select('id')
             .eq('ot_id', otId),
         ])
@@ -1789,8 +1789,8 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
       }
 
       if (requiresChecklistForClose) {
-        const { data: checklistActual, error: checklistError } = await supabase
-          .from('ot_respuestas_checklist')
+        const { data: checklistActual, error: checklistError } = await (supabase as any)
+          .from('ot_equipo_checklist_resultados')
           .select('id')
           .eq('ot_id', otId)
 
@@ -1802,7 +1802,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
 
         if ((checklistActual ?? []).length === 0) {
           throw new Error(
-            'El avance quedÃ³ guardado, pero no se pudo cerrar: esta OT requiere checklist y aÃºn no tiene respuestas registradas.'
+            'El avance quedÃ³ guardado, pero no se pudo cerrar: esta OT requiere checklist técnico por equipo y aún no tiene respuestas registradas.'
           )
         }
       }
@@ -3172,12 +3172,34 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
         )}
       </div>
 
-      <OTChecklistPanel
+      <OTEquipoChecklistPanel
         otId={otId}
         empresaId={detalle.empresa_id}
         currentUserId={currentUserId}
-        initialPlantillaId={detalle.plantilla_checklist_id}
+        plantillaId={detalle.plantilla_checklist_id}
         requiereChecklist={form.requiere_checklist || isPreventivaMespack}
+        equipos={equiposAsociados.map((item, index) => {
+          const equipo = equiposDisponiblesMap[item.equipo_id]
+          return {
+            id: item.id,
+            equipo_id: item.equipo_id,
+            orden: item.orden ?? index + 1,
+            descripcion_trabajo: item.descripcion_trabajo,
+            observacion: item.observacion,
+            tag: equipo?.tag ?? null,
+            nombre: equipo?.nombre ?? null,
+            descripcion: equipo?.descripcion ?? null,
+            tipo_equipo: equipo?.tipo_equipo ?? null,
+            planta: equipo?.planta ?? null,
+            area: equipo?.area ?? null,
+            linea: equipo?.linea ?? null,
+            ubicacion: equipo?.ubicacion ?? null,
+            marca: equipo?.marca ?? null,
+            modelo: equipo?.modelo ?? null,
+            potencia: equipo?.potencia ?? null,
+            criticidad: equipo?.criticidad ?? null,
+          }
+        })}
         onChanged={() => void loadData(false)}
       />
 
@@ -3441,14 +3463,14 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
           />
 
           <CierreStatusItem
-            label="Checklist"
+            label="Checklist técnico por equipo"
             ok={hasChecklistResponses}
             detail={
               requiresChecklistForClose
                 ? hasChecklistResponses
-                  ? `Checklist respondido: ${checklistResponsesCount} registro(s).`
-                  : 'Esta OT requiere checklist y aun no tiene respuestas.'
-                : 'Esta OT no exige checklist para cierre.'
+                  ? `Checklist técnico respondido: ${checklistResponsesCount} registro(s).`
+                  : 'Esta OM requiere checklist técnico por equipo y aún no tiene respuestas.'
+                : 'Esta OM no exige checklist técnico para cierre.'
             }
           />
 
