@@ -23,6 +23,9 @@ type OTDetalle = {
   fecha_ot: string
   fecha_programada: string | null
   fecha_cierre: string | null
+  finalizado_tecnico_at: string | null
+  finalizado_tecnico_by: string | null
+  permitir_edicion_tecnico: boolean | null
   titulo: string
   descripcion_solicitud: string | null
   problema_reportado: string | null
@@ -884,6 +887,9 @@ const isPreventiva = isPreventivaMespack || isPreventivaGeneral
                 fecha_ot,
                 fecha_programada,
                 fecha_cierre,
+                finalizado_tecnico_at,
+                finalizado_tecnico_by,
+                permitir_edicion_tecnico,
                 titulo,
                 descripcion_solicitud,
                 problema_reportado,
@@ -1727,8 +1733,24 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
       }
 
       await saveOtDraft()
+
+      const { error: finalizadoError } = await supabase
+        .from('ot_ordenes_trabajo')
+        .update({
+          finalizado_tecnico_at: new Date().toISOString(),
+          finalizado_tecnico_by: currentUserId || null,
+          permitir_edicion_tecnico: false,
+          updated_by: currentUserId || null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', otId)
+
+      if (finalizadoError) {
+        throw new Error(`No se pudo marcar el trabajo como finalizado: ${finalizadoError.message}`)
+      }
+
       await loadData(false)
-      setCierreSuccess('Trabajo finalizado por el tecnico. La OM queda pendiente de revision y cierre por supervisor.')
+      setCierreSuccess('Trabajo finalizado por el técnico. La OM queda bloqueada para edición técnica y pendiente de revisión/cierre por supervisor.')
       router.refresh()
     } catch (err) {
       setCierreError(err instanceof Error ? err.message : 'No se pudo finalizar el trabajo.')
@@ -2082,21 +2104,25 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
   const canManageOt = adminRoles.has(currentRole) || supervisorRoles.has(currentRole) || isAssignedSupervisor
   const isTechnicianOnly = !canManageOt && (isAssignedTechnician || technicianRoles.has(currentRole))
   const hasTechnicalChecklistFlow = Boolean(form.requiere_checklist || isPreventiva || equiposAsociados.length > 0)
+  const trabajoFinalizadoPorTecnico = Boolean(detalle.finalizado_tecnico_at && !detalle.permitir_edicion_tecnico)
+  const tecnicoBloqueado = isClosed || trabajoFinalizadoPorTecnico
 
-  if (isTechnicianOnly && hasTechnicalChecklistFlow && isClosed) {
+  if (isTechnicianOnly && hasTechnicalChecklistFlow && tecnicoBloqueado) {
     return (
       <div className="space-y-6">
         <div className="rounded-2xl border border-green-200 bg-green-50 p-5 shadow-sm sm:p-6">
           <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
             <div className="min-w-0">
               <p className="text-sm font-medium text-green-700">
-                OT cerrada
+                {isClosed ? 'OT cerrada' : 'Trabajo finalizado'}
               </p>
               <h1 className="mt-1 text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">
                 {resumen.folio || 'Sin folio'} · {detalle.titulo}
               </h1>
               <p className="mt-2 max-w-2xl text-sm text-slate-700">
-                El trabajo ya fue cerrado. La vista del técnico queda bloqueada para evitar cambios posteriores al informe oficial.
+                {isClosed
+                  ? 'La OT ya fue cerrada. La vista del técnico queda bloqueada para evitar cambios posteriores al informe oficial.'
+                  : 'El trabajo fue finalizado por el técnico. La OT queda bloqueada para edición técnica y pendiente de revisión/cierre por supervisor.'}
               </p>
             </div>
 
@@ -2119,7 +2145,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
 
         <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <SectionTitle
-            title="Resumen de cierre"
+            title="Resumen del trabajo"
             subtitle="Información bloqueada para el técnico. Cualquier corrección debe ser autorizada por supervisor o administrador."
           />
 
