@@ -1694,6 +1694,44 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
     }
   }
 
+
+  const handleFinalizarTrabajoTecnico = async () => {
+    try {
+      setClosingOt(true)
+      setCierreError('')
+      setCierreSuccess('')
+      setError('')
+      setSuccess('')
+
+      if (!form.hora_inicio) {
+        throw new Error('Debes ingresar la hora oficial de inicio antes de finalizar el trabajo.')
+      }
+
+      if (!form.hora_termino) {
+        throw new Error('Debes ingresar la hora oficial de termino antes de finalizar el trabajo.')
+      }
+
+      const duracion = calculateDurationMinutes(
+        form.hora_inicio,
+        form.hora_termino,
+        form.fecha_ot || todayLocalDate()
+      )
+
+      if (duracion == null) {
+        throw new Error('La hora oficial de termino debe ser mayor que la hora oficial de inicio.')
+      }
+
+      await saveOtDraft()
+      await loadData(false)
+      setCierreSuccess('Trabajo finalizado por el tecnico. La OM queda pendiente de revision y cierre por supervisor.')
+      router.refresh()
+    } catch (err) {
+      setCierreError(err instanceof Error ? err.message : 'No se pudo finalizar el trabajo.')
+    } finally {
+      setClosingOt(false)
+    }
+  }
+
   const enviarInformeEmail = async (showStandaloneMessages = true) => {
     if (!form.contacto_cliente_id) {
       throw new Error('Debes seleccionar un contacto de cliente desde la base de datos antes de enviar el informe.')
@@ -2254,12 +2292,23 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
           <div className="mt-5 flex flex-col gap-3 sm:flex-row">
             <button
               type="submit"
-              disabled={saving}
+              disabled={saving || closingOt}
+              className="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              {saving ? 'Guardando...' : 'Guardar termino'}
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleFinalizarTrabajoTecnico()}
+              disabled={saving || closingOt || isClosed}
               className="inline-flex items-center justify-center rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70"
             >
-              {saving ? 'Guardando...' : 'Guardar término'}
+              {closingOt ? 'Finalizando...' : 'Finalizar trabajo'}
             </button>
           </div>
+          <p className="mt-3 text-xs text-slate-500">
+            Finalizar trabajo no envia el informe al cliente. Deja la OM lista para revision y cierre por supervisor.
+          </p>
         </form>
 
         <OTFirmasPanel
