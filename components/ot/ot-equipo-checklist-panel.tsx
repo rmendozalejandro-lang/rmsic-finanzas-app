@@ -147,6 +147,16 @@ function keyFor(otOrdenEquipoId: string, itemId: string) {
   return `${otOrdenEquipoId}:${itemId}`
 }
 
+function evidenciaUploadKey(otOrdenEquipoId: string, itemId: string, tipo: 'antes' | 'despues') {
+  return `${otOrdenEquipoId}:${itemId}:${tipo}`
+}
+
+function cleanExtension(fileName: string) {
+  const extension = fileName.split('.').pop() || 'jpg'
+  const cleaned = extension.toLowerCase().replace(/[^a-z0-9]/g, '')
+  return cleaned || 'jpg'
+}
+
 export function OTEquipoChecklistPanel({
   otId,
   empresaId,
@@ -175,6 +185,7 @@ export function OTEquipoChecklistPanel({
   const [mostrarGenerales, setMostrarGenerales] = useState(false)
   const [loading, setLoading] = useState(true)
   const [savingEquipoId, setSavingEquipoId] = useState('')
+  const [uploadingKey, setUploadingKey] = useState('')
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
 
@@ -346,6 +357,70 @@ export function OTEquipoChecklistPanel({
       total,
       respondidos,
       pendientes: Math.max(0, total - respondidos),
+    }
+  }
+
+  const uploadEvidencia = async (
+    equipo: EquipoChecklistInfo,
+    item: ChecklistItem,
+    tipo: 'antes' | 'despues',
+    file: File | null
+  ) => {
+    if (!file) return
+
+    if (!file.type.startsWith('image/')) {
+      setError('Solo se permiten archivos de imagen para la evidencia fotográfica.')
+      setSuccess('')
+      return
+    }
+
+    const maxSizeMb = 8
+    if (file.size > maxSizeMb * 1024 * 1024) {
+      setError(`La imagen supera el máximo permitido de ${maxSizeMb} MB.`)
+      setSuccess('')
+      return
+    }
+
+    const uploadKey = evidenciaUploadKey(equipo.id, item.id, tipo)
+    const field: keyof RespuestaState =
+      tipo === 'antes' ? 'evidencia_antes_url' : 'evidencia_despues_url'
+
+    try {
+      setUploadingKey(uploadKey)
+      setError('')
+      setSuccess('')
+
+      const extension = cleanExtension(file.name)
+      const storagePath = `${empresaId}/${otId}/${equipo.id}/${item.id}/${tipo}-${Date.now()}.${extension}`
+
+      const { error: uploadError } = await db.storage
+        .from('ot-evidencias')
+        .upload(storagePath, file, {
+          cacheControl: '3600',
+          contentType: file.type || 'image/jpeg',
+          upsert: false,
+        })
+
+      if (uploadError) throw new Error(uploadError.message)
+
+      const { data: publicData } = db.storage
+        .from('ot-evidencias')
+        .getPublicUrl(storagePath)
+
+      const publicUrl = publicData?.publicUrl || ''
+      if (!publicUrl) throw new Error('No se pudo obtener la URL pública de la evidencia.')
+
+      setRespuesta(equipo.id, item.id, field, publicUrl)
+      setSuccess(`Foto ${tipo === 'antes' ? 'antes' : 'después'} cargada para ${equipoDisplayName(equipo)}. Recuerda guardar el checklist del equipo.`)
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'No se pudo cargar la evidencia fotográfica.'
+      )
+      setSuccess('')
+    } finally {
+      setUploadingKey('')
     }
   }
 
@@ -626,22 +701,126 @@ export function OTEquipoChecklistPanel({
                                 />
                               </div>
 
-                              {item.requiere_evidencia ? (
-                                <div className="mt-3 grid gap-3 lg:grid-cols-2">
-                                  <input
-                                    value={respuesta.evidencia_antes_url}
-                                    onChange={(event) => setRespuesta(equipo.id, item.id, 'evidencia_antes_url', event.target.value)}
-                                    placeholder="URL evidencia antes"
-                                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
-                                  />
-                                  <input
-                                    value={respuesta.evidencia_despues_url}
-                                    onChange={(event) => setRespuesta(equipo.id, item.id, 'evidencia_despues_url', event.target.value)}
-                                    placeholder="URL evidencia después"
-                                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
-                                  />
+                              <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                                <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                                  <p className="text-sm font-semibold text-slate-800">
+                                    Evidencia fotográfica por ítem
+                                  </p>
+                                  <p className="text-xs text-slate-500">
+                                    Sube una foto antes y una foto después si corresponde.
+                                  </p>
                                 </div>
-                              ) : null}
+
+                                <div className="mt-3 grid gap-3 lg:grid-cols-2">
+                                  <div className="rounded-xl border border-slate-200 bg-white p-3">
+                                    <div className="mb-2 flex items-center justify-between gap-3">
+                                      <p className="text-sm font-semibold text-slate-700">Foto antes</p>
+                                      {respuesta.evidencia_antes_url ? (
+                                        <button
+                                          type="button"
+                                          onClick={() => setRespuesta(equipo.id, item.id, 'evidencia_antes_url', '')}
+                                          className="text-xs font-semibold text-rose-600 hover:text-rose-700"
+                                        >
+                                          Quitar
+                                        </button>
+                                      ) : null}
+                                    </div>
+
+                                    {respuesta.evidencia_antes_url ? (
+                                      <a
+                                        href={respuesta.evidencia_antes_url}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="block overflow-hidden rounded-xl border border-slate-200 bg-slate-100"
+                                      >
+                                        <img
+                                          src={respuesta.evidencia_antes_url}
+                                          alt={`Evidencia antes - ${item.actividad}`}
+                                          className="h-44 w-full object-cover"
+                                        />
+                                      </a>
+                                    ) : (
+                                      <div className="flex h-44 items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50 text-center text-xs text-slate-400">
+                                        Sin foto antes
+                                      </div>
+                                    )}
+
+                                    <label className="mt-3 inline-flex w-full cursor-pointer items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                                      {uploadingKey === evidenciaUploadKey(equipo.id, item.id, 'antes')
+                                        ? 'Subiendo foto...'
+                                        : respuesta.evidencia_antes_url
+                                          ? 'Reemplazar foto antes'
+                                          : 'Subir foto antes'}
+                                      <input
+                                        type="file"
+                                        accept="image/*"
+                                        capture="environment"
+                                        className="hidden"
+                                        disabled={uploadingKey === evidenciaUploadKey(equipo.id, item.id, 'antes')}
+                                        onChange={(event) => {
+                                          const file = event.target.files?.[0] || null
+                                          void uploadEvidencia(equipo, item, 'antes', file)
+                                          event.currentTarget.value = ''
+                                        }}
+                                      />
+                                    </label>
+                                  </div>
+
+                                  <div className="rounded-xl border border-slate-200 bg-white p-3">
+                                    <div className="mb-2 flex items-center justify-between gap-3">
+                                      <p className="text-sm font-semibold text-slate-700">Foto después</p>
+                                      {respuesta.evidencia_despues_url ? (
+                                        <button
+                                          type="button"
+                                          onClick={() => setRespuesta(equipo.id, item.id, 'evidencia_despues_url', '')}
+                                          className="text-xs font-semibold text-rose-600 hover:text-rose-700"
+                                        >
+                                          Quitar
+                                        </button>
+                                      ) : null}
+                                    </div>
+
+                                    {respuesta.evidencia_despues_url ? (
+                                      <a
+                                        href={respuesta.evidencia_despues_url}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="block overflow-hidden rounded-xl border border-slate-200 bg-slate-100"
+                                      >
+                                        <img
+                                          src={respuesta.evidencia_despues_url}
+                                          alt={`Evidencia después - ${item.actividad}`}
+                                          className="h-44 w-full object-cover"
+                                        />
+                                      </a>
+                                    ) : (
+                                      <div className="flex h-44 items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50 text-center text-xs text-slate-400">
+                                        Sin foto después
+                                      </div>
+                                    )}
+
+                                    <label className="mt-3 inline-flex w-full cursor-pointer items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                                      {uploadingKey === evidenciaUploadKey(equipo.id, item.id, 'despues')
+                                        ? 'Subiendo foto...'
+                                        : respuesta.evidencia_despues_url
+                                          ? 'Reemplazar foto después'
+                                          : 'Subir foto después'}
+                                      <input
+                                        type="file"
+                                        accept="image/*"
+                                        capture="environment"
+                                        className="hidden"
+                                        disabled={uploadingKey === evidenciaUploadKey(equipo.id, item.id, 'despues')}
+                                        onChange={(event) => {
+                                          const file = event.target.files?.[0] || null
+                                          void uploadEvidencia(equipo, item, 'despues', file)
+                                          event.currentTarget.value = ''
+                                        }}
+                                      />
+                                    </label>
+                                  </div>
+                                </div>
+                              </div>
                             </div>
 
                             <div>
