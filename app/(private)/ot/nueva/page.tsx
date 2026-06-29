@@ -92,7 +92,6 @@ type UsuarioEmpresaRow = {
   activo: boolean | null
 }
 
-
 type OtTecnicoRow = {
   id: string
   usuario_id: string | null
@@ -131,6 +130,10 @@ type FormDataState = {
   supervisor_contratista_cargo: string
   herramientas_materiales_utilizados: string
   recomendaciones_seguridad: string
+  alcance_trabajo_ejecutado: '' | 'si' | 'no'
+  alcance_trabajo_observacion: string
+  ejecutado_segun_programa: '' | 'si' | 'no'
+  ejecutado_segun_programa_observacion: string
   tecnico_responsable_id: string
   supervisor_id: string
   prioridad: 'baja' | 'media' | 'alta' | 'critica'
@@ -162,6 +165,12 @@ function parsePositiveNumber(value: string) {
 
   const parsed = Number(value)
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : null
+}
+
+function booleanFromSiNo(value: '' | 'si' | 'no') {
+  if (value === 'si') return true
+  if (value === 'no') return false
+  return null
 }
 
 function buildSupervisorLabel(item: PerfilRow) {
@@ -230,6 +239,10 @@ function NuevaOTContent() {
     supervisor_contratista_cargo: '',
     herramientas_materiales_utilizados: '',
     recomendaciones_seguridad: '',
+    alcance_trabajo_ejecutado: '',
+    alcance_trabajo_observacion: '',
+    ejecutado_segun_programa: '',
+    ejecutado_segun_programa_observacion: '',
     tecnico_responsable_id: '',
     supervisor_id: '',
     prioridad: 'media',
@@ -407,16 +420,14 @@ function NuevaOTContent() {
           )
         }
 
-        if (tecnicosError) {
-          throw new Error(`No se pudieron cargar los técnicos OT: ${tecnicosError.message}`)
-        }
-
         const usuariosEmpresa = (usuariosEmpresaRaw ?? []) as UsuarioEmpresaRow[]
+        const tecnicosOt = tecnicosError ? [] : ((tecnicosRaw ?? []) as OtTecnicoRow[])
         const usuarioIds = Array.from(
           new Set(
-            usuariosEmpresa
-              .map((item) => item.usuario_id)
-              .filter((id): id is string => Boolean(id))
+            [
+              ...usuariosEmpresa.map((item) => item.usuario_id),
+              ...tecnicosOt.map((item) => item.usuario_id),
+            ].filter((id): id is string => Boolean(id))
           )
         )
 
@@ -442,10 +453,6 @@ function NuevaOTContent() {
           acc[item.id] = item
           return acc
         }, {})
-
-        const tecnicosOt = ((tecnicosRaw ?? []) as OtTecnicoRow[]).filter((item) =>
-          Boolean(item.usuario_id)
-        )
 
         const buildTecnicoLabel = (tecnico: OtTecnicoRow) => {
           const perfil = tecnico.usuario_id ? perfilesById[tecnico.usuario_id] : null
@@ -526,7 +533,13 @@ function NuevaOTContent() {
           es_predeterminada: Boolean(item.es_predeterminada),
         }))
 
-        const tecnicosData: SelectOption[] = tecnicosOt
+        const usuariosEmpresaOptions: SelectOption[] = perfilesEmpresa.map((item) => ({
+          id: item.id,
+          label: buildSupervisorLabel(item),
+        }))
+
+        const tecnicosOtOptions: SelectOption[] = tecnicosOt
+          .filter((item) => Boolean(item.usuario_id))
           .map((item) => ({
             id: item.usuario_id || '',
             label: buildTecnicoLabel(item),
@@ -534,19 +547,27 @@ function NuevaOTContent() {
           .filter((item) => Boolean(item.id))
           .sort((a, b) => a.label.localeCompare(b.label, 'es'))
 
-        const supervisoresData: SelectOption[] = tecnicosOt
-          .filter((item) => Boolean(item.puede_cerrar_ot))
+        const supervisoresOtOptions: SelectOption[] = tecnicosOt
+          .filter((item) => Boolean(item.usuario_id) && Boolean(item.puede_cerrar_ot))
           .map((item) => ({
             id: item.usuario_id || '',
             label: buildTecnicoLabel(item),
           }))
           .filter((item) => Boolean(item.id))
           .sort((a, b) => a.label.localeCompare(b.label, 'es'))
+
+        const tecnicosData: SelectOption[] =
+          tecnicosOtOptions.length > 0 ? tecnicosOtOptions : usuariosEmpresaOptions
+
+        const supervisoresData: SelectOption[] =
+          supervisoresOtOptions.length > 0 ? supervisoresOtOptions : usuariosEmpresaOptions
 
         const nextWarning =
           tecnicosData.length === 0
-            ? 'La empresa activa no tiene técnicos OT activos. Registra técnicos antes de asignar una OT.'
-            : ''
+            ? 'La empresa activa no tiene técnicos OT activos. Puedes crear la OT sin técnico ni supervisor por ahora.'
+            : tecnicosError
+              ? `No se pudieron cargar técnicos OT (${tecnicosError.message}). Se usarán usuarios de la empresa como respaldo.`
+              : ''
 
         const tecnicoActual = tecnicosData.find((item) => item.id === user.id)
 
@@ -833,6 +854,11 @@ function NuevaOTContent() {
         herramientas_materiales_utilizados:
           form.herramientas_materiales_utilizados.trim() || null,
         recomendaciones_seguridad: form.recomendaciones_seguridad.trim() || null,
+        alcance_trabajo_ejecutado: booleanFromSiNo(form.alcance_trabajo_ejecutado),
+        alcance_trabajo_observacion: form.alcance_trabajo_observacion.trim() || null,
+        ejecutado_segun_programa: booleanFromSiNo(form.ejecutado_segun_programa),
+        ejecutado_segun_programa_observacion:
+          form.ejecutado_segun_programa_observacion.trim() || null,
         tecnico_responsable_id: form.tecnico_responsable_id || null,
         supervisor_id: form.supervisor_id || null,
         prioridad: form.prioridad,
@@ -1364,6 +1390,56 @@ function NuevaOTContent() {
                   rows={3}
                   placeholder="Indica recomendaciones o condiciones de seguridad generales de la OM."
                   className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-500"
+                />
+              </div>
+            </div>
+
+            <div className="mt-5 grid gap-4 md:grid-cols-2">
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  ¿Se ejecutó todo lo solicitado?
+                </label>
+                <select
+                  value={form.alcance_trabajo_ejecutado}
+                  onChange={(e) =>
+                    handleChange('alcance_trabajo_ejecutado', e.target.value as FormDataState['alcance_trabajo_ejecutado'])
+                  }
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
+                >
+                  <option value="">Sin definir</option>
+                  <option value="si">Sí</option>
+                  <option value="no">No</option>
+                </select>
+                <textarea
+                  value={form.alcance_trabajo_observacion}
+                  onChange={(e) => handleChange('alcance_trabajo_observacion', e.target.value)}
+                  rows={3}
+                  placeholder="Observación de alcance, si corresponde."
+                  className="mt-3 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-500"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  ¿Se ejecutó de acuerdo al programa?
+                </label>
+                <select
+                  value={form.ejecutado_segun_programa}
+                  onChange={(e) =>
+                    handleChange('ejecutado_segun_programa', e.target.value as FormDataState['ejecutado_segun_programa'])
+                  }
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
+                >
+                  <option value="">Sin definir</option>
+                  <option value="si">Sí</option>
+                  <option value="no">No</option>
+                </select>
+                <textarea
+                  value={form.ejecutado_segun_programa_observacion}
+                  onChange={(e) => handleChange('ejecutado_segun_programa_observacion', e.target.value)}
+                  rows={3}
+                  placeholder="Indica el motivo si no se ejecutó según programa."
+                  className="mt-3 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-500"
                 />
               </div>
             </div>
