@@ -206,6 +206,45 @@ type TiempoTrabajo = {
   updated_at: string
 }
 
+type EquipoAsociadoPdf = {
+  id: string
+  equipo_id: string
+  orden: number | null
+  descripcion_trabajo: string | null
+  observacion: string | null
+  tag: string | null
+  nombre: string | null
+  descripcion: string | null
+  tipo_equipo: string | null
+  planta: string | null
+  area: string | null
+  linea: string | null
+  ubicacion: string | null
+  marca: string | null
+  modelo: string | null
+  serie: string | null
+  potencia: string | null
+  criticidad: string | null
+}
+
+type EquipoChecklistPdf = {
+  id: string
+  ot_orden_equipo_id: string
+  equipo_id: string
+  plantilla_item_id: string
+  respuesta_texto: string | null
+  observacion_antes: string | null
+  observacion_despues: string | null
+  accion_realizada: string | null
+  recomendacion_tecnica: string | null
+  evidencia_antes_url: string | null
+  evidencia_despues_url: string | null
+  item_zona: string | null
+  item_categoria: string | null
+  item_actividad: string | null
+  item_orden: number | null
+}
+
 function toValidTime(value: string | null | undefined) {
   if (!value) return null
 
@@ -267,6 +306,25 @@ function obtenerHorarioDesdeTiempos(tiempos: TiempoTrabajo[]) {
     hora_termino: toChileFloatingDateTime(termino?.hora_termino || null),
     duracion_minutos: duracionTotal > 0 ? duracionTotal : null,
   }
+}
+
+function equipoPdfNombre(equipo: EquipoAsociadoPdf) {
+  return [equipo.tag, equipo.nombre || equipo.descripcion].filter(Boolean).join(' - ') || equipo.equipo_id
+}
+
+function equipoPdfUbicacion(equipo: EquipoAsociadoPdf) {
+  return [equipo.planta, equipo.area, equipo.linea, equipo.ubicacion].filter(Boolean).join(' / ') || '-'
+}
+
+function equipoPdfCaracteristicas(equipo: EquipoAsociadoPdf) {
+  return [equipo.tipo_equipo, equipo.marca, equipo.modelo, equipo.potencia].filter(Boolean).join(' / ') || '-'
+}
+
+function estadoEquipoPdf(value: string | null) {
+  if (value === 'ok') return 'OK'
+  if (value === 'no_ok') return 'No OK'
+  if (value === 'na') return 'N/A'
+  return 'Pendiente'
 }
 
 function jsonError(message: string, status = 500) {
@@ -615,6 +673,238 @@ const supabaseServiceRoleKeySafe = supabaseServiceRoleKey as string
       }
     }
 
+    const equiposOtResp = await adminClient
+      .from('ot_orden_equipos')
+      .select('id,equipo_id,orden,descripcion_trabajo,observacion')
+      .eq('ot_id', otId)
+      .eq('activo', true)
+      .is('deleted_at', null)
+      .order('orden', { ascending: true })
+
+    if (equiposOtResp.error) {
+      return jsonError(
+        `No se pudieron cargar los equipos asociados a la OM: ${equiposOtResp.error.message}`,
+        500
+      )
+    }
+
+    const equiposOtRows = (equiposOtResp.data ?? []) as Array<{
+      id: string
+      equipo_id: string
+      orden: number | null
+      descripcion_trabajo: string | null
+      observacion: string | null
+    }>
+
+    const equipoIds = Array.from(new Set(equiposOtRows.map((item) => item.equipo_id).filter(Boolean)))
+    let equiposInfoMap = new Map<string, Partial<EquipoAsociadoPdf>>()
+
+    if (equipoIds.length > 0) {
+      const equiposInfoResp = await adminClient
+        .from('ot_equipos')
+        .select('id,tag,nombre,descripcion,tipo_equipo,planta,area,linea,ubicacion,marca,modelo,serie,potencia,criticidad')
+        .in('id', equipoIds)
+
+      if (equiposInfoResp.error) {
+        return jsonError(
+          `No se pudieron cargar los datos de equipos asociados: ${equiposInfoResp.error.message}`,
+          500
+        )
+      }
+
+      equiposInfoMap = new Map(
+        ((equiposInfoResp.data ?? []) as Array<{
+          id: string
+          tag: string | null
+          nombre: string | null
+          descripcion: string | null
+          tipo_equipo: string | null
+          planta: string | null
+          area: string | null
+          linea: string | null
+          ubicacion: string | null
+          marca: string | null
+          modelo: string | null
+          serie: string | null
+          potencia: string | null
+          criticidad: string | null
+        }>).map((equipo) => [equipo.id, equipo])
+      )
+    }
+
+    const equiposAsociados = equiposOtRows.map((item) => ({
+      id: item.id,
+      equipo_id: item.equipo_id,
+      orden: item.orden,
+      descripcion_trabajo: item.descripcion_trabajo,
+      observacion: item.observacion,
+      tag: equiposInfoMap.get(item.equipo_id)?.tag ?? null,
+      nombre: equiposInfoMap.get(item.equipo_id)?.nombre ?? null,
+      descripcion: equiposInfoMap.get(item.equipo_id)?.descripcion ?? null,
+      tipo_equipo: equiposInfoMap.get(item.equipo_id)?.tipo_equipo ?? null,
+      planta: equiposInfoMap.get(item.equipo_id)?.planta ?? null,
+      area: equiposInfoMap.get(item.equipo_id)?.area ?? null,
+      linea: equiposInfoMap.get(item.equipo_id)?.linea ?? null,
+      ubicacion: equiposInfoMap.get(item.equipo_id)?.ubicacion ?? null,
+      marca: equiposInfoMap.get(item.equipo_id)?.marca ?? null,
+      modelo: equiposInfoMap.get(item.equipo_id)?.modelo ?? null,
+      serie: equiposInfoMap.get(item.equipo_id)?.serie ?? null,
+      potencia: equiposInfoMap.get(item.equipo_id)?.potencia ?? null,
+      criticidad: equiposInfoMap.get(item.equipo_id)?.criticidad ?? null,
+    })) as EquipoAsociadoPdf[]
+
+    const checklistEquipoResp = await adminClient
+      .from('ot_equipo_checklist_resultados')
+      .select('id,ot_orden_equipo_id,equipo_id,plantilla_item_id,respuesta_texto,observacion_antes,observacion_despues,accion_realizada,recomendacion_tecnica,evidencia_antes_url,evidencia_despues_url')
+      .eq('ot_id', otId)
+
+    if (checklistEquipoResp.error) {
+      return jsonError(
+        `No se pudo cargar el checklist técnico por equipo: ${checklistEquipoResp.error.message}`,
+        500
+      )
+    }
+
+    const checklistEquipoRows = (checklistEquipoResp.data ?? []) as Array<{
+      id: string
+      ot_orden_equipo_id: string
+      equipo_id: string
+      plantilla_item_id: string
+      respuesta_texto: string | null
+      observacion_antes: string | null
+      observacion_despues: string | null
+      accion_realizada: string | null
+      recomendacion_tecnica: string | null
+      evidencia_antes_url: string | null
+      evidencia_despues_url: string | null
+    }>
+
+    const plantillaItemIdsEquipo = Array.from(new Set(checklistEquipoRows.map((item) => item.plantilla_item_id).filter(Boolean)))
+    let plantillaItemsEquipoMap = new Map<string, Partial<EquipoChecklistPdf>>()
+
+    if (plantillaItemIdsEquipo.length > 0) {
+      const plantillaItemsEquipoResp = await adminClient
+        .from('ot_plantillas_checklist_items')
+        .select('id,zona,categoria,actividad,orden')
+        .in('id', plantillaItemIdsEquipo)
+
+      if (plantillaItemsEquipoResp.error) {
+        return jsonError(
+          `No se pudieron cargar los ítems del checklist por equipo: ${plantillaItemsEquipoResp.error.message}`,
+          500
+        )
+      }
+
+      plantillaItemsEquipoMap = new Map(
+        ((plantillaItemsEquipoResp.data ?? []) as Array<{
+          id: string
+          zona: string | null
+          categoria: string | null
+          actividad: string | null
+          orden: number | null
+        }>).map((item) => [
+          item.id,
+          {
+            item_zona: item.zona,
+            item_categoria: item.categoria,
+            item_actividad: item.actividad,
+            item_orden: item.orden,
+          },
+        ])
+      )
+    }
+
+    const checklistEquipo = checklistEquipoRows
+      .map((row) => ({
+        ...row,
+        item_zona: plantillaItemsEquipoMap.get(row.plantilla_item_id)?.item_zona ?? null,
+        item_categoria: plantillaItemsEquipoMap.get(row.plantilla_item_id)?.item_categoria ?? null,
+        item_actividad: plantillaItemsEquipoMap.get(row.plantilla_item_id)?.item_actividad ?? null,
+        item_orden: plantillaItemsEquipoMap.get(row.plantilla_item_id)?.item_orden ?? null,
+      }))
+      .sort((a, b) => (a.item_orden ?? 9999) - (b.item_orden ?? 9999)) as EquipoChecklistPdf[]
+
+    const checklistEquipoPorAsociacion = checklistEquipo.reduce<Record<string, EquipoChecklistPdf[]>>((acc, item) => {
+      if (!acc[item.ot_orden_equipo_id]) acc[item.ot_orden_equipo_id] = []
+      acc[item.ot_orden_equipo_id].push(item)
+      return acc
+    }, {})
+
+    const equiposAsociadosTextoPdf = equiposAsociados.length > 0
+      ? equiposAsociados
+          .map((equipo, index) => {
+            const itemsEquipo = checklistEquipoPorAsociacion[equipo.id] || []
+            const respondidosEquipo = itemsEquipo.filter((item) => item.respuesta_texto).length
+            return [
+              `Equipo ${index + 1}: ${equipoPdfNombre(equipo)}`,
+              `Ubicación: ${equipoPdfUbicacion(equipo)}`,
+              `Características: ${equipoPdfCaracteristicas(equipo)}`,
+              `Checklist: ${respondidosEquipo}/${itemsEquipo.length} ítems respondidos`,
+              equipo.descripcion_trabajo ? `Trabajo solicitado: ${equipo.descripcion_trabajo}` : '',
+            ]
+              .filter(Boolean)
+              .join('\n')
+          })
+          .join('\n\n')
+      : ''
+
+    const checklistEquipoTextoPdf = equiposAsociados.length > 0
+      ? equiposAsociados
+          .map((equipo, index) => {
+            const itemsEquipo = checklistEquipoPorAsociacion[equipo.id] || []
+            const detalleItems = itemsEquipo
+              .map((item) => [
+                `- ${item.item_actividad || 'Ítem técnico'}: ${estadoEquipoPdf(item.respuesta_texto)}`,
+                item.observacion_antes ? `  Antes: ${item.observacion_antes}` : '',
+                item.accion_realizada ? `  Acción: ${item.accion_realizada}` : '',
+                item.observacion_despues ? `  Después: ${item.observacion_despues}` : '',
+                item.recomendacion_tecnica ? `  Recomendación: ${item.recomendacion_tecnica}` : '',
+                item.evidencia_antes_url ? '  Foto antes: registrada' : '',
+                item.evidencia_despues_url ? '  Foto después: registrada' : '',
+              ]
+                .filter(Boolean)
+                .join('\n'))
+              .join('\n')
+
+            return `Equipo ${index + 1}: ${equipoPdfNombre(equipo)}\n${detalleItems || 'Sin respuestas de checklist registradas.'}`
+          })
+          .join('\n\n')
+      : ''
+
+    const evidenciasChecklistPdf = checklistEquipo.flatMap((item, index) => {
+      const equipo = equiposAsociados.find((entry) => entry.id === item.ot_orden_equipo_id)
+      const baseDescription = `${equipo ? equipoPdfNombre(equipo) : 'Equipo'} - ${item.item_actividad || 'Ítem técnico'}`
+      const rows: Evidencia[] = []
+
+      if (item.evidencia_antes_url) {
+        rows.push({
+          id: `checklist-${item.id}-antes`,
+          ot_id: otId,
+          tipo: 'otro',
+          archivo_url: item.evidencia_antes_url,
+          archivo_nombre: 'foto-antes-checklist.jpg',
+          descripcion: `Foto antes | ${baseDescription}`,
+          orden: 9000 + index * 2,
+          created_at: new Date().toISOString(),
+        })
+      }
+
+      if (item.evidencia_despues_url) {
+        rows.push({
+          id: `checklist-${item.id}-despues`,
+          ot_id: otId,
+          tipo: 'otro',
+          archivo_url: item.evidencia_despues_url,
+          archivo_nombre: 'foto-despues-checklist.jpg',
+          descripcion: `Foto después | ${baseDescription}`,
+          orden: 9001 + index * 2,
+          created_at: new Date().toISOString(),
+        })
+      }
+
+      return rows
+    })
+
     const siNoPdf = (value: boolean | null | undefined) => {
       if (value === true) return 'Sí'
       if (value === false) return 'No'
@@ -654,6 +944,12 @@ const supabaseServiceRoleKeySafe = supabaseServiceRoleKey as string
       observaciones_cierre: [
         detalle.observaciones_cierre,
         omSoftysTextoPdf,
+        equiposAsociadosTextoPdf
+          ? `EQUIPOS / MOTORES ASOCIADOS A LA OM\n${equiposAsociadosTextoPdf}`
+          : '',
+        checklistEquipoTextoPdf
+          ? `CHECKLIST TÉCNICO POR EQUIPO / MOTOR\n${checklistEquipoTextoPdf}`
+          : '',
         checklistTextoPdf
           ? `CHECKLIST DE MANTENIMIENTO\n${checklistTextoPdf}`
           : '',
@@ -661,10 +957,10 @@ const supabaseServiceRoleKeySafe = supabaseServiceRoleKey as string
         .filter((value) => value && value.trim())
         .join('\n\n'),
     }
-    const evidencias = (evidenciasResp.data ?? []) as Evidencia[]
+    const evidencias = [...((evidenciasResp.data ?? []) as Evidencia[]), ...evidenciasChecklistPdf]
     const firmas = (firmasResp.data ?? []) as Firma[]
     const tiposServicio = (tiposResp.data ?? []) as TipoServicioOption[]
-    const logoUrl = new URL('/logos/rmsic-logo.png', request.url).toString()
+    const logoUrl = new URL('/logos/dyf-logo-transparente.png', request.url).toString()
 
     const resumenPdf = {
       ...resumen,

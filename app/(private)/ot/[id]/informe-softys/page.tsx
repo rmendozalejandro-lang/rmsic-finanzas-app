@@ -164,6 +164,51 @@ type ChecklistResultado = {
   updated_at: string | null;
 };
 
+type EquipoAsociadoInforme = {
+  id: string;
+  equipo_id: string;
+  orden: number | null;
+  descripcion_trabajo: string | null;
+  observacion: string | null;
+  tag: string | null;
+  nombre: string | null;
+  descripcion: string | null;
+  tipo_equipo: string | null;
+  planta: string | null;
+  area: string | null;
+  linea: string | null;
+  ubicacion: string | null;
+  marca: string | null;
+  modelo: string | null;
+  serie: string | null;
+  potencia: string | null;
+  criticidad: string | null;
+  estado_equipo: string | null;
+};
+
+type EquipoChecklistInforme = {
+  id: string;
+  ot_orden_equipo_id: string;
+  equipo_id: string;
+  plantilla_item_id: string;
+  respuesta_texto: string | null;
+  respuesta_boolean: boolean | null;
+  observacion_antes: string | null;
+  observacion_despues: string | null;
+  accion_realizada: string | null;
+  recomendacion_tecnica: string | null;
+  evidencia_antes_url: string | null;
+  evidencia_despues_url: string | null;
+  item_zona: string | null;
+  item_categoria: string | null;
+  item_actividad: string | null;
+  item_frecuencia_horas: number | null;
+  item_indicaciones: string | null;
+  item_orden: number | null;
+  item_requiere_evidencia: boolean | null;
+};
+
+
 const datosDefault: InformeDatos = {
   numero_orden_cliente: "",
   descripcion_trabajo: "",
@@ -270,6 +315,46 @@ function buildEquipoCaracteristicas(resumen: OTResumenConEquipo | null) {
   ]
     .filter(Boolean)
     .join(" · ");
+}
+
+function equipoInformeNombre(equipo: EquipoAsociadoInforme) {
+  return [equipo.tag, equipo.nombre || equipo.descripcion]
+    .filter(Boolean)
+    .join(" · ") || equipo.equipo_id;
+}
+
+function equipoInformeUbicacion(equipo: EquipoAsociadoInforme) {
+  return [equipo.planta, equipo.area, equipo.linea, equipo.ubicacion]
+    .filter(Boolean)
+    .join(" / ") || "-";
+}
+
+function equipoInformeCaracteristicas(equipo: EquipoAsociadoInforme) {
+  return [equipo.tipo_equipo, equipo.marca, equipo.modelo, equipo.potencia]
+    .filter(Boolean)
+    .join(" · ") || "-";
+}
+
+function estadoEquipoChecklistLabel(value: string | null | undefined) {
+  if (value === "ok") return "OK";
+  if (value === "no_ok") return "No OK";
+  if (value === "na") return "N/A";
+  return "Pendiente";
+}
+
+function estadoEquipoChecklistClass(value: string | null | undefined) {
+  if (value === "ok") return "status-ok";
+  if (value === "no_ok") return "status-no-ok";
+  if (value === "na") return "status-na";
+  return "status-pending";
+}
+
+function checklistTexto(value: string | null | undefined) {
+  return value && value.trim() ? value : "-";
+}
+
+function hasChecklistEvidence(item: EquipoChecklistInforme) {
+  return Boolean(item.evidencia_antes_url || item.evidencia_despues_url);
 }
 
 function sanitizeFileName(value: string) {
@@ -512,6 +597,10 @@ export default function InformeSoftysPage() {
   const [checklistResultados, setChecklistResultados] = useState<
     ChecklistResultado[]
   >([]);
+  const [equiposAsociados, setEquiposAsociados] = useState<EquipoAsociadoInforme[]>([]);
+  const [checklistEquipoResultados, setChecklistEquipoResultados] = useState<
+    EquipoChecklistInforme[]
+  >([]);
   const [informe, setInforme] = useState<InformeTecnico | null>(null);
   const [informeDatos, setInformeDatos] = useState<InformeDatos>(datosDefault);
   const [savingInforme, setSavingInforme] = useState(false);
@@ -691,6 +780,207 @@ export default function InformeSoftysPage() {
         );
         setChecklistResultados(
           (checklistResp.data ?? []) as ChecklistResultado[],
+        );
+
+        const db = supabase as any;
+        const { data: equiposOtData, error: equiposOtError } = await db
+          .from("ot_orden_equipos")
+          .select("id,equipo_id,orden,descripcion_trabajo,observacion")
+          .eq("ot_id", otId)
+          .eq("activo", true)
+          .is("deleted_at", null)
+          .order("orden", { ascending: true });
+
+        if (equiposOtError) {
+          throw new Error(
+            `No se pudieron cargar equipos asociados a la OM: ${equiposOtError.message}`,
+          );
+        }
+
+        const equiposOtRows = (equiposOtData ?? []) as Array<{
+          id: string;
+          equipo_id: string;
+          orden: number | null;
+          descripcion_trabajo: string | null;
+          observacion: string | null;
+        }>;
+
+        const equipoIds = Array.from(
+          new Set(equiposOtRows.map((item) => item.equipo_id).filter(Boolean)),
+        );
+
+        let equiposInfoMap = new Map<string, Partial<EquipoAsociadoInforme>>();
+
+        if (equipoIds.length > 0) {
+          const { data: equiposInfoData, error: equiposInfoError } = await db
+            .from("ot_equipos")
+            .select(
+              "id,tag,nombre,descripcion,tipo_equipo,planta,area,linea,ubicacion,marca,modelo,serie,potencia,criticidad,estado",
+            )
+            .in("id", equipoIds);
+
+          if (equiposInfoError) {
+            throw new Error(
+              `No se pudieron cargar datos de equipos asociados: ${equiposInfoError.message}`,
+            );
+          }
+
+          equiposInfoMap = new Map(
+            ((equiposInfoData ?? []) as Array<{
+              id: string;
+              tag: string | null;
+              nombre: string | null;
+              descripcion: string | null;
+              tipo_equipo: string | null;
+              planta: string | null;
+              area: string | null;
+              linea: string | null;
+              ubicacion: string | null;
+              marca: string | null;
+              modelo: string | null;
+              serie: string | null;
+              potencia: string | null;
+              criticidad: string | null;
+              estado: string | null;
+            }>).map((equipo) => [
+              equipo.id,
+              {
+                tag: equipo.tag,
+                nombre: equipo.nombre,
+                descripcion: equipo.descripcion,
+                tipo_equipo: equipo.tipo_equipo,
+                planta: equipo.planta,
+                area: equipo.area,
+                linea: equipo.linea,
+                ubicacion: equipo.ubicacion,
+                marca: equipo.marca,
+                modelo: equipo.modelo,
+                serie: equipo.serie,
+                potencia: equipo.potencia,
+                criticidad: equipo.criticidad,
+                estado_equipo: equipo.estado,
+              },
+            ]),
+          );
+        }
+
+        const equiposInforme = equiposOtRows.map((item) => ({
+          id: item.id,
+          equipo_id: item.equipo_id,
+          orden: item.orden,
+          descripcion_trabajo: item.descripcion_trabajo,
+          observacion: item.observacion,
+          tag: equiposInfoMap.get(item.equipo_id)?.tag ?? null,
+          nombre: equiposInfoMap.get(item.equipo_id)?.nombre ?? null,
+          descripcion: equiposInfoMap.get(item.equipo_id)?.descripcion ?? null,
+          tipo_equipo: equiposInfoMap.get(item.equipo_id)?.tipo_equipo ?? null,
+          planta: equiposInfoMap.get(item.equipo_id)?.planta ?? null,
+          area: equiposInfoMap.get(item.equipo_id)?.area ?? null,
+          linea: equiposInfoMap.get(item.equipo_id)?.linea ?? null,
+          ubicacion: equiposInfoMap.get(item.equipo_id)?.ubicacion ?? null,
+          marca: equiposInfoMap.get(item.equipo_id)?.marca ?? null,
+          modelo: equiposInfoMap.get(item.equipo_id)?.modelo ?? null,
+          serie: equiposInfoMap.get(item.equipo_id)?.serie ?? null,
+          potencia: equiposInfoMap.get(item.equipo_id)?.potencia ?? null,
+          criticidad: equiposInfoMap.get(item.equipo_id)?.criticidad ?? null,
+          estado_equipo: equiposInfoMap.get(item.equipo_id)?.estado_equipo ?? null,
+        })) as EquipoAsociadoInforme[];
+
+        setEquiposAsociados(equiposInforme);
+
+        const { data: checklistEquipoData, error: checklistEquipoError } = await db
+          .from("ot_equipo_checklist_resultados")
+          .select(
+            "id,ot_orden_equipo_id,equipo_id,plantilla_item_id,respuesta_texto,respuesta_boolean,observacion_antes,observacion_despues,accion_realizada,recomendacion_tecnica,evidencia_antes_url,evidencia_despues_url",
+          )
+          .eq("ot_id", otId);
+
+        if (checklistEquipoError) {
+          throw new Error(
+            `No se pudo cargar checklist técnico por equipo: ${checklistEquipoError.message}`,
+          );
+        }
+
+        const checklistEquipoRows = (checklistEquipoData ?? []) as Array<{
+          id: string;
+          ot_orden_equipo_id: string;
+          equipo_id: string;
+          plantilla_item_id: string;
+          respuesta_texto: string | null;
+          respuesta_boolean: boolean | null;
+          observacion_antes: string | null;
+          observacion_despues: string | null;
+          accion_realizada: string | null;
+          recomendacion_tecnica: string | null;
+          evidencia_antes_url: string | null;
+          evidencia_despues_url: string | null;
+        }>;
+
+        const plantillaItemIds = Array.from(
+          new Set(
+            checklistEquipoRows
+              .map((item) => item.plantilla_item_id)
+              .filter(Boolean),
+          ),
+        );
+
+        let plantillaItemsMap = new Map<string, Partial<EquipoChecklistInforme>>();
+
+        if (plantillaItemIds.length > 0) {
+          const { data: plantillaItemsData, error: plantillaItemsError } = await db
+            .from("ot_plantillas_checklist_items")
+            .select(
+              "id,zona,categoria,actividad,frecuencia_horas,indicaciones,orden,requiere_evidencia",
+            )
+            .in("id", plantillaItemIds);
+
+          if (plantillaItemsError) {
+            throw new Error(
+              `No se pudieron cargar ítems de checklist por equipo: ${plantillaItemsError.message}`,
+            );
+          }
+
+          plantillaItemsMap = new Map(
+            ((plantillaItemsData ?? []) as Array<{
+              id: string;
+              zona: string | null;
+              categoria: string | null;
+              actividad: string | null;
+              frecuencia_horas: number | null;
+              indicaciones: string | null;
+              orden: number | null;
+              requiere_evidencia: boolean | null;
+            }>).map((item) => [
+              item.id,
+              {
+                item_zona: item.zona,
+                item_categoria: item.categoria,
+                item_actividad: item.actividad,
+                item_frecuencia_horas: item.frecuencia_horas,
+                item_indicaciones: item.indicaciones,
+                item_orden: item.orden,
+                item_requiere_evidencia: item.requiere_evidencia,
+              },
+            ]),
+          );
+        }
+
+        setChecklistEquipoResultados(
+          checklistEquipoRows
+            .map((row) => ({
+              ...row,
+              item_zona: plantillaItemsMap.get(row.plantilla_item_id)?.item_zona ?? null,
+              item_categoria: plantillaItemsMap.get(row.plantilla_item_id)?.item_categoria ?? null,
+              item_actividad: plantillaItemsMap.get(row.plantilla_item_id)?.item_actividad ?? null,
+              item_frecuencia_horas:
+                plantillaItemsMap.get(row.plantilla_item_id)?.item_frecuencia_horas ?? null,
+              item_indicaciones:
+                plantillaItemsMap.get(row.plantilla_item_id)?.item_indicaciones ?? null,
+              item_orden: plantillaItemsMap.get(row.plantilla_item_id)?.item_orden ?? null,
+              item_requiere_evidencia:
+                plantillaItemsMap.get(row.plantilla_item_id)?.item_requiere_evidencia ?? null,
+            }))
+            .sort((a, b) => (a.item_orden ?? 9999) - (b.item_orden ?? 9999)) as EquipoChecklistInforme[],
         );
 
         if (resumenRow.equipo_id) {
@@ -1105,6 +1395,56 @@ export default function InformeSoftysPage() {
     return acc;
   }, {});
 
+  const equiposInforme = equiposAsociados.length > 0
+    ? equiposAsociados
+    : resumen.equipo_id
+      ? [
+          {
+            id: resumen.equipo_id,
+            equipo_id: resumen.equipo_id,
+            orden: 1,
+            descripcion_trabajo: detalle.descripcion_solicitud || detalle.titulo,
+            observacion: null,
+            tag: resumen.equipo_tag,
+            nombre: resumen.equipo_nombre,
+            descripcion: resumen.equipo_descripcion,
+            tipo_equipo: resumen.equipo_tipo,
+            planta: resumen.equipo_planta,
+            area: resumen.equipo_area,
+            linea: resumen.equipo_linea,
+            ubicacion: resumen.equipo_ubicacion,
+            marca: resumen.equipo_marca,
+            modelo: resumen.equipo_modelo,
+            serie: resumen.equipo_serie,
+            potencia: resumen.equipo_potencia,
+            criticidad: null,
+            estado_equipo: null,
+          },
+        ] as EquipoAsociadoInforme[]
+      : [];
+
+  const checklistEquipoPorAsociacion = checklistEquipoResultados.reduce<
+    Record<string, EquipoChecklistInforme[]>
+  >((acc, item) => {
+    const key = item.ot_orden_equipo_id;
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(item);
+    return acc;
+  }, {});
+
+  const totalChecklistEquipo = checklistEquipoResultados.length;
+  const totalChecklistRespondido = checklistEquipoResultados.filter((item) =>
+    Boolean(item.respuesta_texto),
+  ).length;
+  const totalChecklistObservado = checklistEquipoResultados.filter(
+    (item) => item.respuesta_texto === "no_ok",
+  ).length;
+  const totalFotosChecklist = checklistEquipoResultados.reduce(
+    (total, item) =>
+      total + (item.evidencia_antes_url ? 1 : 0) + (item.evidencia_despues_url ? 1 : 0),
+    0,
+  );
+
   return (
     <ProtectedModuleRoute moduleKey="ot">
       <div className="screen-actions">
@@ -1141,8 +1481,8 @@ export default function InformeSoftysPage() {
               Datos manuales del informe DyF / Softys
             </h2>
             <p className="text-sm text-slate-500">
-              Estos datos se guardan en ot_informes_tecnicos y no modifican la
-              OT base de RMSIC.
+              Estos datos complementan la OM principal y se utilizarán en el
+              informe técnico del cliente.
             </p>
           </div>
 
@@ -1320,150 +1660,13 @@ export default function InformeSoftysPage() {
             />
           </div>
 
-          <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-            <div className="mb-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-              <div>
-                <h3 className="text-base font-black text-slate-900">
-                  Checklist técnico de mantenimiento
-                </h3>
-                <p className="text-sm text-slate-500">
-                  Estos ítems vienen de la plantilla técnica y se guardan por
-                  OT.
-                </p>
-              </div>
-
-              {checklistResultados.length === 0 ? (
-                <button
-                  type="button"
-                  onClick={generarChecklistMotorMt}
-                  disabled={savingInforme}
-                  className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-bold text-white disabled:opacity-60"
-                >
-                  Generar checklist motor MT
-                </button>
-              ) : null}
-            </div>
-
-            {checklistResultados.length > 0 ? (
-              <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-                <table className="min-w-[1380px] text-left text-xs">
-                  <thead className="bg-slate-100 text-[10px] uppercase tracking-wide text-slate-500">
-                    <tr>
-                      <th rowSpan={2} className="px-2 py-2">Código</th>
-                      <th rowSpan={2} className="min-w-[280px] px-2 py-2">Actividad</th>
-                      <th rowSpan={2} className="px-2 py-2">Estado</th>
-                      <th colSpan={4} className="px-2 py-2 text-center">Encontrado</th>
-                      <th colSpan={4} className="px-2 py-2 text-center">Acciones</th>
-                      <th colSpan={4} className="px-2 py-2 text-center">PT-100</th>
-                      <th rowSpan={2} className="min-w-[120px] px-2 py-2">Valor / temp.</th>
-                      <th rowSpan={2} className="min-w-[240px] px-2 py-2">Observaciones / relatorio</th>
-                    </tr>
-                    <tr>
-                      {encontradoKeys.map((entry) => (
-                        <th key={entry.key} className="px-2 py-1 text-center" title={entry.title}>{entry.label}</th>
-                      ))}
-                      {accionKeys.map((entry) => (
-                        <th key={entry.key} className="px-2 py-1 text-center" title={entry.title}>{entry.label}</th>
-                      ))}
-                      {pt100Keys.map((entry) => (
-                        <th key={entry.key} className="px-2 py-1 text-center">{entry.label}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {checklistResultados.map((item) => {
-                      const usaEncontrado = usesConfig(item, "usa_encontrado");
-                      const usaAcciones = usesConfig(item, "usa_acciones");
-                      const usaPt100 = usesConfig(item, "usa_pt100");
-                      const usaValorTexto = usesConfig(item, "usa_valor_texto");
-                      const usaTextoLargo = usesConfig(item, "usa_texto_largo");
-
-                      return (
-                        <tr key={item.id} className="border-t border-slate-100 align-top">
-                          <td className="px-2 py-2 font-bold text-slate-700">{item.item_codigo}</td>
-                          <td className="px-2 py-2 text-slate-800">
-                            <div className="font-semibold">{item.actividad}</div>
-                            <div className="mt-1 text-[10px] font-medium text-slate-400">{item.seccion}</div>
-                          </td>
-                          <td className="px-2 py-2">
-                            <select
-                              value={item.estado || "pendiente"}
-                              onChange={(event) => setChecklistTecnico(item.id, "estado", event.target.value)}
-                              className="rounded-lg border border-slate-300 px-2 py-1 text-xs font-semibold"
-                            >
-                              <option value="pendiente">Pendiente</option>
-                              <option value="ok">OK</option>
-                              <option value="observado">Observado</option>
-                              <option value="no_aplica">No aplica</option>
-                            </select>
-                          </td>
-                          {encontradoKeys.map((entry) => (
-                            <td key={entry.key} className="px-2 py-2 text-center">
-                              {usaEncontrado ? (
-                                <input
-                                  type="checkbox"
-                                  checked={datoBoolean(item, entry.key)}
-                                  onChange={(event) => setEncontradoExclusivo(item.id, entry.key, event.target.checked)}
-                                  title={entry.title}
-                                />
-                              ) : <span className="text-slate-300">-</span>}
-                            </td>
-                          ))}
-                          {accionKeys.map((entry) => (
-                            <td key={entry.key} className="px-2 py-2 text-center">
-                              {usaAcciones ? (
-                                <input
-                                  type="checkbox"
-                                  checked={datoBoolean(item, entry.key)}
-                                  onChange={(event) => setChecklistDato(item.id, entry.key, event.target.checked)}
-                                  title={entry.title}
-                                />
-                              ) : <span className="text-slate-300">-</span>}
-                            </td>
-                          ))}
-                          {pt100Keys.map((entry) => (
-                            <td key={entry.key} className="px-1 py-2 text-center">
-                              {usaPt100 ? (
-                                <input
-                                  value={datoTexto(item, entry.key)}
-                                  onChange={(event) => setChecklistDato(item.id, entry.key, event.target.value)}
-                                  className="w-16 rounded-lg border border-slate-300 px-1 py-1 text-center text-xs"
-                                />
-                              ) : <span className="text-slate-300">-</span>}
-                            </td>
-                          ))}
-                          <td className="px-2 py-2">
-                            {usaValorTexto ? (
-                              <div className="flex min-w-[110px] items-center gap-2">
-                                <input
-                                  value={item.valor_texto || ""}
-                                  onChange={(event) => setChecklistTecnico(item.id, "valor_texto", event.target.value)}
-                                  className="w-20 rounded-lg border border-slate-300 px-2 py-1 text-xs"
-                                />
-                                <span className="text-[10px] font-bold text-slate-500">{item.unidad || item.item_unidad}</span>
-                              </div>
-                            ) : <span className="text-slate-300">-</span>}
-                          </td>
-                          <td className="px-2 py-2">
-                            <textarea
-                              value={item.observacion || ""}
-                              onChange={(event) => setChecklistTecnico(item.id, "observacion", event.target.value)}
-                              rows={usaTextoLargo ? 5 : 2}
-                              className="min-w-[220px] rounded-lg border border-slate-300 px-2 py-1 text-xs"
-                            />
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <div className="rounded-xl border border-dashed border-slate-300 bg-white p-4 text-sm text-slate-500">
-                Esta OT aún no tiene checklist técnico aplicado. Puedes
-                generarlo para visualizar el flujo demo.
-              </div>
-            )}
+          <div className="mt-6 rounded-2xl border border-blue-100 bg-blue-50 p-4 text-sm text-blue-900">
+            <p className="font-bold text-blue-950">Checklist técnico por equipo</p>
+            <p className="mt-1">
+              El detalle técnico y las fotos antes/después se completan desde el detalle de la OM,
+              en la sección “Checklist técnico por equipo”. Este informe consolida automáticamente
+              esas respuestas por cada motor asociado.
+            </p>
           </div>
         </section>
       ) : (
@@ -1801,6 +2004,185 @@ export default function InformeSoftysPage() {
             color: #475569;
           }
 
+          .small-note {
+            margin: 0 0 10px;
+            color: #64748b;
+            font-size: 11px;
+            line-height: 1.45;
+          }
+
+          .equipment-list,
+          .equipment-checklist-list,
+          .checklist-item-list {
+            display: grid;
+            gap: 12px;
+          }
+
+          .equipment-card,
+          .equipment-checklist-block,
+          .checklist-item-card {
+            border: 1px solid #dbe3ea;
+            border-radius: 16px;
+            background: #ffffff;
+            padding: 12px;
+            break-inside: avoid;
+          }
+
+          .equipment-card-header,
+          .checklist-equipment-title {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 10px;
+          }
+
+          .equipment-card-header span,
+          .checklist-equipment-title span {
+            border-radius: 999px;
+            background: #163a5f;
+            color: #ffffff;
+            padding: 4px 8px;
+            font-size: 10px;
+            font-weight: 900;
+            text-transform: uppercase;
+          }
+
+          .equipment-card-header strong,
+          .checklist-equipment-title strong {
+            color: #0f172a;
+            font-size: 14px;
+            font-weight: 900;
+          }
+
+          .checklist-equipment-title small {
+            color: #64748b;
+            font-size: 11px;
+            font-weight: 700;
+          }
+
+          .equipment-meta-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            overflow: hidden;
+          }
+
+          .equipment-meta-grid .field {
+            border-right: 1px solid #e2e8f0;
+            border-bottom: 1px solid #e2e8f0;
+          }
+
+          .equipment-note {
+            margin-top: 10px;
+            border-radius: 12px;
+            background: #f8fafc;
+            padding: 9px 10px;
+            color: #475569;
+            font-size: 12px;
+            line-height: 1.45;
+          }
+
+          .equipment-note p {
+            margin: 0;
+          }
+
+          .checklist-item-head {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 12px;
+            align-items: start;
+            margin-bottom: 10px;
+          }
+
+          .checklist-item-head h3 {
+            margin: 2px 0 0;
+            color: #0f172a;
+            font-size: 13px;
+            line-height: 1.35;
+            font-weight: 900;
+          }
+
+          .checklist-zone,
+          .checklist-help {
+            margin: 0;
+            color: #64748b;
+            font-size: 10.5px;
+            line-height: 1.4;
+          }
+
+          .checklist-help {
+            margin-top: 4px;
+            font-size: 11px;
+          }
+
+          .status-ok {
+            border-color: #bbf7d0;
+            background: #f0fdf4;
+            color: #166534;
+          }
+
+          .status-no-ok {
+            border-color: #fecdd3;
+            background: #fff1f2;
+            color: #be123c;
+          }
+
+          .status-na {
+            border-color: #cbd5e1;
+            background: #f8fafc;
+            color: #475569;
+          }
+
+          .status-pending {
+            border-color: #fde68a;
+            background: #fffbeb;
+            color: #92400e;
+          }
+
+          .checklist-detail-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+          }
+
+          .checklist-evidence-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+            margin-top: 10px;
+          }
+
+          .checklist-evidence-card {
+            border: 1px solid #e2e8f0;
+            border-radius: 14px;
+            overflow: hidden;
+            background: #f8fafc;
+          }
+
+          .checklist-evidence-card p {
+            margin: 0;
+            padding: 7px 9px;
+            color: #334155;
+            font-size: 11px;
+            font-weight: 900;
+            text-transform: uppercase;
+          }
+
+          .checklist-evidence-card img,
+          .no-image {
+            width: 100%;
+            height: 170px;
+            object-fit: cover;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #94a3b8;
+            font-size: 11px;
+            background: #f1f5f9;
+          }
+
           .firma-grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
@@ -1900,8 +2282,10 @@ export default function InformeSoftysPage() {
               page-break-inside: avoid;
             }
 
-            .evidence-card img {
-              height: 190px;
+            .evidence-card img,
+            .checklist-evidence-card img,
+            .no-image {
+              height: 145px;
             }
           }
         `}</style>
@@ -1972,35 +2356,58 @@ export default function InformeSoftysPage() {
             />
           </div>
 
-          <Section title="Equipo / motor intervenido">
-            <div className="summary-grid">
-              <Field label="TAG" value={resumen.equipo_tag} />
-              <Field
-                label="Equipo"
-                value={resumen.equipo_nombre || resumen.equipo_descripcion}
-              />
-              <Field label="Tipo" value={resumen.equipo_tipo} />
-              <Field label="Potencia" value={resumen.equipo_potencia} />
-              <Field label="Ubicación" value={equipoUbicacion} />
-              <Field label="Marca / Modelo" value={equipoCaracteristicas} />
-              <Field label="Serie" value={resumen.equipo_serie} />
-              <Field label="Planta" value={resumen.equipo_planta} />
-            </div>
+          <Section title="Equipos / motores asociados a la OM">
+            {equiposInforme.length > 0 ? (
+              <div className="equipment-list">
+                {equiposInforme.map((equipo, index) => {
+                  const itemsEquipo = checklistEquipoPorAsociacion[equipo.id] || [];
+                  const respondidosEquipo = itemsEquipo.filter((item) => item.respuesta_texto).length;
+                  const fotosEquipo = itemsEquipo.reduce(
+                    (total, item) =>
+                      total + (item.evidencia_antes_url ? 1 : 0) + (item.evidencia_despues_url ? 1 : 0),
+                    0,
+                  );
+
+                  return (
+                    <div className="equipment-card" key={equipo.id}>
+                      <div className="equipment-card-header">
+                        <span>Equipo {index + 1}</span>
+                        <strong>{equipoInformeNombre(equipo)}</strong>
+                      </div>
+                      <div className="equipment-meta-grid">
+                        <Field label="Tipo" value={equipo.tipo_equipo} />
+                        <Field label="Ubicación" value={equipoInformeUbicacion(equipo)} />
+                        <Field label="Marca / Modelo / Potencia" value={equipoInformeCaracteristicas(equipo)} />
+                        <Field label="Serie" value={equipo.serie} />
+                        <Field label="Criticidad" value={equipo.criticidad} />
+                        <Field label="Checklist" value={`${respondidosEquipo}/${itemsEquipo.length} respondidos`} />
+                        <Field label="Fotos checklist" value={fotosEquipo > 0 ? `${fotosEquipo} foto(s)` : "-"} />
+                      </div>
+                      {equipo.descripcion_trabajo || equipo.observacion ? (
+                        <div className="equipment-note">
+                          {equipo.descripcion_trabajo ? (
+                            <p><strong>Trabajo solicitado:</strong> {equipo.descripcion_trabajo}</p>
+                          ) : null}
+                          {equipo.observacion ? (
+                            <p><strong>Observación:</strong> {equipo.observacion}</p>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <TextBox value="No hay equipos asociados a esta OM." minHeight={60} />
+            )}
           </Section>
 
-          <Section title="Encabezado técnico plantilla motor MT">
+          <Section title="Resumen de checklist y evidencias técnicas">
             <div className="summary-grid">
-              <Field label="Fecha" value={formatDate(detalle.fecha_ot)} />
-              <Field label="Nombre" value={resumen.equipo_nombre || descripcionTrabajo} />
-              <Field label="Sistema" value={informeDatos.sistema || resumen.equipo_planta} />
-              <Field label="Sub-sistema" value={informeDatos.sub_sistema || resumen.equipo_area} />
-              <Field label="Equipo" value={resumen.equipo_nombre || resumen.equipo_descripcion} />
-              <Field label="Sub-equipo" value={informeDatos.sub_equipo || resumen.equipo_tipo} />
-              <Field label="N° TAG" value={resumen.equipo_tag} />
-              <Field label="Ubicación" value={equipoUbicacion} />
-              <Field label="Criticidad" value={informeDatos.criticidad} />
-              <Field label="Frecuencia" value={informeDatos.frecuencia} />
-              <Field label="Código SAP" value={informeDatos.codigo_sap} />
+              <Field label="Equipos asociados" value={equiposInforme.length} />
+              <Field label="Ítems técnicos respondidos" value={`${totalChecklistRespondido}/${totalChecklistEquipo}`} />
+              <Field label="Ítems No OK" value={totalChecklistObservado} />
+              <Field label="Fotos antes/después" value={totalFotosChecklist} />
             </div>
           </Section>
 
@@ -2100,64 +2507,111 @@ export default function InformeSoftysPage() {
             <TextBox value={herramientasMateriales} minHeight={85} />
           </Section>
 
-                    <Section title="Checklist técnico ejecutado - Formato oficial motor MT">
-            {checklistResultados.length > 0 ? (
+                    <Section title="Checklist técnico por equipo / motor">
+            {equiposInforme.length > 0 ? (
+              <div className="equipment-checklist-list">
+                {equiposInforme.map((equipo, index) => {
+                  const itemsEquipo = checklistEquipoPorAsociacion[equipo.id] || [];
+
+                  return (
+                    <div className="equipment-checklist-block" key={`checklist-${equipo.id}`}>
+                      <div className="checklist-equipment-title">
+                        <span>Equipo {index + 1}</span>
+                        <strong>{equipoInformeNombre(equipo)}</strong>
+                        <small>{equipoInformeUbicacion(equipo)}</small>
+                      </div>
+
+                      {itemsEquipo.length > 0 ? (
+                        <div className="checklist-item-list">
+                          {itemsEquipo.map((item) => (
+                            <div className="checklist-item-card" key={item.id}>
+                              <div className="checklist-item-head">
+                                <div>
+                                  <p className="checklist-zone">
+                                    {[item.item_zona, item.item_categoria].filter(Boolean).join(" / ") || "Checklist técnico"}
+                                  </p>
+                                  <h3>{item.item_actividad || "Ítem técnico"}</h3>
+                                  {item.item_indicaciones ? (
+                                    <p className="checklist-help">{item.item_indicaciones}</p>
+                                  ) : null}
+                                </div>
+                                <span className={`status-pill ${estadoEquipoChecklistClass(item.respuesta_texto)}`}>
+                                  {estadoEquipoChecklistLabel(item.respuesta_texto)}
+                                </span>
+                              </div>
+
+                              <div className="checklist-detail-grid">
+                                <div>
+                                  <p className="label-title">Antes / condición encontrada</p>
+                                  <TextBox value={item.observacion_antes} minHeight={52} />
+                                </div>
+                                <div>
+                                  <p className="label-title">Acción realizada</p>
+                                  <TextBox value={item.accion_realizada} minHeight={52} />
+                                </div>
+                                <div>
+                                  <p className="label-title">Después / resultado</p>
+                                  <TextBox value={item.observacion_despues} minHeight={52} />
+                                </div>
+                                <div>
+                                  <p className="label-title">Recomendación técnica</p>
+                                  <TextBox value={item.recomendacion_tecnica} minHeight={52} />
+                                </div>
+                              </div>
+
+                              {hasChecklistEvidence(item) ? (
+                                <div className="checklist-evidence-grid">
+                                  <div className="checklist-evidence-card">
+                                    <p>Foto antes</p>
+                                    {item.evidencia_antes_url ? (
+                                      <img src={item.evidencia_antes_url} alt="Foto antes" />
+                                    ) : (
+                                      <div className="no-image">Sin foto antes</div>
+                                    )}
+                                  </div>
+                                  <div className="checklist-evidence-card">
+                                    <p>Foto después</p>
+                                    {item.evidencia_despues_url ? (
+                                      <img src={item.evidencia_despues_url} alt="Foto después" />
+                                    ) : (
+                                      <div className="no-image">Sin foto después</div>
+                                    )}
+                                  </div>
+                                </div>
+                              ) : null}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <TextBox value="Este equipo aún no tiene respuestas de checklist registradas." minHeight={55} />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : checklistResultados.length > 0 ? (
               <>
-                {Object.entries(checklistPorSeccion).map(([seccion, items]) => (
+                {(Object.entries(checklistPorSeccion) as [string, ChecklistResultado[]][]).map(([seccion, items]) => (
                   <div key={seccion} style={{ marginBottom: 14 }}>
                     <p className="label-title">{seccion}</p>
-                    <table className="technical-checklist-table softys-matrix-table">
+                    <table className="technical-checklist-table">
                       <thead>
                         <tr>
-                          <th rowSpan={2} style={{ width: 42 }}>Cod.</th>
-                          <th rowSpan={2}>Actividad</th>
-                          <th rowSpan={2} style={{ width: 62 }}>Estado</th>
-                          <th colSpan={4}>Encontrado</th>
-                          <th colSpan={4}>Acciones</th>
-                          <th colSpan={4}>PT-100</th>
-                          <th rowSpan={2} style={{ width: 70 }}>Valor</th>
-                          <th rowSpan={2}>Obs.</th>
-                        </tr>
-                        <tr>
-                          <th title="Muy bueno">MB</th>
-                          <th title="Bueno">B</th>
-                          <th title="Malo">M</th>
-                          <th title="Muy malo">MM</th>
-                          <th title="Limpieza">L</th>
-                          <th title="Reparación">R</th>
-                          <th title="Cambio">C</th>
-                          <th title="Aviso SAP">SAP</th>
-                          <th>N°1</th>
-                          <th>N°2</th>
-                          <th>N°3</th>
-                          <th>N°4</th>
+                          <th>Código</th>
+                          <th>Actividad</th>
+                          <th>Estado</th>
+                          <th>Observación</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {items.map((item) => {
-                          const usaEncontrado = usesConfig(item, "usa_encontrado");
-                          const usaAcciones = usesConfig(item, "usa_acciones");
-                          const usaPt100 = usesConfig(item, "usa_pt100");
-                          const usaValorTexto = usesConfig(item, "usa_valor_texto");
-                          return (
-                            <tr key={item.id}>
-                              <td>{item.item_codigo}</td>
-                              <td>{item.actividad}</td>
-                              <td>{estadoChecklistLabel(item.estado)}</td>
-                              {encontradoKeys.map((entry) => (
-                                <td key={entry.key} className="matrix-center">{usaEncontrado ? checkSymbol(datoBoolean(item, entry.key)) : "-"}</td>
-                              ))}
-                              {accionKeys.map((entry) => (
-                                <td key={entry.key} className="matrix-center">{usaAcciones ? checkSymbol(datoBoolean(item, entry.key)) : "-"}</td>
-                              ))}
-                              {pt100Keys.map((entry) => (
-                                <td key={entry.key} className="matrix-center">{usaPt100 ? labelOrDash(datoTexto(item, entry.key)) : "-"}</td>
-                              ))}
-                              <td>{usaValorTexto ? `${item.valor_texto || "-"}${item.valor_texto && (item.unidad || item.item_unidad) ? ` ${item.unidad || item.item_unidad}` : ""}` : "-"}</td>
-                              <td>{item.observacion || "-"}</td>
-                            </tr>
-                          );
-                        })}
+                        {items.map((item) => (
+                          <tr key={item.id}>
+                            <td>{item.item_codigo}</td>
+                            <td>{item.actividad}</td>
+                            <td>{estadoChecklistLabel(item.estado)}</td>
+                            <td>{item.observacion || "-"}</td>
+                          </tr>
+                        ))}
                       </tbody>
                     </table>
                   </div>
@@ -2253,7 +2707,7 @@ export default function InformeSoftysPage() {
             </div>
           </Section>
 
-          <Section title="Evidencias fotográficas">
+          <Section title="Evidencias generales adicionales">
             {evidenciasImagenes.length > 0 ? (
               <div className="evidence-grid">
                 {evidenciasImagenes.map((item) => (
