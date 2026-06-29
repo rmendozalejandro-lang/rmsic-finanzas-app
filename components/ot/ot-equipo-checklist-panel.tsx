@@ -3,6 +3,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../lib/supabase/client'
 
+type PlantillaChecklist = {
+  id: string
+  nombre: string
+  tipo_activo: string | null
+  descripcion: string | null
+}
+
 type ChecklistItem = {
   id: string
   plantilla_id: string
@@ -159,6 +166,10 @@ export function OTEquipoChecklistPanel({
 }) {
   const db = supabase as any
 
+  const [selectedPlantillaId, setSelectedPlantillaId] = useState(plantillaId || '')
+  const [selectedPlantillaNombre, setSelectedPlantillaNombre] = useState('')
+  const [plantillaAutoAsignada, setPlantillaAutoAsignada] = useState(false)
+
   const [items, setItems] = useState<ChecklistItem[]>([])
   const [respuestas, setRespuestas] = useState<Record<string, RespuestaState>>({})
   const [mostrarGenerales, setMostrarGenerales] = useState(false)
@@ -166,6 +177,13 @@ export function OTEquipoChecklistPanel({
   const [savingEquipoId, setSavingEquipoId] = useState('')
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+
+  useEffect(() => {
+    if (plantillaId) {
+      setSelectedPlantillaId(plantillaId)
+      setPlantillaAutoAsignada(false)
+    }
+  }, [plantillaId])
 
   const equiposOrdenados = useMemo(() => {
     return [...equipos].sort((a, b) => (a.orden ?? 9999) - (b.orden ?? 9999))
@@ -190,16 +208,57 @@ export function OTEquipoChecklistPanel({
   }, [itemsTecnicos])
 
   const loadData = async () => {
-    if (!plantillaId) {
-      setItems([])
-      setRespuestas({})
-      setLoading(false)
-      return
-    }
-
     try {
       setLoading(true)
       setError('')
+
+      let plantillaParaUsar = selectedPlantillaId || plantillaId || ''
+
+      if (!plantillaParaUsar) {
+        const { data: plantillasData, error: plantillasError } = await supabase
+          .from('ot_plantillas_checklist')
+          .select('id, nombre, tipo_activo, descripcion')
+          .eq('empresa_id', empresaId)
+          .eq('activa', true)
+          .order('nombre', { ascending: true })
+
+        if (plantillasError) throw new Error(plantillasError.message)
+
+        const plantillas = (plantillasData || []) as PlantillaChecklist[]
+        const plantillaElegida =
+          plantillas.find((item) => normalizeText(item.nombre).includes('motor')) ||
+          plantillas.find((item) => normalizeText(item.nombre).includes('mespack')) ||
+          plantillas.find((item) => normalizeText(item.tipo_activo || '').includes('motor')) ||
+          plantillas[0]
+
+        if (!plantillaElegida) {
+          setItems([])
+          setRespuestas({})
+          setSelectedPlantillaNombre('')
+          setLoading(false)
+          return
+        }
+
+        plantillaParaUsar = plantillaElegida.id
+        setSelectedPlantillaId(plantillaElegida.id)
+        setSelectedPlantillaNombre(plantillaElegida.nombre)
+        setPlantillaAutoAsignada(true)
+
+        const { error: updatePlantillaError } = await db
+          .from('ot_ordenes_trabajo')
+          .update({
+            plantilla_checklist_id: plantillaElegida.id,
+            requiere_checklist: true,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', otId)
+
+        if (updatePlantillaError) {
+          throw new Error(updatePlantillaError.message)
+        }
+
+        onChanged?.()
+      }
 
       const [itemsResp, respuestasResp] = await Promise.all([
         supabase
@@ -207,7 +266,7 @@ export function OTEquipoChecklistPanel({
           .select(
             'id, plantilla_id, zona, categoria, actividad, frecuencia_horas, indicaciones, tipo_item, tipo_respuesta, requiere_observacion_si_no_ok, requiere_evidencia, orden'
           )
-          .eq('plantilla_id', plantillaId)
+          .eq('plantilla_id', plantillaParaUsar)
           .eq('activa', true)
           .order('orden', { ascending: true }),
         db
@@ -256,7 +315,7 @@ export function OTEquipoChecklistPanel({
   useEffect(() => {
     void loadData()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [otId, plantillaId])
+  }, [otId, empresaId, plantillaId, selectedPlantillaId])
 
   const setRespuesta = (
     equipoAsociadoId: string,
@@ -291,7 +350,9 @@ export function OTEquipoChecklistPanel({
   }
 
   const guardarEquipo = async (equipo: EquipoChecklistInfo) => {
-    if (!plantillaId) {
+    const plantillaParaUsar = selectedPlantillaId || plantillaId || ''
+
+    if (!plantillaParaUsar) {
       setError('La OM no tiene plantilla de checklist asociada.')
       setSuccess('')
       return
@@ -316,7 +377,7 @@ export function OTEquipoChecklistPanel({
           ot_id: otId,
           ot_orden_equipo_id: equipo.id,
           equipo_id: equipo.equipo_id,
-          plantilla_id: plantillaId,
+          plantilla_id: plantillaParaUsar,
           plantilla_item_id: item.id,
           respuesta_texto: respuesta.respuesta_texto || null,
           respuesta_boolean:
@@ -407,9 +468,15 @@ export function OTEquipoChecklistPanel({
         </div>
       ) : null}
 
-      {!plantillaId ? (
+      {!selectedPlantillaId ? (
         <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-          Esta OM no tiene plantilla de checklist asociada. Revisa la plantilla de la OM antes de completar checklist por equipo.
+          Esta OM no tiene plantilla de checklist asociada. El sistema intentará usar una plantilla activa de checklist técnico de la empresa.
+        </div>
+      ) : null}
+
+      {selectedPlantillaId && plantillaAutoAsignada ? (
+        <div className="mt-5 rounded-2xl border border-blue-100 bg-blue-50 p-4 text-sm text-blue-900">
+          Plantilla de checklist asignada automáticamente: <span className="font-semibold">{selectedPlantillaNombre || 'Checklist técnico'}</span>.
         </div>
       ) : null}
 
@@ -431,7 +498,7 @@ export function OTEquipoChecklistPanel({
         </div>
       ) : null}
 
-      {plantillaId && itemsTecnicos.length === 0 ? (
+      {selectedPlantillaId && itemsTecnicos.length === 0 ? (
         <div className="mt-5 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-500">
           No hay ítems técnicos para mostrar con el filtro actual. Activa “Mostrar ítems generales” si necesitas ver la plantilla completa.
         </div>
@@ -609,7 +676,7 @@ export function OTEquipoChecklistPanel({
                   <button
                     type="button"
                     onClick={() => void guardarEquipo(equipo)}
-                    disabled={savingEquipoId === equipo.id || !plantillaId || itemsTecnicos.length === 0}
+                    disabled={savingEquipoId === equipo.id || !selectedPlantillaId || itemsTecnicos.length === 0}
                     className="inline-flex w-full items-center justify-center rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70 sm:w-auto"
                   >
                     {savingEquipoId === equipo.id ? 'Guardando checklist...' : 'Guardar checklist de este equipo'}
