@@ -1486,7 +1486,7 @@ export default function InformeSoftysPage() {
           }}
           className="action-primary"
         >
-          {modoOficial ? "Imprimir / Guardar informe" : "Imprimir / Guardar PDF"}
+          {modoOficial ? "Imprimir / Guardar PDF oficial" : "Imprimir / Guardar PDF"}
         </button>
       </div>
 
@@ -2383,14 +2383,6 @@ export default function InformeSoftysPage() {
             {equiposInforme.length > 0 ? (
               <div className="equipment-list">
                 {equiposInforme.map((equipo, index) => {
-                  const itemsEquipo = checklistEquipoPorAsociacion[equipo.id] || [];
-                  const respondidosEquipo = itemsEquipo.filter((item) => item.respuesta_texto).length;
-                  const fotosEquipo = itemsEquipo.reduce(
-                    (total, item) =>
-                      total + (item.evidencia_antes_url ? 1 : 0) + (item.evidencia_despues_url ? 1 : 0),
-                    0,
-                  );
-
                   return (
                     <div className="equipment-card" key={equipo.id}>
                       <div className="equipment-card-header">
@@ -2403,17 +2395,10 @@ export default function InformeSoftysPage() {
                         <Field label="Marca / Modelo / Potencia" value={equipoInformeCaracteristicas(equipo)} />
                         <Field label="Serie" value={equipo.serie} />
                         <Field label="Criticidad" value={equipo.criticidad} />
-                        <Field label="Checklist" value={`${respondidosEquipo}/${itemsEquipo.length} respondidos`} />
-                        <Field label="Fotos checklist" value={fotosEquipo > 0 ? `${fotosEquipo} foto(s)` : "-"} />
                       </div>
-                      {equipo.descripcion_trabajo || equipo.observacion ? (
+                      {equipo.observacion ? (
                         <div className="equipment-note">
-                          {equipo.descripcion_trabajo ? (
-                            <p><strong>Trabajo solicitado:</strong> {equipo.descripcion_trabajo}</p>
-                          ) : null}
-                          {equipo.observacion ? (
-                            <p><strong>Observación:</strong> {equipo.observacion}</p>
-                          ) : null}
+                          <p><strong>Observación:</strong> {equipo.observacion}</p>
                         </div>
                       ) : null}
                     </div>
@@ -2428,11 +2413,11 @@ export default function InformeSoftysPage() {
 
 
           {(hasValue(detalleTrabajoRealizado) || hasValue(detalle.hallazgos) || hasValue(detalle.conclusiones_tecnicas)) ? (
-            <Section title="Detalle de trabajos realizados adicionales">
+            <Section title="Detalle de trabajos adicionales fuera del checklist">
               {hasValue(detalleTrabajoRealizado) ? (
                 <>
                   <p className="small-note">
-                    Registrar aquí solo labores adicionales que no estén cubiertas por el checklist técnico.
+                    Se muestra solo cuando existen labores adicionales, hallazgos o conclusiones que no están cubiertas por el checklist técnico.
                   </p>
                   <TextBox value={detalleTrabajoRealizado} minHeight={95} />
                 </>
@@ -2681,13 +2666,15 @@ export default function InformeSoftysPage() {
               </table>
             </div>
 
-            <div style={{ marginTop: 12 }}>
-              <p className="label-title">Observaciones de recepción</p>
-              <TextBox
-                value={informeDatos.observaciones_recepcion}
-                minHeight={70}
-              />
-            </div>
+            {hasValue(informeDatos.observaciones_recepcion) ? (
+              <div style={{ marginTop: 12 }}>
+                <p className="label-title">Observaciones de recepción</p>
+                <TextBox
+                  value={informeDatos.observaciones_recepcion}
+                  minHeight={70}
+                />
+              </div>
+            ) : null}
           </Section>
 
           {evidenciasImagenes.length > 0 ? (
