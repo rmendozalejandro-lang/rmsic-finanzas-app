@@ -2128,8 +2128,9 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
 
             <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:justify-end">
               <Link
-                href={`/ot/${otId}/informe-softys`}
-                className="inline-flex w-full items-center justify-center rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800 sm:w-auto"
+                href={`/ot/${otId}/informe-softys?oficial=1`}
+                style={{ backgroundColor: '#0f172a', color: '#ffffff' }}
+                className="inline-flex w-full items-center justify-center rounded-xl border border-slate-950 px-5 py-3 text-sm font-bold text-white shadow-sm hover:bg-slate-800 sm:w-auto"
               >
                 Ver informe oficial
               </Link>

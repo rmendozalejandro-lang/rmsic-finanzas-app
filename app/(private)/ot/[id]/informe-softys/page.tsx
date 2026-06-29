@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import ProtectedModuleRoute from "@/components/ProtectedModuleRoute";
 import { supabase } from "@/lib/supabase/client";
@@ -273,6 +273,16 @@ function formatDateTime(value: string | null | undefined) {
   return date.toLocaleString("es-CL", {
     dateStyle: "short",
     timeStyle: "short",
+  });
+}
+
+function formatTimeOnly(value: string | null | undefined) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleTimeString("es-CL", {
+    hour: "2-digit",
+    minute: "2-digit",
   });
 }
 
@@ -591,7 +601,9 @@ function FirmaBox({
 
 export default function InformeSoftysPage() {
   const params = useParams();
+  const searchParams = useSearchParams();
   const otId = String(params?.id || "");
+  const modoOficial = searchParams.get("oficial") === "1" || searchParams.get("modo") === "oficial";
 
   const [resumen, setResumen] = useState<OTResumenConEquipo | null>(null);
   const [detalle, setDetalle] = useState<OTDetalle | null>(null);
@@ -1455,7 +1467,7 @@ export default function InformeSoftysPage() {
         <Link href={`/ot/${otId}`} className="action-secondary">
           Volver a la OT
         </Link>
-        {informe ? (
+        {!modoOficial && informe ? (
           <button
             type="button"
             onClick={guardarInformeTecnico}
@@ -1474,11 +1486,11 @@ export default function InformeSoftysPage() {
           }}
           className="action-primary"
         >
-          Imprimir / Guardar PDF
+          {modoOficial ? "Imprimir / Guardar informe" : "Imprimir / Guardar PDF"}
         </button>
       </div>
 
-      {resumen.equipo_id ? (
+      {!modoOficial && resumen.equipo_id ? (
         <section className="screen-edit-panel">
           <div className="mb-4">
             <h2 className="text-lg font-black text-slate-900">
@@ -1692,6 +1704,7 @@ export default function InformeSoftysPage() {
             display: flex;
             justify-content: flex-end;
             gap: 12px;
+            flex-wrap: wrap;
           }
 
           .action-primary,
@@ -1706,14 +1719,18 @@ export default function InformeSoftysPage() {
           }
 
           .action-primary {
-            background: #163a5f;
-            color: #ffffff;
-            border-color: #163a5f;
+            background: #0f172a !important;
+            color: #ffffff !important;
+            border-color: #0f172a !important;
+          }
+
+          .action-primary:hover {
+            background: #1e293b !important;
           }
 
           .action-secondary {
-            background: #ffffff;
-            color: #334155;
+            background: #ffffff !important;
+            color: #334155 !important;
           }
 
           .screen-edit-panel {
@@ -2342,10 +2359,10 @@ export default function InformeSoftysPage() {
               label="Fecha programada"
               value={formatDate(detalle.fecha_programada)}
             />
-            <Field label="Inicio" value={formatDateTime(detalle.hora_inicio)} />
+            <Field label="Inicio" value={formatTimeOnly(detalle.hora_inicio)} />
             <Field
               label="Término"
-              value={formatDateTime(detalle.hora_termino)}
+              value={formatTimeOnly(detalle.hora_termino)}
             />
             <Field
               label="Duración"
@@ -2408,112 +2425,45 @@ export default function InformeSoftysPage() {
             )}
           </Section>
 
-          <Section title="Resumen de checklist y evidencias técnicas">
-            <div className="summary-grid">
-              <Field label="Equipos asociados" value={equiposInforme.length} />
-              <Field label="Ítems técnicos respondidos" value={`${totalChecklistRespondido}/${totalChecklistEquipo}`} />
-              <Field label="Ítems No OK" value={totalChecklistObservado} />
-              <Field label="Fotos antes/después" value={totalFotosChecklist} />
-            </div>
-          </Section>
 
-          <Section title="Descripción y alcance del trabajo">
-            <div className="two-col">
-              <div>
-                <p className="label-title">Descripción / solicitud</p>
-                <TextBox value={descripcionTrabajo} minHeight={105} />
-              </div>
-              <div>
-                <p className="label-title">Alcance / diagnóstico</p>
-                <TextBox value={alcanceTrabajo} minHeight={105} />
-              </div>
-            </div>
-          </Section>
 
-          <Section title="Detalle de trabajo realizado">
-            <TextBox value={detalleTrabajoRealizado} minHeight={125} />
+          {(hasValue(detalleTrabajoRealizado) || hasValue(detalle.hallazgos) || hasValue(detalle.conclusiones_tecnicas)) ? (
+            <Section title="Detalle de trabajos realizados adicionales">
+              {hasValue(detalleTrabajoRealizado) ? (
+                <>
+                  <p className="small-note">
+                    Registrar aquí solo labores adicionales que no estén cubiertas por el checklist técnico.
+                  </p>
+                  <TextBox value={detalleTrabajoRealizado} minHeight={95} />
+                </>
+              ) : null}
 
-            <div className="two-col" style={{ marginTop: 12 }}>
-              <div>
-                <p className="label-title">Hallazgos</p>
-                <TextBox value={detalle.hallazgos} minHeight={80} />
-              </div>
-              <div>
-                <p className="label-title">Conclusiones técnicas</p>
-                <TextBox value={detalle.conclusiones_tecnicas} minHeight={80} />
-              </div>
-            </div>
-          </Section>
+              {(hasValue(detalle.hallazgos) || hasValue(detalle.conclusiones_tecnicas)) ? (
+                <div className="two-col" style={{ marginTop: 12 }}>
+                  {hasValue(detalle.hallazgos) ? (
+                    <div>
+                      <p className="label-title">Hallazgos adicionales</p>
+                      <TextBox value={detalle.hallazgos} minHeight={70} />
+                    </div>
+                  ) : null}
+                  {hasValue(detalle.conclusiones_tecnicas) ? (
+                    <div>
+                      <p className="label-title">Conclusiones técnicas adicionales</p>
+                      <TextBox value={detalle.conclusiones_tecnicas} minHeight={70} />
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+            </Section>
+          ) : null}
 
-          <Section title="Equipo de trabajo / horas hombre">
-            {tiempos.length > 0 ? (
-              <>
-                <table className="reception-table">
-                  <thead>
-                    <tr>
-                      <th>Integrante</th>
-                      <th>Fecha</th>
-                      <th>Tipo / función</th>
-                      <th>Inicio</th>
-                      <th>Término</th>
-                      <th>Duración</th>
-                      <th>HH</th>
-                      <th>Observación</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {tiempos.map((item) => (
-                      <tr key={item.id}>
-                        <td>{labelOrDash(nombreUsuarioTiempo(item))}</td>
-                        <td>{formatDate(item.fecha)}</td>
-                        <td>{labelOrDash(item.tipo_tiempo)}</td>
-                        <td>{formatDateTime(item.hora_inicio)}</td>
-                        <td>{formatDateTime(item.hora_termino)}</td>
-                        <td>{formatMinutes(item.duracion_minutos)}</td>
-                        <td>{formatHoursDecimal(item.duracion_minutos)}</td>
-                        <td>{labelOrDash(item.observacion)}</td>
-                      </tr>
-                    ))}
-                    <tr>
-                      <td colSpan={6} style={{ fontWeight: 900, textAlign: "right" }}>
-                        Total horas hombre calculadas
-                      </td>
-                      <td style={{ fontWeight: 900 }}>{formatHoursDecimal(totalMinutosEquipo)}</td>
-                      <td>
-                        {integrantesUnicos > 0
-                          ? `${integrantesUnicos} integrante${integrantesUnicos === 1 ? "" : "s"}`
-                          : "-"}
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
+          {hasValue(herramientasMateriales) ? (
+            <Section title="Herramientas y materiales utilizados">
+              <TextBox value={herramientasMateriales} minHeight={70} />
+            </Section>
+          ) : null}
 
-                {informeDatos.equipo_trabajo ? (
-                  <div style={{ marginTop: 12 }}>
-                    <p className="label-title">Complemento manual</p>
-                    <TextBox value={informeDatos.equipo_trabajo} minHeight={45} />
-                  </div>
-                ) : null}
-              </>
-            ) : (
-              <>
-                <p className="small-note">
-                  Sin registros automáticos de tiempo asociados a esta OT. Registrar tiempos permite calcular automáticamente las HH.
-                </p>
-                {informeDatos.equipo_trabajo ? (
-                  <TextBox value={informeDatos.equipo_trabajo} minHeight={60} />
-                ) : (
-                  <TextBox value={null} minHeight={60} />
-                )}
-              </>
-            )}
-          </Section>
-
-          <Section title="Herramientas y materiales utilizados">
-            <TextBox value={herramientasMateriales} minHeight={85} />
-          </Section>
-
-                    <Section title="Checklist técnico por equipo / motor">
+          <Section title="Checklist técnico por equipo / motor">
             {equiposInforme.length > 0 ? (
               <div className="equipment-checklist-list">
                 {equiposInforme.map((equipo, index) => {
@@ -2653,9 +2603,11 @@ export default function InformeSoftysPage() {
             )}
           </Section>
 
-          <Section title="Recomendaciones de seguridad y observaciones">
-            <TextBox value={recomendacionesSeguridad} minHeight={90} />
-          </Section>
+          {hasValue(recomendacionesSeguridad) ? (
+            <Section title="Recomendaciones de seguridad y observaciones">
+              <TextBox value={recomendacionesSeguridad} minHeight={75} />
+            </Section>
+          ) : null}
 
           <Section title="Checklist de recepción del trabajo - Responsable Softys">
             <table className="reception-table">
@@ -2738,8 +2690,8 @@ export default function InformeSoftysPage() {
             </div>
           </Section>
 
-          <Section title="Evidencias generales adicionales">
-            {evidenciasImagenes.length > 0 ? (
+          {evidenciasImagenes.length > 0 ? (
+            <Section title="Evidencias generales adicionales">
               <div className="evidence-grid">
                 {evidenciasImagenes.map((item) => (
                   <div className="evidence-card" key={item.id}>
@@ -2757,10 +2709,8 @@ export default function InformeSoftysPage() {
                   </div>
                 ))}
               </div>
-            ) : (
-              <TextBox value={null} minHeight={70} />
-            )}
-          </Section>
+            </Section>
+          ) : null}
 
           <Section title="Firmas">
             <div className="firma-grid">
