@@ -115,6 +115,47 @@ type EnvioEmail = {
   created_at: string
 }
 
+type EquipoDisponible = {
+  id: string
+  empresa_id: string
+  cliente_id: string | null
+  cliente_nombre: string | null
+  tag: string
+  nombre: string | null
+  descripcion: string | null
+  tipo_equipo: string | null
+  planta: string | null
+  area: string | null
+  linea: string | null
+  ubicacion: string | null
+  marca: string | null
+  modelo: string | null
+  serie: string | null
+  potencia: string | null
+  criticidad: string | null
+  estado: string | null
+  activo: boolean | null
+  deleted_at: string | null
+}
+
+type EquipoAsociado = {
+  id: string
+  empresa_id: string
+  ot_id: string
+  equipo_id: string
+  descripcion_trabajo: string | null
+  observacion: string | null
+  orden: number | null
+  activo: boolean
+  created_at: string
+}
+
+type EquipoAsociadoFormState = {
+  equipo_id: string
+  descripcion_trabajo: string
+  observacion: string
+}
+
 type EstadoOption = {
   id: string
   codigo: string
@@ -486,6 +527,31 @@ function CierreStatusItem({
   )
 }
 
+
+function equipoDisplayName(equipo: EquipoDisponible | null | undefined) {
+  if (!equipo) return '-'
+  return [equipo.tag, equipo.nombre].filter(Boolean).join(' · ') || equipo.id
+}
+
+function equipoUbicacionDisplay(equipo: EquipoDisponible | null | undefined) {
+  if (!equipo) return '-'
+  const partes = [equipo.planta, equipo.area, equipo.linea, equipo.ubicacion].filter(Boolean)
+  return partes.length > 0 ? partes.join(' / ') : '-'
+}
+
+function equipoCaracteristicasDisplay(equipo: EquipoDisponible | null | undefined) {
+  if (!equipo) return '-'
+  const partes = [equipo.tipo_equipo, equipo.marca, equipo.modelo, equipo.potencia].filter(Boolean)
+  return partes.length > 0 ? partes.join(' · ') : '-'
+}
+
+function prioridadEquipoClass(criticidad: string | null | undefined) {
+  if (criticidad === 'critica') return 'border-red-200 bg-red-50 text-red-800'
+  if (criticidad === 'alta') return 'border-orange-200 bg-orange-50 text-orange-800'
+  if (criticidad === 'media') return 'border-blue-200 bg-blue-50 text-blue-800'
+  return 'border-slate-200 bg-slate-50 text-slate-700'
+}
+
 function OTDetalleContent() {
   const params = useParams()
   const router = useRouter()
@@ -523,6 +589,16 @@ function OTDetalleContent() {
   const [firmas, setFirmas] = useState<FirmaMini[]>([])
   const [contactosCliente, setContactosCliente] = useState<ClienteContactoOption[]>([])
   const [enviosEmail, setEnviosEmail] = useState<EnvioEmail[]>([])
+  const [equiposDisponibles, setEquiposDisponibles] = useState<EquipoDisponible[]>([])
+  const [equiposAsociados, setEquiposAsociados] = useState<EquipoAsociado[]>([])
+  const [equipoForm, setEquipoForm] = useState<EquipoAsociadoFormState>({
+    equipo_id: '',
+    descripcion_trabajo: '',
+    observacion: '',
+  })
+  const [savingEquipoAsociado, setSavingEquipoAsociado] = useState(false)
+  const [equipoAsociadoError, setEquipoAsociadoError] = useState('')
+  const [equipoAsociadoSuccess, setEquipoAsociadoSuccess] = useState('')
   const [checklistResponsesCount, setChecklistResponsesCount] = useState(0)
   const [perfilesMap, setPerfilesMap] = useState<Record<string, string>>({})
 
@@ -674,6 +750,25 @@ const isPreventiva = isPreventivaMespack || isPreventivaGeneral
   const contactoEmailParaEnvio = useMemo(() => {
     return selectedContactoCliente?.email || form.contacto_cliente_email || ''
   }, [selectedContactoCliente, form.contacto_cliente_email])
+
+  const equiposAsociadosIds = useMemo(() => {
+    return new Set(equiposAsociados.filter((item) => item.activo).map((item) => item.equipo_id))
+  }, [equiposAsociados])
+
+  const equiposDisponiblesParaAgregar = useMemo(() => {
+    return equiposDisponibles
+      .filter((equipo) => equipo.activo !== false && equipo.estado !== 'baja')
+      .filter((equipo) => !equiposAsociadosIds.has(equipo.id))
+      .filter((equipo) => !detalle?.cliente_id || !equipo.cliente_id || equipo.cliente_id === detalle.cliente_id)
+      .sort((a, b) => (a.tag || '').localeCompare(b.tag || '', 'es'))
+  }, [equiposDisponibles, equiposAsociadosIds, detalle?.cliente_id])
+
+  const equiposDisponiblesMap = useMemo(() => {
+    return equiposDisponibles.reduce<Record<string, EquipoDisponible>>((acc, item) => {
+      acc[item.id] = item
+      return acc
+    }, {})
+  }, [equiposDisponibles])
 
   const getUserLabel = useCallback(
     (userId: string | null | undefined) => {
@@ -891,7 +986,7 @@ const isPreventiva = isPreventivaMespack || isPreventivaGeneral
         const firmasData = (firmasResp.data ?? []) as FirmaMini[]
         const checklistData = checklistResp.data ?? []
 
-        const [contactosResp, enviosEmailResp] = await Promise.all([
+        const [contactosResp, enviosEmailResp, equiposAsociadosResp, equiposDisponiblesResp] = await Promise.all([
           supabase
             .from('cliente_contactos')
             .select('id, cliente_id, nombre, cargo, area, linea, email, telefono, tipo_contacto, recibe_informes_ot')
@@ -905,6 +1000,21 @@ const isPreventiva = isPreventivaMespack || isPreventivaGeneral
             .eq('empresa_id', detalleData.empresa_id)
             .eq('ot_id', otId)
             .order('created_at', { ascending: false }),
+          (supabase as any)
+            .from('ot_orden_equipos')
+            .select('id, empresa_id, ot_id, equipo_id, descripcion_trabajo, observacion, orden, activo, created_at')
+            .eq('empresa_id', detalleData.empresa_id)
+            .eq('ot_id', otId)
+            .eq('activo', true)
+            .is('deleted_at', null)
+            .order('orden', { ascending: true })
+            .order('created_at', { ascending: true }),
+          supabase
+            .from('ot_vw_equipos')
+            .select('id, empresa_id, cliente_id, cliente_nombre, tag, nombre, descripcion, tipo_equipo, planta, area, linea, ubicacion, marca, modelo, serie, potencia, criticidad, estado, activo, deleted_at')
+            .eq('empresa_id', detalleData.empresa_id)
+            .is('deleted_at', null)
+            .order('tag', { ascending: true }),
         ])
 
         if (contactosResp.error) {
@@ -915,8 +1025,18 @@ const isPreventiva = isPreventivaMespack || isPreventivaGeneral
           throw new Error(`No se pudo cargar el historial de envíos: ${enviosEmailResp.error.message}`)
         }
 
+        if (equiposAsociadosResp.error) {
+          throw new Error(`No se pudieron cargar los equipos asociados a la OM: ${equiposAsociadosResp.error.message}`)
+        }
+
+        if (equiposDisponiblesResp.error) {
+          throw new Error(`No se pudieron cargar los equipos disponibles: ${equiposDisponiblesResp.error.message}`)
+        }
+
         const contactosData = (contactosResp.data ?? []) as ClienteContactoOption[]
         const enviosEmailData = (enviosEmailResp.data ?? []) as EnvioEmail[]
+        const equiposAsociadosData = (equiposAsociadosResp.data ?? []) as EquipoAsociado[]
+        const equiposDisponiblesData = (equiposDisponiblesResp.data ?? []) as EquipoDisponible[]
 
         if (
           rolActual === 'tecnico_ot' &&
@@ -1030,6 +1150,8 @@ const isPreventiva = isPreventivaMespack || isPreventivaGeneral
         setFirmas(firmasData)
         setContactosCliente(contactosData)
         setEnviosEmail(enviosEmailData)
+        setEquiposAsociados(equiposAsociadosData)
+        setEquiposDisponibles(equiposDisponiblesData)
         setChecklistResponsesCount(checklistData.length)
         setPerfiles(perfilesSelectData)
         setPerfilesMap(nextMap)
@@ -1155,6 +1277,16 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
     value: TiempoFormState[K]
   ) => {
     setTiempoForm((prev) => ({
+      ...prev,
+      [field]: value,
+    }))
+  }
+
+  const handleEquipoAsociadoChange = <K extends keyof EquipoAsociadoFormState>(
+    field: K,
+    value: EquipoAsociadoFormState[K]
+  ) => {
+    setEquipoForm((prev) => ({
       ...prev,
       [field]: value,
     }))
@@ -1412,6 +1544,117 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
     } catch (err) {
       setTiempoError(
         err instanceof Error ? err.message : 'No se pudo archivar el tiempo.'
+      )
+    }
+  }
+
+
+  const handleAddEquipoAsociado = async (e: React.FormEvent) => {
+    e.preventDefault()
+
+    try {
+      setSavingEquipoAsociado(true)
+      setEquipoAsociadoError('')
+      setEquipoAsociadoSuccess('')
+
+      if (!detalle) {
+        throw new Error('No se ha cargado el detalle de la OM.')
+      }
+
+      if (!equipoForm.equipo_id) {
+        throw new Error('Debes seleccionar un equipo o motor para asociar a la OM.')
+      }
+
+      const equipoSeleccionado = equiposDisponibles.find((item) => item.id === equipoForm.equipo_id)
+
+      if (!equipoSeleccionado) {
+        throw new Error('El equipo seleccionado no existe o no está disponible.')
+      }
+
+      if (detalle.cliente_id && equipoSeleccionado.cliente_id && equipoSeleccionado.cliente_id !== detalle.cliente_id) {
+        throw new Error('El equipo seleccionado pertenece a otro cliente.')
+      }
+
+      const yaAsociado = equiposAsociados.some(
+        (item) => item.activo && item.equipo_id === equipoForm.equipo_id
+      )
+
+      if (yaAsociado) {
+        throw new Error('Este equipo ya está asociado a la OM.')
+      }
+
+      const payload = {
+        empresa_id: detalle.empresa_id,
+        ot_id: otId,
+        equipo_id: equipoForm.equipo_id,
+        descripcion_trabajo: equipoForm.descripcion_trabajo.trim() || null,
+        observacion: equipoForm.observacion.trim() || null,
+        orden: equiposAsociados.length + 1,
+        created_by: currentUserId || null,
+        updated_by: currentUserId || null,
+      }
+
+      const { error: insertError } = await (supabase as any)
+        .from('ot_orden_equipos')
+        .insert(payload)
+
+      if (insertError) {
+        const message = String(insertError.message || '')
+        if (message.includes('ot_orden_equipos_ot_equipo_unique')) {
+          throw new Error('Este equipo ya está asociado a la OM.')
+        }
+        throw new Error(`No se pudo asociar el equipo a la OM: ${insertError.message}`)
+      }
+
+      setEquipoForm({ equipo_id: '', descripcion_trabajo: '', observacion: '' })
+      await loadData(false)
+      setEquipoAsociadoSuccess('Equipo asociado correctamente a la OM.')
+      router.refresh()
+    } catch (err) {
+      setEquipoAsociadoError(
+        err instanceof Error ? err.message : 'No se pudo asociar el equipo a la OM.'
+      )
+    } finally {
+      setSavingEquipoAsociado(false)
+    }
+  }
+
+  const handleRemoveEquipoAsociado = async (item: EquipoAsociado) => {
+    try {
+      setEquipoAsociadoError('')
+      setEquipoAsociadoSuccess('')
+
+      const equipo = equiposDisponiblesMap[item.equipo_id]
+      const confirmar = window.confirm(
+        `¿Deseas quitar ${equipoDisplayName(equipo)} de esta OM? No se eliminará el equipo maestro.`
+      )
+
+      if (!confirmar) return
+
+      const nowIso = new Date().toISOString()
+
+      const { error: updateError } = await (supabase as any)
+        .from('ot_orden_equipos')
+        .update({
+          activo: false,
+          deleted_at: nowIso,
+          deleted_by: currentUserId || null,
+          updated_by: currentUserId || null,
+          updated_at: nowIso,
+        })
+        .eq('id', item.id)
+        .eq('ot_id', otId)
+
+      if (updateError) {
+        throw new Error(`No se pudo quitar el equipo de la OM: ${updateError.message}`)
+      }
+
+      await loadData(false)
+      setEquipoAsociadoSuccess('Equipo quitado de la OM correctamente.')
+      router.refresh()
+    } catch (err) {
+      setEquipoAsociadoError(
+        err instanceof Error ? err.message : 'No se pudo quitar el equipo de la OM.'
       )
     }
   }
@@ -1863,6 +2106,147 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
           <DetailField label="Supervisor actual" value={supervisorLabel} />
           <DetailField label="Fecha cierre" value={formatDateTime(detalle.fecha_cierre)} />
           <DetailField label="Creado por" value={createdByLabel} />
+        </div>
+      </div>
+
+
+      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <SectionTitle
+          title="Equipos / motores asociados a la OM"
+          subtitle="Asocia aquí todos los equipos solicitados por Softys. Esta será la base para el informe único consolidado y para el checklist técnico por equipo."
+        />
+
+        {equipoAsociadoError ? (
+          <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {equipoAsociadoError}
+          </div>
+        ) : null}
+
+        {equipoAsociadoSuccess ? (
+          <div className="mt-4 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+            {equipoAsociadoSuccess}
+          </div>
+        ) : null}
+
+        <form onSubmit={handleAddEquipoAsociado} className="mt-5 space-y-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+          <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr_1fr]">
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-700">
+                Equipo / motor
+              </label>
+              <select
+                value={equipoForm.equipo_id}
+                onChange={(e) => handleEquipoAsociadoChange('equipo_id', e.target.value)}
+                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
+              >
+                <option value="">Seleccionar equipo...</option>
+                {equiposDisponiblesParaAgregar.map((equipo) => (
+                  <option key={equipo.id} value={equipo.id}>
+                    {equipoDisplayName(equipo)}
+                  </option>
+                ))}
+              </select>
+              {equiposDisponiblesParaAgregar.length === 0 ? (
+                <p className="mt-2 text-xs text-amber-700">
+                  No hay equipos disponibles para agregar. Revisa el maestro de equipos o si todos ya fueron asociados.
+                </p>
+              ) : null}
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-700">
+                Trabajo solicitado para este equipo
+              </label>
+              <input
+                value={equipoForm.descripcion_trabajo}
+                onChange={(e) => handleEquipoAsociadoChange('descripcion_trabajo', e.target.value)}
+                placeholder="Ej: Mantención motor línea 2"
+                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
+              />
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-700">
+                Observación interna
+              </label>
+              <input
+                value={equipoForm.observacion}
+                onChange={(e) => handleEquipoAsociadoChange('observacion', e.target.value)}
+                placeholder="Opcional"
+                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
+              />
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-xs text-slate-500">
+              Esta asociación no elimina ni modifica el maestro de equipos; solo vincula el equipo a esta OM.
+            </p>
+            <button
+              type="submit"
+              disabled={savingEquipoAsociado || !equipoForm.equipo_id}
+              className="inline-flex w-full items-center justify-center rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+            >
+              {savingEquipoAsociado ? 'Asociando...' : 'Agregar equipo a OM'}
+            </button>
+          </div>
+        </form>
+
+        <div className="mt-5 space-y-3">
+          {equiposAsociados.length === 0 ? (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              Esta OM aún no tiene equipos asociados en la nueva estructura. Si corresponde, agrega aquí todos los motores o equipos solicitados por Softys.
+            </div>
+          ) : (
+            equiposAsociados.map((item, index) => {
+              const equipo = equiposDisponiblesMap[item.equipo_id]
+              return (
+                <div key={item.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="rounded-full bg-slate-900 px-2.5 py-1 text-xs font-semibold text-white">
+                          Equipo {index + 1}
+                        </span>
+                        {equipo?.criticidad ? (
+                          <span className={`rounded-full border px-2.5 py-1 text-xs font-medium ${prioridadEquipoClass(equipo.criticidad)}`}>
+                            Criticidad {equipo.criticidad}
+                          </span>
+                        ) : null}
+                      </div>
+                      <h3 className="mt-3 text-base font-semibold text-slate-900">
+                        {equipoDisplayName(equipo)}
+                      </h3>
+                      <p className="mt-1 text-sm text-slate-600">
+                        {equipoCaracteristicasDisplay(equipo)}
+                      </p>
+                      <p className="mt-1 text-sm text-slate-500">
+                        Ubicación: {equipoUbicacionDisplay(equipo)}
+                      </p>
+                      {item.descripcion_trabajo ? (
+                        <p className="mt-3 text-sm text-slate-700">
+                          <span className="font-medium">Trabajo solicitado:</span> {item.descripcion_trabajo}
+                        </p>
+                      ) : null}
+                      {item.observacion ? (
+                        <p className="mt-1 text-sm text-slate-700">
+                          <span className="font-medium">Observación:</span> {item.observacion}
+                        </p>
+                      ) : null}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => void handleRemoveEquipoAsociado(item)}
+                      className="inline-flex w-full items-center justify-center rounded-xl border border-red-300 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50 lg:w-auto"
+                    >
+                      Quitar de la OM
+                    </button>
+                  </div>
+                </div>
+              )
+            })
+          )}
         </div>
       </div>
 
