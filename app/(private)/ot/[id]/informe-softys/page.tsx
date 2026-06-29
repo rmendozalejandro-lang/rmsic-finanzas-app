@@ -255,6 +255,10 @@ function labelOrDash(value: string | number | null | undefined) {
   return String(value);
 }
 
+function hasValue(value: string | number | null | undefined) {
+  return value !== null && value !== undefined && String(value).trim() !== "";
+}
+
 function formatDate(value: string | null | undefined) {
   if (!value) return "-";
   const date = new Date(value);
@@ -1837,11 +1841,13 @@ export default function InformeSoftysPage() {
 
           .section-block {
             margin-top: 16px;
-            break-inside: avoid;
+            break-inside: auto;
           }
 
           .section-block h2 {
             margin: 0 0 8px;
+            break-after: avoid;
+            page-break-after: avoid;
             padding: 7px 11px;
             color: #ffffff;
             background: #163a5f;
@@ -2024,7 +2030,7 @@ export default function InformeSoftysPage() {
             border: 1px solid #dbe3ea;
             border-radius: 16px;
             background: #ffffff;
-            padding: 12px;
+            padding: 10px;
             break-inside: avoid;
           }
 
@@ -2279,13 +2285,13 @@ export default function InformeSoftysPage() {
             }
 
             .section-block {
-              page-break-inside: avoid;
+              page-break-inside: auto;
             }
 
             .evidence-card img,
             .checklist-evidence-card img,
             .no-image {
-              height: 145px;
+              height: 132px;
             }
           }
         `}</style>
@@ -2540,24 +2546,49 @@ export default function InformeSoftysPage() {
                                 </span>
                               </div>
 
-                              <div className="checklist-detail-grid">
-                                <div>
-                                  <p className="label-title">Antes / condición encontrada</p>
-                                  <TextBox value={item.observacion_antes} minHeight={52} />
-                                </div>
-                                <div>
-                                  <p className="label-title">Acción realizada</p>
-                                  <TextBox value={item.accion_realizada} minHeight={52} />
-                                </div>
-                                <div>
-                                  <p className="label-title">Después / resultado</p>
-                                  <TextBox value={item.observacion_despues} minHeight={52} />
-                                </div>
-                                <div>
-                                  <p className="label-title">Recomendación técnica</p>
-                                  <TextBox value={item.recomendacion_tecnica} minHeight={52} />
-                                </div>
-                              </div>
+                              {(() => {
+                                const tieneAntes = hasValue(item.observacion_antes);
+                                const tieneAccion = hasValue(item.accion_realizada);
+                                const tieneDespues = hasValue(item.observacion_despues);
+                                const tieneRecomendacion = hasValue(item.recomendacion_tecnica);
+                                const debeMostrarDetalle =
+                                  tieneAntes ||
+                                  tieneAccion ||
+                                  tieneDespues ||
+                                  tieneRecomendacion ||
+                                  item.respuesta_texto === "no_ok";
+
+                                if (!debeMostrarDetalle) return null;
+
+                                return (
+                                  <div className="checklist-detail-grid">
+                                    {(tieneAntes || item.respuesta_texto === "no_ok") ? (
+                                      <div>
+                                        <p className="label-title">Antes / condición encontrada</p>
+                                        <TextBox value={item.observacion_antes} minHeight={42} />
+                                      </div>
+                                    ) : null}
+                                    {(tieneAccion || item.respuesta_texto === "no_ok") ? (
+                                      <div>
+                                        <p className="label-title">Acción realizada</p>
+                                        <TextBox value={item.accion_realizada} minHeight={42} />
+                                      </div>
+                                    ) : null}
+                                    {(tieneDespues || item.respuesta_texto === "no_ok") ? (
+                                      <div>
+                                        <p className="label-title">Después / resultado</p>
+                                        <TextBox value={item.observacion_despues} minHeight={42} />
+                                      </div>
+                                    ) : null}
+                                    {(tieneRecomendacion || item.respuesta_texto === "no_ok") ? (
+                                      <div>
+                                        <p className="label-title">Recomendación técnica</p>
+                                        <TextBox value={item.recomendacion_tecnica} minHeight={42} />
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                );
+                              })()}
 
                               {hasChecklistEvidence(item) ? (
                                 <div className="checklist-evidence-grid">
