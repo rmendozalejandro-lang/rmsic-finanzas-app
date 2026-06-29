@@ -174,6 +174,7 @@ type PerfilOption = {
   label: string
   cargo?: string | null
   puedeCerrarOt?: boolean | null
+  rolOt?: string | null
 }
 
 
@@ -184,6 +185,7 @@ type OtTecnicoRow = {
   activo: boolean | null
   puede_crear_ot: boolean | null
   puede_cerrar_ot: boolean | null
+  rol_ot?: string | null
 }
 
 type TiempoTrabajo = {
@@ -791,14 +793,16 @@ const isPreventiva = isPreventivaMespack || isPreventivaGeneral
   )
 
   const perfilesSupervisores = useMemo(() => {
+    const supervisorRolesOt = new Set(['supervisor', 'jefe', 'admin_ot', 'administrador_ot'])
+
     return perfiles.filter((perfil) => {
-      const label = `${perfil.label} ${perfil.cargo ?? ''}`.toLowerCase()
+      const rolOt = (perfil.rolOt || '').trim().toLowerCase()
+      const cargo = (perfil.cargo || '').trim().toLowerCase()
+
       return (
-        perfil.puedeCerrarOt === true ||
-        label.includes('supervisor') ||
-        label.includes('jefe') ||
-        label.includes('administrador') ||
-        label.includes('ingeniero de proyecto')
+        supervisorRolesOt.has(rolOt) ||
+        cargo.includes('supervisor') ||
+        cargo.includes('jefe')
       )
     })
   }, [perfiles])
@@ -1077,7 +1081,7 @@ const isPreventiva = isPreventivaMespack || isPreventivaGeneral
 
         const tecnicosResp = await supabase
           .from('ot_tecnicos')
-          .select('user_id, nombre_completo, cargo, activo, puede_crear_ot, puede_cerrar_ot')
+          .select('user_id, nombre_completo, cargo, activo, puede_crear_ot, puede_cerrar_ot, rol_ot')
           .eq('activo', true)
           .order('nombre_completo', { ascending: true })
 
@@ -1142,6 +1146,7 @@ const isPreventiva = isPreventivaMespack || isPreventivaGeneral
                   label: labelParts.join(' - '),
                   cargo,
                   puedeCerrarOt: tecnico.puede_cerrar_ot,
+                  rolOt: tecnico.rol_ot,
                 }
               })
               .filter((item) => Boolean(item.id))
@@ -2078,6 +2083,62 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
   const isTechnicianOnly = !canManageOt && (isAssignedTechnician || technicianRoles.has(currentRole))
   const hasTechnicalChecklistFlow = Boolean(form.requiere_checklist || isPreventiva || equiposAsociados.length > 0)
 
+  if (isTechnicianOnly && hasTechnicalChecklistFlow && isClosed) {
+    return (
+      <div className="space-y-6">
+        <div className="rounded-2xl border border-green-200 bg-green-50 p-5 shadow-sm sm:p-6">
+          <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-green-700">
+                OT cerrada
+              </p>
+              <h1 className="mt-1 text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">
+                {resumen.folio || 'Sin folio'} · {detalle.titulo}
+              </h1>
+              <p className="mt-2 max-w-2xl text-sm text-slate-700">
+                El trabajo ya fue cerrado. La vista del técnico queda bloqueada para evitar cambios posteriores al informe oficial.
+              </p>
+            </div>
+
+            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:justify-end">
+              <Link
+                href={`/ot/${otId}/informe-softys`}
+                className="inline-flex w-full items-center justify-center rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800 sm:w-auto"
+              >
+                Ver informe oficial
+              </Link>
+              <Link
+                href="/ot"
+                className="inline-flex w-full items-center justify-center rounded-xl border border-slate-300 px-5 py-3 text-sm font-medium text-slate-700 hover:bg-slate-100 sm:w-auto"
+              >
+                Volver a OT
+              </Link>
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <SectionTitle
+            title="Resumen de cierre"
+            subtitle="Información bloqueada para el técnico. Cualquier corrección debe ser autorizada por supervisor o administrador."
+          />
+
+          <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <DetailField label="Cliente" value={resumen.cliente_nombre} />
+            <DetailField label="N° OM / Orden cliente" value={form.numero_om_cliente} />
+            <DetailField label="Servicio" value={resumen.tipo_servicio_nombre} />
+            <DetailField label="Fecha OT" value={formatDate(detalle.fecha_ot)} />
+            <DetailField label="Inicio" value={formatTimeOnly(detalle.hora_inicio)} />
+            <DetailField label="Término" value={formatTimeOnly(detalle.hora_termino)} />
+            <DetailField label="Técnico asignado" value={getUserLabel(form.tecnico_responsable_id)} />
+            <DetailField label="Supervisor" value={supervisorLabel} />
+            <DetailField label="Equipos asociados" value={equiposAsociados.length || 0} />
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   if (isTechnicianOnly && hasTechnicalChecklistFlow) {
     return (
       <div className="space-y-6">
@@ -2096,12 +2157,6 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
             </div>
 
             <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:justify-end">
-              <Link
-                href={`/ot/${otId}/informe-softys`}
-                className="inline-flex w-full items-center justify-center rounded-xl border border-slate-300 px-4 py-3 text-sm font-medium text-slate-700 hover:bg-slate-100 sm:w-auto sm:py-2"
-              >
-                Ver informe
-              </Link>
               <Link
                 href="/ot"
                 className="inline-flex w-full items-center justify-center rounded-xl border border-slate-300 px-4 py-3 text-sm font-medium text-slate-700 hover:bg-slate-100 sm:w-auto sm:py-2"
