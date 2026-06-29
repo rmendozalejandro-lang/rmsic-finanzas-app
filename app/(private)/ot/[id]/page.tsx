@@ -176,8 +176,7 @@ type PerfilOption = {
 
 
 type OtTecnicoRow = {
-  id: string
-  usuario_id: string | null
+  user_id: string | null
   nombre_completo: string | null
   cargo: string | null
   activo: boolean | null
@@ -1063,8 +1062,7 @@ const isPreventiva = isPreventivaMespack || isPreventivaGeneral
 
         const tecnicosResp = await supabase
           .from('ot_tecnicos')
-          .select('id, usuario_id, nombre_completo, cargo, activo, puede_crear_ot, puede_cerrar_ot')
-          .eq('empresa_id', detalleData.empresa_id)
+          .select('user_id, nombre_completo, cargo, activo, puede_crear_ot, puede_cerrar_ot')
           .eq('activo', true)
           .order('nombre_completo', { ascending: true })
 
@@ -1072,13 +1070,13 @@ const isPreventiva = isPreventivaMespack || isPreventivaGeneral
           perfilesWarning = 'No se pudo cargar la lista de técnicos OT de la empresa.'
         } else {
           const tecnicosOt = ((tecnicosResp.data ?? []) as OtTecnicoRow[]).filter((item) =>
-            Boolean(item.usuario_id)
+            Boolean(item.user_id)
           )
 
           const userIds = Array.from(
             new Set(
               tecnicosOt
-                .map((item) => item.usuario_id)
+                .map((item) => item.user_id)
                 .filter((value): value is string => Boolean(value))
             )
           )
@@ -1110,7 +1108,7 @@ const isPreventiva = isPreventivaMespack || isPreventivaGeneral
 
             perfilesSelectData = tecnicosOt
               .map((tecnico) => {
-                const userId = tecnico.usuario_id || ''
+                const userId = tecnico.user_id || ''
                 const perfil = perfilesById[userId]
                 const nombre =
                   tecnico.nombre_completo?.trim() ||

@@ -93,8 +93,7 @@ type UsuarioEmpresaRow = {
 }
 
 type OtTecnicoRow = {
-  id: string
-  usuario_id: string | null
+  user_id: string | null
   nombre_completo: string | null
   cargo: string | null
   activo: boolean | null
@@ -383,8 +382,7 @@ function NuevaOTContent() {
 
         const { data: tecnicosRaw, error: tecnicosError } = await supabase
           .from('ot_tecnicos')
-          .select('id, usuario_id, nombre_completo, cargo, activo, puede_crear_ot, puede_cerrar_ot')
-          .eq('empresa_id', storedEmpresaId)
+          .select('user_id, nombre_completo, cargo, activo, puede_crear_ot, puede_cerrar_ot')
           .eq('activo', true)
           .order('nombre_completo', { ascending: true })
 
@@ -426,7 +424,7 @@ function NuevaOTContent() {
           new Set(
             [
               ...usuariosEmpresa.map((item) => item.usuario_id),
-              ...tecnicosOt.map((item) => item.usuario_id),
+              ...tecnicosOt.map((item) => item.user_id),
             ].filter((id): id is string => Boolean(id))
           )
         )
@@ -455,7 +453,7 @@ function NuevaOTContent() {
         }, {})
 
         const buildTecnicoLabel = (tecnico: OtTecnicoRow) => {
-          const perfil = tecnico.usuario_id ? perfilesById[tecnico.usuario_id] : null
+          const perfil = tecnico.user_id ? perfilesById[tecnico.user_id] : null
           const nombre = tecnico.nombre_completo?.trim() || perfil?.nombre_completo?.trim()
           const email = perfil?.email?.trim()
           const cargo = tecnico.cargo?.trim()
@@ -539,18 +537,18 @@ function NuevaOTContent() {
         }))
 
         const tecnicosOtOptions: SelectOption[] = tecnicosOt
-          .filter((item) => Boolean(item.usuario_id))
+          .filter((item) => Boolean(item.user_id))
           .map((item) => ({
-            id: item.usuario_id || '',
+            id: item.user_id || '',
             label: buildTecnicoLabel(item),
           }))
           .filter((item) => Boolean(item.id))
           .sort((a, b) => a.label.localeCompare(b.label, 'es'))
 
         const supervisoresOtOptions: SelectOption[] = tecnicosOt
-          .filter((item) => Boolean(item.usuario_id) && Boolean(item.puede_cerrar_ot))
+          .filter((item) => Boolean(item.user_id) && Boolean(item.puede_cerrar_ot))
           .map((item) => ({
-            id: item.usuario_id || '',
+            id: item.user_id || '',
             label: buildTecnicoLabel(item),
           }))
           .filter((item) => Boolean(item.id))
