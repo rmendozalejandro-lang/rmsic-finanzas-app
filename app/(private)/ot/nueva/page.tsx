@@ -92,6 +92,17 @@ type UsuarioEmpresaRow = {
   activo: boolean | null
 }
 
+
+type OtTecnicoRow = {
+  id: string
+  usuario_id: string | null
+  nombre_completo: string | null
+  cargo: string | null
+  activo: boolean | null
+  puede_crear_ot: boolean | null
+  puede_cerrar_ot: boolean | null
+}
+
 type FormDataState = {
   empresa_id: string
   cliente_id: string
@@ -357,6 +368,13 @@ function NuevaOTContent() {
           .eq('empresa_id', storedEmpresaId)
           .eq('activo', true)
 
+        const { data: tecnicosRaw, error: tecnicosError } = await supabase
+          .from('ot_tecnicos')
+          .select('id, usuario_id, nombre_completo, cargo, activo, puede_crear_ot, puede_cerrar_ot')
+          .eq('empresa_id', storedEmpresaId)
+          .eq('activo', true)
+          .order('nombre_completo', { ascending: true })
+
         if (clientesResp.error) {
           throw new Error(`No se pudieron cargar los clientes: ${clientesResp.error.message}`)
         }
@@ -389,6 +407,10 @@ function NuevaOTContent() {
           )
         }
 
+        if (tecnicosError) {
+          throw new Error(`No se pudieron cargar los técnicos OT: ${tecnicosError.message}`)
+        }
+
         const usuariosEmpresa = (usuariosEmpresaRaw ?? []) as UsuarioEmpresaRow[]
         const usuarioIds = Array.from(
           new Set(
@@ -415,6 +437,28 @@ function NuevaOTContent() {
         const perfilesEmpresa = ((perfilesResp.data ?? []) as PerfilRow[]).sort((a, b) =>
           buildSupervisorLabel(a).localeCompare(buildSupervisorLabel(b), 'es')
         )
+
+        const perfilesById = perfilesEmpresa.reduce<Record<string, PerfilRow>>((acc, item) => {
+          acc[item.id] = item
+          return acc
+        }, {})
+
+        const tecnicosOt = ((tecnicosRaw ?? []) as OtTecnicoRow[]).filter((item) =>
+          Boolean(item.usuario_id)
+        )
+
+        const buildTecnicoLabel = (tecnico: OtTecnicoRow) => {
+          const perfil = tecnico.usuario_id ? perfilesById[tecnico.usuario_id] : null
+          const nombre = tecnico.nombre_completo?.trim() || perfil?.nombre_completo?.trim()
+          const email = perfil?.email?.trim()
+          const cargo = tecnico.cargo?.trim()
+          const parts = [nombre || email || 'Técnico OT']
+
+          if (cargo) parts.push(cargo)
+          if (email) parts.push(email)
+
+          return parts.join(' - ')
+        }
 
         const clientesData: ClienteOption[] = (clientesResp.data ?? []).map((item) => ({
           id: item.id,
@@ -482,19 +526,29 @@ function NuevaOTContent() {
           es_predeterminada: Boolean(item.es_predeterminada),
         }))
 
-        const usuariosEmpresaOptions: SelectOption[] = perfilesEmpresa.map((item) => ({
-          id: item.id,
-          label: buildSupervisorLabel(item),
-        }))
+        const tecnicosData: SelectOption[] = tecnicosOt
+          .map((item) => ({
+            id: item.usuario_id || '',
+            label: buildTecnicoLabel(item),
+          }))
+          .filter((item) => Boolean(item.id))
+          .sort((a, b) => a.label.localeCompare(b.label, 'es'))
 
-        const tecnicosData: SelectOption[] = usuariosEmpresaOptions
-        const supervisoresData: SelectOption[] = usuariosEmpresaOptions
+        const supervisoresData: SelectOption[] = tecnicosOt
+          .filter((item) => Boolean(item.puede_cerrar_ot))
+          .map((item) => ({
+            id: item.usuario_id || '',
+            label: buildTecnicoLabel(item),
+          }))
+          .filter((item) => Boolean(item.id))
+          .sort((a, b) => a.label.localeCompare(b.label, 'es'))
+
         const nextWarning =
-          usuariosEmpresaOptions.length === 0
-            ? 'La empresa activa no tiene usuarios asociados. Puedes crear la OT sin técnico ni supervisor por ahora.'
+          tecnicosData.length === 0
+            ? 'La empresa activa no tiene técnicos OT activos. Registra técnicos antes de asignar una OT.'
             : ''
 
-        const tecnicoActual = usuariosEmpresaOptions.find((item) => item.id === user.id)
+        const tecnicoActual = tecnicosData.find((item) => item.id === user.id)
 
         if (!active) return
 

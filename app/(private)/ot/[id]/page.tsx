@@ -174,6 +174,17 @@ type PerfilOption = {
   label: string
 }
 
+
+type OtTecnicoRow = {
+  id: string
+  usuario_id: string | null
+  nombre_completo: string | null
+  cargo: string | null
+  activo: boolean | null
+  puede_crear_ot: boolean | null
+  puede_cerrar_ot: boolean | null
+}
+
 type TiempoTrabajo = {
   id: string
   ot_id: string
@@ -1050,75 +1061,84 @@ const isPreventiva = isPreventivaMespack || isPreventivaGeneral
         let perfilesWarning = ''
         let nextMap: Record<string, string> = {}
 
-        const usuariosEmpresaResp = await supabase
-          .from('usuario_empresas')
-          .select('usuario_id, rol')
+        const tecnicosResp = await supabase
+          .from('ot_tecnicos')
+          .select('id, usuario_id, nombre_completo, cargo, activo, puede_crear_ot, puede_cerrar_ot')
           .eq('empresa_id', detalleData.empresa_id)
           .eq('activo', true)
+          .order('nombre_completo', { ascending: true })
 
-        if (usuariosEmpresaResp.error) {
-          perfilesWarning = 'No se pudo cargar la lista de usuarios de la empresa.'
+        if (tecnicosResp.error) {
+          perfilesWarning = 'No se pudo cargar la lista de técnicos OT de la empresa.'
         } else {
-          const usuariosEmpresa =
-            (usuariosEmpresaResp.data ?? []) as Array<{
-              usuario_id: string
-              rol: string | null
-            }>
+          const tecnicosOt = ((tecnicosResp.data ?? []) as OtTecnicoRow[]).filter((item) =>
+            Boolean(item.usuario_id)
+          )
 
           const userIds = Array.from(
             new Set(
-              usuariosEmpresa
+              tecnicosOt
                 .map((item) => item.usuario_id)
-                .filter((value): value is string => !!value)
+                .filter((value): value is string => Boolean(value))
             )
           )
 
-          if (userIds.length > 0) {
-            const perfilesEmpresaResp = await supabase
-              .from('perfiles')
-              .select('id, email')
-              .in('id', userIds)
+          const perfilesEmpresaResp =
+            userIds.length > 0
+              ? await supabase
+                  .from('perfiles')
+                  .select('id, nombre_completo, email')
+                  .in('id', userIds)
+              : { data: [], error: null }
 
-            if (perfilesEmpresaResp.error) {
-              perfilesWarning = 'No se pudieron cargar los perfiles asociados a la empresa.'
-            } else {
-              const perfilesEmpresa =
-                (perfilesEmpresaResp.data ?? []) as Array<{
-                  id: string
-                  email: string | null
-                }>
+          if (perfilesEmpresaResp.error) {
+            perfilesWarning = 'No se pudieron cargar los perfiles asociados a los técnicos OT.'
+          } else {
+            const perfilesEmpresa =
+              (perfilesEmpresaResp.data ?? []) as Array<{
+                id: string
+                nombre_completo: string | null
+                email: string | null
+              }>
 
-              const perfilesById = perfilesEmpresa.reduce<
-                Record<string, { id: string; email: string | null }>
-              >((acc, item) => {
-                acc[item.id] = item
-                return acc
-              }, {})
+            const perfilesById = perfilesEmpresa.reduce<
+              Record<string, { id: string; nombre_completo: string | null; email: string | null }>
+            >((acc, item) => {
+              acc[item.id] = item
+              return acc
+            }, {})
 
-              perfilesSelectData = userIds.map((userId) => {
+            perfilesSelectData = tecnicosOt
+              .map((tecnico) => {
+                const userId = tecnico.usuario_id || ''
                 const perfil = perfilesById[userId]
-                const usuarioEmpresa = usuariosEmpresa.find(
-                  (item) => item.usuario_id === userId
-                )
-                const baseLabel = humanizePerson(perfil?.email || userId)
-                const rolLabel = usuarioEmpresa?.rol
-                  ? usuarioEmpresa.rol.replace(/_/g, ' ')
-                  : 'usuario'
+                const nombre =
+                  tecnico.nombre_completo?.trim() ||
+                  perfil?.nombre_completo?.trim() ||
+                  perfil?.email?.trim() ||
+                  'Técnico OT'
+                const cargo = tecnico.cargo?.trim()
+                const email = perfil?.email?.trim()
+                const labelParts = [nombre]
+
+                if (cargo) labelParts.push(cargo)
+                if (email) labelParts.push(email)
 
                 return {
                   id: userId,
-                  label: `${baseLabel} - ${rolLabel}`,
+                  label: labelParts.join(' - '),
                 }
               })
+              .filter((item) => Boolean(item.id))
+              .sort((a, b) => a.label.localeCompare(b.label, 'es'))
 
-              nextMap = perfilesSelectData.reduce<Record<string, string>>(
-                (acc, item) => {
-                  acc[item.id] = item.label
-                  return acc
-                },
-                {}
-              )
-            }
+            nextMap = perfilesSelectData.reduce<Record<string, string>>(
+              (acc, item) => {
+                acc[item.id] = item.label
+                return acc
+              },
+              {}
+            )
           }
         }
 
