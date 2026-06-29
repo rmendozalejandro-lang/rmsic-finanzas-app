@@ -1737,13 +1737,13 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
 
   return (
     <div className="space-y-6">
-      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
         <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-          <div>
+          <div className="min-w-0">
             <p className="text-sm font-medium text-slate-500">
               {resumen.folio || 'Sin folio'}
             </p>
-            <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900">
+            <h1 className="mt-1 text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">
               {detalle.titulo}
             </h1>
             <p className="mt-2 text-sm text-slate-500">
@@ -1761,36 +1761,25 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
                 </span>
               </p>
             ) : null}
+            <p className="mt-3 max-w-2xl text-xs text-slate-500 sm:text-sm">
+              Para DyF / Softys se utiliza un solo informe oficial de OM. Las vistas antiguas de PDF/firma base se mantienen ocultas para evitar confusión con formatos RMSIC.
+            </p>
           </div>
 
-          <div className="flex flex-wrap gap-3">
-            <Link
-              href={`/ot/${otId}/firma`}
-              className="inline-flex rounded-xl border border-blue-300 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-100"
-            >
-              Abrir vista cliente / firma
-            </Link>
-
-            <Link
-              href={`/ot/${otId}/pdf`}
-              style={{ backgroundColor: '#163A5F', color: '#ffffff' }}
-              className="inline-flex rounded-xl bg-[#163A5F] px-4 py-2 text-sm font-semibold text-white hover:bg-[#245C90]"
-            >
-              PDF real
-            </Link>
-
-           {resumen.equipo_id ? (
-  <Link
-    href={`/ot/${otId}/informe-softys`}
-    className="inline-flex rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
-  >
-    Informe DyF / Softys
-  </Link>
-) : null}
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:justify-end sm:gap-3">
+            {resumen.equipo_id ? (
+              <Link
+                href={`/ot/${otId}/informe-softys`}
+                style={{ backgroundColor: '#163A5F', color: '#ffffff' }}
+                className="inline-flex w-full items-center justify-center rounded-xl bg-[#163A5F] px-4 py-3 text-sm font-semibold text-white hover:bg-[#245C90] sm:w-auto sm:py-2"
+              >
+                Informe OM DyF / Softys
+              </Link>
+            ) : null}
 
             <Link
               href="/ot"
-              className="inline-flex rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+              className="inline-flex w-full items-center justify-center rounded-xl border border-slate-300 px-4 py-3 text-sm font-medium text-slate-700 hover:bg-slate-100 sm:w-auto sm:py-2"
             >
               Volver
             </Link>
