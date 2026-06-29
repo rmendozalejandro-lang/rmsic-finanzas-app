@@ -99,6 +99,7 @@ type OtTecnicoRow = {
   activo: boolean | null
   puede_crear_ot: boolean | null
   puede_cerrar_ot: boolean | null
+  rol_ot?: string | null
 }
 
 type FormDataState = {
@@ -166,6 +167,35 @@ function parsePositiveNumber(value: string) {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : null
 }
 
+function normalizeSearchText(value: string | null | undefined) {
+  return (value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim()
+}
+
+function buildEquipoSearchText(equipo: EquipoOption) {
+  return normalizeSearchText(
+    [
+      equipo.tag,
+      equipo.nombre,
+      equipo.descripcion,
+      equipo.tipo_equipo,
+      equipo.planta,
+      equipo.area,
+      equipo.linea,
+      equipo.ubicacion,
+      equipo.marca,
+      equipo.modelo,
+      equipo.serie,
+      equipo.potencia,
+    ]
+      .filter(Boolean)
+      .join(' ')
+  )
+}
+
 function buildSupervisorLabel(item: PerfilRow) {
   if (item.nombre_completo?.trim() && item.email?.trim()) {
     return `${item.nombre_completo} - ${item.email}`
@@ -204,6 +234,7 @@ function NuevaOTContent() {
   const [tecnicos, setTecnicos] = useState<SelectOption[]>([])
   const [supervisores, setSupervisores] = useState<SelectOption[]>([])
   const [equipoSelectorId, setEquipoSelectorId] = useState('')
+  const [equipoBusqueda, setEquipoBusqueda] = useState('')
   const [equiposSeleccionadosIds, setEquiposSeleccionadosIds] = useState<string[]>([])
 
   const [form, setForm] = useState<FormDataState>({
@@ -270,11 +301,23 @@ function NuevaOTContent() {
       .filter((item): item is EquipoOption => Boolean(item))
   }, [equipos, equiposSeleccionadosIds])
 
-  const equiposDisponiblesParaSeleccionar = useMemo(() => {
+  const equiposDisponiblesTotal = useMemo(() => {
     const seleccionados = new Set(equiposSeleccionadosIds)
 
     return equiposCliente.filter((item) => !seleccionados.has(item.id))
   }, [equiposCliente, equiposSeleccionadosIds])
+
+  const equiposDisponiblesParaSeleccionar = useMemo(() => {
+    const busqueda = normalizeSearchText(equipoBusqueda)
+
+    if (!busqueda) {
+      return equiposDisponiblesTotal.slice(0, 80)
+    }
+
+    return equiposDisponiblesTotal
+      .filter((equipo) => buildEquipoSearchText(equipo).includes(busqueda))
+      .slice(0, 80)
+  }, [equiposDisponiblesTotal, equipoBusqueda])
 
   const contactosDelCliente = useMemo(() => {
     if (!form.cliente_id) return []
@@ -388,7 +431,7 @@ function NuevaOTContent() {
 
         const { data: tecnicosRaw, error: tecnicosError } = await supabase
           .from('ot_tecnicos')
-          .select('user_id, nombre_completo, cargo, activo, puede_crear_ot, puede_cerrar_ot')
+          .select('user_id, nombre_completo, cargo, activo, puede_crear_ot, puede_cerrar_ot, rol_ot')
           .eq('activo', true)
           .order('nombre_completo', { ascending: true })
 
@@ -551,8 +594,22 @@ function NuevaOTContent() {
           .filter((item) => Boolean(item.id))
           .sort((a, b) => a.label.localeCompare(b.label, 'es'))
 
+        const supervisorRolesOt = new Set(['supervisor', 'jefe', 'admin_ot', 'administrador_ot'])
+
+        const esSupervisorDesignado = (item: OtTecnicoRow) => {
+          const rolOt = (item.rol_ot || '').trim().toLowerCase()
+          const cargo = (item.cargo || '').trim().toLowerCase()
+
+          return (
+            Boolean(item.user_id) &&
+            (supervisorRolesOt.has(rolOt) ||
+              cargo.includes('supervisor') ||
+              cargo.includes('jefe'))
+          )
+        }
+
         const supervisoresOtOptions: SelectOption[] = tecnicosOt
-          .filter((item) => Boolean(item.user_id) && Boolean(item.puede_cerrar_ot))
+          .filter(esSupervisorDesignado)
           .map((item) => ({
             id: item.user_id || '',
             label: buildTecnicoLabel(item),
@@ -563,15 +620,16 @@ function NuevaOTContent() {
         const tecnicosData: SelectOption[] =
           tecnicosOtOptions.length > 0 ? tecnicosOtOptions : usuariosEmpresaOptions
 
-        const supervisoresData: SelectOption[] =
-          supervisoresOtOptions.length > 0 ? supervisoresOtOptions : usuariosEmpresaOptions
+        const supervisoresData: SelectOption[] = supervisoresOtOptions
 
         const nextWarning =
           tecnicosData.length === 0
             ? 'La empresa activa no tiene técnicos OT activos. Puedes crear la OT sin técnico ni supervisor por ahora.'
             : tecnicosError
               ? `No se pudieron cargar técnicos OT (${tecnicosError.message}). Se usarán usuarios de la empresa como respaldo.`
-              : ''
+              : supervisoresData.length === 0
+                ? 'No hay supervisores OT designados. Revisa la configuración de Técnicos OT y marca al menos un usuario como supervisor o jefe.'
+                : ''
 
         const tecnicoActual = tecnicosData.find((item) => item.id === user.id)
 
@@ -697,6 +755,7 @@ function NuevaOTContent() {
 
         setEquiposSeleccionadosIds(equiposPermitidos)
         setEquipoSelectorId('')
+        setEquipoBusqueda('')
 
         return {
           ...prev,
@@ -790,6 +849,7 @@ function NuevaOTContent() {
     })
 
     setEquipoSelectorId('')
+    setEquipoBusqueda('')
     setError('')
   }
 
@@ -1100,39 +1160,62 @@ function NuevaOTContent() {
                   Equipos / TAG a intervenir{selectedPlantilla?.requiere_equipo ? ' *' : ''}
                 </label>
 
-                <div className="grid gap-3 md:grid-cols-[1fr_auto]">
-                  <select
-                    value={equipoSelectorId}
+                <div className="space-y-3">
+                  <input
+                    type="search"
+                    value={equipoBusqueda}
                     onChange={(e) => {
-                      const equipoId = e.target.value
-                      setEquipoSelectorId(equipoId)
-                      handleAddEquipoSeleccionado(equipoId)
+                      setEquipoBusqueda(e.target.value)
+                      setEquipoSelectorId('')
                     }}
+                    placeholder="Buscar por TAG, nombre, area, linea, ubicacion o serie"
                     disabled={!form.cliente_id && equiposCliente.length === 0}
-                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500 disabled:bg-slate-100 disabled:text-slate-500"
-                  >
-                    <option value="">
-                      {equiposDisponiblesParaSeleccionar.length === 0
-                        ? 'Sin equipos disponibles'
-                        : 'Buscar y seleccionar equipo/TAG'}
-                    </option>
-                    {equiposDisponiblesParaSeleccionar.map((equipo) => (
-                      <option key={equipo.id} value={equipo.id}>
-                        {equipo.tag}
-                        {equipo.nombre ? ` - ${equipo.nombre}` : ''}
-                        {equipo.descripcion && !equipo.nombre ? ` - ${equipo.descripcion}` : ''}
-                      </option>
-                    ))}
-                  </select>
+                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-slate-500 disabled:bg-slate-100 disabled:text-slate-500"
+                  />
 
-                  <button
-                    type="button"
-                    onClick={() => handleAddEquipoSeleccionado(equipoSelectorId)}
-                    disabled={!equipoSelectorId}
-                    className="inline-flex items-center justify-center rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    Agregar
-                  </button>
+                  <div className="grid gap-3 md:grid-cols-[1fr_auto]">
+                    <select
+                      value={equipoSelectorId}
+                      onChange={(e) => {
+                        const equipoId = e.target.value
+                        setEquipoSelectorId(equipoId)
+                        handleAddEquipoSeleccionado(equipoId)
+                      }}
+                      disabled={!form.cliente_id && equiposCliente.length === 0}
+                      className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500 disabled:bg-slate-100 disabled:text-slate-500"
+                    >
+                      <option value="">
+                        {equiposDisponiblesTotal.length === 0
+                          ? 'Sin equipos disponibles'
+                          : equipoBusqueda.trim()
+                            ? 'Selecciona un resultado de busqueda'
+                            : 'Escribe arriba para buscar o selecciona un equipo/TAG'}
+                      </option>
+                      {equiposDisponiblesParaSeleccionar.map((equipo) => (
+                        <option key={equipo.id} value={equipo.id}>
+                          {equipo.tag}
+                          {equipo.nombre ? ` - ${equipo.nombre}` : ''}
+                          {equipo.descripcion && !equipo.nombre ? ` - ${equipo.descripcion}` : ''}
+                          {equipo.area ? ` / ${equipo.area}` : ''}
+                          {equipo.linea ? ` / ${equipo.linea}` : ''}
+                        </option>
+                      ))}
+                    </select>
+
+                    <button
+                      type="button"
+                      onClick={() => handleAddEquipoSeleccionado(equipoSelectorId)}
+                      disabled={!equipoSelectorId}
+                      className="inline-flex items-center justify-center rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Agregar
+                    </button>
+                  </div>
+
+                  <div className="text-xs text-slate-500">
+                    Mostrando {equiposDisponiblesParaSeleccionar.length} de {equiposDisponiblesTotal.length} equipos disponibles.
+                    {equiposDisponiblesTotal.length > 80 ? ' Escribe parte del TAG o nombre para acotar la busqueda.' : ''}
+                  </div>
                 </div>
 
                 <p className="mt-1 text-xs text-slate-500">
