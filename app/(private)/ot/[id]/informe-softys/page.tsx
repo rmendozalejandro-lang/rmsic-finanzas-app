@@ -197,8 +197,11 @@ type EquipoChecklistInforme = {
   observacion_despues: string | null;
   accion_realizada: string | null;
   recomendacion_tecnica: string | null;
+  condicion_equipo: string | null;
+  accion_checklist: string | null;
   evidencia_antes_url: string | null;
   evidencia_despues_url: string | null;
+  datos: Record<string, unknown> | null;
   item_zona: string | null;
   item_categoria: string | null;
   item_actividad: string | null;
@@ -363,8 +366,164 @@ function estadoEquipoChecklistClass(value: string | null | undefined) {
   return "status-pending";
 }
 
+function condicionEquipoChecklistLabel(value: string | null | undefined) {
+  if (value === "muy_bueno") return "Muy bueno";
+  if (value === "bueno") return "Bueno";
+  if (value === "regular") return "Regular";
+  if (value === "malo") return "Malo";
+  if (value === "muy_malo") return "Muy malo";
+  if (value === "no_aplica") return "No aplica";
+  return "";
+}
+
+function accionChecklistLabel(value: string | null | undefined) {
+  if (value === "check") return "Check";
+  if (value === "limpieza") return "Limpieza";
+  if (value === "reparacion") return "Reparación";
+  if (value === "cambio") return "Cambio";
+  if (value === "aviso_sap") return "Aviso SAP";
+  if (value === "no_aplica") return "No aplica";
+  return "";
+}
+
 function checklistTexto(value: string | null | undefined) {
   return value && value.trim() ? value : "-";
+}
+
+
+type MedicionMotorTipo = "resistencia_bobinas" | "aislacion";
+
+type MedicionMotorField = {
+  key: string;
+  label: string;
+  unidad: string;
+};
+
+const RESISTENCIA_BOBINAS_FIELDS: MedicionMotorField[] = [
+  { key: "u1_u2", label: "U1 - U2", unidad: "Ω" },
+  { key: "v1_v2", label: "V1 - V2", unidad: "Ω" },
+  { key: "w1_w2", label: "W1 - W2", unidad: "Ω" },
+];
+
+const AISLACION_MOTOR_FIELDS: MedicionMotorField[] = [
+  { key: "u_tierra", label: "U - Tierra", unidad: "MΩ" },
+  { key: "v_tierra", label: "V - Tierra", unidad: "MΩ" },
+  { key: "w_tierra", label: "W - Tierra", unidad: "MΩ" },
+  { key: "u_v", label: "U - V", unidad: "MΩ" },
+  { key: "v_w", label: "V - W", unidad: "MΩ" },
+  { key: "w_u", label: "W - U", unidad: "MΩ" },
+];
+
+function getMedicionesMotor(datos: Record<string, unknown> | null | undefined) {
+  const mediciones = datos?.mediciones_motor;
+  return mediciones && typeof mediciones === "object"
+    ? (mediciones as Record<string, Record<string, unknown>>)
+    : {};
+}
+
+function getMedicionMotorValue(
+  datos: Record<string, unknown> | null | undefined,
+  tipo: MedicionMotorTipo,
+  field: string,
+) {
+  const mediciones = getMedicionesMotor(datos);
+  const grupo = mediciones[tipo];
+  const value = grupo && typeof grupo === "object" ? grupo[field] : "";
+  return typeof value === "string" || typeof value === "number" ? String(value) : "";
+}
+
+function hasMedicionesMotor(datos: Record<string, unknown> | null | undefined) {
+  const mediciones = getMedicionesMotor(datos);
+  return Object.values(mediciones).some((grupo) => {
+    if (!grupo || typeof grupo !== "object") return false;
+    return Object.values(grupo).some((value) => String(value ?? "").trim());
+  });
+}
+
+function calculoDiferenciaBobinasInforme(datos: Record<string, unknown> | null | undefined) {
+  const values = RESISTENCIA_BOBINAS_FIELDS
+    .map((field) => Number(String(getMedicionMotorValue(datos, "resistencia_bobinas", field.key)).replace(",", ".")))
+    .filter((value) => Number.isFinite(value) && value > 0);
+
+  if (values.length < 2) return "";
+
+  const max = Math.max(...values);
+  const min = Math.min(...values);
+  const promedio = values.reduce((sum, value) => sum + value, 0) / values.length;
+
+  if (!promedio) return "";
+
+  return `${(((max - min) / promedio) * 100).toFixed(2)} %`;
+}
+
+
+function normalizeText(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+function medicionMotorTipoInforme(item: EquipoChecklistInforme): MedicionMotorTipo | null {
+  const text = normalizeText([item.item_actividad, item.item_categoria, item.item_zona].filter(Boolean).join(" "));
+
+  if (text.includes("resistencia") && (text.includes("bobina") || text.includes("bobinas"))) {
+    return "resistencia_bobinas";
+  }
+
+  if (text.includes("aislacion") && (text.includes("bobina") || text.includes("tierra"))) {
+    return "aislacion";
+  }
+
+  return null;
+}
+
+function MedicionMotorTable({
+  item,
+  tipo,
+}: {
+  item: EquipoChecklistInforme;
+  tipo: MedicionMotorTipo;
+}) {
+  const fields = tipo === "resistencia_bobinas" ? RESISTENCIA_BOBINAS_FIELDS : AISLACION_MOTOR_FIELDS;
+  const title = tipo === "resistencia_bobinas"
+    ? "Medición de resistencia de bobinas"
+    : "Medición de aislación del motor";
+  const rows = fields
+    .map((field) => ({ ...field, value: getMedicionMotorValue(item.datos, tipo, field.key) }))
+    .filter((field) => hasValue(field.value));
+  const voltajePrueba = tipo === "aislacion" ? getMedicionMotorValue(item.datos, tipo, "voltaje_prueba_v") : "";
+  const diferenciaBobinas = tipo === "resistencia_bobinas" ? calculoDiferenciaBobinasInforme(item.datos) : "";
+
+  if (rows.length === 0 && !voltajePrueba && !diferenciaBobinas) return null;
+
+  return (
+    <div className="measurement-box">
+      <p className="label-title">{title}</p>
+      <table className="measurement-table">
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.key}>
+              <th>{row.label}</th>
+              <td>{row.value} {row.unidad}</td>
+            </tr>
+          ))}
+          {tipo === "resistencia_bobinas" && diferenciaBobinas ? (
+            <tr>
+              <th>Diferencia máxima calculada</th>
+              <td>{diferenciaBobinas}</td>
+            </tr>
+          ) : null}
+          {tipo === "aislacion" && voltajePrueba ? (
+            <tr>
+              <th>Voltaje de prueba</th>
+              <td>{voltajePrueba} V</td>
+            </tr>
+          ) : null}
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
 function hasChecklistEvidence(item: EquipoChecklistInforme) {
@@ -907,7 +1066,7 @@ export default function InformeSoftysPage() {
         const { data: checklistEquipoData, error: checklistEquipoError } = await db
           .from("ot_equipo_checklist_resultados")
           .select(
-            "id,ot_orden_equipo_id,equipo_id,plantilla_item_id,respuesta_texto,respuesta_boolean,observacion_antes,observacion_despues,accion_realizada,recomendacion_tecnica,evidencia_antes_url,evidencia_despues_url",
+            "id,ot_orden_equipo_id,equipo_id,plantilla_item_id,respuesta_texto,respuesta_boolean,observacion_antes,observacion_despues,accion_realizada,recomendacion_tecnica,condicion_equipo,accion_checklist,evidencia_antes_url,evidencia_despues_url,datos",
           )
           .eq("ot_id", otId);
 
@@ -928,8 +1087,11 @@ export default function InformeSoftysPage() {
           observacion_despues: string | null;
           accion_realizada: string | null;
           recomendacion_tecnica: string | null;
+          condicion_equipo: string | null;
+          accion_checklist: string | null;
           evidencia_antes_url: string | null;
           evidencia_despues_url: string | null;
+          datos: Record<string, unknown> | null;
         }>;
 
         const plantillaItemIds = Array.from(
@@ -2170,6 +2332,34 @@ export default function InformeSoftysPage() {
             gap: 10px;
           }
 
+          .measurement-box {
+            grid-column: 1 / -1;
+            border: 1px solid #cfe0ff;
+            background: #f8fbff;
+            border-radius: 14px;
+            padding: 10px;
+          }
+
+          .measurement-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 6px;
+            font-size: 11px;
+          }
+
+          .measurement-table th,
+          .measurement-table td {
+            border: 1px solid #dbeafe;
+            padding: 7px 8px;
+            text-align: left;
+          }
+
+          .measurement-table th {
+            width: 45%;
+            background: #eff6ff;
+            color: #334155;
+          }
+
           .checklist-evidence-grid {
             display: grid;
             grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2482,30 +2672,54 @@ export default function InformeSoftysPage() {
                               </div>
 
                               {(() => {
+                                const condicionLabel = condicionEquipoChecklistLabel(item.condicion_equipo);
+                                const accionChecklist = accionChecklistLabel(item.accion_checklist);
+                                const tieneCondicion = hasValue(condicionLabel);
+                                const tieneAccionChecklist = hasValue(accionChecklist);
                                 const tieneAntes = hasValue(item.observacion_antes);
                                 const tieneAccion = hasValue(item.accion_realizada);
                                 const tieneDespues = hasValue(item.observacion_despues);
                                 const tieneRecomendacion = hasValue(item.recomendacion_tecnica);
+                                const tipoMedicionMotor = medicionMotorTipoInforme(item);
+                                const tieneMedicionesMotor = Boolean(tipoMedicionMotor && hasMedicionesMotor(item.datos));
                                 const debeMostrarDetalle =
+                                  tieneCondicion ||
+                                  tieneAccionChecklist ||
                                   tieneAntes ||
                                   tieneAccion ||
                                   tieneDespues ||
                                   tieneRecomendacion ||
+                                  tieneMedicionesMotor ||
                                   item.respuesta_texto === "no_ok";
 
                                 if (!debeMostrarDetalle) return null;
 
                                 return (
                                   <div className="checklist-detail-grid">
+                                    {tipoMedicionMotor && tieneMedicionesMotor ? (
+                                      <MedicionMotorTable item={item} tipo={tipoMedicionMotor} />
+                                    ) : null}
+                                    {tieneCondicion ? (
+                                      <div>
+                                        <p className="label-title">Condición encontrada</p>
+                                        <TextBox value={condicionLabel} minHeight={42} />
+                                      </div>
+                                    ) : null}
+                                    {tieneAccionChecklist ? (
+                                      <div>
+                                        <p className="label-title">Acción / gestión</p>
+                                        <TextBox value={accionChecklist} minHeight={42} />
+                                      </div>
+                                    ) : null}
                                     {(tieneAntes || item.respuesta_texto === "no_ok") ? (
                                       <div>
-                                        <p className="label-title">Antes / condición encontrada</p>
+                                        <p className="label-title">Observación antes / condición encontrada</p>
                                         <TextBox value={item.observacion_antes} minHeight={42} />
                                       </div>
                                     ) : null}
                                     {(tieneAccion || item.respuesta_texto === "no_ok") ? (
                                       <div>
-                                        <p className="label-title">Acción realizada</p>
+                                        <p className="label-title">Detalle adicional de acción</p>
                                         <TextBox value={item.accion_realizada} minHeight={42} />
                                       </div>
                                     ) : null}

@@ -59,6 +59,7 @@ type RespuestaRow = {
   accion_checklist: string | null
   evidencia_antes_url: string | null
   evidencia_despues_url: string | null
+  datos: Record<string, any> | null
 }
 
 type RespuestaState = {
@@ -71,6 +72,7 @@ type RespuestaState = {
   accion_checklist: string
   evidencia_antes_url: string
   evidencia_despues_url: string
+  datos: Record<string, any>
 }
 
 const EMPTY_RESPUESTA: RespuestaState = {
@@ -83,6 +85,7 @@ const EMPTY_RESPUESTA: RespuestaState = {
   accion_checklist: '',
   evidencia_antes_url: '',
   evidencia_despues_url: '',
+  datos: {},
 }
 
 function normalizeEstado(value: string | null | undefined): RespuestaState['respuesta_texto'] {
@@ -122,6 +125,194 @@ function accionChecklistLabel(value: string | null | undefined) {
   if (value === 'aviso_sap') return 'Aviso SAP'
   if (value === 'no_aplica') return 'No aplica'
   return ''
+}
+
+
+type MedicionMotorTipo = 'resistencia_bobinas' | 'aislacion'
+
+type MedicionField = {
+  key: string
+  label: string
+  unidad: string
+}
+
+const RESISTENCIA_BOBINAS_FIELDS: MedicionField[] = [
+  { key: 'u1_u2', label: 'U1 - U2', unidad: 'Ω' },
+  { key: 'v1_v2', label: 'V1 - V2', unidad: 'Ω' },
+  { key: 'w1_w2', label: 'W1 - W2', unidad: 'Ω' },
+]
+
+const AISLACION_MOTOR_FIELDS: MedicionField[] = [
+  { key: 'u_tierra', label: 'U - Tierra', unidad: 'MΩ' },
+  { key: 'v_tierra', label: 'V - Tierra', unidad: 'MΩ' },
+  { key: 'w_tierra', label: 'W - Tierra', unidad: 'MΩ' },
+  { key: 'u_v', label: 'U - V', unidad: 'MΩ' },
+  { key: 'v_w', label: 'V - W', unidad: 'MΩ' },
+  { key: 'w_u', label: 'W - U', unidad: 'MΩ' },
+]
+
+function getMedicionesMotor(datos: Record<string, any> | null | undefined) {
+  const mediciones = datos?.mediciones_motor
+  return mediciones && typeof mediciones === 'object' ? mediciones : {}
+}
+
+function getMedicionMotorValue(
+  datos: Record<string, any> | null | undefined,
+  tipo: MedicionMotorTipo,
+  field: string
+) {
+  const mediciones = getMedicionesMotor(datos)
+  const grupo = mediciones[tipo]
+  const value = grupo && typeof grupo === 'object' ? grupo[field] : ''
+  return typeof value === 'string' || typeof value === 'number' ? String(value) : ''
+}
+
+function hasMedicionesMotor(datos: Record<string, any> | null | undefined) {
+  const mediciones = getMedicionesMotor(datos)
+  return Object.values(mediciones).some((grupo) => {
+    if (!grupo || typeof grupo !== 'object') return false
+    return Object.values(grupo as Record<string, unknown>).some((value) => String(value ?? '').trim())
+  })
+}
+
+function limpiarDatosChecklist(datos: Record<string, any> | null | undefined) {
+  const mediciones = getMedicionesMotor(datos)
+  const nextMediciones: Record<string, Record<string, string>> = {}
+
+  ;(['resistencia_bobinas', 'aislacion'] as MedicionMotorTipo[]).forEach((tipo) => {
+    const grupo = mediciones[tipo]
+    if (!grupo || typeof grupo !== 'object') return
+
+    const nextGrupo = Object.entries(grupo as Record<string, unknown>).reduce<Record<string, string>>(
+      (acc, [key, value]) => {
+        const text = String(value ?? '').trim()
+        if (text) acc[key] = text
+        return acc
+      },
+      {}
+    )
+
+    if (Object.keys(nextGrupo).length > 0) {
+      nextMediciones[tipo] = nextGrupo
+    }
+  })
+
+  return Object.keys(nextMediciones).length > 0
+    ? { mediciones_motor: nextMediciones }
+    : {}
+}
+
+function medicionMotorTipo(item: ChecklistItem): MedicionMotorTipo | null {
+  const text = normalizeText([item.actividad, item.categoria, item.zona].filter(Boolean).join(' '))
+
+  if (text.includes('resistencia') && (text.includes('bobina') || text.includes('bobinas'))) {
+    return 'resistencia_bobinas'
+  }
+
+  if (text.includes('aislacion') && (text.includes('bobina') || text.includes('tierra'))) {
+    return 'aislacion'
+  }
+
+  return null
+}
+
+function calculoDiferenciaBobinas(datos: Record<string, any> | null | undefined) {
+  const values = RESISTENCIA_BOBINAS_FIELDS
+    .map((field) => Number(String(getMedicionMotorValue(datos, 'resistencia_bobinas', field.key)).replace(',', '.')))
+    .filter((value) => Number.isFinite(value) && value > 0)
+
+  if (values.length < 2) return ''
+
+  const max = Math.max(...values)
+  const min = Math.min(...values)
+  const promedio = values.reduce((sum, value) => sum + value, 0) / values.length
+
+  if (!promedio) return ''
+
+  return `${(((max - min) / promedio) * 100).toFixed(2)} %`
+}
+
+function MedicionesMotorPanel({
+  tipo,
+  datos,
+  onChange,
+}: {
+  tipo: MedicionMotorTipo
+  datos: Record<string, any>
+  onChange: (field: string, value: string) => void
+}) {
+  const esResistencia = tipo === 'resistencia_bobinas'
+  const fields = esResistencia ? RESISTENCIA_BOBINAS_FIELDS : AISLACION_MOTOR_FIELDS
+  const unidadPrincipal = esResistencia ? 'Ω' : 'MΩ'
+  const title = esResistencia
+    ? 'Medición de resistencia de bobinas'
+    : 'Medición de aislación del motor'
+  const subtitle = esResistencia
+    ? 'Registra la impedancia/resistencia medida en cada bobina del motor.'
+    : 'Registra la aislación respecto a tierra y entre bobinas. Normalmente se expresa en MΩ.'
+
+  return (
+    <div className="mt-4 rounded-2xl border border-blue-200 bg-blue-50 p-4">
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="text-sm font-semibold text-blue-950">{title}</p>
+          <p className="mt-1 text-xs text-blue-800">{subtitle}</p>
+        </div>
+        <span className="rounded-full border border-blue-200 bg-white px-2.5 py-1 text-xs font-semibold text-blue-800">
+          Unidad: {unidadPrincipal}
+        </span>
+      </div>
+
+      <div className="mt-4 grid gap-3 md:grid-cols-3">
+        {fields.map((field) => (
+          <label key={field.key} className="block rounded-xl border border-blue-100 bg-white p-3">
+            <span className="block text-xs font-bold uppercase tracking-wide text-slate-500">
+              {field.label}
+            </span>
+            <div className="mt-2 flex items-center gap-2">
+              <input
+                type="number"
+                inputMode="decimal"
+                step="any"
+                value={getMedicionMotorValue(datos, tipo, field.key)}
+                onChange={(event) => onChange(field.key, event.target.value)}
+                placeholder="0.00"
+                className="min-w-0 flex-1 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-500"
+              />
+              <span className="w-9 text-sm font-semibold text-slate-600">{field.unidad}</span>
+            </div>
+          </label>
+        ))}
+      </div>
+
+      {esResistencia ? (
+        <div className="mt-3 rounded-xl border border-blue-100 bg-white px-3 py-2 text-sm text-slate-700">
+          Diferencia máxima calculada entre bobinas:{' '}
+          <span className="font-semibold text-slate-900">
+            {calculoDiferenciaBobinas(datos) || 'Pendiente'}
+          </span>
+        </div>
+      ) : (
+        <label className="mt-3 block rounded-xl border border-blue-100 bg-white p-3">
+          <span className="block text-xs font-bold uppercase tracking-wide text-slate-500">
+            Voltaje de prueba
+          </span>
+          <div className="mt-2 flex items-center gap-2">
+            <input
+              type="number"
+              inputMode="numeric"
+              step="1"
+              value={getMedicionMotorValue(datos, tipo, 'voltaje_prueba_v')}
+              onChange={(event) => onChange('voltaje_prueba_v', event.target.value)}
+              placeholder="500"
+              className="min-w-0 flex-1 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-500"
+            />
+            <span className="w-9 text-sm font-semibold text-slate-600">V</span>
+          </div>
+        </label>
+      )}
+    </div>
+  )
 }
 
 function normalizeText(value: string) {
@@ -309,7 +500,7 @@ export function OTEquipoChecklistPanel({
         db
           .from('ot_equipo_checklist_resultados')
           .select(
-            'id, ot_orden_equipo_id, plantilla_item_id, respuesta_texto, respuesta_boolean, observacion_antes, observacion_despues, accion_realizada, recomendacion_tecnica, condicion_equipo, accion_checklist, evidencia_antes_url, evidencia_despues_url'
+            'id, ot_orden_equipo_id, plantilla_item_id, respuesta_texto, respuesta_boolean, observacion_antes, observacion_despues, accion_realizada, recomendacion_tecnica, condicion_equipo, accion_checklist, evidencia_antes_url, evidencia_despues_url, datos'
           )
           .eq('ot_id', otId),
       ])
@@ -332,6 +523,7 @@ export function OTEquipoChecklistPanel({
             accion_checklist: row.accion_checklist || '',
             evidencia_antes_url: row.evidencia_antes_url || '',
             evidencia_despues_url: row.evidencia_despues_url || '',
+            datos: row.datos && typeof row.datos === 'object' ? row.datos : {},
           }
           return acc
         },
@@ -359,7 +551,7 @@ export function OTEquipoChecklistPanel({
   const setRespuesta = (
     equipoAsociadoId: string,
     itemId: string,
-    field: keyof RespuestaState,
+    field: Exclude<keyof RespuestaState, 'datos'>,
     value: string
   ) => {
     const key = keyFor(equipoAsociadoId, itemId)
@@ -372,6 +564,44 @@ export function OTEquipoChecklistPanel({
         [field]: value,
       },
     }))
+  }
+
+  const setMedicionMotor = (
+    equipoAsociadoId: string,
+    itemId: string,
+    tipo: MedicionMotorTipo,
+    field: string,
+    value: string
+  ) => {
+    const key = keyFor(equipoAsociadoId, itemId)
+
+    setRespuestas((prev) => {
+      const current = {
+        ...EMPTY_RESPUESTA,
+        ...(prev[key] || {}),
+      }
+      const currentMediciones = getMedicionesMotor(current.datos)
+      const currentGrupo = currentMediciones[tipo] && typeof currentMediciones[tipo] === 'object'
+        ? currentMediciones[tipo]
+        : {}
+
+      return {
+        ...prev,
+        [key]: {
+          ...current,
+          datos: {
+            ...current.datos,
+            mediciones_motor: {
+              ...currentMediciones,
+              [tipo]: {
+                ...currentGrupo,
+                [field]: value,
+              },
+            },
+          },
+        },
+      }
+    })
   }
 
   const resumenEquipo = (equipoAsociadoId: string) => {
@@ -410,7 +640,7 @@ export function OTEquipoChecklistPanel({
     }
 
     const uploadKey = evidenciaUploadKey(equipo.id, item.id, tipo)
-    const field: keyof RespuestaState =
+    const field: Exclude<keyof RespuestaState, 'datos'> =
       tipo === 'antes' ? 'evidencia_antes_url' : 'evidencia_despues_url'
 
     try {
@@ -464,6 +694,7 @@ export function OTEquipoChecklistPanel({
     const payload = itemsTecnicos
       .map((item) => {
         const respuesta = respuestas[keyFor(equipo.id, item.id)] || EMPTY_RESPUESTA
+        const datosChecklist = limpiarDatosChecklist(respuesta.datos)
         const tieneDatos =
           respuesta.respuesta_texto ||
           respuesta.observacion_antes.trim() ||
@@ -472,6 +703,7 @@ export function OTEquipoChecklistPanel({
           respuesta.recomendacion_tecnica.trim() ||
           respuesta.condicion_equipo.trim() ||
           respuesta.accion_checklist.trim() ||
+          Object.keys(datosChecklist).length > 0 ||
           respuesta.evidencia_antes_url.trim() ||
           respuesta.evidencia_despues_url.trim()
 
@@ -499,6 +731,7 @@ export function OTEquipoChecklistPanel({
           accion_checklist: respuesta.accion_checklist.trim() || null,
           evidencia_antes_url: respuesta.evidencia_antes_url.trim() || null,
           evidencia_despues_url: respuesta.evidencia_despues_url.trim() || null,
+          datos: datosChecklist,
           usuario_id: currentUserId || null,
           updated_at: new Date().toISOString(),
         }
@@ -669,6 +902,7 @@ export function OTEquipoChecklistPanel({
                     <div className="divide-y divide-slate-100">
                       {zonaItems.map((item) => {
                         const respuesta = respuestas[keyFor(equipo.id, item.id)] || EMPTY_RESPUESTA
+                        const tipoMedicionMotor = medicionMotorTipo(item)
 
                         return (
                           <div key={`${equipo.id}-${item.id}`} className="grid gap-4 p-4 xl:grid-cols-[1fr_220px]">
@@ -710,6 +944,14 @@ export function OTEquipoChecklistPanel({
                                 <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-600">
                                   {item.indicaciones}
                                 </p>
+                              ) : null}
+
+                              {tipoMedicionMotor ? (
+                                <MedicionesMotorPanel
+                                  tipo={tipoMedicionMotor}
+                                  datos={respuesta.datos}
+                                  onChange={(field, value) => setMedicionMotor(equipo.id, item.id, tipoMedicionMotor, field, value)}
+                                />
                               ) : null}
 
                               <div className="mt-4 grid gap-3 lg:grid-cols-2">
