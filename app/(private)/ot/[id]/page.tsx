@@ -2135,6 +2135,12 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
                 Ver informe oficial
               </Link>
               <Link
+                href={`/ot/${otId}/checklists`}
+                className="inline-flex w-full items-center justify-center rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-100 sm:w-auto"
+              >
+                Checklists individuales
+              </Link>
+              <Link
                 href="/ot"
                 className="inline-flex w-full items-center justify-center rounded-xl border border-slate-300 px-5 py-3 text-sm font-medium text-slate-700 hover:bg-slate-100 sm:w-auto"
               >
@@ -2436,13 +2442,21 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
 
           <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:justify-end sm:gap-3">
             {resumen.equipo_id ? (
-              <Link
-                href={`/ot/${otId}/informe-softys`}
-                style={{ backgroundColor: '#163A5F', color: '#ffffff' }}
-                className="inline-flex w-full items-center justify-center rounded-xl bg-[#163A5F] px-4 py-3 text-sm font-semibold text-white hover:bg-[#245C90] sm:w-auto sm:py-2"
-              >
-                Informe OM DyF / Softys
-              </Link>
+              <>
+                <Link
+                  href={`/ot/${otId}/informe-softys`}
+                  style={{ backgroundColor: '#163A5F', color: '#ffffff' }}
+                  className="inline-flex w-full items-center justify-center rounded-xl bg-[#163A5F] px-4 py-3 text-sm font-semibold text-white hover:bg-[#245C90] sm:w-auto sm:py-2"
+                >
+                  Informe OM DyF / Softys
+                </Link>
+                <Link
+                  href={`/ot/${otId}/checklists`}
+                  className="inline-flex w-full items-center justify-center rounded-xl border border-[#163A5F] bg-white px-4 py-3 text-sm font-semibold text-[#163A5F] hover:bg-blue-50 sm:w-auto sm:py-2"
+                >
+                  Checklists individuales
+                </Link>
+              </>
             ) : null}
 
             <Link
