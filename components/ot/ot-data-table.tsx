@@ -21,9 +21,14 @@ type OTResumenConPlantilla = OTResumen & {
   plantilla_ruta_base?: string | null
   plantilla_ruta_pdf?: string | null
   plantilla_requiere_equipo?: boolean | null
+  plantilla_usa_equipos_multiples?: boolean | null
   plantilla_usa_checklist?: boolean | null
   plantilla_checklist_codigo?: string | null
   plantilla_informe_codigo?: string | null
+  tipo_equipo_permitido?: string | null
+  finalizado_tecnico_at?: string | null
+  permitir_edicion_tecnico?: boolean | null
+  equipos_asociados_count?: number | null
 }
 
 function formatDate(value: string | null | undefined) {
@@ -165,6 +170,79 @@ function estadoBadgeClass(estado: string | null | undefined) {
   }
 }
 
+function isSoftysMultiEquipoFlow(ot: OTResumenConPlantilla) {
+  const codigo = (ot.plantilla_codigo || '').toLowerCase()
+  const informeCodigo = (ot.plantilla_informe_codigo || '').toLowerCase()
+  const checklistCodigo = (ot.plantilla_checklist_codigo || '').toLowerCase()
+  const tipoEquipo = (ot.tipo_equipo_permitido || '').toLowerCase()
+
+  return Boolean(
+    ot.plantilla_usa_equipos_multiples ||
+      codigo.includes('softys') ||
+      informeCodigo.includes('softys') ||
+      checklistCodigo.includes('softys') ||
+      ['motor', 'valvula', 'valvula_control'].includes(tipoEquipo)
+  )
+}
+
+function buildEquipoResumen(ot: OTResumenConPlantilla) {
+  if (ot.equipo_tag) {
+    return {
+      titulo: labelOrDash(ot.equipo_tag),
+      subtitulo: buildEquipoSubtitle(ot),
+      neutral: false,
+    }
+  }
+
+  const totalEquipos = Number(ot.equipos_asociados_count || 0)
+
+  if (totalEquipos > 0) {
+    return {
+      titulo: `${totalEquipos} equipo${totalEquipos === 1 ? '' : 's'} asociado${totalEquipos === 1 ? '' : 's'}`,
+      subtitulo: 'Ver detalle de equipos en la OT/OM',
+      neutral: true,
+    }
+  }
+
+  if (isSoftysMultiEquipoFlow(ot)) {
+    return {
+      titulo: 'Equipos por asociar',
+      subtitulo: 'Se cargan en planificación de la OM',
+      neutral: true,
+    }
+  }
+
+  return {
+    titulo: 'Sin equipo/TAG',
+    subtitulo: '',
+    neutral: true,
+  }
+}
+
+function buildEstadoVisual(ot: OTResumenConPlantilla) {
+  const estado = labelOrDash(ot.estado_nombre)
+  const isClosed = (ot.estado_nombre || '').toLowerCase() === 'cerrada'
+
+  if (ot.finalizado_tecnico_at && !isClosed) {
+    if (ot.permitir_edicion_tecnico) {
+      return {
+        label: 'Corrección autorizada',
+        className: 'border-amber-200 bg-amber-50 text-amber-800',
+      }
+    }
+
+    return {
+      label: 'Finalizada técnico',
+      className: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+    }
+  }
+
+  return {
+    label: estado,
+    className: estadoBadgeClass(ot.estado_nombre),
+  }
+}
+
 export function OTDataTable({
   data,
   selectable = false,
@@ -221,12 +299,10 @@ export function OTDataTable({
             {data.map((ot) => {
               const otConPlantilla = ot as OTResumenConPlantilla
               const checked = Boolean(selectedIds?.has(ot.id))
-              const equipoSubtitle = buildEquipoSubtitle(ot)
+              const equipoResumen = buildEquipoResumen(otConPlantilla)
+              const estadoVisual = buildEstadoVisual(otConPlantilla)
               const otMainHref = buildOtMainHref(otConPlantilla)
               const otActionLabel = buildOtActionLabel(otConPlantilla)
-              const faltaEquipoRequerido = Boolean(
-                otConPlantilla.plantilla_requiere_equipo && !ot.equipo_id
-              )
 
               return (
                 <tr key={ot.id} className="border-t border-slate-100 text-slate-700">
@@ -267,36 +343,23 @@ export function OTDataTable({
                   </td>
 
                   <td className="px-4 py-3">
-                    {ot.equipo_tag ? (
-                      <div className="max-w-[240px] whitespace-normal break-words">
-                        <div className="font-semibold text-slate-900">
-                          {labelOrDash(ot.equipo_tag)}
+                    <div className="max-w-[240px] whitespace-normal break-words">
+                      <div className={equipoResumen.neutral ? 'font-medium text-slate-500' : 'font-semibold text-slate-900'}>
+                        {equipoResumen.titulo}
+                      </div>
+                      {equipoResumen.subtitulo ? (
+                        <div className="mt-1 text-xs leading-5 text-slate-500">
+                          {equipoResumen.subtitulo}
                         </div>
-                        {equipoSubtitle ? (
-                          <div className="mt-1 text-xs leading-5 text-slate-500">
-                            {equipoSubtitle}
-                          </div>
-                        ) : null}
-                      </div>
-                    ) : (
-                      <div className="max-w-[240px] whitespace-normal break-words">
-                        <span className="text-slate-400">-</span>
-                        {faltaEquipoRequerido ? (
-                          <div className="mt-1 inline-flex rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
-                            Falta equipo/TAG
-                          </div>
-                        ) : null}
-                      </div>
-                    )}
+                      ) : null}
+                    </div>
                   </td>
 
                   <td className="px-4 py-3">
                     <span
-                      className={`inline-flex rounded-full border px-3 py-1 text-xs font-medium ${estadoBadgeClass(
-                        ot.estado_nombre
-                      )}`}
+                      className={`inline-flex rounded-full border px-3 py-1 text-xs font-medium ${estadoVisual.className}`}
                     >
-                      {labelOrDash(ot.estado_nombre)}
+                      {estadoVisual.label}
                     </span>
                   </td>
 

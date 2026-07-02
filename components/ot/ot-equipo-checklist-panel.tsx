@@ -322,6 +322,48 @@ function normalizeText(value: string) {
     .toLowerCase()
 }
 
+function tipoEquipoSingularLabel(value: string | null | undefined) {
+  const raw = normalizeText(value || '')
+
+  if (raw.includes('valvula')) return 'válvula'
+  if (raw.includes('motor')) return 'motor'
+  if (raw.includes('bomba')) return 'bomba'
+  if (raw.includes('variador') || raw.includes('vdf')) return 'variador'
+  return 'equipo'
+}
+
+function tipoEquipoPluralLabel(value: string | null | undefined, fallback?: string | null) {
+  if (fallback && fallback.trim()) return fallback
+
+  const raw = normalizeText(value || '')
+
+  if (raw.includes('valvula')) return 'válvulas'
+  if (raw.includes('motor')) return 'motores'
+  if (raw.includes('bomba')) return 'bombas'
+  if (raw.includes('variador') || raw.includes('vdf')) return 'variadores'
+  return 'equipos'
+}
+
+function plantillaMatchesTipoEquipo(plantilla: PlantillaChecklist, tipoEquipoPermitido: string | null | undefined) {
+  const tipo = normalizeText(tipoEquipoPermitido || '')
+  if (!tipo) return false
+
+  const textoPlantilla = normalizeText(
+    [plantilla.nombre, plantilla.tipo_activo, plantilla.descripcion]
+      .filter(Boolean)
+      .join(' ')
+  )
+
+  if (tipo.includes('valvula')) return textoPlantilla.includes('valvula')
+  if (tipo.includes('motor')) return textoPlantilla.includes('motor')
+  if (tipo.includes('bomba')) return textoPlantilla.includes('bomba')
+  if (tipo.includes('variador') || tipo.includes('vdf')) {
+    return textoPlantilla.includes('variador') || textoPlantilla.includes('vdf')
+  }
+
+  return textoPlantilla.includes(tipo)
+}
+
 function esItemGeneralOm(item: ChecklistItem) {
   const text = normalizeText(
     [item.zona, item.categoria, item.actividad, item.indicaciones]
@@ -380,6 +422,8 @@ export function OTEquipoChecklistPanel({
   currentUserId,
   plantillaId,
   requiereChecklist,
+  tipoEquipoPermitido,
+  tipoEquipoLabel,
   equipos,
   onChanged,
 }: {
@@ -388,6 +432,8 @@ export function OTEquipoChecklistPanel({
   currentUserId: string
   plantillaId: string | null
   requiereChecklist: boolean
+  tipoEquipoPermitido?: string | null
+  tipoEquipoLabel?: string | null
   equipos: EquipoChecklistInfo[]
   onChanged?: () => void
 }) {
@@ -405,6 +451,9 @@ export function OTEquipoChecklistPanel({
   const [uploadingKey, setUploadingKey] = useState('')
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+
+  const tipoEquipoSingular = tipoEquipoSingularLabel(tipoEquipoPermitido)
+  const tipoEquipoPlural = tipoEquipoPluralLabel(tipoEquipoPermitido, tipoEquipoLabel)
 
   useEffect(() => {
     if (plantillaId) {
@@ -453,7 +502,12 @@ export function OTEquipoChecklistPanel({
         if (plantillasError) throw new Error(plantillasError.message)
 
         const plantillas = (plantillasData || []) as PlantillaChecklist[]
+        const plantillaPorTipo = plantillas.find((item) =>
+          plantillaMatchesTipoEquipo(item, tipoEquipoPermitido)
+        )
+
         const plantillaElegida =
+          plantillaPorTipo ||
           plantillas.find((item) => normalizeText(item.nombre).includes('motor')) ||
           plantillas.find((item) => normalizeText(item.nombre).includes('mespack')) ||
           plantillas.find((item) => normalizeText(item.tipo_activo || '').includes('motor')) ||
@@ -785,10 +839,10 @@ export function OTEquipoChecklistPanel({
         <div>
           <p className="text-sm font-medium text-slate-500">Checklist técnico por equipo</p>
           <h2 className="text-lg font-semibold text-slate-900">
-            Revisión por motor / equipo asociado
+            Revisión por {tipoEquipoSingular} / equipo asociado
           </h2>
           <p className="mt-1 text-sm text-slate-500">
-            Cada equipo de la OM tiene su propio checklist técnico. Los ítems generales de seguridad y herramientas se mantienen fuera de esta revisión para no repetirlos por motor.
+            Cada equipo de la OM tiene su propio checklist técnico. Los ítems generales de seguridad y herramientas se mantienen fuera de esta revisión para no repetirlos por equipo.
           </p>
         </div>
 
@@ -822,7 +876,7 @@ export function OTEquipoChecklistPanel({
 
       {equiposOrdenados.length === 0 ? (
         <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-          Primero asocia uno o más equipos / motores a la OM. Luego podrás completar el checklist técnico de cada uno.
+          Primero asocia una o más {tipoEquipoPlural} a la OM. Luego podrás completar el checklist técnico de cada una.
         </div>
       ) : null}
 

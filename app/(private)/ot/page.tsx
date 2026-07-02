@@ -77,6 +77,50 @@ function obtenerClienteNombre(ot: OTResumen) {
   )
 }
 
+
+async function enriquecerOtsConEstadoTecnicoYEquipos(otsData: OTResumen[]) {
+  const ids = otsData.map((ot) => ot.id).filter(Boolean)
+
+  if (ids.length === 0) return otsData
+
+  const [estadoTecnicoResp, equiposResp] = await Promise.all([
+    supabase
+      .from('ot_ordenes_trabajo')
+      .select('id, finalizado_tecnico_at, permitir_edicion_tecnico')
+      .in('id', ids),
+    supabase
+      .from('ot_orden_equipos')
+      .select('ot_id, activo')
+      .in('ot_id', ids)
+      .eq('activo', true),
+  ])
+
+  const estadoTecnicoMap = new Map<string, Record<string, unknown>>()
+  const equiposCountMap = new Map<string, number>()
+
+  if (!estadoTecnicoResp.error) {
+    ;(estadoTecnicoResp.data ?? []).forEach((row) => {
+      const record = row as Record<string, unknown>
+      const id = typeof record.id === 'string' ? record.id : ''
+      if (id) estadoTecnicoMap.set(id, record)
+    })
+  }
+
+  if (!equiposResp.error) {
+    ;(equiposResp.data ?? []).forEach((row) => {
+      const record = row as Record<string, unknown>
+      const otId = typeof record.ot_id === 'string' ? record.ot_id : ''
+      if (otId) equiposCountMap.set(otId, (equiposCountMap.get(otId) ?? 0) + 1)
+    })
+  }
+
+  return otsData.map((ot) => ({
+    ...ot,
+    ...(estadoTecnicoMap.get(ot.id) ?? {}),
+    equipos_asociados_count: equiposCountMap.get(ot.id) ?? 0,
+  })) as OTResumen[]
+}
+
 function OTPageContent() {
   const [ots, setOts] = useState<OTResumen[]>([])
   const [loading, setLoading] = useState(true)
@@ -225,8 +269,10 @@ function OTPageContent() {
           otsData = (data ?? []) as OTResumen[]
         }
 
+        const otsEnriquecidas = await enriquecerOtsConEstadoTecnicoYEquipos(otsData)
+
         if (active) {
-          setOts(otsData)
+          setOts(otsEnriquecidas)
         }
       } catch (err) {
         if (active) {

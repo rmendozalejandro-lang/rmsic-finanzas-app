@@ -71,6 +71,7 @@ const menuItems: MenuItem[] = [
 
   { href: '/ot', label: 'OT', moduleKey: 'ot' },
   { href: '/ot/equipos', label: 'Equipos / Activos', moduleKey: 'ot' },
+{ href: '/operacional/tecnicos-dyf', label: 'Técnicos DyF', moduleKey: 'ot' },
 
   { href: '/remuneraciones', label: 'Remuneraciones', moduleKey: 'remuneraciones' },
 { href: '/remuneraciones/prestamos', label: 'Prestamos y anticipos', moduleKey: 'remuneraciones' },

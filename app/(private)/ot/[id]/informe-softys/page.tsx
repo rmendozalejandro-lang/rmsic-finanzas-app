@@ -129,6 +129,17 @@ type InformeTecnico = {
   datos: InformeDatos | null;
 };
 
+type TipoServicioConfig = {
+  id: string;
+  codigo: string | null;
+  nombre: string | null;
+  estructura_ot_codigo: string | null;
+  requiere_checklist: boolean | null;
+  usa_equipos_multiples: boolean | null;
+  usa_checklist_por_equipo: boolean | null;
+  tipo_equipo_permitido: string | null;
+};
+
 type ChecklistResultado = {
   id: string;
   empresa_id: string;
@@ -686,8 +697,12 @@ function CheckInput({
   );
 }
 
-function checkMark(value: boolean | null | undefined) {
-  return value ? "☑" : "□";
+function checkMark(value: unknown) {
+  return value === true || value === 'si' || value === 'sí' || value === 'true' ? "☑" : "□";
+}
+
+function isNoValue(value: unknown) {
+  return value === false || value === 'no' || value === 'false';
 }
 
 function estadoChecklistLabel(value: string | null | undefined) {
@@ -799,6 +814,7 @@ export default function InformeSoftysPage() {
     EquipoChecklistInforme[]
   >([]);
   const [informe, setInforme] = useState<InformeTecnico | null>(null);
+  const [tipoServicioConfig, setTipoServicioConfig] = useState<TipoServicioConfig | null>(null);
   const [informeDatos, setInformeDatos] = useState<InformeDatos>(datosDefault);
   const [savingInforme, setSavingInforme] = useState(false);
   const [saveOk, setSaveOk] = useState("");
@@ -980,6 +996,23 @@ export default function InformeSoftysPage() {
         );
 
         const db = supabase as any;
+
+        const { data: tipoServicioData, error: tipoServicioError } = detalleRow.tipo_servicio_id
+          ? await db
+              .from("ot_tipos_servicio")
+              .select("id,codigo,nombre,estructura_ot_codigo,requiere_checklist,usa_equipos_multiples,usa_checklist_por_equipo,tipo_equipo_permitido")
+              .eq("id", detalleRow.tipo_servicio_id)
+              .maybeSingle()
+          : { data: null, error: null };
+
+        if (tipoServicioError) {
+          throw new Error(
+            `No se pudo cargar configuración del tipo de servicio: ${tipoServicioError.message}`,
+          );
+        }
+
+        setTipoServicioConfig((tipoServicioData ?? null) as TipoServicioConfig | null);
+
         const { data: equiposOtData, error: equiposOtError } = await db
           .from("ot_orden_equipos")
           .select("id,equipo_id,orden,descripcion_trabajo,observacion")
@@ -1183,89 +1216,81 @@ export default function InformeSoftysPage() {
             .sort((a, b) => (a.item_orden ?? 9999) - (b.item_orden ?? 9999)) as EquipoChecklistInforme[],
         );
 
-        if (resumenRow.equipo_id) {
-          const informeResp = await supabase
-            .from("ot_informes_tecnicos")
-            .select("*")
-            .eq("ot_id", otId)
-            .eq("plantilla_codigo", "softys_om")
-            .maybeSingle();
+        const informeResp = await supabase
+          .from("ot_informes_tecnicos")
+          .select("*")
+          .eq("ot_id", otId)
+          .eq("plantilla_codigo", "softys_om")
+          .maybeSingle();
 
-          if (informeResp.error) {
-            throw new Error(
-              `No se pudo cargar informe técnico: ${informeResp.error.message}`,
-            );
-          }
+        if (informeResp.error) {
+          throw new Error(
+            `No se pudo cargar informe técnico: ${informeResp.error.message}`,
+          );
+        }
 
-          if (informeResp.data) {
-            const informeRow = informeResp.data as InformeTecnico;
-            setInforme(informeRow);
-            setInformeDatos(mergeInformeDatos(informeRow.datos));
-          } else {
-            const datosIniciales = mergeInformeDatos({
-              numero_orden_cliente: "",
-              descripcion_trabajo:
-                detalleRow.descripcion_solicitud || detalleRow.titulo || "",
-              empresa_contratista: "DyF Ingeniería y Mantenimiento Industrial",
-              sistema: resumenRow.equipo_planta || "",
-              sub_sistema: resumenRow.equipo_area || "",
-              sub_equipo: resumenRow.equipo_tipo || "",
-              criticidad: "",
-              frecuencia: "",
-              codigo_sap: "",
-              responsable_softys:
-                detalleRow.contacto_cliente_nombre ||
-                detalleRow.cliente_nombre_firma ||
-                "",
-              cargo_responsable_softys:
-                detalleRow.contacto_cliente_cargo ||
-                detalleRow.cliente_cargo_firma ||
-                "",
-              supervisor_contratista: "",
-              cargo_supervisor_contratista: "Supervisor / Técnico DyF",
-              alcance:
-                detalleRow.problema_reportado || detalleRow.diagnostico || "",
-              detalle_trabajo_realizado:
-                detalleRow.trabajo_realizado ||
-                detalleRow.resultado_servicio ||
-                "",
-              herramientas_materiales: detalleRow.observaciones_cierre || "",
-              recomendaciones_seguridad: detalleRow.recomendaciones || "",
-            });
-
-            // En desarrollo, React/Next puede ejecutar este efecto dos veces.
-            // Usamos upsert para evitar error por duplicado si el informe ya fue creado
-            // por una ejecución anterior del mismo render.
-            const nuevoInformeResp = await supabase
-              .from("ot_informes_tecnicos")
-              .upsert(
-                {
-                  empresa_id: resumenRow.empresa_id,
-                  ot_id: resumenRow.id,
-                  plantilla_codigo: "softys_om",
-                  estado: "borrador",
-                  datos: datosIniciales,
-                },
-                { onConflict: "ot_id,plantilla_codigo" },
-              )
-              .select("*")
-              .single();
-
-            if (nuevoInformeResp.error) {
-              throw new Error(
-                `No se pudo crear o cargar informe técnico: ${nuevoInformeResp.error.message}`,
-              );
-            }
-
-            const informeRow = nuevoInformeResp.data as InformeTecnico;
-            setInforme(informeRow);
-            setInformeDatos(
-              mergeInformeDatos(informeRow.datos || datosIniciales),
-            );
-          }
+        if (informeResp.data) {
+          const informeRow = informeResp.data as InformeTecnico;
+          setInforme(informeRow);
+          setInformeDatos(mergeInformeDatos(informeRow.datos));
         } else {
-          setInforme(null);
-          setInformeDatos(datosDefault);
+          const datosIniciales = mergeInformeDatos({
+            numero_orden_cliente: "",
+            descripcion_trabajo:
+              detalleRow.descripcion_solicitud || detalleRow.titulo || "",
+            empresa_contratista: "DyF Ingeniería y Mantenimiento Industrial",
+            sistema: resumenRow.equipo_planta || "",
+            sub_sistema: resumenRow.equipo_area || "",
+            sub_equipo: resumenRow.equipo_tipo || "",
+            criticidad: "",
+            frecuencia: "",
+            codigo_sap: "",
+            responsable_softys:
+              detalleRow.contacto_cliente_nombre ||
+              detalleRow.cliente_nombre_firma ||
+              "",
+            cargo_responsable_softys:
+              detalleRow.contacto_cliente_cargo ||
+              detalleRow.cliente_cargo_firma ||
+              "",
+            supervisor_contratista: "",
+            cargo_supervisor_contratista: "Supervisor / Técnico DyF",
+            alcance:
+              detalleRow.problema_reportado || detalleRow.diagnostico || "",
+            detalle_trabajo_realizado:
+              detalleRow.trabajo_realizado ||
+              detalleRow.resultado_servicio ||
+              "",
+            herramientas_materiales: detalleRow.observaciones_cierre || "",
+            recomendaciones_seguridad: detalleRow.recomendaciones || "",
+          });
+
+          const nuevoInformeResp = await supabase
+            .from("ot_informes_tecnicos")
+            .upsert(
+              {
+                empresa_id: resumenRow.empresa_id,
+                ot_id: resumenRow.id,
+                plantilla_codigo: "softys_om",
+                estado: "borrador",
+                datos: datosIniciales,
+              },
+              { onConflict: "ot_id,plantilla_codigo" },
+            )
+            .select("*")
+            .single();
+
+          if (nuevoInformeResp.error) {
+            throw new Error(
+              `No se pudo crear o cargar informe técnico: ${nuevoInformeResp.error.message}`,
+            );
+          }
+
+          const informeRow = nuevoInformeResp.data as InformeTecnico;
+          setInforme(informeRow);
+          setInformeDatos(
+            mergeInformeDatos(informeRow.datos || datosIniciales),
+          );
         }
       } catch (err) {
         setError(
@@ -1578,6 +1603,28 @@ export default function InformeSoftysPage() {
   const recomendacionesSeguridad =
     informeDatos.recomendaciones_seguridad || detalle.recomendaciones;
 
+  const estructuraOtCodigo = (tipoServicioConfig?.estructura_ot_codigo || "").toLowerCase();
+  const tipoServicioCodigo = (tipoServicioConfig?.codigo || "").toLowerCase();
+  const tipoServicioNombre = (tipoServicioConfig?.nombre || resumen.tipo_servicio_nombre || "").toLowerCase();
+  const usaChecklistPorEquipo = Boolean(tipoServicioConfig?.usa_checklist_por_equipo) ||
+    estructuraOtCodigo.includes("motores") ||
+    estructuraOtCodigo.includes("valvulas") ||
+    tipoServicioCodigo.includes("mantencion_motores") ||
+    tipoServicioCodigo.includes("mantencion_valvulas");
+  const esAsistenciaTecnica = estructuraOtCodigo.includes("asistencia") || tipoServicioCodigo.includes("asistencia") || tipoServicioNombre.includes("asistencia");
+  const esUrgencia = estructuraOtCodigo.includes("urgencia") || tipoServicioCodigo.includes("urgencia") || tipoServicioNombre.includes("urgencia");
+  const esMantenimientoGeneral = estructuraOtCodigo.includes("mantencion_general") || estructuraOtCodigo.includes("mantenimiento_general") || tipoServicioCodigo.includes("mantencion_general") || tipoServicioNombre.includes("mantenimiento general");
+  const clienteNombreInforme = (resumen.cliente_nombre || "").trim();
+  const clienteNombreNormalizado = clienteNombreInforme.toLowerCase();
+  const esClienteSoftys = clienteNombreNormalizado.includes("softys");
+  const clienteFinalLabel = clienteNombreInforme || "Cliente no informado";
+  const informeTitulo = usaChecklistPorEquipo ? "Informe de OM" : "Informe técnico";
+  const ordenClienteLabel = esClienteSoftys ? "N° orden cliente / Softys" : "N° orden cliente";
+  const receptorLabel = esClienteSoftys ? "Responsable Softys / receptor" : "Responsable cliente / receptor";
+  const recepcionSectionTitle = esClienteSoftys
+    ? "Checklist de recepción del trabajo - Responsable Softys"
+    : "Checklist de recepción del trabajo - Responsable cliente";
+
   const totalMinutosEquipo = tiempos.reduce(
     (total, item) => total + (item.duracion_minutos || 0),
     0,
@@ -1674,11 +1721,11 @@ export default function InformeSoftysPage() {
         </button>
       </div>
 
-      {!modoOficial && resumen.equipo_id ? (
+      {!modoOficial && informe ? (
         <section className="screen-edit-panel">
           <div className="mb-4">
             <h2 className="text-lg font-black text-slate-900">
-              Datos manuales del informe DyF / Softys
+              Datos manuales del informe técnico
             </h2>
             <p className="text-sm text-slate-500">
               Estos datos complementan la OM principal y se utilizarán en el
@@ -1700,7 +1747,7 @@ export default function InformeSoftysPage() {
 
           <div className="grid gap-4 md:grid-cols-3">
             <TextInput
-              label="N° orden cliente / Softys"
+              label={ordenClienteLabel}
               value={informeDatos.numero_orden_cliente || ""}
               onChange={(value) =>
                 setCampoInforme("numero_orden_cliente", value)
@@ -1749,12 +1796,12 @@ export default function InformeSoftysPage() {
               onChange={(value) => setCampoInforme("evaluacion_general", value)}
             />
             <TextInput
-              label="Responsable Softys"
+              label={esClienteSoftys ? "Responsable Softys" : "Responsable cliente"}
               value={informeDatos.responsable_softys || ""}
               onChange={(value) => setCampoInforme("responsable_softys", value)}
             />
             <TextInput
-              label="Cargo responsable Softys"
+              label={esClienteSoftys ? "Cargo responsable Softys" : "Cargo responsable cliente"}
               value={informeDatos.cargo_responsable_softys || ""}
               onChange={(value) =>
                 setCampoInforme("cargo_responsable_softys", value)
@@ -1869,12 +1916,12 @@ export default function InformeSoftysPage() {
             </p>
           </div>
         </section>
-      ) : (
+      ) : usaChecklistPorEquipo ? (
         <div className="mx-auto mb-4 max-w-[980px] rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 print:hidden">
-          Esta OT no tiene equipo/TAG asociado. El informe DyF / Softys se
+          Esta OT no tiene equipo/TAG asociado. El informe técnico por equipo se
           mantiene solo para OT industriales con equipo.
         </div>
-      )}
+      ) : null}
 
       <main className="report-page">
         <style jsx global>{`
@@ -2534,25 +2581,31 @@ export default function InformeSoftysPage() {
           </div>
 
           <div className="header-title">
-            <p>Informe de OM</p>
+            <p>{informeTitulo}</p>
             <h1>Orden de Trabajo / Informe Técnico</h1>
             <strong>{labelOrDash(resumen.folio)}</strong>
           </div>
 
-          <div className="logo-wrap right">
-            <img src={SOFTYS_LOGO} alt="Softys" />
-          </div>
+          {esClienteSoftys ? (
+            <div className="logo-wrap right">
+              <img src={SOFTYS_LOGO} alt="Softys" />
+            </div>
+          ) : (
+            <div className="logo-wrap right text-only">
+              <strong>{labelOrDash(clienteFinalLabel)}</strong>
+            </div>
+          )}
         </div>
 
         <div className="report-body">
           <div className="summary-grid">
             <Field
-              label="N° orden cliente / Softys"
+              label={ordenClienteLabel}
               value={informeDatos.numero_orden_cliente}
             />
             <Field
               label="Cliente final"
-              value={resumen.cliente_nombre || "Softys"}
+              value={clienteFinalLabel}
             />
             <Field
               label="Empresa contratista"
@@ -2581,7 +2634,7 @@ export default function InformeSoftysPage() {
               value={formatMinutes(detalle.duracion_minutos)}
             />
             <Field
-              label="Responsable Softys / receptor"
+              label={receptorLabel}
               value={responsableSoftys}
             />
             <Field label="Cargo receptor" value={cargoResponsableSoftys} />
@@ -2591,7 +2644,8 @@ export default function InformeSoftysPage() {
             />
           </div>
 
-          <Section title="Equipos / motores asociados a la OM">
+          {usaChecklistPorEquipo ? (
+            <Section title={tipoServicioConfig?.tipo_equipo_permitido === "valvula" ? "Válvulas asociadas a la OM" : "Equipos / motores asociados a la OM"}>
             {equiposInforme.length > 0 ? (
               <div className="equipment-list">
                 {equiposInforme.map((equipo, index) => {
@@ -2621,10 +2675,52 @@ export default function InformeSoftysPage() {
               <TextBox value="No hay equipos asociados a esta OM." minHeight={60} />
             )}
           </Section>
+          ) : null}
 
+          {!usaChecklistPorEquipo ? (
+            <Section title={
+              esUrgencia
+                ? "Desarrollo de urgencia"
+                : esAsistenciaTecnica
+                  ? "Desarrollo de asistencia técnica"
+                  : esMantenimientoGeneral
+                    ? "Desarrollo de mantenimiento general"
+                    : "Desarrollo técnico del servicio"
+            }>
+              {esUrgencia ? (
+                <>
+                  <p className="label-title">Problema reportado</p>
+                  <TextBox value={detalle.problema_reportado || detalle.descripcion_solicitud} minHeight={70} />
+                  <p className="label-title">Causa detectada</p>
+                  <TextBox value={detalle.causa_probable} minHeight={70} />
+                  <p className="label-title">Solución aplicada</p>
+                  <TextBox value={detalle.trabajo_realizado || detalleTrabajoRealizado} minHeight={85} />
+                  <p className="label-title">Recomendaciones técnicas</p>
+                  <TextBox value={detalle.recomendaciones} minHeight={70} />
+                </>
+              ) : esAsistenciaTecnica ? (
+                <>
+                  <p className="label-title">Desarrollo de asistencia técnica</p>
+                  <TextBox value={detalle.trabajo_realizado || detalleTrabajoRealizado} minHeight={100} />
+                  <p className="label-title">Resultado / observación técnica</p>
+                  <TextBox value={detalle.resultado_servicio || detalle.observaciones_cierre} minHeight={80} />
+                </>
+              ) : (
+                <>
+                  <p className="label-title">Trabajo realizado</p>
+                  <TextBox value={detalle.trabajo_realizado || detalleTrabajoRealizado} minHeight={85} />
+                  <p className="label-title">Hallazgos detectados</p>
+                  <TextBox value={detalle.hallazgos} minHeight={70} />
+                  <p className="label-title">Resultado del servicio</p>
+                  <TextBox value={detalle.resultado_servicio} minHeight={70} />
+                  <p className="label-title">Recomendaciones técnicas</p>
+                  <TextBox value={detalle.recomendaciones} minHeight={70} />
+                </>
+              )}
+            </Section>
+          ) : null}
 
-
-          {(hasValue(detalleTrabajoRealizado) || hasValue(detalle.hallazgos) || hasValue(detalle.conclusiones_tecnicas)) ? (
+          {usaChecklistPorEquipo && (hasValue(detalleTrabajoRealizado) || hasValue(detalle.hallazgos) || hasValue(detalle.conclusiones_tecnicas)) ? (
             <Section title="Detalle de trabajos adicionales fuera del checklist">
               {hasValue(detalleTrabajoRealizado) ? (
                 <>
@@ -2660,7 +2756,8 @@ export default function InformeSoftysPage() {
             </Section>
           ) : null}
 
-          <Section title="Checklist técnico por equipo / motor">
+          {usaChecklistPorEquipo ? (
+            <Section title={tipoServicioConfig?.tipo_equipo_permitido === "valvula" ? "Checklist técnico por equipo / válvula" : "Checklist técnico por equipo / motor"}>
             {equiposInforme.length > 0 ? (
               <div className="equipment-checklist-list">
                 {equiposInforme.map((equipo, index) => {
@@ -2833,6 +2930,7 @@ export default function InformeSoftysPage() {
               <TextBox value="Checklist técnico pendiente de cargar para esta OT." minHeight={60} />
             )}
           </Section>
+          ) : null}
 
           {hasValue(recomendacionesSeguridad) ? (
             <Section title="Recomendaciones de seguridad y observaciones">
@@ -2840,7 +2938,7 @@ export default function InformeSoftysPage() {
             </Section>
           ) : null}
 
-          <Section title="Checklist de recepción del trabajo - Responsable Softys">
+          <Section title={recepcionSectionTitle}>
             <table className="reception-table">
               <thead>
                 <tr>
@@ -2883,7 +2981,7 @@ export default function InformeSoftysPage() {
                     <td>{item.label}</td>
                     <td className="checkbox-cell">{checkMark(item.value)}</td>
                     <td className="checkbox-cell">
-                      {item.value === false ? "☑" : "□"}
+                      {isNoValue(item.value) ? "☑" : "□"}
                     </td>
                   </tr>
                 ))}
@@ -2904,7 +3002,7 @@ export default function InformeSoftysPage() {
                     ].map((item) => (
                       <td key={item}>
                         {item}{" "}
-                        {informeDatos.evaluacion_general === item ? "☑" : "□"}
+                        {String(informeDatos.evaluacion_general || '').toLowerCase() === item.toLowerCase() ? "☑" : "□"}
                       </td>
                     ))}
                   </tr>
@@ -2950,7 +3048,7 @@ export default function InformeSoftysPage() {
           <Section title="Firmas">
             <div className="firma-grid">
               <FirmaBox
-                title="Nombre y firma responsable Softys"
+                title={esClienteSoftys ? "Nombre y firma responsable Softys" : "Nombre y firma responsable cliente"}
                 nombre={firmaCliente?.nombre_firmante || responsableSoftys}
                 cargo={firmaCliente?.cargo_firmante || cargoResponsableSoftys}
                 firmaUrl={firmaCliente?.firma_url}

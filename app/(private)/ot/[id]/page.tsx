@@ -1,11 +1,12 @@
 'use client'
 
 import Link from 'next/link'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import ProtectedModuleRoute from '../../../../components/ProtectedModuleRoute'
 import { OTEvidenciasPanel } from '../../../../components/ot/ot-evidencias-panel'
 import { OTFirmasPanel } from '../../../../components/ot/ot-firmas-panel'
+import { OTChecklistPanel } from '../../../../components/ot/ot-checklist-panel'
 import { OTEquipoChecklistPanel } from '../../../../components/ot/ot-equipo-checklist-panel'
 import { supabase } from '../../../../lib/supabase/client'
 import type { OTResumen } from '../../../../lib/ot/types'
@@ -19,6 +20,7 @@ type OTDetalle = {
   activo_id: string | null
   cotizacion_id: string | null
   tipo_servicio_id: string
+  plantilla_id: string | null
   estado_id: string
   fecha_ot: string
   fecha_programada: string | null
@@ -164,6 +166,21 @@ type PlantillaChecklistInfo = {
   tipo_activo: string | null
 }
 
+type PlantillaOtConfig = {
+  id: string
+  codigo: string | null
+  nombre: string | null
+  flujo_ot: string | null
+  formato_ot: string | null
+  requiere_equipo_encabezado: boolean | null
+  usa_equipos_multiples: boolean | null
+  usa_checklist_por_equipo: boolean | null
+  usa_checklist_por_horas: boolean | null
+  usa_tecnicos_participantes: boolean | null
+  requiere_rut_responsable_cliente: boolean | null
+  tipo_equipo_permitido: string | null
+}
+
 type EstadoOption = {
   id: string
   codigo: string
@@ -214,6 +231,70 @@ type FirmaMini = {
   id: string
   tipo_firma: 'tecnico' | 'cliente' | 'supervisor'
   fecha_firma: string
+}
+
+
+type RecepcionSoftysCheckKey =
+  | 'alcance_ejecutado'
+  | 'area_limpia'
+  | 'seguridad_cumplida'
+  | 'plazo_cumplido'
+  | 'pruebas_realizadas'
+
+type RecepcionSoftysEvaluacion = '' | 'Deficiente' | 'Malo' | 'Regular' | 'Bueno' | 'Excelente'
+
+type RecepcionSoftysState = {
+  checklist_recepcion: Record<RecepcionSoftysCheckKey, '' | 'si' | 'no'>
+  evaluacion_general: RecepcionSoftysEvaluacion
+  observaciones_recepcion: string
+}
+
+type InformeSoftysMini = {
+  id: string
+  datos: Record<string, any> | null
+}
+
+const RECEPCION_SOFTYS_ITEMS: Array<{ key: RecepcionSoftysCheckKey; label: string }> = [
+  {
+    key: 'alcance_ejecutado',
+    label: 'Alcance del trabajo: ¿Se ejecutó todo lo solicitado?',
+  },
+  {
+    key: 'area_limpia',
+    label: 'Limpieza y orden: ¿Se retiraron residuos y herramientas, dejando la zona limpia?',
+  },
+  {
+    key: 'seguridad_cumplida',
+    label: 'Seguridad: ¿Se respetan las normas de seguridad y protocolos?',
+  },
+  {
+    key: 'plazo_cumplido',
+    label: 'Tiempo de ejecución: ¿Se completó dentro del plazo acordado?',
+  },
+  {
+    key: 'pruebas_realizadas',
+    label: 'Funcionamiento y pruebas: ¿Se verificó el correcto funcionamiento de lo ejecutado dentro de lo posible?',
+  },
+]
+
+const RECEPCION_SOFTYS_EVALUACIONES: RecepcionSoftysEvaluacion[] = [
+  'Deficiente',
+  'Malo',
+  'Regular',
+  'Bueno',
+  'Excelente',
+]
+
+const RECEPCION_SOFTYS_DEFAULT: RecepcionSoftysState = {
+  checklist_recepcion: {
+    alcance_ejecutado: '',
+    area_limpia: '',
+    seguridad_cumplida: '',
+    plazo_cumplido: '',
+    pruebas_realizadas: '',
+  },
+  evaluacion_general: '',
+  observaciones_recepcion: '',
 }
 
 type FormState = {
@@ -467,6 +548,41 @@ function siNoFromBoolean(value: boolean | null | undefined): '' | 'si' | 'no' {
   return ''
 }
 
+
+function recepcionSiNoFromBoolean(value: unknown): '' | 'si' | 'no' {
+  if (value === true) return 'si'
+  if (value === false) return 'no'
+  return ''
+}
+
+function recepcionBooleanFromSiNo(value: '' | 'si' | 'no') {
+  if (value === 'si') return true
+  if (value === 'no') return false
+  return undefined
+}
+
+function normalizarRecepcionSoftys(datos: Record<string, any> | null | undefined): RecepcionSoftysState {
+  const checklist = (datos?.checklist_recepcion ?? {}) as Record<string, unknown>
+  const evaluacion = typeof datos?.evaluacion_general === 'string'
+    ? datos.evaluacion_general
+    : ''
+
+  return {
+    checklist_recepcion: {
+      alcance_ejecutado: recepcionSiNoFromBoolean(checklist.alcance_ejecutado),
+      area_limpia: recepcionSiNoFromBoolean(checklist.area_limpia),
+      seguridad_cumplida: recepcionSiNoFromBoolean(checklist.seguridad_cumplida),
+      plazo_cumplido: recepcionSiNoFromBoolean(checklist.plazo_cumplido),
+      pruebas_realizadas: recepcionSiNoFromBoolean(checklist.pruebas_realizadas),
+    },
+    evaluacion_general: RECEPCION_SOFTYS_EVALUACIONES.includes(evaluacion as RecepcionSoftysEvaluacion)
+      ? (evaluacion as RecepcionSoftysEvaluacion)
+      : '',
+    observaciones_recepcion:
+      typeof datos?.observaciones_recepcion === 'string' ? datos.observaciones_recepcion : '',
+  }
+}
+
 function combineDateAndTimeToISOString(
   dateValue: string,
   timeValue: string,
@@ -610,6 +726,66 @@ function getTiposEquipoPermitidos(info: PlantillaChecklistInfo | null) {
   return []
 }
 
+
+function getTiposEquipoPermitidosDesdeValor(value: string | null | undefined) {
+  const raw = normalizeChecklistText(value)
+
+  if (!raw) return []
+
+  if (raw.includes('valvula control') || raw.includes('valvula_control') || raw.includes('control')) {
+    return ['valvula_control', 'valvula']
+  }
+
+  if (raw.includes('valvula') || raw.includes('valvulas')) {
+    return ['valvula', 'valvula_control']
+  }
+
+  if (raw.includes('motor') || raw.includes('motores')) {
+    return ['motor']
+  }
+
+  if (raw.includes('bomba') || raw.includes('bombas')) {
+    return ['bomba']
+  }
+
+  if (raw.includes('variador') || raw.includes('vdf')) {
+    return ['vdf']
+  }
+
+  if (raw.includes('flujo')) {
+    return ['transmisor_flujo']
+  }
+
+  if (raw.includes('presion')) {
+    return ['transmisor_presion']
+  }
+
+  return [raw]
+}
+
+function normalizeTipoEquipoParaFiltro(value: string | null | undefined) {
+  const raw = normalizeChecklistText(value)
+
+  if (!raw) return ''
+  if (raw.includes('valvula control') || raw.includes('valvula_control') || raw.includes('control')) return 'valvula_control'
+  if (raw.includes('valvula')) return 'valvula'
+  if (raw.includes('motor')) return 'motor'
+  if (raw.includes('bomba')) return 'bomba'
+  if (raw.includes('variador') || raw.includes('vdf')) return 'vdf'
+  if (raw.includes('flujo')) return 'transmisor_flujo'
+  if (raw.includes('presion')) return 'transmisor_presion'
+  return raw
+}
+
+function tipoEquipoSingularLabel(value: string | null | undefined) {
+  const raw = normalizeChecklistText(value)
+  if (raw.includes('valvula')) return 'válvula'
+  if (raw.includes('motor')) return 'motor'
+  if (raw.includes('bomba')) return 'bomba'
+  if (raw.includes('variador') || raw.includes('vdf')) return 'variador'
+  return 'equipo'
+}
+
 function tiposEquipoPermitidosLabel(tipos: string[]) {
   if (tipos.length === 0) return ''
 
@@ -636,6 +812,7 @@ function prioridadEquipoClass(criticidad: string | null | undefined) {
 function OTDetalleContent() {
   const params = useParams()
   const router = useRouter()
+  const searchParams = useSearchParams()
 
   const otId = useMemo(() => {
     const raw = params?.id
@@ -648,6 +825,7 @@ function OTDetalleContent() {
   const [saving, setSaving] = useState(false)
   const [savingTiempo, setSavingTiempo] = useState(false)
   const [closingOt, setClosingOt] = useState(false)
+  const [autorizandoEdicionTecnica, setAutorizandoEdicionTecnica] = useState(false)
   const [sendingInforme, setSendingInforme] = useState(false)
   const [deletingOt, setDeletingOt] = useState(false)
 
@@ -673,6 +851,7 @@ function OTDetalleContent() {
   const [equiposDisponibles, setEquiposDisponibles] = useState<EquipoDisponible[]>([])
   const [equiposAsociados, setEquiposAsociados] = useState<EquipoAsociado[]>([])
   const [plantillaChecklistInfo, setPlantillaChecklistInfo] = useState<PlantillaChecklistInfo | null>(null)
+  const [plantillaOtConfig, setPlantillaOtConfig] = useState<PlantillaOtConfig | null>(null)
   const [equipoForm, setEquipoForm] = useState<EquipoAsociadoFormState>({
     equipo_id: '',
     descripcion_trabajo: '',
@@ -682,6 +861,12 @@ function OTDetalleContent() {
   const [equipoAsociadoError, setEquipoAsociadoError] = useState('')
   const [equipoAsociadoSuccess, setEquipoAsociadoSuccess] = useState('')
   const [checklistResponsesCount, setChecklistResponsesCount] = useState(0)
+  const [informeSoftysId, setInformeSoftysId] = useState('')
+  const [informeSoftysDatosBase, setInformeSoftysDatosBase] = useState<Record<string, any>>({})
+  const [recepcionSoftys, setRecepcionSoftys] = useState<RecepcionSoftysState>(RECEPCION_SOFTYS_DEFAULT)
+  const [recepcionSoftysError, setRecepcionSoftysError] = useState('')
+  const [recepcionSoftysSuccess, setRecepcionSoftysSuccess] = useState('')
+  const [savingRecepcionSoftys, setSavingRecepcionSoftys] = useState(false)
   const [perfilesMap, setPerfilesMap] = useState<Record<string, string>>({})
 
   const [estados, setEstados] = useState<EstadoOption[]>([])
@@ -752,14 +937,61 @@ function OTDetalleContent() {
   }, [tiposServicio, form.tipo_servicio_id])
 
   const tipoCodigo = selectedTipo?.codigo ?? ''
+  const tipoCodigoNormalizado = tipoCodigo
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
 
-  const isPreventivaMespack = tipoCodigo === 'preventiva'
-const isPreventivaGeneral = tipoCodigo === 'preventiva_general'
-const isPreventiva = isPreventivaMespack || isPreventivaGeneral
-  const isUrgencia = tipoCodigo === 'urgencia'
-  const isAsistencia = tipoCodigo === 'general'
+  const isPreventivaMespack =
+    tipoCodigoNormalizado === 'preventiva' ||
+    tipoCodigoNormalizado.includes('mantencion_mespack') ||
+    tipoCodigoNormalizado.includes('mantenimiento_mespack')
+  const isPreventivaGeneral =
+    tipoCodigoNormalizado === 'preventiva_general' ||
+    tipoCodigoNormalizado.includes('mantencion_general') ||
+    tipoCodigoNormalizado.includes('mantenimiento_general')
+  const isPreventiva = isPreventivaMespack || isPreventivaGeneral
+  const checklistTipoActivoNormalizado = (plantillaChecklistInfo?.tipo_activo ?? '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+
+  const esChecklistSoftysPorEquipo =
+    checklistTipoActivoNormalizado.includes('motor') ||
+    checklistTipoActivoNormalizado.includes('valvula')
+
+  const esFlujoDyfSoftys =
+    plantillaOtConfig?.flujo_ot === 'dyf_softys' ||
+    plantillaOtConfig?.formato_ot === 'softys_checklist_equipo' ||
+    plantillaOtConfig?.codigo === 'softys_om' ||
+    plantillaOtConfig?.codigo === 'softys_valvulas' ||
+    plantillaOtConfig?.codigo === 'softys_motores' ||
+    esChecklistSoftysPorEquipo
+  const usaEquiposMultiples = Boolean(plantillaOtConfig?.usa_equipos_multiples)
+  const usaTecnicosParticipantes = Boolean(plantillaOtConfig?.usa_tecnicos_participantes)
+  const usaChecklistPorEquipo = esFlujoDyfSoftys && Boolean(plantillaOtConfig?.usa_checklist_por_equipo)
+  const usaChecklistRmsicMespack =
+    !esFlujoDyfSoftys &&
+    (isPreventivaMespack || Boolean(plantillaOtConfig?.usa_checklist_por_horas))
+  const documentoTrabajoLabel = esFlujoDyfSoftys ? 'OM' : 'OT'
+  const isUrgencia = tipoCodigoNormalizado.includes('urgencia')
+  const isAsistencia = tipoCodigoNormalizado.includes('asistencia')
+  const isMantenimientoGeneral =
+    tipoCodigoNormalizado.includes('mantencion_general') ||
+    tipoCodigoNormalizado.includes('mantenimiento_general')
   const isUrgenciaOAsistencia = isUrgencia || isAsistencia
-  const isAsesoria = tipoCodigo === 'asesoria'
+  const isAsesoria = tipoCodigoNormalizado.includes('asesoria') || tipoCodigoNormalizado.includes('consultoria')
+  const isServicioTecnicoSimple =
+    !usaChecklistPorEquipo &&
+    (esFlujoDyfSoftys || isAsistencia || isUrgencia || isMantenimientoGeneral || isAsesoria)
+  const informePrincipalLabel = esFlujoDyfSoftys
+    ? usaChecklistPorEquipo
+      ? 'Informe OM'
+      : 'Informe técnico'
+    : 'PDF OT'
+  const ejecucionTecnicaIntro = usaChecklistPorEquipo
+    ? 'Completa checklist, evidencias, término y firma de recepción.'
+    : 'Registra el desarrollo técnico del servicio, término y firma de recepción.'
 
   const estadoCerrada = useMemo(() => {
     return estados.find((item) => item.codigo === 'cerrada') ?? null
@@ -788,23 +1020,61 @@ const isPreventiva = isPreventivaMespack || isPreventivaGeneral
   }, [tiempos])
 
   const requiresChecklistForClose = useMemo(() => {
-  const requierePorTipo =
-    form.requiere_checklist || isPreventivaMespack
-
-  return requierePorTipo && !!detalle?.plantilla_checklist_id
-}, [
-  form.requiere_checklist,
-  form.tipo_servicio_id,
-  tipoPreventivaId,
-  detalle?.plantilla_checklist_id,
-])
+    return Boolean(
+      usaChecklistPorEquipo &&
+      form.requiere_checklist &&
+      detalle?.plantilla_checklist_id
+    )
+  }, [usaChecklistPorEquipo, form.requiere_checklist, detalle?.plantilla_checklist_id])
 
   const hasTrabajoRealizado = useMemo(() => {
+    if (isUrgencia) {
+      return (
+        !!form.problema_reportado.trim() ||
+        !!form.causa_probable.trim() ||
+        !!form.trabajo_realizado.trim() ||
+        !!form.recomendaciones.trim()
+      )
+    }
+
+    if (isAsistencia || isMantenimientoGeneral) {
+      return (
+        !!form.trabajo_realizado.trim() ||
+        !!form.resultado_servicio.trim() ||
+        !!form.hallazgos.trim() ||
+        !!form.recomendaciones.trim()
+      )
+    }
+
     if (isAsesoria) {
       return !!form.diagnostico.trim() || !!form.conclusiones_tecnicas.trim()
     }
+
     return !!form.trabajo_realizado.trim()
-  }, [form.trabajo_realizado, form.diagnostico, form.conclusiones_tecnicas, isAsesoria])
+  }, [
+    form.problema_reportado,
+    form.causa_probable,
+    form.trabajo_realizado,
+    form.recomendaciones,
+    form.resultado_servicio,
+    form.hallazgos,
+    form.diagnostico,
+    form.conclusiones_tecnicas,
+    isUrgencia,
+    isAsistencia,
+    isMantenimientoGeneral,
+    isAsesoria,
+  ])
+
+  const hasChecklistResponses = useMemo(() => {
+    if (!requiresChecklistForClose) return true
+    return checklistResponsesCount > 0
+  }, [requiresChecklistForClose, checklistResponsesCount])
+
+  const hasContenidoPrincipalParaCierre = useMemo(() => {
+    if (usaChecklistPorEquipo) return hasChecklistResponses
+    return hasTrabajoRealizado
+  }, [usaChecklistPorEquipo, hasChecklistResponses, hasTrabajoRealizado])
 
   const hasTiempos = useMemo(() => tiempos.length > 0, [tiempos])
   const hasAnyFirma = useMemo(() => firmas.length > 0, [firmas])
@@ -819,11 +1089,6 @@ const isPreventiva = isPreventivaMespack || isPreventivaGeneral
     [firmas]
   )
 
-  const hasChecklistResponses = useMemo(() => {
-    if (!requiresChecklistForClose) return true
-    return checklistResponsesCount > 0
-  }, [requiresChecklistForClose, checklistResponsesCount])
-
   const selectedContactoCliente = useMemo(() => {
     return contactosCliente.find((item) => item.id === form.contacto_cliente_id) ?? null
   }, [contactosCliente, form.contacto_cliente_id])
@@ -837,8 +1102,14 @@ const isPreventiva = isPreventivaMespack || isPreventivaGeneral
   }, [equiposAsociados])
 
   const tiposEquipoPermitidos = useMemo(() => {
+    const desdePlantillaOt = getTiposEquipoPermitidosDesdeValor(plantillaOtConfig?.tipo_equipo_permitido)
+    if (desdePlantillaOt.length > 0) return desdePlantillaOt
     return getTiposEquipoPermitidos(plantillaChecklistInfo)
-  }, [plantillaChecklistInfo])
+  }, [plantillaOtConfig?.tipo_equipo_permitido, plantillaChecklistInfo])
+
+  const tipoEquipoSingular = useMemo(() => {
+    return tipoEquipoSingularLabel(plantillaOtConfig?.tipo_equipo_permitido)
+  }, [plantillaOtConfig?.tipo_equipo_permitido])
 
   const filtroTipoEquipoLabel = useMemo(() => {
     return tiposEquipoPermitidosLabel(tiposEquipoPermitidos)
@@ -851,7 +1122,7 @@ const isPreventiva = isPreventivaMespack || isPreventivaGeneral
       .filter((equipo) => !detalle?.cliente_id || !equipo.cliente_id || equipo.cliente_id === detalle.cliente_id)
       .filter((equipo) => {
         if (tiposEquipoPermitidos.length === 0) return true
-        return tiposEquipoPermitidos.includes((equipo.tipo_equipo || '').toLowerCase())
+        return tiposEquipoPermitidos.includes(normalizeTipoEquipoParaFiltro(equipo.tipo_equipo))
       })
       .sort((a, b) => (a.tag || '').localeCompare(b.tag || '', 'es'))
   }, [equiposDisponibles, equiposAsociadosIds, detalle?.cliente_id, tiposEquipoPermitidos])
@@ -959,6 +1230,7 @@ const isPreventiva = isPreventivaMespack || isPreventivaGeneral
                 activo_id,
                 cotizacion_id,
                 tipo_servicio_id,
+                plantilla_id,
                 estado_id,
                 fecha_ot,
                 fecha_programada,
@@ -1096,6 +1368,19 @@ const isPreventiva = isPreventivaMespack || isPreventivaGeneral
         const firmasData = (firmasResp.data ?? []) as FirmaMini[]
         const checklistData = checklistResp.data ?? []
 
+        const informeSoftysResp = await supabase
+          .from('ot_informes_tecnicos')
+          .select('id, datos')
+          .eq('ot_id', otId)
+          .eq('plantilla_codigo', 'softys_om')
+          .maybeSingle()
+
+        if (informeSoftysResp.error) {
+          throw new Error(`No se pudo cargar el checklist de recepción: ${informeSoftysResp.error.message}`)
+        }
+
+        const informeSoftysData = (informeSoftysResp.data ?? null) as InformeSoftysMini | null
+
         const plantillaChecklistPromise = detalleData.plantilla_checklist_id
           ? (supabase as any)
               .from('ot_plantillas_checklist')
@@ -1104,8 +1389,18 @@ const isPreventiva = isPreventivaMespack || isPreventivaGeneral
               .maybeSingle()
           : Promise.resolve({ data: null, error: null })
 
-        const [plantillaChecklistResp, contactosResp, enviosEmailResp, equiposAsociadosResp, equiposDisponiblesResp] = await Promise.all([
+        const plantillaOtConfigPromise = detalleData.plantilla_id
+          ? (supabase as any)
+              .from('ot_plantillas')
+              .select('id, codigo, nombre, flujo_ot, formato_ot, requiere_equipo_encabezado, usa_equipos_multiples, usa_checklist_por_equipo, usa_checklist_por_horas, usa_tecnicos_participantes, requiere_rut_responsable_cliente, tipo_equipo_permitido')
+              .eq('id', detalleData.plantilla_id)
+              .eq('empresa_id', detalleData.empresa_id)
+              .maybeSingle()
+          : Promise.resolve({ data: null, error: null })
+
+        const [plantillaChecklistResp, plantillaOtConfigResp, contactosResp, enviosEmailResp, equiposAsociadosResp, equiposDisponiblesResp] = await Promise.all([
           plantillaChecklistPromise,
+          plantillaOtConfigPromise,
           supabase
             .from('cliente_contactos')
             .select('id, cliente_id, nombre, cargo, area, linea, email, telefono, tipo_contacto, recibe_informes_ot')
@@ -1140,6 +1435,10 @@ const isPreventiva = isPreventivaMespack || isPreventivaGeneral
           throw new Error(`No se pudo cargar la plantilla de checklist: ${plantillaChecklistResp.error.message}`)
         }
 
+        if (plantillaOtConfigResp.error) {
+          throw new Error(`No se pudo cargar la configuración de plantilla OT: ${plantillaOtConfigResp.error.message}`)
+        }
+
         if (contactosResp.error) {
           throw new Error(`No se pudieron cargar los contactos del cliente: ${contactosResp.error.message}`)
         }
@@ -1157,6 +1456,7 @@ const isPreventiva = isPreventivaMespack || isPreventivaGeneral
         }
 
         const plantillaChecklistData = (plantillaChecklistResp.data ?? null) as PlantillaChecklistInfo | null
+        const plantillaOtConfigData = (plantillaOtConfigResp.data ?? null) as PlantillaOtConfig | null
         const contactosData = (contactosResp.data ?? []) as ClienteContactoOption[]
         const enviosEmailData = (enviosEmailResp.data ?? []) as EnvioEmail[]
         const equiposAsociadosData = (equiposAsociadosResp.data ?? []) as EquipoAsociado[]
@@ -1288,7 +1588,13 @@ const isPreventiva = isPreventivaMespack || isPreventivaGeneral
         setEquiposAsociados(equiposAsociadosData)
         setEquiposDisponibles(equiposDisponiblesData)
         setPlantillaChecklistInfo(plantillaChecklistData)
+        setPlantillaOtConfig(plantillaOtConfigData)
         setChecklistResponsesCount(checklistData.length)
+        setInformeSoftysId(informeSoftysData?.id ?? '')
+        setInformeSoftysDatosBase((informeSoftysData?.datos ?? {}) as Record<string, any>)
+        setRecepcionSoftys(normalizarRecepcionSoftys(informeSoftysData?.datos))
+        setRecepcionSoftysError('')
+        setRecepcionSoftysSuccess('')
         setPerfiles(perfilesSelectData)
         setPerfilesMap(nextMap)
         setWarning(perfilesWarning)
@@ -1543,6 +1849,129 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
     return payload
   }
 
+  const handleRecepcionSoftysChecklistChange = (
+    field: RecepcionSoftysCheckKey,
+    value: '' | 'si' | 'no'
+  ) => {
+    setRecepcionSoftys((prev) => ({
+      ...prev,
+      checklist_recepcion: {
+        ...prev.checklist_recepcion,
+        [field]: value,
+      },
+    }))
+  }
+
+  const buildRecepcionSoftysDatos = () => {
+    const checklistActual = (informeSoftysDatosBase.checklist_recepcion ?? {}) as Record<string, any>
+
+    return {
+      ...informeSoftysDatosBase,
+      numero_orden_cliente:
+        informeSoftysDatosBase.numero_orden_cliente || form.numero_om_cliente || '',
+      responsable_softys:
+        informeSoftysDatosBase.responsable_softys || form.contacto_cliente_nombre || '',
+      cargo_responsable_softys:
+        informeSoftysDatosBase.cargo_responsable_softys || form.contacto_cliente_cargo || '',
+      supervisor_contratista:
+        informeSoftysDatosBase.supervisor_contratista || form.supervisor_contratista_nombre || '',
+      cargo_supervisor_contratista:
+        informeSoftysDatosBase.cargo_supervisor_contratista || form.supervisor_contratista_cargo || '',
+      herramientas_materiales:
+        informeSoftysDatosBase.herramientas_materiales || form.herramientas_materiales_utilizados || '',
+      recomendaciones_seguridad:
+        informeSoftysDatosBase.recomendaciones_seguridad || form.recomendaciones_seguridad || '',
+      observaciones_recepcion: recepcionSoftys.observaciones_recepcion.trim(),
+      evaluacion_general: recepcionSoftys.evaluacion_general,
+      checklist_recepcion: {
+        ...checklistActual,
+        alcance_ejecutado: recepcionBooleanFromSiNo(
+          recepcionSoftys.checklist_recepcion.alcance_ejecutado
+        ),
+        area_limpia: recepcionBooleanFromSiNo(recepcionSoftys.checklist_recepcion.area_limpia),
+        seguridad_cumplida: recepcionBooleanFromSiNo(
+          recepcionSoftys.checklist_recepcion.seguridad_cumplida
+        ),
+        plazo_cumplido: recepcionBooleanFromSiNo(recepcionSoftys.checklist_recepcion.plazo_cumplido),
+        pruebas_realizadas: recepcionBooleanFromSiNo(
+          recepcionSoftys.checklist_recepcion.pruebas_realizadas
+        ),
+      },
+    }
+  }
+
+  const validateRecepcionSoftys = () => {
+    if (!esFlujoDyfSoftys) return ''
+
+    const itemPendiente = RECEPCION_SOFTYS_ITEMS.find(
+      (item) => !recepcionSoftys.checklist_recepcion[item.key]
+    )
+
+    if (itemPendiente) {
+      return 'Debes completar el checklist de recepción antes de finalizar el trabajo.'
+    }
+
+    if (!recepcionSoftys.evaluacion_general) {
+      return 'Debes seleccionar la evaluación general antes de finalizar el trabajo.'
+    }
+
+    return ''
+  }
+
+  const saveRecepcionSoftysDraft = async () => {
+    if (!detalle || !esFlujoDyfSoftys) return null
+
+    const datos = buildRecepcionSoftysDatos()
+
+    const informePayload: Record<string, any> = {
+      empresa_id: detalle.empresa_id,
+      ot_id: otId,
+      plantilla_codigo: 'softys_om',
+      estado: 'borrador',
+      datos,
+    }
+
+    if (informeSoftysId) {
+      informePayload.id = informeSoftysId
+    }
+
+    const { data, error: upsertError } = await supabase
+      .from('ot_informes_tecnicos')
+      .upsert(informePayload, { onConflict: 'ot_id,plantilla_codigo' })
+      .select('id, datos')
+      .single()
+
+    if (upsertError) {
+      throw new Error(`No se pudo guardar el checklist de recepción: ${upsertError.message}`)
+    }
+
+    const informeGuardado = data as InformeSoftysMini
+    setInformeSoftysId(informeGuardado.id)
+    setInformeSoftysDatosBase((informeGuardado.datos ?? {}) as Record<string, any>)
+    setRecepcionSoftys(normalizarRecepcionSoftys(informeGuardado.datos))
+
+    return informeGuardado
+  }
+
+  const handleSaveRecepcionSoftys = async () => {
+    try {
+      setSavingRecepcionSoftys(true)
+      setRecepcionSoftysError('')
+      setRecepcionSoftysSuccess('')
+
+      await saveRecepcionSoftysDraft()
+
+      setRecepcionSoftysSuccess('Recepción del trabajo guardada correctamente.')
+      router.refresh()
+    } catch (err) {
+      setRecepcionSoftysError(
+        err instanceof Error ? err.message : 'No se pudo guardar el checklist de recepción Softys.'
+      )
+    } finally {
+      setSavingRecepcionSoftys(false)
+    }
+  }
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
 
@@ -1696,7 +2125,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
       }
 
       if (!equipoForm.equipo_id) {
-        throw new Error('Debes seleccionar un equipo o motor para asociar a la OM.')
+        throw new Error('Debes seleccionar un equipo para asociar a la OM.')
       }
 
       const equipoSeleccionado = equiposDisponibles.find((item) => item.id === equipoForm.equipo_id)
@@ -1820,7 +2249,13 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
         throw new Error('La hora oficial de termino debe ser mayor que la hora oficial de inicio.')
       }
 
+      const recepcionError = validateRecepcionSoftys()
+      if (recepcionError) {
+        throw new Error(recepcionError)
+      }
+
       await saveOtDraft()
+      await saveRecepcionSoftysDraft()
 
       const { error: finalizadoError } = await supabase
         .from('ot_ordenes_trabajo')
@@ -1844,6 +2279,48 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
       setCierreError(err instanceof Error ? err.message : 'No se pudo finalizar el trabajo.')
     } finally {
       setClosingOt(false)
+    }
+  }
+
+
+  const handleToggleEdicionTecnica = async (permitir: boolean) => {
+    try {
+      setAutorizandoEdicionTecnica(true)
+      setCierreError('')
+      setCierreSuccess('')
+      setError('')
+      setSuccess('')
+
+      if (!canManageOt) {
+        throw new Error('No tienes permisos para autorizar edición técnica.')
+      }
+
+      const { error: updateError } = await supabase
+        .from('ot_ordenes_trabajo')
+        .update({
+          permitir_edicion_tecnico: permitir,
+          updated_by: currentUserId || null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', otId)
+
+      if (updateError) {
+        throw new Error(`No se pudo actualizar la autorización técnica: ${updateError.message}`)
+      }
+
+      await loadData(false)
+      setCierreSuccess(
+        permitir
+          ? 'Edición técnica autorizada. El técnico podrá corregir la ejecución y finalizar nuevamente.'
+          : 'Edición técnica bloqueada. La OT queda pendiente de revisión/cierre por supervisor.'
+      )
+      router.refresh()
+    } catch (err) {
+      setCierreError(
+        err instanceof Error ? err.message : 'No se pudo actualizar la autorización técnica.'
+      )
+    } finally {
+      setAutorizandoEdicionTecnica(false)
     }
   }
 
@@ -1883,7 +2360,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
       const json = await response.json().catch(() => null)
 
       if (!response.ok) {
-        throw new Error(json?.error || 'No se pudo enviar el informe OM por email.')
+        throw new Error(json?.error || 'No se pudo enviar el informe por email.')
       }
 
       await loadData(false)
@@ -1905,7 +2382,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
       await enviarInformeEmail(true)
       router.refresh()
     } catch (err) {
-      setEmailError(err instanceof Error ? err.message : 'No se pudo enviar el informe OM.')
+      setEmailError(err instanceof Error ? err.message : 'No se pudo enviar el informe.')
     } finally {
       setSendingInforme(false)
     }
@@ -2029,7 +2506,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
           setCierreSuccess('OT guardada, cerrada e informe enviado correctamente.')
         } catch (emailErr) {
           setCierreSuccess('OT guardada y cerrada correctamente, pero el informe no pudo enviarse.')
-          setEmailError(emailErr instanceof Error ? emailErr.message : 'No se pudo enviar el informe OM.')
+          setEmailError(emailErr instanceof Error ? emailErr.message : 'No se pudo enviar el informe.')
         }
       } else {
         setCierreSuccess('OT guardada y cerrada correctamente.')
@@ -2191,11 +2668,25 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
   const isAssignedSupervisor = Boolean(currentUserId && form.supervisor_id === currentUserId)
   const canManageOt = adminRoles.has(currentRole) || supervisorRoles.has(currentRole) || isAssignedSupervisor
   const isTechnicianOnly = !canManageOt && (isAssignedTechnician || technicianRoles.has(currentRole))
-  const hasTechnicalChecklistFlow = Boolean(form.requiere_checklist || isPreventiva || equiposAsociados.length > 0)
-  const trabajoFinalizadoPorTecnico = Boolean(detalle.finalizado_tecnico_at && !detalle.permitir_edicion_tecnico)
+  const hasTechnicalExecutionFlow = Boolean(
+    usaChecklistPorEquipo || isServicioTecnicoSimple || usaChecklistRmsicMespack
+  )
+  const vistaTecnicaSolicitada =
+    searchParams.get('vista') === 'tecnica' ||
+    searchParams.get('vista') === 'tecnico' ||
+    searchParams.get('modo') === 'tecnico'
+  const mostrarVistaTecnica = hasTechnicalExecutionFlow && (isTechnicianOnly || vistaTecnicaSolicitada)
+  const mostrarBloquesTecnicosEnDetalle = !hasTechnicalExecutionFlow
+  const trabajoFueFinalizadoPorTecnico = Boolean(detalle.finalizado_tecnico_at)
+  const edicionTecnicaAutorizada = Boolean(
+    trabajoFueFinalizadoPorTecnico && detalle.permitir_edicion_tecnico && !isClosed
+  )
+  const trabajoFinalizadoPorTecnico = Boolean(
+    trabajoFueFinalizadoPorTecnico && !detalle.permitir_edicion_tecnico
+  )
   const tecnicoBloqueado = isClosed || trabajoFinalizadoPorTecnico
 
-  if (isTechnicianOnly && hasTechnicalChecklistFlow && tecnicoBloqueado) {
+  if (mostrarVistaTecnica && tecnicoBloqueado) {
     return (
       <div className="space-y-6">
         <div className="rounded-2xl border border-green-200 bg-green-50 p-5 shadow-sm sm:p-6">
@@ -2222,12 +2713,14 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
               >
                 Ver informe oficial
               </Link>
-              <Link
-                href={`/ot/${otId}/checklists`}
-                className="inline-flex w-full items-center justify-center rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-100 sm:w-auto"
-              >
-                Checklists individuales
-              </Link>
+              {usaChecklistPorEquipo ? (
+                <Link
+                  href={`/ot/${otId}/checklists`}
+                  className="inline-flex w-full items-center justify-center rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-100 sm:w-auto"
+                >
+                  Checklists individuales
+                </Link>
+              ) : null}
               <Link
                 href="/ot"
                 className="inline-flex w-full items-center justify-center rounded-xl border border-slate-300 px-5 py-3 text-sm font-medium text-slate-700 hover:bg-slate-100 sm:w-auto"
@@ -2260,7 +2753,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
     )
   }
 
-  if (isTechnicianOnly && hasTechnicalChecklistFlow) {
+  if (mostrarVistaTecnica) {
     return (
       <div className="space-y-6">
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
@@ -2273,7 +2766,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
                 {detalle.titulo}
               </h1>
               <p className="mt-2 text-sm text-slate-600">
-                Trabajo técnico asignado. Completa checklist, evidencias, término y firma de recepción.
+                Trabajo técnico asignado. {ejecucionTecnicaIntro}
               </p>
             </div>
 
@@ -2297,6 +2790,13 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
         {success ? (
           <div className="rounded-2xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
             {success}
+          </div>
+        ) : null}
+
+        {edicionTecnicaAutorizada ? (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 shadow-sm">
+            <span className="font-semibold">Edición autorizada por supervisor.</span>{' '}
+            Corrige los datos necesarios y finaliza nuevamente el trabajo para devolverlo a revisión administrativa.
           </div>
         ) : null}
 
@@ -2350,13 +2850,13 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
           <div className="mt-5 grid gap-4 md:grid-cols-2">
             <div>
               <label className="mb-2 block text-sm font-medium text-slate-700">
-                Hora oficial de inicio OM *
+                {`Hora oficial de inicio ${documentoTrabajoLabel} *`}
               </label>
               <input
                 type="time"
                 value={form.hora_inicio}
                 onChange={(e) => handleChange('hora_inicio', e.target.value)}
-                disabled={isClosed}
+                disabled={isClosed && !canManageOt}
                 className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500 disabled:bg-slate-100"
               />
               <p className="mt-1 text-xs text-slate-500">
@@ -2386,12 +2886,15 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
           </div>
         </form>
 
-        <OTEquipoChecklistPanel
+        {usaChecklistPorEquipo ? (
+      <OTEquipoChecklistPanel
           otId={otId}
           empresaId={detalle.empresa_id}
           currentUserId={currentUserId}
           plantillaId={detalle.plantilla_checklist_id}
-          requiereChecklist={form.requiere_checklist || isPreventivaMespack}
+          requiereChecklist={form.requiere_checklist || usaChecklistPorEquipo || isPreventivaMespack}
+          tipoEquipoPermitido={plantillaOtConfig?.tipo_equipo_permitido}
+          tipoEquipoLabel={filtroTipoEquipoLabel}
           equipos={equiposAsociados.map((item, index) => {
             const equipo = equiposDisponiblesMap[item.equipo_id]
             return {
@@ -2416,6 +2919,278 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
           })}
           onChanged={() => void loadData(false)}
         />
+      ) : null}
+
+        {usaChecklistRmsicMespack ? (
+          <OTChecklistPanel
+            otId={otId}
+            empresaId={detalle.empresa_id}
+            currentUserId={currentUserId}
+            initialPlantillaId={detalle.plantilla_checklist_id}
+            requiereChecklist={form.requiere_checklist || usaChecklistPorEquipo || isPreventivaMespack}
+            onChanged={() => void loadData(false)}
+          />
+        ) : null}
+
+        {!usaChecklistPorEquipo && isServicioTecnicoSimple ? (
+          <form onSubmit={handleSave} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <SectionTitle
+              title={
+                isUrgencia
+                  ? 'Desarrollo de urgencia'
+                  : isAsistencia
+                    ? 'Desarrollo de asistencia técnica'
+                    : isMantenimientoGeneral
+                      ? 'Desarrollo de mantenimiento general'
+                      : 'Desarrollo técnico del servicio'
+              }
+              subtitle="Completa el desarrollo técnico del servicio. Esta información se reflejará en el informe."
+            />
+
+            {isUrgencia ? (
+              <div className="mt-5 grid gap-4 md:grid-cols-2">
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-700">Problema reportado</label>
+                  <textarea
+                    value={form.problema_reportado}
+                    onChange={(e) => handleChange('problema_reportado', e.target.value)}
+                    rows={4}
+                    placeholder="Describe el problema informado o detectado en terreno."
+                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-500"
+                  />
+                </div>
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-700">Causa detectada</label>
+                  <textarea
+                    value={form.causa_probable}
+                    onChange={(e) => handleChange('causa_probable', e.target.value)}
+                    rows={4}
+                    placeholder="Indica la causa probable o confirmada de la falla."
+                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-500"
+                  />
+                </div>
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-700">Solución aplicada</label>
+                  <textarea
+                    value={form.trabajo_realizado}
+                    onChange={(e) => handleChange('trabajo_realizado', e.target.value)}
+                    rows={4}
+                    placeholder="Describe la intervención realizada para resolver la urgencia."
+                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-500"
+                  />
+                </div>
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-700">Recomendaciones técnicas</label>
+                  <textarea
+                    value={form.recomendaciones}
+                    onChange={(e) => handleChange('recomendaciones', e.target.value)}
+                    rows={4}
+                    placeholder="Recomendaciones, pendientes o medidas preventivas."
+                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-500"
+                  />
+                </div>
+              </div>
+            ) : isAsistencia ? (
+              <div className="mt-5 grid gap-4 md:grid-cols-2">
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-700">Desarrollo de asistencia técnica</label>
+                  <textarea
+                    value={form.trabajo_realizado}
+                    onChange={(e) => handleChange('trabajo_realizado', e.target.value)}
+                    rows={6}
+                    placeholder="Describe el desarrollo realizado durante la asistencia técnica."
+                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-500"
+                  />
+                </div>
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-700">Resultado / observación técnica</label>
+                  <textarea
+                    value={form.resultado_servicio}
+                    onChange={(e) => handleChange('resultado_servicio', e.target.value)}
+                    rows={6}
+                    placeholder="Resultado final, condición de entrega o comentarios relevantes."
+                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-500"
+                  />
+                </div>
+              </div>
+            ) : (
+              <div className="mt-5 grid gap-4 md:grid-cols-2">
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-700">Trabajo realizado</label>
+                  <textarea
+                    value={form.trabajo_realizado}
+                    onChange={(e) => handleChange('trabajo_realizado', e.target.value)}
+                    rows={4}
+                    placeholder="Describe las actividades realizadas."
+                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-500"
+                  />
+                </div>
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-700">Hallazgos detectados</label>
+                  <textarea
+                    value={form.hallazgos}
+                    onChange={(e) => handleChange('hallazgos', e.target.value)}
+                    rows={4}
+                    placeholder="Registra hallazgos, anomalías o condiciones encontradas."
+                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-500"
+                  />
+                </div>
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-700">Resultado del servicio</label>
+                  <textarea
+                    value={form.resultado_servicio}
+                    onChange={(e) => handleChange('resultado_servicio', e.target.value)}
+                    rows={4}
+                    placeholder="Indica el resultado final del mantenimiento general."
+                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-500"
+                  />
+                </div>
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-700">Recomendaciones técnicas</label>
+                  <textarea
+                    value={form.recomendaciones}
+                    onChange={(e) => handleChange('recomendaciones', e.target.value)}
+                    rows={4}
+                    placeholder="Recomendaciones, pendientes o acciones sugeridas."
+                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-500"
+                  />
+                </div>
+              </div>
+            )}
+
+            <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+              <button
+                type="submit"
+                disabled={saving || isClosed}
+                className="inline-flex items-center justify-center rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70"
+              >
+                {saving ? 'Guardando...' : 'Guardar desarrollo técnico'}
+              </button>
+            </div>
+          </form>
+        ) : null}
+
+        {esFlujoDyfSoftys ? (
+          <section id="recepcion-softys" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <SectionTitle
+              title="Checklist de recepción del trabajo"
+              subtitle="Completa esta validación solo al finalizar el trabajo. Estos datos se reflejan en el informe OM oficial."
+            />
+
+            <div className="mt-5 overflow-hidden rounded-xl border border-slate-200">
+              <table className="min-w-full divide-y divide-slate-200 text-sm">
+                <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                  <tr>
+                    <th className="w-14 px-3 py-3 text-left font-semibold">Ítem</th>
+                    <th className="px-3 py-3 text-left font-semibold">Descripción</th>
+                    <th className="w-24 px-3 py-3 text-center font-semibold">Sí</th>
+                    <th className="w-24 px-3 py-3 text-center font-semibold">No</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 bg-white">
+                  {RECEPCION_SOFTYS_ITEMS.map((item, index) => (
+                    <tr key={item.key}>
+                      <td className="px-3 py-3 font-medium text-slate-700">{index + 1}</td>
+                      <td className="px-3 py-3 text-slate-700">{item.label}</td>
+                      <td className="px-3 py-3 text-center">
+                        <input
+                          type="radio"
+                          name={`recepcion-${item.key}`}
+                          checked={recepcionSoftys.checklist_recepcion[item.key] === 'si'}
+                          onChange={() => handleRecepcionSoftysChecklistChange(item.key, 'si')}
+                          className="h-4 w-4 accent-slate-900"
+                        />
+                      </td>
+                      <td className="px-3 py-3 text-center">
+                        <input
+                          type="radio"
+                          name={`recepcion-${item.key}`}
+                          checked={recepcionSoftys.checklist_recepcion[item.key] === 'no'}
+                          onChange={() => handleRecepcionSoftysChecklistChange(item.key, 'no')}
+                          className="h-4 w-4 accent-slate-900"
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="mt-5 grid gap-4 md:grid-cols-2">
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  Evaluación general
+                </label>
+                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+                  {RECEPCION_SOFTYS_EVALUACIONES.filter(Boolean).map((item) => (
+                    <label
+                      key={item}
+                      className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700"
+                    >
+                      <input
+                        type="radio"
+                        name="evaluacion-general-softys"
+                        checked={recepcionSoftys.evaluacion_general === item}
+                        onChange={() =>
+                          setRecepcionSoftys((prev) => ({
+                            ...prev,
+                            evaluacion_general: item,
+                          }))
+                        }
+                        className="h-4 w-4 accent-slate-900"
+                      />
+                      {item}
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  Observaciones de recepción
+                </label>
+                <textarea
+                  value={recepcionSoftys.observaciones_recepcion}
+                  onChange={(e) =>
+                    setRecepcionSoftys((prev) => ({
+                      ...prev,
+                      observaciones_recepcion: e.target.value,
+                    }))
+                  }
+                  rows={3}
+                  placeholder="Opcional: comentarios finales antes de firma/recepción."
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-500"
+                />
+              </div>
+            </div>
+
+            {recepcionSoftysError ? (
+              <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                {recepcionSoftysError}
+              </div>
+            ) : null}
+
+            {recepcionSoftysSuccess ? (
+              <div className="mt-4 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+                {recepcionSoftysSuccess}
+              </div>
+            ) : null}
+
+            <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center">
+              <button
+                type="button"
+                onClick={() => void handleSaveRecepcionSoftys()}
+                disabled={savingRecepcionSoftys || isClosed}
+                className="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-70"
+              >
+                {savingRecepcionSoftys ? 'Guardando...' : 'Guardar recepción'}
+              </button>
+              <p className="text-xs text-slate-500">
+                Al finalizar el trabajo, esta sección debe estar completa para que el informe muestre los checks de recepción.
+              </p>
+            </div>
+          </section>
+        ) : null}
 
         <form onSubmit={handleSave} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <SectionTitle
@@ -2426,7 +3201,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
           <div className="mt-5 grid gap-4 md:grid-cols-2">
             <div>
               <label className="mb-2 block text-sm font-medium text-slate-700">
-                Hora oficial de término OM *
+                {`Hora oficial de término ${documentoTrabajoLabel} *`}
               </label>
               <input
                 type="time"
@@ -2523,29 +3298,91 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
                 </span>
               </p>
             ) : null}
-            <p className="mt-3 max-w-2xl text-xs text-slate-500 sm:text-sm">
-              Para DyF / Softys se utiliza un solo informe oficial de OM. Las vistas antiguas de PDF/firma base se mantienen ocultas para evitar confusión con formatos RMSIC.
-            </p>
+            {esFlujoDyfSoftys ? (
+              <p className="mt-3 max-w-2xl text-xs text-slate-500 sm:text-sm">
+                {usaChecklistPorEquipo
+                  ? 'Servicio con trazabilidad por equipos, checklist técnico y técnicos participantes.'
+                  : 'Servicio general sin checklist por equipo. El técnico registra el desarrollo y el informe técnico consolida la ejecución.'}
+              </p>
+            ) : null}
           </div>
 
           <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:justify-end sm:gap-3">
-            {resumen.equipo_id ? (
+            {esFlujoDyfSoftys ? (
               <>
                 <Link
                   href={`/ot/${otId}/informe-softys`}
                   style={{ backgroundColor: '#163A5F', color: '#ffffff' }}
                   className="inline-flex w-full items-center justify-center rounded-xl bg-[#163A5F] px-4 py-3 text-sm font-semibold text-white hover:bg-[#245C90] sm:w-auto sm:py-2"
                 >
-                  Informe OM DyF / Softys
+                  {informePrincipalLabel}
                 </Link>
+                {canManageOt ? (
+                  <button
+                    type="button"
+                    onClick={() => void handleEnviarInformeEmail()}
+                    disabled={sendingInforme || !form.contacto_cliente_id || !contactoEmailParaEnvio}
+                    className="inline-flex w-full items-center justify-center rounded-xl border border-blue-300 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-70 sm:w-auto sm:py-2"
+                    title={
+                      !form.contacto_cliente_id
+                        ? 'Selecciona un contacto cliente antes de enviar.'
+                        : !contactoEmailParaEnvio
+                          ? 'El contacto seleccionado no tiene email registrado.'
+                          : undefined
+                    }
+                  >
+                    {sendingInforme ? 'Enviando...' : 'Enviar informe por email'}
+                  </button>
+                ) : null}
+                {usaChecklistPorEquipo ? (
+                  <Link
+                    href={`/ot/${otId}/checklists`}
+                    className="inline-flex w-full items-center justify-center rounded-xl border border-[#163A5F] bg-white px-4 py-3 text-sm font-semibold text-[#163A5F] hover:bg-blue-50 sm:w-auto sm:py-2"
+                  >
+                    Checklists individuales
+                  </Link>
+                ) : null}
                 <Link
-                  href={`/ot/${otId}/checklists`}
-                  className="inline-flex w-full items-center justify-center rounded-xl border border-[#163A5F] bg-white px-4 py-3 text-sm font-semibold text-[#163A5F] hover:bg-blue-50 sm:w-auto sm:py-2"
+                  href={`/ot/${otId}?vista=tecnica`}
+                  className="inline-flex w-full items-center justify-center rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700 hover:bg-emerald-100 sm:w-auto sm:py-2"
                 >
-                  Checklists individuales
+                  Abrir ejecución técnica
                 </Link>
               </>
-            ) : null}
+            ) : (
+              <>
+                <Link
+                  href={`/ot/${otId}/firma`}
+                  className="inline-flex w-full items-center justify-center rounded-xl border border-blue-300 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-700 hover:bg-blue-100 sm:w-auto sm:py-2"
+                >
+                  Abrir vista cliente / firma
+                </Link>
+                <Link
+                  href={`/ot/${otId}/pdf`}
+                  style={{ backgroundColor: '#163A5F', color: '#ffffff' }}
+                  className="inline-flex w-full items-center justify-center rounded-xl bg-[#163A5F] px-4 py-3 text-sm font-semibold text-white hover:bg-[#245C90] sm:w-auto sm:py-2"
+                >
+                  PDF OT
+                </Link>
+                {canManageOt ? (
+                  <button
+                    type="button"
+                    onClick={() => void handleEnviarInformeEmail()}
+                    disabled={sendingInforme || !form.contacto_cliente_id || !contactoEmailParaEnvio}
+                    className="inline-flex w-full items-center justify-center rounded-xl border border-blue-300 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-70 sm:w-auto sm:py-2"
+                    title={
+                      !form.contacto_cliente_id
+                        ? 'Selecciona un contacto cliente antes de enviar.'
+                        : !contactoEmailParaEnvio
+                          ? 'El contacto seleccionado no tiene email registrado.'
+                          : undefined
+                    }
+                  >
+                    {sendingInforme ? 'Enviando...' : 'Enviar informe por email'}
+                  </button>
+                ) : null}
+              </>
+            )}
 
             <Link
               href="/ot"
@@ -2556,6 +3393,45 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
           </div>
         </div>
       </div>
+
+      {canManageOt && trabajoFueFinalizadoPorTecnico && !isClosed ? (
+        <div className={`rounded-2xl border p-5 shadow-sm ${edicionTecnicaAutorizada ? 'border-amber-200 bg-amber-50' : 'border-emerald-200 bg-emerald-50'}`}>
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div className="min-w-0">
+              <p className={`text-sm font-semibold ${edicionTecnicaAutorizada ? 'text-amber-800' : 'text-emerald-800'}`}>
+                {edicionTecnicaAutorizada ? 'Corrección técnica autorizada' : 'Trabajo finalizado por técnico'}
+              </p>
+              <p className={`mt-1 text-sm ${edicionTecnicaAutorizada ? 'text-amber-700' : 'text-emerald-700'}`}>
+                {edicionTecnicaAutorizada
+                  ? 'El técnico puede modificar la ejecución y debe finalizar nuevamente para devolver la OM a revisión.'
+                  : 'La OM está lista para revisión administrativa, cierre, firma e informe. La edición técnica está bloqueada para evitar cambios posteriores.'}
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap lg:justify-end">
+              {edicionTecnicaAutorizada ? (
+                <button
+                  type="button"
+                  onClick={() => void handleToggleEdicionTecnica(false)}
+                  disabled={autorizandoEdicionTecnica}
+                  className="inline-flex items-center justify-center rounded-xl border border-amber-300 bg-white px-4 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {autorizandoEdicionTecnica ? 'Actualizando...' : 'Bloquear edición técnica'}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => void handleToggleEdicionTecnica(true)}
+                  disabled={autorizandoEdicionTecnica}
+                  className="inline-flex items-center justify-center rounded-xl border border-emerald-300 bg-white px-4 py-2 text-sm font-semibold text-emerald-800 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {autorizandoEdicionTecnica ? 'Autorizando...' : 'Autorizar corrección técnica'}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -2637,10 +3513,11 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
       </div>
 
 
-      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+      {usaEquiposMultiples ? (
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <SectionTitle
-          title="Equipos / motores asociados a la OM"
-          subtitle={canManageOt ? 'Asocia aquí todos los equipos solicitados por Softys. El técnico trabajará solo con esta lista.' : 'Equipos definidos por el administrador o supervisor para esta OM.'}
+          title="Equipos asociados a la OT/OM"
+          subtitle={canManageOt ? 'Asocia aquí todos los equipos definidos para este trabajo.' : 'Equipos definidos por el administrador o supervisor para esta OT.'}
         />
 
         {equipoAsociadoError ? (
@@ -2660,7 +3537,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
             <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr_1fr]">
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-700">
-                  Equipo / motor
+                  Equipo
                 </label>
                 <select
                   value={equipoForm.equipo_id}
@@ -2693,7 +3570,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
                 <input
                   value={equipoForm.descripcion_trabajo}
                   onChange={(e) => handleEquipoAsociadoChange('descripcion_trabajo', e.target.value)}
-                  placeholder="Ej: Mantención motor línea 2"
+                  placeholder={`Ej: Mantención ${tipoEquipoSingular} línea 2`}
                   className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
                 />
               </div>
@@ -2729,7 +3606,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
         <div className="mt-5 space-y-3">
           {equiposAsociados.length === 0 ? (
             <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-              Esta OM aún no tiene equipos asociados en la nueva estructura. Si corresponde, agrega aquí todos los motores o equipos solicitados por Softys.
+              Esta OT aún no tiene equipos asociados en esta estructura. Si corresponde, agrega aquí los equipos definidos para el trabajo.
             </div>
           ) : (
             equiposAsociados.map((item, index) => {
@@ -2785,7 +3662,9 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
           )}
         </div>
       </div>
+      ) : null}
 
+      {!esFlujoDyfSoftys ? (
       <form onSubmit={handleSave} className="space-y-6">
         <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
           <SectionTitle
@@ -2893,7 +3772,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
               <select
                 value={form.contacto_cliente_id}
                 onChange={(e) => handleChange('contacto_cliente_id', e.target.value)}
-                disabled={isClosed}
+                disabled={isClosed && !canManageOt}
                 className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500 disabled:bg-slate-100"
               >
                 <option value="">
@@ -2922,7 +3801,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
                 type="text"
                 value={form.contacto_cliente_cargo}
                 onChange={(e) => handleChange('contacto_cliente_cargo', e.target.value)}
-                disabled={isClosed}
+                disabled={isClosed && !canManageOt}
                 className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500 disabled:bg-slate-100"
               />
             </div>
@@ -2994,14 +3873,15 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
             </label>
           </div>
 
-          {isPreventiva ? (
+          {isPreventiva && !esFlujoDyfSoftys ? (
             <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
               En mantenimiento preventivo el checklist queda marcado automaticamente.
             </div>
           ) : null}
         </div>
 
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        {esFlujoDyfSoftys ? (
+          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
           <SectionTitle
             title="Formato OM Softys"
             subtitle="Campos de la portada principal del informe OM. Se registran una sola vez por orden principal."
@@ -3098,8 +3978,50 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
           </div>
 
         </div>
+        ) : null}
 
-        {isPreventiva ? (
+        {esFlujoDyfSoftys ? (
+          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <SectionTitle
+              title="Planificación / instrucciones para terreno"
+              subtitle="Campos administrativos para orientar al técnico. El desarrollo técnico y el checklist se completan en la vista de ejecución."
+            />
+
+            <div className="mt-5 grid gap-4">
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  Trabajo solicitado / alcance inicial
+                </label>
+                <textarea
+                  value={form.descripcion_solicitud}
+                  onChange={(e) => handleChange('descripcion_solicitud', e.target.value)}
+                  rows={4}
+                  placeholder="Ejemplo: Ejecutar pauta de mantenimiento preventivo según plantilla seleccionada."
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-500"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  Observación administrativa para el técnico
+                </label>
+                <textarea
+                  value={form.problema_reportado}
+                  onChange={(e) => handleChange('problema_reportado', e.target.value)}
+                  rows={3}
+                  placeholder="Opcional: restricciones de acceso, coordinación con Softys, permisos, ventanas horarias o información de terreno."
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-500"
+                />
+              </div>
+
+              <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+                El checklist técnico, fotos, condición encontrada, acciones y término del trabajo quedan reservados para la vista de ejecución técnica.
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {isPreventiva && !esFlujoDyfSoftys ? (
           <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
             <SectionTitle
               title="Contenido OT: mantenimiento preventivo"
@@ -3170,7 +4092,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
           </div>
         ) : null}
 
-        {isUrgenciaOAsistencia ? (
+        {isUrgenciaOAsistencia && !esFlujoDyfSoftys ? (
           <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
             <SectionTitle
               title="Contenido OT: urgencia / asistencia tecnica"
@@ -3298,7 +4220,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
           </div>
         ) : null}
 
-        {isAsesoria ? (
+        {isAsesoria && !esFlujoDyfSoftys ? (
           <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
             <SectionTitle
               title="Contenido OT: consultora / asesoria tecnica"
@@ -3369,7 +4291,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
           </div>
         ) : null}
 
-        {!isPreventiva && !isUrgenciaOAsistencia && !isAsesoria ? (
+        {!esFlujoDyfSoftys && !isPreventiva && !isUrgenciaOAsistencia && !isAsesoria ? (
           <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
             <SectionTitle
               title="Contenido general"
@@ -3494,6 +4416,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
           </Link>
         </div>
       </form>
+      ) : null}
 
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <SectionTitle
@@ -3640,7 +4563,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <SectionTitle
           title="Bitácora de tiempos registrada"
-          subtitle="Historial opcional de bloques de tiempo asociados a esta OT. La hora oficial de cierre se ingresa solo en Cierre / entrega de OM."
+          subtitle={`Historial opcional de bloques de tiempo asociados a esta OT. La hora oficial de cierre se ingresa solo en Cierre / entrega de ${documentoTrabajoLabel}.`}
         />
 
         {tiempos.length === 0 ? (
@@ -3697,12 +4620,15 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
         )}
       </div>
 
+      {mostrarBloquesTecnicosEnDetalle && usaChecklistPorEquipo ? (
       <OTEquipoChecklistPanel
         otId={otId}
         empresaId={detalle.empresa_id}
         currentUserId={currentUserId}
         plantillaId={detalle.plantilla_checklist_id}
-        requiereChecklist={form.requiere_checklist || isPreventivaMespack}
+        requiereChecklist={form.requiere_checklist || usaChecklistPorEquipo || isPreventivaMespack}
+        tipoEquipoPermitido={plantillaOtConfig?.tipo_equipo_permitido}
+        tipoEquipoLabel={filtroTipoEquipoLabel}
         equipos={equiposAsociados.map((item, index) => {
           const equipo = equiposDisponiblesMap[item.equipo_id]
           return {
@@ -3727,23 +4653,62 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
         })}
         onChanged={() => void loadData(false)}
       />
+      ) : null}
 
-      <OTEvidenciasPanel
-        otId={otId}
-        empresaId={detalle.empresa_id}
-        currentUserId={currentUserId}
-      />
+      {mostrarBloquesTecnicosEnDetalle && usaChecklistRmsicMespack ? (
+        <OTChecklistPanel
+          otId={otId}
+          empresaId={detalle.empresa_id}
+          currentUserId={currentUserId}
+          initialPlantillaId={detalle.plantilla_checklist_id}
+          requiereChecklist={form.requiere_checklist || usaChecklistPorEquipo || isPreventivaMespack}
+          onChanged={() => void loadData(false)}
+        />
+      ) : null}
 
-      <OTFirmasPanel
-        otId={otId}
-        empresaId={detalle.empresa_id}
-        currentUserId={currentUserId}
-      />
+      {mostrarBloquesTecnicosEnDetalle ? (
+        <>
+          <OTEvidenciasPanel
+            otId={otId}
+            empresaId={detalle.empresa_id}
+            currentUserId={currentUserId}
+          />
+
+          <OTFirmasPanel
+            otId={otId}
+            empresaId={detalle.empresa_id}
+            currentUserId={currentUserId}
+          />
+        </>
+      ) : null}
+
+      {!mostrarBloquesTecnicosEnDetalle ? (
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-6 shadow-sm">
+          <SectionTitle
+            title="OM lista para ejecución técnica"
+            subtitle="La vista administrativa queda limpia. El checklist, fotos, acciones y término del trabajo se completan en la vista técnica."
+          />
+          <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+            <Link
+              href={`/ot/${otId}?vista=tecnica`}
+              className="inline-flex items-center justify-center rounded-xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white hover:bg-emerald-800"
+            >
+              Abrir ejecución técnica
+            </Link>
+            <Link
+              href={`/ot/${otId}/informe-softys`}
+              className="inline-flex items-center justify-center rounded-xl border border-emerald-300 bg-white px-5 py-3 text-sm font-semibold text-emerald-700 hover:bg-emerald-100"
+            >
+              Ver informe técnico
+            </Link>
+          </div>
+        </div>
+      ) : null}
 
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <SectionTitle
-          title="Cierre / entrega de OM"
-          subtitle="Completa estos datos al entregar el trabajo. La hora término, duración y horas hombre se registran al cierre, no al crear la OM."
+          title={`Cierre / entrega de ${documentoTrabajoLabel}`}
+          subtitle={`Completa estos datos al entregar el trabajo. La hora término, duración y horas hombre se registran al cierre, no al crear la ${documentoTrabajoLabel}.`}
         />
 
         <div className="mt-5 rounded-2xl border border-blue-100 bg-blue-50 p-4">
@@ -3751,7 +4716,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
             <div>
               <p className="text-sm font-semibold text-slate-900">Acciones de cierre</p>
               <p className="mt-1 text-xs text-slate-600">
-                Primero completa los datos de entrega. Luego puedes cerrar sin enviar o cerrar y enviar el informe al contacto seleccionado.
+                Primero completa los datos de entrega. Luego puedes cerrar sin enviar, cerrar y enviar, o reenviar el informe al contacto seleccionado.
               </p>
             </div>
 
@@ -3797,17 +4762,17 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
         <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           <div>
             <label className="mb-2 block text-sm font-medium text-slate-700">
-              Hora oficial de término OM *
+              {`Hora oficial de término ${documentoTrabajoLabel} *`}
             </label>
             <input
               type="time"
               value={form.hora_termino}
               onChange={(e) => handleChange('hora_termino', e.target.value)}
-              disabled={isClosed}
+              disabled={isClosed && !canManageOt}
               className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500 disabled:bg-slate-100"
             />
             <p className="mt-1 text-xs text-slate-500">
-              Esta es la hora oficial de cierre para el informe OM.
+              Esta es la hora oficial de cierre para el informe.
             </p>
           </div>
 
@@ -3821,7 +4786,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
               step="1"
               value={form.cantidad_tecnicos}
               onChange={(e) => handleChange('cantidad_tecnicos', e.target.value)}
-              disabled={isClosed}
+              disabled={isClosed && !canManageOt}
               className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500 disabled:bg-slate-100"
             />
           </div>
@@ -3836,7 +4801,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
               step="0.25"
               value={form.horas_hombre_utilizadas}
               onChange={(e) => handleChange('horas_hombre_utilizadas', e.target.value)}
-              disabled={isClosed}
+              disabled={isClosed && !canManageOt}
               placeholder={horasHombreSugeridas != null ? String(horasHombreSugeridas) : ''}
               className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500 disabled:bg-slate-100"
             />
@@ -3858,7 +4823,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
               onChange={(e) =>
                 handleChange('alcance_trabajo_ejecutado', e.target.value as FormState['alcance_trabajo_ejecutado'])
               }
-              disabled={isClosed}
+              disabled={isClosed && !canManageOt}
               className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500 disabled:bg-slate-100"
             >
               <option value="">Sin definir</option>
@@ -3869,7 +4834,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
               value={form.alcance_trabajo_observacion}
               onChange={(e) => handleChange('alcance_trabajo_observacion', e.target.value)}
               rows={3}
-              disabled={isClosed}
+              disabled={isClosed && !canManageOt}
               placeholder="Observación de alcance, si corresponde."
               className="mt-3 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-500 disabled:bg-slate-100"
             />
@@ -3884,7 +4849,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
               onChange={(e) =>
                 handleChange('ejecutado_segun_programa', e.target.value as FormState['ejecutado_segun_programa'])
               }
-              disabled={isClosed}
+              disabled={isClosed && !canManageOt}
               className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500 disabled:bg-slate-100"
             >
               <option value="">Sin definir</option>
@@ -3895,7 +4860,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
               value={form.ejecutado_segun_programa_observacion}
               onChange={(e) => handleChange('ejecutado_segun_programa_observacion', e.target.value)}
               rows={3}
-              disabled={isClosed}
+              disabled={isClosed && !canManageOt}
               placeholder="Indica el motivo si no se ejecutó según programa."
               className="mt-3 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-500 disabled:bg-slate-100"
             />
@@ -3911,7 +4876,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
               value={form.resultado_servicio}
               onChange={(e) => handleChange('resultado_servicio', e.target.value)}
               rows={4}
-              disabled={isClosed}
+              disabled={isClosed && !canManageOt}
               placeholder="Resumen del resultado final entregado al cliente."
               className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-500 disabled:bg-slate-100"
             />
@@ -3925,7 +4890,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
               value={form.observaciones_cierre}
               onChange={(e) => handleChange('observaciones_cierre', e.target.value)}
               rows={4}
-              disabled={isClosed}
+              disabled={isClosed && !canManageOt}
               placeholder="Observaciones finales de entrega, pendientes o comentarios del cierre."
               className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-500 disabled:bg-slate-100"
             />
@@ -3934,16 +4899,20 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
 
         <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           <CierreStatusItem
-            label="Contenido principal"
-            ok={hasTrabajoRealizado}
+            label={usaChecklistPorEquipo ? 'Ejecución técnica' : 'Contenido principal'}
+            ok={hasContenidoPrincipalParaCierre}
             detail={
-              isAsesoria
-                ? hasTrabajoRealizado
-                  ? 'El analisis tecnico o las conclusiones ya estan completas.'
-                  : 'Debes completar el analisis tecnico o las conclusiones antes de cerrar.'
-                : hasTrabajoRealizado
-                  ? 'El campo principal de ejecucion ya esta completo.'
-                  : 'Debes completar el campo principal de ejecucion antes de cerrar.'
+              usaChecklistPorEquipo
+                ? hasContenidoPrincipalParaCierre
+                  ? `Checklist técnico respondido: ${checklistResponsesCount} registro(s).`
+                  : 'La ejecución técnica se completa desde la vista técnica antes del cierre.'
+                : isAsesoria
+                  ? hasTrabajoRealizado
+                    ? 'El analisis tecnico o las conclusiones ya estan completas.'
+                    : 'Debes completar el analisis tecnico o las conclusiones antes de cerrar.'
+                  : hasTrabajoRealizado
+                    ? 'El campo principal de ejecucion ya esta completo.'
+                    : 'Debes completar el campo principal de ejecucion antes de cerrar.'
             }
           />
 
@@ -3987,6 +4956,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
             }
           />
 
+          {usaChecklistPorEquipo ? (
           <CierreStatusItem
             label="Checklist técnico por equipo"
             ok={hasChecklistResponses}
@@ -3998,6 +4968,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
                 : 'Esta OM no exige checklist técnico para cierre.'
             }
           />
+          ) : null}
 
           <CierreStatusItem
             label="Estado actual"
@@ -4099,13 +5070,13 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
 
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <SectionTitle
-          title="Historial de envíos de informe OM"
+          title="Historial de envíos de informe"
           subtitle="Registro de fecha, hora, contacto, correo y estado de cada envío o reenvío."
         />
 
         {enviosEmail.length === 0 ? (
           <div className="mt-5 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-600">
-            Aún no hay envíos registrados para esta OM.
+            Aún no hay envíos registrados para esta OT/OM.
           </div>
         ) : (
           <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200">

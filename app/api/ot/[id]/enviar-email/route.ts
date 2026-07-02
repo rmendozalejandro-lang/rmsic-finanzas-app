@@ -189,6 +189,28 @@ export async function POST(
       return jsonError('No tienes permisos para enviar informes de esta empresa.', 403)
     }
 
+    const rolesPermitidosEnvio = new Set([
+      'super_admin',
+      'admin',
+      'administrador',
+      'admin_empresa',
+      'admin_operacional',
+      'supervisor',
+      'supervisor_ot',
+      'jefe_ot',
+      'jefe_mantenimiento',
+      'responsable_ot',
+    ])
+
+    const rolUsuario = String(permisoResp.data.rol || '').toLowerCase().trim()
+
+    if (!rolesPermitidosEnvio.has(rolUsuario)) {
+      return jsonError(
+        'Solo administradores o supervisores pueden enviar informes por email.',
+        403
+      )
+    }
+
     if (!ot.contacto_cliente_id) {
       return jsonError(
         'La OM no tiene un contacto de cliente seleccionado desde la base de datos.',
@@ -243,9 +265,9 @@ export async function POST(
 
     const folioLabel = ot.folio || 'Sin folio'
     const numeroOmLabel = ot.numero_om_cliente || 'Sin N° OM cliente'
-    const asunto = `Informe OM ${numeroOmLabel} - ${folioLabel}`
+    const asunto = `Informe técnico ${numeroOmLabel} - ${folioLabel}`
     const senderEmail = getSenderEmail(resendFromEmail)
-    const from = `${empresaNombre} - Informes OM <${senderEmail}>`
+    const from = `${empresaNombre} - Informes técnicos <${senderEmail}>`
 
     const pdfUrl = new URL(`/api/ot-pdf/${otId}`, request.url).toString()
     const pdfResp = await fetch(pdfUrl, {
@@ -286,7 +308,7 @@ export async function POST(
     const html = `
       <div style="font-family: Arial, sans-serif; color: #0f172a; line-height: 1.5; max-width: 680px; margin: 0 auto;">
         <div style="background: #163A5F; color: white; padding: 22px; border-radius: 16px 16px 0 0;">
-          <h1 style="margin: 0; font-size: 22px;">Informe OM</h1>
+          <h1 style="margin: 0; font-size: 22px;">Informe técnico</h1>
           <p style="margin: 6px 0 0;">${escapeHtml(empresaNombre)}</p>
         </div>
 
@@ -294,7 +316,7 @@ export async function POST(
           <p>Estimado/a ${escapeHtml(contacto.nombre)},</p>
 
           <p>
-            Junto con saludar, se adjunta informe OM correspondiente al trabajo realizado.
+            Junto con saludar, se adjunta informe técnico correspondiente al trabajo realizado.
           </p>
 
           <table style="border-collapse: collapse; width: 100%; margin: 16px 0;">
@@ -303,7 +325,7 @@ export async function POST(
               <td style="border: 1px solid #e2e8f0; padding: 8px;">${escapeHtml(folioLabel)}</td>
             </tr>
             <tr>
-              <td style="border: 1px solid #e2e8f0; padding: 8px; background: #f8fafc;"><strong>N° OM cliente</strong></td>
+              <td style="border: 1px solid #e2e8f0; padding: 8px; background: #f8fafc;"><strong>N° orden cliente</strong></td>
               <td style="border: 1px solid #e2e8f0; padding: 8px;">${escapeHtml(numeroOmLabel)}</td>
             </tr>
             <tr>
@@ -324,15 +346,15 @@ export async function POST(
     `
 
     const text = [
-      'Informe OM',
+      'Informe técnico',
       '',
       `Empresa: ${empresaNombre}`,
       `Folio: ${folioLabel}`,
-      `N° OM cliente: ${numeroOmLabel}`,
+      `N° orden cliente: ${numeroOmLabel}`,
       `Trabajo: ${ot.titulo || '-'}`,
       `Contacto: ${contacto.nombre}${contacto.cargo ? ` - ${contacto.cargo}` : ''}`,
       '',
-      'Se adjunta informe OM en PDF.',
+      'Se adjunta informe técnico en PDF.',
       '',
       'Correo generado desde Tralixia. El envío queda registrado como respaldo.',
     ].join('\n')
@@ -392,7 +414,7 @@ export async function POST(
 
     if (!resendResp.ok) {
       return jsonError(
-        resendJson?.message || resendJson?.error || 'No se pudo enviar el informe OM por Resend.',
+        resendJson?.message || resendJson?.error || 'No se pudo enviar el informe por Resend.',
         500
       )
     }
@@ -415,7 +437,7 @@ export async function POST(
     })
   } catch (error) {
     const message =
-      error instanceof Error ? error.message : 'No se pudo enviar el informe OM.'
+      error instanceof Error ? error.message : 'No se pudo enviar el informe.'
 
     return jsonError(message, 500)
   }

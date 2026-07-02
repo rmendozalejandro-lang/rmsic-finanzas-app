@@ -99,6 +99,16 @@ type TipoServicioOption = {
   id: string
   codigo: string
   nombre: string
+  estructura_ot_codigo?: string | null
+  requiere_checklist?: boolean | null
+  usa_equipos_multiples?: boolean | null
+  usa_checklist_por_equipo?: boolean | null
+  tipo_equipo_permitido?: string | null
+}
+
+type InformeTecnicoMini = {
+  id: string
+  datos: Record<string, any> | null
 }
 
 
@@ -533,7 +543,10 @@ const supabaseServiceRoleKeySafe = supabaseServiceRoleKey as string
         .is('deleted_at', null)
         .order('hora_inicio', { ascending: true }),
       adminClient.from('perfiles').select('id, email').order('email', { ascending: true }),
-      adminClient.from('ot_tipos_servicio').select('id, codigo, nombre').eq('activo', true),
+      adminClient
+        .from('ot_tipos_servicio')
+        .select('id, codigo, nombre, estructura_ot_codigo, requiere_checklist, usa_equipos_multiples, usa_checklist_por_equipo, tipo_equipo_permitido')
+        .eq('activo', true),
     ])
 
     if (resumenResp.error) {
@@ -556,6 +569,20 @@ const supabaseServiceRoleKeySafe = supabaseServiceRoleKey as string
     }
     if (tiposResp.error) {
       return jsonError(`No se pudieron cargar los tipos de servicio: ${tiposResp.error.message}`, 500)
+    }
+
+    const informeTecnicoResp = await adminClient
+      .from('ot_informes_tecnicos')
+      .select('id, datos')
+      .eq('ot_id', otId)
+      .eq('plantilla_codigo', 'softys_om')
+      .maybeSingle()
+
+    if (informeTecnicoResp.error) {
+      return jsonError(
+        `No se pudo cargar la recepción/informe técnico: ${informeTecnicoResp.error.message}`,
+        500
+      )
     }
 
     const perfilesRaw = (perfilesResp.data ?? []) as PerfilMini[]
@@ -911,10 +938,86 @@ const supabaseServiceRoleKeySafe = supabaseServiceRoleKey as string
       return '-'
     }
 
+    const tiposServicio = (tiposResp.data ?? []) as TipoServicioOption[]
+    const tipoServicioConfig = tiposServicio.find((item) => item.id === detalle.tipo_servicio_id) ?? null
+    const estructuraOtCodigo = (tipoServicioConfig?.estructura_ot_codigo || '').toLowerCase()
+    const tipoServicioCodigo = (tipoServicioConfig?.codigo || '').toLowerCase()
+    const tipoServicioNombre = (tipoServicioConfig?.nombre || resumen.tipo_servicio_nombre || '').toLowerCase()
+    const usaChecklistPorEquipo = Boolean(tipoServicioConfig?.usa_checklist_por_equipo) ||
+      estructuraOtCodigo.includes('motores') ||
+      estructuraOtCodigo.includes('valvulas') ||
+      tipoServicioCodigo.includes('mantencion_motores') ||
+      tipoServicioCodigo.includes('mantencion_valvulas')
+    const esUrgencia = estructuraOtCodigo.includes('urgencia') || tipoServicioCodigo.includes('urgencia') || tipoServicioNombre.includes('urgencia')
+    const esAsistenciaTecnica = estructuraOtCodigo.includes('asistencia') || tipoServicioCodigo.includes('asistencia') || tipoServicioNombre.includes('asistencia')
+    const esMantenimientoGeneral =
+      estructuraOtCodigo.includes('mantencion_general') ||
+      estructuraOtCodigo.includes('mantenimiento_general') ||
+      tipoServicioCodigo.includes('mantencion_general') ||
+      tipoServicioNombre.includes('mantenimiento general')
+
+    const informeTecnico = informeTecnicoResp.data as InformeTecnicoMini | null
+    const informeDatos = (informeTecnico?.datos ?? {}) as Record<string, any>
+    const checklistRecepcion = (informeDatos.checklist_recepcion ?? {}) as Record<string, any>
+    const boolLabel = (value: unknown) => {
+      if (value === true || value === 'si' || value === 'sí' || value === 'true') return 'Sí'
+      if (value === false || value === 'no' || value === 'false') return 'No'
+      return '-'
+    }
+
+    const recepcionTextoPdf = [
+      'CHECKLIST DE RECEPCIÓN DEL TRABAJO',
+      `Alcance del trabajo: ${boolLabel(checklistRecepcion.alcance_ejecutado)}`,
+      `Limpieza y orden: ${boolLabel(checklistRecepcion.area_limpia)}`,
+      `Seguridad: ${boolLabel(checklistRecepcion.seguridad_cumplida)}`,
+      `Tiempo de ejecución: ${boolLabel(checklistRecepcion.plazo_cumplido)}`,
+      `Funcionamiento y pruebas: ${boolLabel(checklistRecepcion.pruebas_realizadas)}`,
+      informeDatos.evaluacion_general ? `Evaluación general: ${informeDatos.evaluacion_general}` : '',
+      informeDatos.observaciones_recepcion ? `Observaciones recepción: ${informeDatos.observaciones_recepcion}` : '',
+    ].filter((value) => value && value.trim()).join('\n')
+
+    const desarrolloServicioSimplePdf = !usaChecklistPorEquipo
+      ? [
+          esUrgencia
+            ? 'DESARROLLO DE URGENCIA'
+            : esAsistenciaTecnica
+              ? 'DESARROLLO DE ASISTENCIA TÉCNICA'
+              : esMantenimientoGeneral
+                ? 'DESARROLLO DE MANTENIMIENTO GENERAL'
+                : 'DESARROLLO TÉCNICO DEL SERVICIO',
+          esUrgencia ? `Problema reportado:
+${detalle.problema_reportado || detalle.descripcion_solicitud || '-'}` : '',
+          esUrgencia ? `Causa detectada:
+${detalle.causa_probable || '-'}` : '',
+          esUrgencia ? `Solución aplicada:
+${detalle.trabajo_realizado || detalle.resultado_servicio || '-'}` : '',
+          esUrgencia ? `Recomendaciones técnicas:
+${detalle.recomendaciones || '-'}` : '',
+          esAsistenciaTecnica ? `Desarrollo de asistencia técnica:
+${detalle.trabajo_realizado || detalle.descripcion_solicitud || '-'}` : '',
+          esAsistenciaTecnica ? `Resultado / observación técnica:
+${detalle.resultado_servicio || detalle.observaciones_cierre || '-'}` : '',
+          esMantenimientoGeneral ? `Trabajo realizado:
+${detalle.trabajo_realizado || '-'}` : '',
+          esMantenimientoGeneral ? `Hallazgos detectados:
+${detalle.hallazgos || '-'}` : '',
+          esMantenimientoGeneral ? `Resultado del servicio:
+${detalle.resultado_servicio || '-'}` : '',
+          esMantenimientoGeneral ? `Recomendaciones técnicas:
+${detalle.recomendaciones || '-'}` : '',
+        ]
+          .filter((value) => value && value.trim())
+          .join('\n\n')
+      : ''
+
+    const receptorClienteLabel = (resumen.cliente_nombre || '').toLowerCase().includes('softys')
+      ? 'Responsable cliente / Softys'
+      : 'Responsable cliente'
+
     const omSoftysTextoPdf = [
       'DATOS PRINCIPALES INFORME OM',
       `N° OM / Orden cliente: ${detalle.numero_om_cliente || '-'}`,
-      `Responsable cliente / Softys: ${detalle.contacto_cliente_nombre || '-'}${detalle.contacto_cliente_cargo ? ` - ${detalle.contacto_cliente_cargo}` : ''}${detalle.responsable_cliente_rut ? ` - RUT ${detalle.responsable_cliente_rut}` : ''}`,
+      `${receptorClienteLabel}: ${detalle.contacto_cliente_nombre || '-'}${detalle.contacto_cliente_cargo ? ` - ${detalle.contacto_cliente_cargo}` : ''}${detalle.responsable_cliente_rut ? ` - RUT ${detalle.responsable_cliente_rut}` : ''}`,
       `Supervisor contratista: ${detalle.supervisor_contratista_nombre || '-'}${detalle.supervisor_contratista_cargo ? ` - ${detalle.supervisor_contratista_cargo}` : ''}${detalle.supervisor_contratista_rut ? ` - RUT ${detalle.supervisor_contratista_rut}` : ''}`,
       `Área / sector de trabajo: ${detalle.area_trabajo || '-'}`,
       `Hora inicio OM: ${toChileTimeOnly(detalleHorarioBase.hora_inicio) || '-'}`,
@@ -944,22 +1047,28 @@ const supabaseServiceRoleKeySafe = supabaseServiceRoleKey as string
       observaciones_cierre: [
         detalle.observaciones_cierre,
         omSoftysTextoPdf,
-        equiposAsociadosTextoPdf
-          ? `EQUIPOS / MOTORES ASOCIADOS A LA OM\n${equiposAsociadosTextoPdf}`
+        !usaChecklistPorEquipo && desarrolloServicioSimplePdf
+          ? desarrolloServicioSimplePdf
           : '',
-        checklistEquipoTextoPdf
-          ? `CHECKLIST TÉCNICO POR EQUIPO / MOTOR\n${checklistEquipoTextoPdf}`
+        usaChecklistPorEquipo && equiposAsociadosTextoPdf
+          ? `${tipoServicioConfig?.tipo_equipo_permitido === 'valvula' ? 'VÁLVULAS ASOCIADAS A LA OM' : 'EQUIPOS / MOTORES ASOCIADOS A LA OM'}
+${equiposAsociadosTextoPdf}`
+          : '',
+        usaChecklistPorEquipo && checklistEquipoTextoPdf
+          ? `${tipoServicioConfig?.tipo_equipo_permitido === 'valvula' ? 'CHECKLIST TÉCNICO POR EQUIPO / VÁLVULA' : 'CHECKLIST TÉCNICO POR EQUIPO / MOTOR'}
+${checklistEquipoTextoPdf}`
           : '',
         checklistTextoPdf
-          ? `CHECKLIST DE MANTENIMIENTO\n${checklistTextoPdf}`
+          ? `CHECKLIST DE MANTENIMIENTO
+${checklistTextoPdf}`
           : '',
+        recepcionTextoPdf,
       ]
         .filter((value) => value && value.trim())
         .join('\n\n'),
     }
     const evidencias = [...((evidenciasResp.data ?? []) as Evidencia[]), ...evidenciasChecklistPdf]
     const firmas = (firmasResp.data ?? []) as Firma[]
-    const tiposServicio = (tiposResp.data ?? []) as TipoServicioOption[]
     const logoUrl = new URL('/logos/dyf-logo-transparente.png', request.url).toString()
 
     const resumenPdf = {

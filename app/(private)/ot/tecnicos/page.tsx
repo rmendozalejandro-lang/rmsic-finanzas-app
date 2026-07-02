@@ -334,10 +334,11 @@ function TecnicosOTPageContent() {
           <div>
             <p className="text-sm font-medium text-slate-500">Configuración OT</p>
             <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900">
-              Técnicos OT
+              Usuarios con acceso OT
             </h1>
             <p className="mt-2 text-sm text-slate-500">
-              Administra los usuarios que el sistema reconocerá como técnicos para órdenes de trabajo.
+              Administra usuarios del sistema que pueden operar órdenes de trabajo. 
+Estos registros corresponden a personas con acceso a Tralixia y no deben confundirse con los técnicos participantes en terreno.
             </p>
           </div>
 
