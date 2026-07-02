@@ -460,9 +460,9 @@ function humanizePerson(value: string | null | undefined) {
   if (
     lower.includes('rmendoza') ||
     (lower.includes('raul') && lower.includes('mendoza')) ||
-    (lower.includes('raÃºl') && lower.includes('mendoza'))
+    (lower.includes('raúl') && lower.includes('mendoza'))
   ) {
-    return 'RaÃºl Mendoza'
+    return 'Raúl Mendoza'
   }
 
   if (
@@ -928,19 +928,17 @@ function OTDetalleContent() {
     observacion: '',
   })
 
-  const tipoPreventivaId = useMemo(() => {
-    return tiposServicio.find((item) => item.codigo === 'preventiva')?.id ?? ''
-  }, [tiposServicio])
-
   const selectedTipo = useMemo(() => {
     return tiposServicio.find((item) => item.id === form.tipo_servicio_id) ?? null
   }, [tiposServicio, form.tipo_servicio_id])
 
   const tipoCodigo = selectedTipo?.codigo ?? ''
-  const tipoCodigoNormalizado = tipoCodigo
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
+  const tipoServicioNombre = selectedTipo?.nombre ?? resumen?.tipo_servicio_nombre ?? ''
+  const tipoCodigoNormalizado = normalizeChecklistText(
+    [tipoCodigo, tipoServicioNombre, resumen?.tipo_servicio_nombre]
+      .filter(Boolean)
+      .join(' ')
+  )
 
   const isPreventivaMespack =
     tipoCodigoNormalizado === 'preventiva' ||
@@ -951,25 +949,17 @@ function OTDetalleContent() {
     tipoCodigoNormalizado.includes('mantencion_general') ||
     tipoCodigoNormalizado.includes('mantenimiento_general')
   const isPreventiva = isPreventivaMespack || isPreventivaGeneral
-  const checklistTipoActivoNormalizado = (plantillaChecklistInfo?.tipo_activo ?? '')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-
-  const esChecklistSoftysPorEquipo =
-    checklistTipoActivoNormalizado.includes('motor') ||
-    checklistTipoActivoNormalizado.includes('valvula')
-
   const esFlujoDyfSoftys =
     plantillaOtConfig?.flujo_ot === 'dyf_softys' ||
     plantillaOtConfig?.formato_ot === 'softys_checklist_equipo' ||
     plantillaOtConfig?.codigo === 'softys_om' ||
     plantillaOtConfig?.codigo === 'softys_valvulas' ||
     plantillaOtConfig?.codigo === 'softys_motores' ||
-    esChecklistSoftysPorEquipo
+    tipoCodigoNormalizado.includes('softys') ||
+    tipoCodigoNormalizado.includes('dyf_softys')
   const usaEquiposMultiples = Boolean(plantillaOtConfig?.usa_equipos_multiples)
   const usaTecnicosParticipantes = Boolean(plantillaOtConfig?.usa_tecnicos_participantes)
-  const usaChecklistPorEquipo = esFlujoDyfSoftys && Boolean(plantillaOtConfig?.usa_checklist_por_equipo)
+  const usaChecklistPorEquipo = Boolean(plantillaOtConfig?.usa_checklist_por_equipo)
   const usaChecklistRmsicMespack =
     !esFlujoDyfSoftys &&
     (isPreventivaMespack || Boolean(plantillaOtConfig?.usa_checklist_por_horas))
@@ -1097,6 +1087,13 @@ function OTDetalleContent() {
     return selectedContactoCliente?.email || form.contacto_cliente_email || ''
   }, [selectedContactoCliente, form.contacto_cliente_email])
 
+  const esClienteSoftys = useMemo(() => {
+    return normalizeChecklistText(resumen?.cliente_nombre).includes('softys')
+  }, [resumen?.cliente_nombre])
+
+  const contactoClienteLabel = esClienteSoftys ? 'Contacto cliente / Softys' : 'Contacto cliente'
+  const informeDestinoLabel = esFlujoDyfSoftys ? 'Informe OM' : 'Informe técnico'
+
   const equiposAsociadosIds = useMemo(() => {
     return new Set(equiposAsociados.filter((item) => item.activo).map((item) => item.equipo_id))
   }, [equiposAsociados])
@@ -1167,7 +1164,7 @@ function OTDetalleContent() {
         setDeleteError('')
 
         if (!otId) {
-          throw new Error('No se recibiÃ³ el identificador de la OT.')
+          throw new Error('No se recibió el identificador de la OT.')
         }
 
         const {
@@ -1339,7 +1336,7 @@ function OTDetalleContent() {
         }
         if (!resumenResp.data || !detalleResp.data) {
           throw new Error(
-            'No se encontrÃ³ la OT solicitada o fue archivada. Vuelve al listado y selecciona una OT activa.'
+            'No se encontró la OT solicitada o fue archivada. Vuelve al listado y selecciona una OT activa.'
           )
         }
         if (estadosResp.error) {
@@ -1567,13 +1564,13 @@ function OTDetalleContent() {
 
         if (tecnicoResponsableId && !tecnicoAsignadoValido) {
           perfilesWarning = perfilesWarning
-            ? `${perfilesWarning} AdemÃ¡s, el tÃ©cnico asignado no pertenece a la empresa de esta OT.`
-            : 'El tÃ©cnico asignado no pertenece a la empresa de esta OT. Debes reasignarlo antes de guardar.'
+            ? `${perfilesWarning} Además, el técnico asignado no pertenece a la empresa de esta OT.`
+            : 'El técnico asignado no pertenece a la empresa de esta OT. Debes reasignarlo antes de guardar.'
         }
 
         if (supervisorId && !supervisorAsignadoValido) {
           perfilesWarning = perfilesWarning
-            ? `${perfilesWarning} AdemÃ¡s, el supervisor asignado no pertenece a la empresa de esta OT.`
+            ? `${perfilesWarning} Además, el supervisor asignado no pertenece a la empresa de esta OT.`
             : 'El supervisor asignado no pertenece a la empresa de esta OT. Debes reasignarlo antes de guardar.'
         }
 
@@ -1671,24 +1668,34 @@ function OTDetalleContent() {
   }, [loadData])
 
   useEffect(() => {
-    const tipoSeleccionado = tiposServicio.find(
-  (item) => item.id === form.tipo_servicio_id
-)
+    const tipoSeleccionado = tiposServicio.find((item) => item.id === form.tipo_servicio_id)
+    const tipoTexto = normalizeChecklistText(
+      [tipoSeleccionado?.codigo, tipoSeleccionado?.nombre].filter(Boolean).join(' ')
+    )
 
-if (tipoSeleccionado?.codigo === 'preventiva') {
-  setForm((prev) => ({
-    ...prev,
-    requiere_checklist: true,
-  }))
-}
+    if (!tipoTexto) return
 
-if (tipoSeleccionado?.codigo === 'preventiva_general') {
-  setForm((prev) => ({
-    ...prev,
-    requiere_checklist: false,
-  }))
-}
-  }, [form.tipo_servicio_id, tipoPreventivaId])
+    const esServicioConChecklist =
+      tipoTexto === 'preventiva' ||
+      tipoTexto.includes('mespack') ||
+      tipoTexto.includes('motor') ||
+      tipoTexto.includes('motores') ||
+      tipoTexto.includes('valvula') ||
+      tipoTexto.includes('valvulas')
+
+    const esServicioSimple =
+      tipoTexto.includes('asistencia') ||
+      tipoTexto.includes('urgencia') ||
+      tipoTexto.includes('mantencion_general') ||
+      tipoTexto.includes('mantenimiento_general') ||
+      tipoTexto.includes('consultoria') ||
+      tipoTexto.includes('asesoria')
+
+    setForm((prev) => ({
+      ...prev,
+      requiere_checklist: esServicioConChecklist && !esServicioSimple,
+    }))
+  }, [form.tipo_servicio_id, tiposServicio])
 
   const handleChange = <K extends keyof FormState>(field: K, value: FormState[K]) => {
     if (field === 'contacto_cliente_id') {
@@ -1736,13 +1743,13 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
   const validateForm = () => {
     if (!form.tipo_servicio_id) return 'Debes seleccionar un tipo de servicio.'
     if (!form.estado_id) return 'Debes seleccionar un estado.'
-    if (!form.titulo.trim()) return 'Debes ingresar un tÃ­tulo.'
+    if (!form.titulo.trim()) return 'Debes ingresar un título.'
     if (!form.fecha_ot) return 'Debes indicar la fecha OT.'
 
     if (isUrgenciaOAsistencia && form.mostrar_nota_valor_hora) {
       const valor = Number(form.valor_hora_uf)
       if (Number.isNaN(valor) || valor <= 0) {
-        return 'Debes ingresar un valor hora UF vÃ¡lido.'
+        return 'Debes ingresar un valor hora UF válido.'
       }
     }
 
@@ -1761,7 +1768,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
     if (!tiempoForm.usuario_id) return 'Debes seleccionar un usuario para el tiempo.'
     if (!tiempoForm.fecha) return 'Debes indicar la fecha del registro.'
     if (!tiempoForm.hora_inicio) return 'Debes indicar la hora de inicio.'
-    if (!tiempoForm.hora_termino) return 'Debes indicar la hora de tÃ©rmino.'
+    if (!tiempoForm.hora_termino) return 'Debes indicar la hora de término.'
 
     const inicio = new Date(`${tiempoForm.fecha}T${tiempoForm.hora_inicio}`)
     const termino = new Date(`${tiempoForm.fecha}T${tiempoForm.hora_termino}`)
@@ -1771,11 +1778,11 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
     }
 
     if (Number.isNaN(inicio.getTime()) || Number.isNaN(termino.getTime())) {
-      return 'Las horas ingresadas no son vÃ¡lidas.'
+      return 'Las horas ingresadas no son válidas.'
     }
 
     if (termino <= inicio) {
-      return 'La hora de tÃ©rmino debe ser mayor que la hora de inicio. Si el servicio terminÃ³ al dÃ­a siguiente, marca "Termina al dÃ­a siguiente".'
+      return 'La hora de término debe ser mayor que la hora de inicio. Si el servicio terminó al día siguiente, marca "Termina al día siguiente".'
     }
 
     return ''
@@ -2076,7 +2083,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
       setTiempoError('')
       setTiempoSuccess('')
 
-      const confirmar = window.confirm('Â¿Deseas archivar este registro de tiempo? No se borrarÃ¡ de la base.')
+      const confirmar = window.confirm('¿Deseas archivar este registro de tiempo? No se borrará de la base.')
       if (!confirmar) return
 
       const {
@@ -2236,7 +2243,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
       }
 
       if (!form.hora_termino) {
-        throw new Error('Debes ingresar la hora oficial de termino antes de finalizar el trabajo.')
+        throw new Error('Debes ingresar la hora oficial de término antes de finalizar el trabajo.')
       }
 
       const duracion = calculateDurationMinutes(
@@ -2246,7 +2253,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
       )
 
       if (duracion == null) {
-        throw new Error('La hora oficial de termino debe ser mayor que la hora oficial de inicio.')
+        throw new Error('La hora oficial de término debe ser mayor que la hora oficial de inicio.')
       }
 
       const recepcionError = validateRecepcionSoftys()
@@ -2360,7 +2367,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
       const json = await response.json().catch(() => null)
 
       if (!response.ok) {
-        throw new Error(json?.error || 'No se pudo enviar el informe por email.')
+        throw new Error(json?.error || 'No se pudo enviar el informe OM por email.')
       }
 
       await loadData(false)
@@ -2382,7 +2389,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
       await enviarInformeEmail(true)
       router.refresh()
     } catch (err) {
-      setEmailError(err instanceof Error ? err.message : 'No se pudo enviar el informe.')
+      setEmailError(err instanceof Error ? err.message : 'No se pudo enviar el informe OM.')
     } finally {
       setSendingInforme(false)
     }
@@ -2444,12 +2451,12 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
       if (isAsesoria) {
         if (!analisisAsesoria && !conclusionesAsesoria) {
           throw new Error(
-            'El avance quedÃ³ guardado, pero no se pudo cerrar: debes completar al menos el anÃ¡lisis tÃ©cnico o las conclusiones tÃ©cnicas.'
+            'El avance quedó guardado, pero no se pudo cerrar: debes completar al menos el análisis técnico o las conclusiones técnicas.'
           )
         }
       } else if (!trabajoPrincipal) {
         throw new Error(
-          'El avance quedÃ³ guardado, pero no se pudo cerrar: debes completar "Trabajo realizado".'
+          'El avance quedó guardado, pero no se pudo cerrar: debes completar "Trabajo realizado".'
         )
       }
 
@@ -2461,13 +2468,13 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
 
         if (checklistError) {
           throw new Error(
-            `El avance quedÃ³ guardado, pero no se pudo validar el checklist: ${checklistError.message}`
+            `El avance quedó guardado, pero no se pudo validar el checklist: ${checklistError.message}`
           )
         }
 
         if ((checklistActual ?? []).length === 0) {
           throw new Error(
-            'El avance quedÃ³ guardado, pero no se pudo cerrar: esta OT requiere checklist técnico por equipo y aún no tiene respuestas registradas.'
+            'El avance quedó guardado, pero no se pudo cerrar: esta OT requiere checklist técnico por equipo y aún no tiene respuestas registradas.'
           )
         }
       }
@@ -2494,7 +2501,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
 
       if (updateError) {
         throw new Error(
-          `El avance quedÃ³ guardado, pero no se pudo cerrar la OT: ${updateError.message}`
+          `El avance quedó guardado, pero no se pudo cerrar la OT: ${updateError.message}`
         )
       }
 
@@ -2506,7 +2513,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
           setCierreSuccess('OT guardada, cerrada e informe enviado correctamente.')
         } catch (emailErr) {
           setCierreSuccess('OT guardada y cerrada correctamente, pero el informe no pudo enviarse.')
-          setEmailError(emailErr instanceof Error ? emailErr.message : 'No se pudo enviar el informe.')
+          setEmailError(emailErr instanceof Error ? emailErr.message : 'No se pudo enviar el informe OM.')
         }
       } else {
         setCierreSuccess('OT guardada y cerrada correctamente.')
@@ -2598,7 +2605,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
         resumen.equipo_potencia,
       ]
         .filter(Boolean)
-        .join(' Â· ')
+        .join(' · ')
     : ''
 
   if (loading) {
@@ -2630,7 +2637,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
     return (
       <div className="space-y-4">
         <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-sm text-red-700 shadow-sm">
-          No se encontrÃ³ la orden de trabajo.
+          No se encontró la orden de trabajo.
         </div>
 
         <Link
@@ -2856,7 +2863,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
                 type="time"
                 value={form.hora_inicio}
                 onChange={(e) => handleChange('hora_inicio', e.target.value)}
-                disabled={isClosed && !canManageOt}
+                disabled={isClosed}
                 className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500 disabled:bg-slate-100"
               />
               <p className="mt-1 text-xs text-slate-500">
@@ -3246,7 +3253,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
               disabled={saving || closingOt}
               className="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-70"
             >
-              {saving ? 'Guardando...' : 'Guardar termino'}
+              {saving ? 'Guardando...' : 'Guardar término'}
             </button>
             <button
               type="button"
@@ -3294,7 +3301,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
                 Equipo / TAG:{' '}
                 <span className="font-medium text-slate-700">
                   {resumen.equipo_tag}
-                  {resumen.equipo_nombre ? ` Â· ${resumen.equipo_nombre}` : ''}
+                  {resumen.equipo_nombre ? ` · ${resumen.equipo_nombre}` : ''}
                 </span>
               </p>
             ) : null}
@@ -3317,23 +3324,6 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
                 >
                   {informePrincipalLabel}
                 </Link>
-                {canManageOt ? (
-                  <button
-                    type="button"
-                    onClick={() => void handleEnviarInformeEmail()}
-                    disabled={sendingInforme || !form.contacto_cliente_id || !contactoEmailParaEnvio}
-                    className="inline-flex w-full items-center justify-center rounded-xl border border-blue-300 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-70 sm:w-auto sm:py-2"
-                    title={
-                      !form.contacto_cliente_id
-                        ? 'Selecciona un contacto cliente antes de enviar.'
-                        : !contactoEmailParaEnvio
-                          ? 'El contacto seleccionado no tiene email registrado.'
-                          : undefined
-                    }
-                  >
-                    {sendingInforme ? 'Enviando...' : 'Enviar informe por email'}
-                  </button>
-                ) : null}
                 {usaChecklistPorEquipo ? (
                   <Link
                     href={`/ot/${otId}/checklists`}
@@ -3364,23 +3354,6 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
                 >
                   PDF OT
                 </Link>
-                {canManageOt ? (
-                  <button
-                    type="button"
-                    onClick={() => void handleEnviarInformeEmail()}
-                    disabled={sendingInforme || !form.contacto_cliente_id || !contactoEmailParaEnvio}
-                    className="inline-flex w-full items-center justify-center rounded-xl border border-blue-300 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-70 sm:w-auto sm:py-2"
-                    title={
-                      !form.contacto_cliente_id
-                        ? 'Selecciona un contacto cliente antes de enviar.'
-                        : !contactoEmailParaEnvio
-                          ? 'El contacto seleccionado no tiene email registrado.'
-                          : undefined
-                    }
-                  >
-                    {sendingInforme ? 'Enviando...' : 'Enviar informe por email'}
-                  </button>
-                ) : null}
               </>
             )}
 
@@ -3463,7 +3436,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
         </div>
 
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-sm text-slate-500">DuraciÃ³n OT (cierre)</p>
+          <p className="text-sm text-slate-500">Duración OT (cierre)</p>
           <p className="mt-2 text-lg font-semibold text-slate-900">
             {formatDuration(detalle.duracion_minutos)}
           </p>
@@ -3735,7 +3708,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
 
             <div>
               <label className="mb-2 block text-sm font-medium text-slate-700">
-                TÃ­tulo *
+                Título *
               </label>
               <input
                 type="text"
@@ -3759,7 +3732,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
                 <option value="baja">Baja</option>
                 <option value="media">Media</option>
                 <option value="alta">Alta</option>
-                <option value="critica">Cri­tica</option>
+                <option value="critica">Crítica</option>
               </select>
             </div>
           </div>
@@ -3767,12 +3740,12 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
           <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             <div>
               <label className="mb-2 block text-sm font-medium text-slate-700">
-                Contacto cliente / Softys
+                {contactoClienteLabel}
               </label>
               <select
                 value={form.contacto_cliente_id}
                 onChange={(e) => handleChange('contacto_cliente_id', e.target.value)}
-                disabled={isClosed && !canManageOt}
+                disabled={isClosed}
                 className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500 disabled:bg-slate-100"
               >
                 <option value="">
@@ -3788,7 +3761,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
               </select>
               <p className="mt-1 text-xs text-slate-500">
                 {contactoEmailParaEnvio
-                  ? `Informe OM dirigido a: ${contactoEmailParaEnvio}`
+                  ? `${informeDestinoLabel} dirigido a: ${contactoEmailParaEnvio}`
                   : 'Registra contactos desde Clientes para habilitar envío de informe.'}
               </p>
             </div>
@@ -3801,14 +3774,14 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
                 type="text"
                 value={form.contacto_cliente_cargo}
                 onChange={(e) => handleChange('contacto_cliente_cargo', e.target.value)}
-                disabled={isClosed && !canManageOt}
+                disabled={isClosed}
                 className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500 disabled:bg-slate-100"
               />
             </div>
 
             <div>
               <label className="mb-2 block text-sm font-medium text-slate-700">
-                Ãrea / sector de trabajo
+                Área / sector de trabajo
               </label>
               <input
                 type="text"
@@ -3820,12 +3793,12 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
           </div>
 
           <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-            <h3 className="text-base font-semibold text-slate-900">Asignacion</h3>
+            <h3 className="text-base font-semibold text-slate-900">Asignación</h3>
 
             <div className="mt-5 grid gap-4 md:grid-cols-2">
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-700">
-                  Tecnico responsable
+                  Técnico responsable
                 </label>
                 <select
                   value={form.tecnico_responsable_id}
@@ -3875,7 +3848,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
 
           {isPreventiva && !esFlujoDyfSoftys ? (
             <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
-              En mantenimiento preventivo el checklist queda marcado automaticamente.
+              En mantenimiento preventivo el checklist queda marcado automáticamente.
             </div>
           ) : null}
         </div>
@@ -4025,7 +3998,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
           <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
             <SectionTitle
               title="Contenido OT: mantenimiento preventivo"
-              subtitle="Estructura enfocada en control, ejecucion, hallazgos y recomendaciones."
+              subtitle="Estructura enfocada en control, ejecución, hallazgos y recomendaciones."
             />
 
             <div className="mt-5 grid gap-4">
@@ -4126,7 +4099,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
 
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-700">
-                  Diagnostico
+                  Diagnóstico
                 </label>
                 <textarea
                   value={form.diagnostico}
@@ -4254,7 +4227,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
 
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-700">
-                  Analisis tecnico
+                  Análisis técnico
                 </label>
                 <textarea
                   value={form.diagnostico}
@@ -4266,7 +4239,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
 
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-700">
-                  Conclusiones tecnicas
+                  Conclusiones técnicas
                 </label>
                 <textarea
                   value={form.conclusiones_tecnicas}
@@ -4295,13 +4268,13 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
           <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
             <SectionTitle
               title="Contenido general"
-              subtitle="Modo de respaldo para tipos no clasificados todavia."
+              subtitle="Modo de respaldo para tipos no clasificados todavía."
             />
 
             <div className="mt-5 grid gap-4">
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-700">
-                  DescripciÃ³n de la solicitud
+                  Descripción de la solicitud
                 </label>
                 <textarea
                   value={form.descripcion_solicitud}
@@ -4325,7 +4298,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
 
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-700">
-                  Diagnostico
+                  Diagnóstico
                 </label>
                 <textarea
                   value={form.diagnostico}
@@ -4699,7 +4672,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
               href={`/ot/${otId}/informe-softys`}
               className="inline-flex items-center justify-center rounded-xl border border-emerald-300 bg-white px-5 py-3 text-sm font-semibold text-emerald-700 hover:bg-emerald-100"
             >
-              Ver informe técnico
+              Ver informe OM
             </Link>
           </div>
         </div>
@@ -4716,7 +4689,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
             <div>
               <p className="text-sm font-semibold text-slate-900">Acciones de cierre</p>
               <p className="mt-1 text-xs text-slate-600">
-                Primero completa los datos de entrega. Luego puedes cerrar sin enviar, cerrar y enviar, o reenviar el informe al contacto seleccionado.
+                Primero completa los datos de entrega. Luego puedes cerrar sin enviar o cerrar y enviar el informe al contacto seleccionado.
               </p>
             </div>
 
@@ -4768,7 +4741,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
               type="time"
               value={form.hora_termino}
               onChange={(e) => handleChange('hora_termino', e.target.value)}
-              disabled={isClosed && !canManageOt}
+              disabled={isClosed}
               className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500 disabled:bg-slate-100"
             />
             <p className="mt-1 text-xs text-slate-500">
@@ -4786,7 +4759,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
               step="1"
               value={form.cantidad_tecnicos}
               onChange={(e) => handleChange('cantidad_tecnicos', e.target.value)}
-              disabled={isClosed && !canManageOt}
+              disabled={isClosed}
               className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500 disabled:bg-slate-100"
             />
           </div>
@@ -4801,7 +4774,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
               step="0.25"
               value={form.horas_hombre_utilizadas}
               onChange={(e) => handleChange('horas_hombre_utilizadas', e.target.value)}
-              disabled={isClosed && !canManageOt}
+              disabled={isClosed}
               placeholder={horasHombreSugeridas != null ? String(horasHombreSugeridas) : ''}
               className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500 disabled:bg-slate-100"
             />
@@ -4823,7 +4796,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
               onChange={(e) =>
                 handleChange('alcance_trabajo_ejecutado', e.target.value as FormState['alcance_trabajo_ejecutado'])
               }
-              disabled={isClosed && !canManageOt}
+              disabled={isClosed}
               className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500 disabled:bg-slate-100"
             >
               <option value="">Sin definir</option>
@@ -4834,7 +4807,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
               value={form.alcance_trabajo_observacion}
               onChange={(e) => handleChange('alcance_trabajo_observacion', e.target.value)}
               rows={3}
-              disabled={isClosed && !canManageOt}
+              disabled={isClosed}
               placeholder="Observación de alcance, si corresponde."
               className="mt-3 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-500 disabled:bg-slate-100"
             />
@@ -4849,7 +4822,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
               onChange={(e) =>
                 handleChange('ejecutado_segun_programa', e.target.value as FormState['ejecutado_segun_programa'])
               }
-              disabled={isClosed && !canManageOt}
+              disabled={isClosed}
               className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500 disabled:bg-slate-100"
             >
               <option value="">Sin definir</option>
@@ -4860,7 +4833,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
               value={form.ejecutado_segun_programa_observacion}
               onChange={(e) => handleChange('ejecutado_segun_programa_observacion', e.target.value)}
               rows={3}
-              disabled={isClosed && !canManageOt}
+              disabled={isClosed}
               placeholder="Indica el motivo si no se ejecutó según programa."
               className="mt-3 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-500 disabled:bg-slate-100"
             />
@@ -4876,7 +4849,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
               value={form.resultado_servicio}
               onChange={(e) => handleChange('resultado_servicio', e.target.value)}
               rows={4}
-              disabled={isClosed && !canManageOt}
+              disabled={isClosed}
               placeholder="Resumen del resultado final entregado al cliente."
               className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-500 disabled:bg-slate-100"
             />
@@ -4890,7 +4863,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
               value={form.observaciones_cierre}
               onChange={(e) => handleChange('observaciones_cierre', e.target.value)}
               rows={4}
-              disabled={isClosed && !canManageOt}
+              disabled={isClosed}
               placeholder="Observaciones finales de entrega, pendientes o comentarios del cierre."
               className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-500 disabled:bg-slate-100"
             />
@@ -4908,11 +4881,11 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
                   : 'La ejecución técnica se completa desde la vista técnica antes del cierre.'
                 : isAsesoria
                   ? hasTrabajoRealizado
-                    ? 'El analisis tecnico o las conclusiones ya estan completas.'
-                    : 'Debes completar el analisis tecnico o las conclusiones antes de cerrar.'
+                    ? 'El análisis técnico o las conclusiones ya están completas.'
+                    : 'Debes completar el análisis técnico o las conclusiones antes de cerrar.'
                   : hasTrabajoRealizado
-                    ? 'El campo principal de ejecucion ya esta completo.'
-                    : 'Debes completar el campo principal de ejecucion antes de cerrar.'
+                    ? 'El campo principal de ejecución ya está completo.'
+                    : 'Debes completar el campo principal de ejecución antes de cerrar.'
             }
           />
 
@@ -5070,13 +5043,13 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
 
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <SectionTitle
-          title="Historial de envíos de informe"
+          title="Historial de envíos de informe OM"
           subtitle="Registro de fecha, hora, contacto, correo y estado de cada envío o reenvío."
         />
 
         {enviosEmail.length === 0 ? (
           <div className="mt-5 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-600">
-            Aún no hay envíos registrados para esta OT/OM.
+            Aún no hay envíos registrados para esta OM.
           </div>
         ) : (
           <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200">
