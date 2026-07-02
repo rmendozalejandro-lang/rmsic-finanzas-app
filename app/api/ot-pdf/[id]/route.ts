@@ -1,4 +1,4 @@
-﻿import { NextRequest } from "next/server";
+import { NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { renderToBuffer } from "@react-pdf/renderer";
 import type { DocumentProps } from "@react-pdf/renderer";
@@ -36,6 +36,12 @@ type OTDetalle = {
   supervisor_contratista_cargo: string | null;
   herramientas_materiales_utilizados: string | null;
   recomendaciones_seguridad: string | null;
+  seguridad_permiso_trabajo: boolean;
+  seguridad_uso_epp: boolean;
+  seguridad_bloqueo_tarjeta: boolean;
+  seguridad_observacion: string | null;
+  seguridad_validada_at: string | null;
+  seguridad_validada_by: string | null;
   alcance_trabajo_ejecutado: boolean | null;
   alcance_trabajo_observacion: string | null;
   ejecutado_segun_programa: boolean | null;
@@ -556,6 +562,12 @@ export async function GET(
             supervisor_contratista_cargo,
             herramientas_materiales_utilizados,
             recomendaciones_seguridad,
+            seguridad_permiso_trabajo,
+            seguridad_uso_epp,
+            seguridad_bloqueo_tarjeta,
+            seguridad_observacion,
+            seguridad_validada_at,
+            seguridad_validada_by,
             alcance_trabajo_ejecutado,
             alcance_trabajo_observacion,
             ejecutado_segun_programa,
