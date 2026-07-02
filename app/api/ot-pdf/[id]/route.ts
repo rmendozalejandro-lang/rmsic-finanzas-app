@@ -5,6 +5,8 @@ import type { DocumentProps } from "@react-pdf/renderer";
 import { OTPdfDocument } from "../../../../components/ot/ot-pdf-document";
 import type { OTResumen } from "../../../../lib/ot/types";
 import React from "react";
+import { existsSync } from "fs";
+import path from "path";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -112,6 +114,39 @@ type InformeTecnicoMini = {
 };
 
 const CHILE_TIME_ZONE = "America/Santiago";
+const DYF_EMPRESA_ID = "73dd5543-2bf7-4d44-9982-4a641c8658f5";
+const RMSIC_EMPRESA_ID = "557a054c-71ef-4c5f-8637-594755ad669b";
+
+
+const pickPublicLogoUrl = (request: NextRequest, candidates: string[]) => {
+  for (const candidate of candidates) {
+    const relativePath = candidate.startsWith("/") ? candidate.slice(1) : candidate;
+    const absolutePath = path.join(process.cwd(), "public", relativePath);
+    if (existsSync(absolutePath)) {
+      return new URL(candidate, request.url).toString();
+    }
+  }
+
+  return null;
+};
+
+const DYF_LOGO_CANDIDATES = [
+  "/logos/dyf-logo-transparente.png",
+  "/logos/dyf-logo.png",
+  "/logos/logo-dyf.png",
+];
+
+const RMSIC_LOGO_CANDIDATES = [
+  "/logos/rmsic-original.png",
+  "/logos/logo-rmsic.png",
+  "/logos/rmsic.png",
+  "/rmsic-logo.png",
+  "/logo-rmsic.png",
+  "/logo-rmsic-original.png",
+  "/Logo_RMSIC.png",
+  "/logo.png",
+  "/logos/rmsic-logo.png",
+];
 
 type DateTimeParts = {
   year: string;
@@ -206,6 +241,17 @@ function toChileTimeOnly(value: string | null | undefined) {
   const parts = getChileDateTimeParts(value);
   if (!parts) return null;
   return `${parts.hour}:${parts.minute}`;
+}
+
+function toPdfTimeOnly(value: string | null | undefined) {
+  if (!value) return null;
+
+  // Si ya viene como fecha/hora flotante local, por ejemplo 2026-07-01T20:00:00,
+  // no lo volvemos a convertir a zona horaria para evitar desfases en Vercel.
+  const floatingMatch = String(value).trim().match(/T(\d{2}):(\d{2})/);
+  if (floatingMatch) return `${floatingMatch[1]}:${floatingMatch[2]}`;
+
+  return toChileTimeOnly(value);
 }
 
 type TiempoTrabajo = {
@@ -696,9 +742,13 @@ export async function GET(
     const detalleHorarioBase: OTDetalle = {
       ...detalle,
       hora_inicio:
-        detalle.hora_inicio || horarioDesdeTiempos?.hora_inicio || null,
+        toChileFloatingDateTime(detalle.hora_inicio) ||
+        horarioDesdeTiempos?.hora_inicio ||
+        null,
       hora_termino:
-        detalle.hora_termino || horarioDesdeTiempos?.hora_termino || null,
+        toChileFloatingDateTime(detalle.hora_termino) ||
+        horarioDesdeTiempos?.hora_termino ||
+        null,
       duracion_minutos:
         detalle.duracion_minutos ??
         horarioDesdeTiempos?.duracion_minutos ??
@@ -1125,6 +1175,12 @@ export async function GET(
       tipoServicioCodigo.includes("mantencion_general") ||
       tipoServicioNombre.includes("mantenimiento general");
 
+    const esEmpresaDyf = detalle.empresa_id === DYF_EMPRESA_ID;
+    const esClienteSoftys = (resumen.cliente_nombre || "")
+      .toLowerCase()
+      .includes("softys");
+    const esFlujoDyfSoftys = esEmpresaDyf || esClienteSoftys;
+
     const informeTecnico = informeTecnicoResp.data as InformeTecnicoMini | null;
     const informeDatos = (informeTecnico?.datos ?? {}) as Record<string, any>;
     const checklistRecepcion = (informeDatos.checklist_recepcion ??
@@ -1259,6 +1315,10 @@ export async function GET(
               ])
       : "";
 
+    // La estructura simple la renderiza el componente PDF desde los campos reales.
+    // Se mantiene esta variable para compatibilidad mientras se retiran secciones antiguas.
+    void desarrolloServicioSimplePdf;
+
     const receptorClienteLabel = (resumen.cliente_nombre || "")
       .toLowerCase()
       .includes("softys")
@@ -1294,11 +1354,11 @@ export async function GET(
         ? `Supervisor contratista: ${supervisorContratistaTexto}`
         : "",
       optionalTextLine("Área / sector de trabajo", detalle.area_trabajo),
-      toChileTimeOnly(detalleHorarioBase.hora_inicio)
-        ? `Hora inicio: ${toChileTimeOnly(detalleHorarioBase.hora_inicio)}`
+      toPdfTimeOnly(detalleHorarioBase.hora_inicio)
+        ? `Hora inicio: ${toPdfTimeOnly(detalleHorarioBase.hora_inicio)}`
         : "",
-      toChileTimeOnly(detalleHorarioBase.hora_termino)
-        ? `Hora término: ${toChileTimeOnly(detalleHorarioBase.hora_termino)}`
+      toPdfTimeOnly(detalleHorarioBase.hora_termino)
+        ? `Hora término: ${toPdfTimeOnly(detalleHorarioBase.hora_termino)}`
         : "",
       optionalNumberLine("Cantidad de técnicos", detalle.cantidad_tecnicos),
       optionalNumberLine(
@@ -1346,10 +1406,11 @@ export async function GET(
       hallazgos: cleanText(detalle.hallazgos),
       conclusiones_tecnicas: cleanText(detalle.conclusiones_tecnicas),
       observaciones_cierre: [
-        omSoftysTextoPdf,
-        !usaChecklistPorEquipo && desarrolloServicioSimplePdf
-          ? desarrolloServicioSimplePdf
+        cleanText(detalle.observaciones_cierre)
+          ? `OBSERVACIONES FINALES
+${cleanText(detalle.observaciones_cierre)}`
           : "",
+        esFlujoDyfSoftys ? omSoftysTextoPdf : "",
         usaChecklistPorEquipo && equiposAsociadosTextoPdf
           ? `${tipoServicioConfig?.tipo_equipo_permitido === "valvula" ? "VÁLVULAS ASOCIADAS A LA OM" : "EQUIPOS / MOTORES ASOCIADOS A LA OM"}
 ${equiposAsociadosTextoPdf}`
@@ -1362,7 +1423,7 @@ ${checklistEquipoTextoPdf}`
           ? `CHECKLIST DE MANTENIMIENTO
 ${checklistTextoPdf}`
           : "",
-        recepcionTextoPdf,
+        esFlujoDyfSoftys ? recepcionTextoPdf : "",
       ]
         .filter((value) => value && value.trim())
         .join("\n\n"),
@@ -1372,10 +1433,11 @@ ${checklistTextoPdf}`
       ...evidenciasChecklistPdf,
     ];
     const firmas = (firmasResp.data ?? []) as Firma[];
-    const logoUrl = new URL(
-      "/logos/dyf-logo-transparente.png",
-      request.url,
-    ).toString();
+    const logoUrl = esEmpresaDyf
+      ? pickPublicLogoUrl(request, DYF_LOGO_CANDIDATES)
+      : detalle.empresa_id === RMSIC_EMPRESA_ID
+        ? pickPublicLogoUrl(request, RMSIC_LOGO_CANDIDATES)
+        : null;
 
     const resumenPdf = {
       ...resumen,

@@ -82,7 +82,7 @@ export type OTPdfDocumentProps = {
   firmas: FirmaPdf[]
   perfilesMap: Record<string, string>
   tiposServicio: TipoServicioPdf[]
-  logoUrl: string
+  logoUrl?: string | null
 }
 
 Font.registerHyphenationCallback((word) => [word])
@@ -138,22 +138,29 @@ const styles = StyleSheet.create({
     maxWidth: 355,
   },
 
-  logoBox: {
-    width: 78,
-    height: 56,
-    borderWidth: 1,
-    borderColor: COLORS.slate200,
-    borderRadius: 10,
-    padding: 6,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: COLORS.white,
-  },
+ logoBox: {
+  width: 96,
+  height: 70,
+  borderWidth: 1,
+  borderColor: COLORS.slate200,
+  borderRadius: 10,
+  padding: 4,
+  justifyContent: 'center',
+  alignItems: 'center',
+  backgroundColor: COLORS.white,
+},
 
-  logo: {
-    width: '100%',
-    height: '100%',
-    objectFit: 'contain',
+logo: {
+  width: '100%',
+  height: '100%',
+  objectFit: 'contain',
+},
+
+  logoFallback: {
+    fontSize: 14,
+    fontWeight: 700,
+    color: COLORS.primaryDark,
+    letterSpacing: 0.8,
   },
 
   headerTextWrap: {
@@ -858,12 +865,27 @@ export function OTPdfDocument({
 
   const tipoCodigo = tipoActual?.codigo ?? ''
   const tipoNombre = tipoActual?.nombre ?? resumen.tipo_servicio_nombre ?? '-'
+  const tipoCodigoLower = tipoCodigo.toLowerCase()
+  const tipoNombreLower = tipoNombre.toLowerCase()
 
-  const isPreventiva = tipoCodigo === 'preventiva'
-  const isUrgencia = tipoCodigo === 'urgencia'
-  const isAsistencia = tipoCodigo === 'general'
-  const isUrgenciaOAsistencia = isUrgencia || isAsistencia
-  const isAsesoria = tipoCodigo === 'asesoria'
+  const isUrgencia =
+    tipoCodigoLower.includes('urgencia') || tipoNombreLower.includes('urgencia')
+  const isAsistencia =
+    tipoCodigoLower.includes('asistencia') ||
+    tipoCodigoLower === 'general' ||
+    tipoNombreLower.includes('asistencia')
+  const isMantenimientoGeneral =
+    tipoCodigoLower.includes('mantencion_general') ||
+    tipoCodigoLower.includes('mantenimiento_general') ||
+    tipoNombreLower.includes('mantenimiento general')
+  const isPreventiva =
+    !isUrgencia &&
+    !isAsistencia &&
+    (tipoCodigoLower.includes('preventiva') ||
+      tipoCodigoLower.includes('mantencion') ||
+      tipoCodigoLower.includes('mantenimiento'))
+  const isAsesoria =
+    tipoCodigoLower.includes('asesoria') || tipoNombreLower.includes('asesoría')
 
   const evidenciasImagenes = evidencias.filter((item) =>
     isImageFile(item.archivo_url, item.archivo_nombre)
@@ -920,7 +942,11 @@ export function OTPdfDocument({
         <View style={styles.header}>
           <View style={styles.headerLeft}>
             <View style={styles.logoBox}>
-              <Image src={logoUrl} style={styles.logo} />
+              {logoUrl ? (
+                <Image src={logoUrl} style={styles.logo} />
+              ) : (
+                <Text style={styles.logoFallback}>RMSIC</Text>
+              )}
             </View>
 
             <View style={styles.headerTextWrap}>
@@ -988,27 +1014,47 @@ export function OTPdfDocument({
           </View>
         ) : null}
 
-        {isUrgenciaOAsistencia ? (
+        {isUrgencia ? (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>DESARROLLO DE LA ACTIVIDAD</Text>
+            <Text style={styles.sectionTitle}>DESARROLLO DE LA URGENCIA</Text>
             <TextBlock
               title="Solicitud del cliente"
               value={detalle.descripcion_solicitud}
             />
             <TextBlock
-              title="Problema detectado"
+              title="Problema reportado"
               value={detalle.problema_reportado}
             />
-            <TextBlock title="Causa probable" value={detalle.causa_probable} />
+            <TextBlock title="Causa detectada" value={detalle.causa_probable} />
             <TextBlock
-              title="Solución implementada"
+              title="Solución aplicada"
               value={detalle.trabajo_realizado}
             />
             <TextBlock
               title="Resultado del servicio"
               value={detalle.resultado_servicio}
             />
-            <TextBlock title="Recomendaciones" value={detalle.recomendaciones} />
+            <TextBlock title="Recomendaciones técnicas" value={detalle.recomendaciones} />
+            <TextBlock title="Observaciones" value={observaciones} />
+          </View>
+        ) : null}
+
+        {isAsistencia ? (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>DESARROLLO DE ASISTENCIA TÉCNICA</Text>
+            <TextBlock
+              title="Solicitud del cliente"
+              value={detalle.descripcion_solicitud}
+            />
+            <TextBlock
+              title="Desarrollo de asistencia técnica"
+              value={detalle.trabajo_realizado}
+            />
+            <TextBlock
+              title="Resultado / observación técnica"
+              value={detalle.resultado_servicio}
+            />
+            <TextBlock title="Recomendaciones técnicas" value={detalle.recomendaciones} />
             <TextBlock title="Observaciones" value={observaciones} />
 
             {detalle.mostrar_nota_valor_hora ? (
@@ -1034,6 +1080,23 @@ export function OTPdfDocument({
           </View>
         ) : null}
 
+        {isMantenimientoGeneral ? (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>DESARROLLO DE MANTENIMIENTO GENERAL</Text>
+            <TextBlock
+              title="Trabajo realizado"
+              value={detalle.trabajo_realizado}
+            />
+            <TextBlock title="Hallazgos detectados" value={detalle.hallazgos} />
+            <TextBlock
+              title="Resultado del servicio"
+              value={detalle.resultado_servicio}
+            />
+            <TextBlock title="Recomendaciones técnicas" value={detalle.recomendaciones} />
+            <TextBlock title="Observaciones" value={observaciones} />
+          </View>
+        ) : null}
+
         {isAsesoria ? (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>DESARROLLO DE LA ASESORÍA</Text>
@@ -1055,7 +1118,7 @@ export function OTPdfDocument({
           </View>
         ) : null}
 
-        {!isPreventiva && !isUrgenciaOAsistencia && !isAsesoria ? (
+        {!isPreventiva && !isUrgencia && !isAsistencia && !isMantenimientoGeneral && !isAsesoria ? (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>DESARROLLO DE LA ACTIVIDAD</Text>
             <TextBlock
