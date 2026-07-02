@@ -1,4 +1,4 @@
-import { NextRequest } from "next/server";
+﻿import { NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { renderToBuffer } from "@react-pdf/renderer";
 import type { DocumentProps } from "@react-pdf/renderer";
@@ -136,17 +136,7 @@ const DYF_LOGO_CANDIDATES = [
   "/logos/logo-dyf.png",
 ];
 
-const RMSIC_LOGO_CANDIDATES = [
-  "/logos/rmsic-original.png",
-  "/logos/logo-rmsic.png",
-  "/logos/rmsic.png",
-  "/rmsic-logo.png",
-  "/logo-rmsic.png",
-  "/logo-rmsic-original.png",
-  "/Logo_RMSIC.png",
-  "/logo.png",
-  "/logos/rmsic-logo.png",
-];
+const RMSIC_LOGO_CANDIDATES = ["/logos/rmsic-logo.png"];
 
 type DateTimeParts = {
   year: string;
@@ -215,7 +205,7 @@ function toChileDate(value: string | null | undefined) {
 
   // Las fechas puras de Supabase, por ejemplo 2026-05-17, no deben pasar
   // por new Date(), porque JS las interpreta como medianoche UTC y en Chile
-  // pueden retroceder al día anterior.
+  // pueden retroceder al dÃ­a anterior.
   if (isDateOnly(trimmed)) {
     return trimmed.slice(0, 10);
   }
@@ -443,7 +433,7 @@ function optionalNumberLine(label: string, value: number | null | undefined) {
 }
 
 function optionalBoolLine(label: string, value: boolean | null | undefined) {
-  if (value === true) return `${label}: Sí`;
+  if (value === true) return `${label}: SÃ­`;
   if (value === false) return `${label}: No`;
   return "";
 }
@@ -464,7 +454,7 @@ export async function GET(
     const { id: otId } = await context.params;
 
     if (!otId) {
-      return jsonError("No se recibió el identificador de la OT.", 400);
+      return jsonError("No se recibiÃ³ el identificador de la OT.", 400);
     }
 
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -513,7 +503,7 @@ export async function GET(
     } = await authClient.auth.getUser(token);
 
     if (userError || !user) {
-      return jsonError("Sesión no válida.", 401);
+      return jsonError("SesiÃ³n no vÃ¡lida.", 401);
     }
 
     const adminClient = createClient(
@@ -720,7 +710,7 @@ export async function GET(
 
     if (informeTecnicoResp.error) {
       return jsonError(
-        `No se pudo cargar la recepción/informe técnico: ${informeTecnicoResp.error.message}`,
+        `No se pudo cargar la recepciÃ³n/informe tÃ©cnico: ${informeTecnicoResp.error.message}`,
         500,
       );
     }
@@ -793,7 +783,7 @@ export async function GET(
 
         if (checklistItemsResp.error) {
           return jsonError(
-            `No se pudieron cargar los ítems del checklist: ${checklistItemsResp.error.message}`,
+            `No se pudieron cargar los Ã­tems del checklist: ${checklistItemsResp.error.message}`,
             500,
           );
         }
@@ -955,7 +945,7 @@ export async function GET(
 
     if (checklistEquipoResp.error) {
       return jsonError(
-        `No se pudo cargar el checklist técnico por equipo: ${checklistEquipoResp.error.message}`,
+        `No se pudo cargar el checklist tÃ©cnico por equipo: ${checklistEquipoResp.error.message}`,
         500,
       );
     }
@@ -994,7 +984,7 @@ export async function GET(
 
       if (plantillaItemsEquipoResp.error) {
         return jsonError(
-          `No se pudieron cargar los ítems del checklist por equipo: ${plantillaItemsEquipoResp.error.message}`,
+          `No se pudieron cargar los Ã­tems del checklist por equipo: ${plantillaItemsEquipoResp.error.message}`,
           500,
         );
       }
@@ -1057,9 +1047,9 @@ export async function GET(
               ).length;
               return [
                 `Equipo ${index + 1}: ${equipoPdfNombre(equipo)}`,
-                `Ubicación: ${equipoPdfUbicacion(equipo)}`,
-                `Características: ${equipoPdfCaracteristicas(equipo)}`,
-                `Checklist: ${respondidosEquipo}/${itemsEquipo.length} ítems respondidos`,
+                `UbicaciÃ³n: ${equipoPdfUbicacion(equipo)}`,
+                `CaracterÃ­sticas: ${equipoPdfCaracteristicas(equipo)}`,
+                `Checklist: ${respondidosEquipo}/${itemsEquipo.length} Ã­tems respondidos`,
                 equipo.descripcion_trabajo
                   ? `Trabajo solicitado: ${equipo.descripcion_trabajo}`
                   : "",
@@ -1078,22 +1068,22 @@ export async function GET(
               const detalleItems = itemsEquipo
                 .map((item) =>
                   [
-                    `- ${item.item_actividad || "Ítem técnico"}: ${estadoEquipoPdf(item.respuesta_texto)}`,
+                    `- ${item.item_actividad || "Ãtem tÃ©cnico"}: ${estadoEquipoPdf(item.respuesta_texto)}`,
                     item.observacion_antes
                       ? `  Antes: ${item.observacion_antes}`
                       : "",
                     item.accion_realizada
-                      ? `  Acción: ${item.accion_realizada}`
+                      ? `  AcciÃ³n: ${item.accion_realizada}`
                       : "",
                     item.observacion_despues
-                      ? `  Después: ${item.observacion_despues}`
+                      ? `  DespuÃ©s: ${item.observacion_despues}`
                       : "",
                     item.recomendacion_tecnica
-                      ? `  Recomendación: ${item.recomendacion_tecnica}`
+                      ? `  RecomendaciÃ³n: ${item.recomendacion_tecnica}`
                       : "",
                     item.evidencia_antes_url ? "  Foto antes: registrada" : "",
                     item.evidencia_despues_url
-                      ? "  Foto después: registrada"
+                      ? "  Foto despuÃ©s: registrada"
                       : "",
                   ]
                     .filter(Boolean)
@@ -1110,7 +1100,7 @@ export async function GET(
       const equipo = equiposAsociados.find(
         (entry) => entry.id === item.ot_orden_equipo_id,
       );
-      const baseDescription = `${equipo ? equipoPdfNombre(equipo) : "Equipo"} - ${item.item_actividad || "Ítem técnico"}`;
+      const baseDescription = `${equipo ? equipoPdfNombre(equipo) : "Equipo"} - ${item.item_actividad || "Ãtem tÃ©cnico"}`;
       const rows: Evidencia[] = [];
 
       if (item.evidencia_antes_url) {
@@ -1133,7 +1123,7 @@ export async function GET(
           tipo: "otro",
           archivo_url: item.evidencia_despues_url,
           archivo_nombre: "foto-despues-checklist.jpg",
-          descripcion: `Foto después | ${baseDescription}`,
+          descripcion: `Foto despuÃ©s | ${baseDescription}`,
           orden: 9001 + index * 2,
           created_at: new Date().toISOString(),
         });
@@ -1190,17 +1180,17 @@ export async function GET(
       if (
         value === true ||
         value === "si" ||
-        value === "sí" ||
+        value === "sÃ­" ||
         value === "true"
       )
-        return `${label}: Sí`;
+        return `${label}: SÃ­`;
       if (value === false || value === "no" || value === "false")
         return `${label}: No`;
       return "";
     };
 
     const recepcionTextoPdf = sectionText(
-      "CHECKLIST DE RECEPCIÓN DEL TRABAJO",
+      "CHECKLIST DE RECEPCIÃ“N DEL TRABAJO",
       [
         optionalRecepcionBoolLine(
           "Alcance del trabajo",
@@ -1215,7 +1205,7 @@ export async function GET(
           checklistRecepcion.seguridad_cumplida,
         ),
         optionalRecepcionBoolLine(
-          "Tiempo de ejecución",
+          "Tiempo de ejecuciÃ³n",
           checklistRecepcion.plazo_cumplido,
         ),
         optionalRecepcionBoolLine(
@@ -1223,11 +1213,11 @@ export async function GET(
           checklistRecepcion.pruebas_realizadas,
         ),
         optionalTextBlock(
-          "Evaluación general",
+          "EvaluaciÃ³n general",
           informeDatos.evaluacion_general,
         ),
         optionalTextBlock(
-          "Observaciones recepción",
+          "Observaciones recepciÃ³n",
           informeDatos.observaciones_recepcion,
         ),
       ],
@@ -1241,33 +1231,33 @@ export async function GET(
               detalle.descripcion_solicitud,
             ),
             optionalTextBlock("Problema reportado", detalle.problema_reportado),
-            optionalTextBlock("Diagnóstico", detalle.diagnostico),
+            optionalTextBlock("DiagnÃ³stico", detalle.diagnostico),
             optionalTextBlock("Causa detectada", detalle.causa_probable),
             optionalTextBlock(
-              "Solución aplicada",
+              "SoluciÃ³n aplicada",
               detalle.trabajo_realizado || detalle.resultado_servicio,
             ),
             optionalTextBlock(
-              "Recomendaciones técnicas",
+              "Recomendaciones tÃ©cnicas",
               detalle.recomendaciones,
             ),
           ])
         : esAsistenciaTecnica
-          ? sectionText("DESARROLLO DE ASISTENCIA TÉCNICA", [
+          ? sectionText("DESARROLLO DE ASISTENCIA TÃ‰CNICA", [
               optionalTextBlock(
                 "Solicitud del cliente",
                 detalle.descripcion_solicitud,
               ),
               optionalTextBlock(
-                "Desarrollo de asistencia técnica",
+                "Desarrollo de asistencia tÃ©cnica",
                 detalle.trabajo_realizado,
               ),
               optionalTextBlock(
-                "Resultado / observación técnica",
+                "Resultado / observaciÃ³n tÃ©cnica",
                 detalle.resultado_servicio || detalle.observaciones_cierre,
               ),
               optionalTextBlock(
-                "Recomendaciones técnicas",
+                "Recomendaciones tÃ©cnicas",
                 detalle.recomendaciones,
               ),
             ])
@@ -1283,11 +1273,11 @@ export async function GET(
                   detalle.resultado_servicio,
                 ),
                 optionalTextBlock(
-                  "Recomendaciones técnicas",
+                  "Recomendaciones tÃ©cnicas",
                   detalle.recomendaciones,
                 ),
               ])
-            : sectionText("DESARROLLO TÉCNICO DEL SERVICIO", [
+            : sectionText("DESARROLLO TÃ‰CNICO DEL SERVICIO", [
                 optionalTextBlock(
                   "Solicitud del cliente",
                   detalle.descripcion_solicitud,
@@ -1296,7 +1286,7 @@ export async function GET(
                   "Problema reportado",
                   detalle.problema_reportado,
                 ),
-                optionalTextBlock("Diagnóstico", detalle.diagnostico),
+                optionalTextBlock("DiagnÃ³stico", detalle.diagnostico),
                 optionalTextBlock("Causa probable", detalle.causa_probable),
                 optionalTextBlock(
                   "Trabajo realizado",
@@ -1308,7 +1298,7 @@ export async function GET(
                 ),
                 optionalTextBlock("Hallazgos", detalle.hallazgos),
                 optionalTextBlock(
-                  "Conclusiones técnicas",
+                  "Conclusiones tÃ©cnicas",
                   detalle.conclusiones_tecnicas,
                 ),
                 optionalTextBlock("Recomendaciones", detalle.recomendaciones),
@@ -1346,39 +1336,39 @@ export async function GET(
       .join(" - ");
 
     const omSoftysTextoPdf = sectionText("DATOS PRINCIPALES DEL INFORME", [
-      optionalTextLine("N° OM / Orden cliente", detalle.numero_om_cliente),
+      optionalTextLine("NÂ° OM / Orden cliente", detalle.numero_om_cliente),
       responsableClienteTexto
         ? `${receptorClienteLabel}: ${responsableClienteTexto}`
         : "",
       supervisorContratistaTexto
         ? `Supervisor contratista: ${supervisorContratistaTexto}`
         : "",
-      optionalTextLine("Área / sector de trabajo", detalle.area_trabajo),
+      optionalTextLine("Ãrea / sector de trabajo", detalle.area_trabajo),
       toPdfTimeOnly(detalleHorarioBase.hora_inicio)
         ? `Hora inicio: ${toPdfTimeOnly(detalleHorarioBase.hora_inicio)}`
         : "",
       toPdfTimeOnly(detalleHorarioBase.hora_termino)
-        ? `Hora término: ${toPdfTimeOnly(detalleHorarioBase.hora_termino)}`
+        ? `Hora tÃ©rmino: ${toPdfTimeOnly(detalleHorarioBase.hora_termino)}`
         : "",
-      optionalNumberLine("Cantidad de técnicos", detalle.cantidad_tecnicos),
+      optionalNumberLine("Cantidad de tÃ©cnicos", detalle.cantidad_tecnicos),
       optionalNumberLine(
         "Horas hombre utilizadas",
         detalle.horas_hombre_utilizadas,
       ),
       optionalBoolLine(
-        "¿Se ejecutó todo lo solicitado?",
+        "Â¿Se ejecutÃ³ todo lo solicitado?",
         detalle.alcance_trabajo_ejecutado,
       ),
       optionalTextBlock(
-        "Observación alcance",
+        "ObservaciÃ³n alcance",
         detalle.alcance_trabajo_observacion,
       ),
       optionalBoolLine(
-        "¿Se ejecutó de acuerdo al programa?",
+        "Â¿Se ejecutÃ³ de acuerdo al programa?",
         detalle.ejecutado_segun_programa,
       ),
       optionalTextBlock(
-        "Observación programa",
+        "ObservaciÃ³n programa",
         detalle.ejecutado_segun_programa_observacion,
       ),
       optionalTextBlock(
@@ -1412,11 +1402,11 @@ ${cleanText(detalle.observaciones_cierre)}`
           : "",
         esFlujoDyfSoftys ? omSoftysTextoPdf : "",
         usaChecklistPorEquipo && equiposAsociadosTextoPdf
-          ? `${tipoServicioConfig?.tipo_equipo_permitido === "valvula" ? "VÁLVULAS ASOCIADAS A LA OM" : "EQUIPOS / MOTORES ASOCIADOS A LA OM"}
+          ? `${tipoServicioConfig?.tipo_equipo_permitido === "valvula" ? "VÃLVULAS ASOCIADAS A LA OM" : "EQUIPOS / MOTORES ASOCIADOS A LA OM"}
 ${equiposAsociadosTextoPdf}`
           : "",
         usaChecklistPorEquipo && checklistEquipoTextoPdf
-          ? `${tipoServicioConfig?.tipo_equipo_permitido === "valvula" ? "CHECKLIST TÉCNICO POR EQUIPO / VÁLVULA" : "CHECKLIST TÉCNICO POR EQUIPO / MOTOR"}
+          ? `${tipoServicioConfig?.tipo_equipo_permitido === "valvula" ? "CHECKLIST TÃ‰CNICO POR EQUIPO / VÃLVULA" : "CHECKLIST TÃ‰CNICO POR EQUIPO / MOTOR"}
 ${checklistEquipoTextoPdf}`
           : "",
         checklistTextoPdf
@@ -1433,11 +1423,12 @@ ${checklistTextoPdf}`
       ...evidenciasChecklistPdf,
     ];
     const firmas = (firmasResp.data ?? []) as Firma[];
-    const logoUrl = esEmpresaDyf
-      ? pickPublicLogoUrl(request, DYF_LOGO_CANDIDATES)
-      : detalle.empresa_id === RMSIC_EMPRESA_ID
-        ? pickPublicLogoUrl(request, RMSIC_LOGO_CANDIDATES)
-        : null;
+    const logoUrl =
+      detalle.empresa_id === RMSIC_EMPRESA_ID
+        ? new URL("/logos/rmsic-logo.png", request.url).toString()
+        : detalle.empresa_id === DYF_EMPRESA_ID
+          ? new URL("/logos/dyf-logo-transparente.png", request.url).toString()
+          : null;
 
     const resumenPdf = {
       ...resumen,
@@ -1487,3 +1478,4 @@ ${checklistTextoPdf}`
     return jsonError(message, 500);
   }
 }
+
