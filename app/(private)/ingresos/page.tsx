@@ -51,6 +51,11 @@ type Ingreso = {
   fecha_vencimiento: string | null
   tipo_documento: string | null
   numero_documento: string | null
+  documento_tributario_tipo?: string | null
+  documento_tributario_numero?: string | null
+  respaldo_comercial_tipo?: string | null
+  respaldo_comercial_numero?: string | null
+  origen_tipo?: string | null
   descripcion: string
   tratamiento_tributario: string | null
   monto_neto: number | null
@@ -239,6 +244,57 @@ const formatTratamientoTributario = (value: string | null | undefined) => {
   }
 }
 
+
+const formatTipoDocumento = (tipo?: string | null) => {
+  const value = String(tipo || '').toLowerCase()
+
+  switch (value) {
+    case 'factura':
+      return 'Factura'
+    case 'factura_exenta':
+      return 'Factura exenta'
+    case 'boleta':
+      return 'Boleta'
+    case 'nota_credito':
+      return 'Nota de crédito'
+    case 'nota_debito':
+      return 'Nota de débito'
+    case 'guia_despacho':
+      return 'Guía de despacho'
+    case 'recibo':
+      return 'Recibo'
+    case 'comprobante':
+      return 'Comprobante'
+    case 'otro':
+      return 'Documento'
+    default:
+      return tipo || '-'
+  }
+}
+
+const formatDocumentoTributario = (item: Ingreso) => {
+  const tipo = item.documento_tributario_tipo || item.tipo_documento
+  const numero = item.documento_tributario_numero || item.numero_documento
+
+  if (!tipo && !numero) return 'Pendiente de facturar'
+
+  if (String(tipo || '').toLowerCase() === 'otro' && item.respaldo_comercial_numero) {
+    return 'Pendiente de facturar'
+  }
+
+  return [formatTipoDocumento(tipo), numero].filter(Boolean).join(' ')
+}
+
+const formatRespaldoComercial = (item: Ingreso) => {
+  const tipo = String(item.respaldo_comercial_tipo || '').toLowerCase()
+  const numero = item.respaldo_comercial_numero
+
+  if (!tipo && !numero) return '-'
+
+  const tipoLabel = tipo === 'orden_compra' ? 'OC' : tipo.replace(/_/g, ' ') || 'Respaldo'
+  return [tipoLabel, numero].filter(Boolean).join(' ')
+}
+
 const inferTratamientoTributario = (item: Ingreso): TratamientoTributario => {
   if (item.tratamiento_tributario === 'afecto_iva') return 'afecto_iva'
   if (item.tratamiento_tributario === 'exento') return 'exento'
@@ -374,7 +430,7 @@ export default function IngresosPage() {
           { headers }
         ),
         fetch(
-          `${baseUrl}/rest/v1/movimientos?select=id,fecha,fecha_vencimiento,tipo_documento,numero_documento,descripcion,tratamiento_tributario,monto_neto,monto_exento,monto_iva,impuesto_especifico,monto_total,estado,cliente_id,categoria_id,centro_costo_id,cuenta_bancaria_id,empresa_id,activo,deleted_at&empresa_id=eq.${empresaActivaId}&tipo_movimiento=eq.ingreso&activo=eq.true&deleted_at=is.null&order=fecha.desc`,
+          `${baseUrl}/rest/v1/movimientos?select=id,fecha,fecha_vencimiento,tipo_documento,numero_documento,documento_tributario_tipo,documento_tributario_numero,respaldo_comercial_tipo,respaldo_comercial_numero,origen_tipo,descripcion,tratamiento_tributario,monto_neto,monto_exento,monto_iva,impuesto_especifico,monto_total,estado,cliente_id,categoria_id,centro_costo_id,cuenta_bancaria_id,empresa_id,activo,deleted_at&empresa_id=eq.${empresaActivaId}&tipo_movimiento=eq.ingreso&activo=eq.true&deleted_at=is.null&order=fecha.desc`,
           { headers }
         ),
         fetch(
@@ -399,7 +455,7 @@ export default function IngresosPage() {
         return
       }
       if (!categoriasResp.ok) {
-        setError('No se pudieron cargar las categorÃ­as.')
+        setError('No se pudieron cargar las categorías.')
         return
       }
       if (!centrosResp.ok) {
@@ -429,7 +485,7 @@ export default function IngresosPage() {
 
       const clientesMap = new Map(clientesData.map((item) => [item.id, item.nombre]))
       const cuentasMap = new Map(
-        cuentasData.map((item) => [item.id, `${item.banco} Â· ${item.nombre_cuenta}`])
+        cuentasData.map((item) => [item.id, `${item.banco} · ${item.nombre_cuenta}`])
       )
       const categoriasMap = new Map(categoriasData.map((item) => [item.id, item.nombre]))
       const centrosMap = new Map(centrosData.map((item) => [item.id, item.nombre]))
@@ -721,7 +777,7 @@ export default function IngresosPage() {
     }
 
     const confirmacion = window.confirm(
-      `Â¿Desea archivar el ingreso "${item.descripcion}"? No se borrarÃ¡ de la base de datos.`
+      `¿Desea archivar el ingreso "${item.descripcion}"? No se borrará de la base de datos.`
     )
     if (!confirmacion) return
 
@@ -785,7 +841,7 @@ export default function IngresosPage() {
   const ingresosFiltrados = useMemo(() => {
     return ingresos.filter((item) => {
       const estado = normalizarTextoBusqueda(item.estado)
-      const numeroDocumento = normalizarTextoBusqueda(item.numero_documento)
+      const numeroDocumento = normalizarTextoBusqueda(item.documento_tributario_numero || item.numero_documento)
       const descripcion = normalizarTextoBusqueda(item.descripcion)
       const clienteId = item.cliente_id || ''
       const fecha = item.fecha || ''
@@ -795,6 +851,10 @@ export default function IngresosPage() {
       const camposBusqueda = [
         item.tipo_documento,
         item.numero_documento,
+        item.documento_tributario_tipo,
+        item.documento_tributario_numero,
+        item.respaldo_comercial_tipo,
+        item.respaldo_comercial_numero,
         item.descripcion,
         item.cliente_nombre,
         item.categoria_nombre,
@@ -884,7 +944,7 @@ export default function IngresosPage() {
 
         <EmpresaActivaBanner
           modulo="Ingresos"
-          descripcion="Todos los registros visibles corresponden Ãºnicamente a la empresa activa seleccionada."
+          descripcion="Todos los registros visibles corresponden únicamente a la empresa activa seleccionada."
         />
 
         {!isAdmin && !loading ? (
@@ -899,7 +959,7 @@ export default function IngresosPage() {
           <div className="mb-4 flex flex-col gap-1">
             <h2 className="text-lg font-semibold text-slate-900">Filtros de ingresos</h2>
             <p className="text-sm text-slate-500">
-              Busca por fecha, documento, cliente, descripcion o monto total/neto.
+              Busca por fecha, documento, cliente, descripción o monto total/neto.
             </p>
           </div>
 
@@ -939,7 +999,7 @@ export default function IngresosPage() {
             </div>
 
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">NÂ° documento</label>
+              <label className="mb-1 block text-sm font-medium text-slate-700">N° documento</label>
               <input
                 type="text"
                 value={filters.numeroDocumento}
@@ -969,7 +1029,7 @@ export default function IngresosPage() {
                 type="text"
                 value={filters.texto}
                 onChange={(e) => setFilters((prev) => ({ ...prev, texto: e.target.value }))}
-                placeholder="Descripcion, cliente, categoria o monto"
+                placeholder="Descripción, cliente, categoría o monto"
                 className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
               />
             </div>
@@ -1026,15 +1086,16 @@ export default function IngresosPage() {
             <p className="text-sm text-slate-500">No hay ingresos para los filtros seleccionados.</p>
           ) : (
             <div className="overflow-x-auto">
-              <table className="min-w-[1420px] w-full text-sm">
+              <table className="min-w-[1520px] w-full text-sm">
                 <thead>
                   <tr className="border-b border-slate-200 text-left text-slate-500">
                     <th className="py-3 pr-4">Fecha</th>
                     <th className="py-3 pr-4">Vencimiento</th>
-                    <th className="py-3 pr-4">Documento</th>
-                    <th className="py-3 pr-4">Descripcion</th>
+                    <th className="py-3 pr-4">Documento tributario</th>
+                    <th className="py-3 pr-4">Respaldo</th>
+                    <th className="py-3 pr-4">Descripción</th>
                     <th className="py-3 pr-4">Cliente</th>
-                    <th className="py-3 pr-4">CategorÃ­a</th>
+                    <th className="py-3 pr-4">Categoría</th>
                     <th className="py-3 pr-4">Centro costo</th>
                     <th className="py-3 pr-4">Cuenta bancaria</th>
                     <th className="py-3 pr-4">Tratamiento</th>
@@ -1049,8 +1110,10 @@ export default function IngresosPage() {
                       <td className="py-3 pr-4 whitespace-nowrap">{formatDate(item.fecha)}</td>
                       <td className="py-3 pr-4 whitespace-nowrap">{formatDate(item.fecha_vencimiento)}</td>
                       <td className="py-3 pr-4 whitespace-nowrap">
-                        <div className="font-medium text-slate-800">{item.tipo_documento || '-'}</div>
-                        <div className="text-slate-500">{item.numero_documento || '-'}</div>
+                        <div className="font-medium text-slate-800">{formatDocumentoTributario(item)}</div>
+                      </td>
+                      <td className="py-3 pr-4 whitespace-nowrap text-slate-600">
+                        {formatRespaldoComercial(item)}
                       </td>
                       <td className="py-3 pr-4 min-w-[260px]">{item.descripcion}</td>
                       <td className="py-3 pr-4 whitespace-nowrap">{item.cliente_nombre || '-'}</td>
@@ -1136,7 +1199,7 @@ export default function IngresosPage() {
 
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">Numero documento</label>
+                <label className="mb-1 block text-sm font-medium text-slate-700">Número documento</label>
                 <input
                   type="text"
                   name="numero_documento"
@@ -1162,7 +1225,7 @@ export default function IngresosPage() {
             </div>
 
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Descripcion</label>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Descripción</label>
               <textarea
                 name="descripcion"
                 value={formData.descripcion}
@@ -1267,14 +1330,14 @@ export default function IngresosPage() {
                 ) : null}
               </div>
               <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">Categoria</label>
+                <label className="mb-1 block text-sm font-medium text-slate-700">Categoría</label>
                 <select
                   name="categoria_id"
                   value={formData.categoria_id}
                   onChange={handleChange}
                   className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
                 >
-                  <option value="">Seleccionar categorÃ­a</option>
+                  <option value="">Seleccionar categoría</option>
                   {categorias.map((item) => (
                     <option key={item.id} value={item.id}>{item.nombre}</option>
                   ))}
@@ -1307,7 +1370,7 @@ export default function IngresosPage() {
                 >
                   <option value="">Seleccionar cuenta</option>
                   {cuentas.map((item) => (
-                    <option key={item.id} value={item.id}>{item.banco} Â· {item.nombre_cuenta}</option>
+                    <option key={item.id} value={item.id}>{item.banco} · {item.nombre_cuenta}</option>
                   ))}
                 </select>
               </div>

@@ -302,7 +302,7 @@ function CobranzaPageContent() {
 
   const handleRegistrarPago = async () => {
     if (!selectedItem) {
-      setError('No se seleccionó ninguna factura.')
+      setError('No se seleccionó ningún documento por cobrar.')
       return
     }
 
@@ -381,7 +381,7 @@ function CobranzaPageContent() {
       `¿Enviar recordatorio de cobranza?
 
 Cliente: ${item.cliente || '-'}
-Factura: ${item.numero_factura || '-'}
+Documento tributario: ${item.numero_factura || '-'}
 Saldo pendiente: ${item.saldo_pendiente_clp || formatCLP(item.saldo_pendiente)}
 
 El correo se enviará inmediatamente.`
@@ -435,7 +435,7 @@ El correo se enviará inmediatamente.`
           <div>
             <h1 className="text-3xl font-semibold text-slate-900">Cobranza</h1>
             <p className="mt-1 text-sm text-slate-500">
-              Facturas pendientes, vencidas o parciales de la empresa activa.
+              Documentos por cobrar pendientes, vencidos o parciales de la empresa activa.
             </p>
           </div>
 
@@ -491,7 +491,7 @@ El correo se enviará inmediatamente.`
                   Cuentas por cobrar activas
                 </h2>
                 <p className="mt-1 text-sm text-slate-500">
-                  Registra aquí el pago de una factura para actualizar ingresos y bancos.
+                  Registra aquí pagos de documentos pendientes para actualizar ingresos y bancos.
                 </p>
               </div>
 
@@ -504,7 +504,7 @@ El correo se enviará inmediatamente.`
 
             {items.length === 0 ? (
               <div className="mt-6 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-600">
-                No hay facturas pendientes para la empresa activa.
+                No hay documentos pendientes para la empresa activa.
               </div>
             ) : (
               <div className="mt-6 overflow-hidden rounded-2xl border border-slate-200">
@@ -513,7 +513,7 @@ El correo se enviará inmediatamente.`
                     <thead className="bg-slate-50">
                       <tr className="text-left text-slate-600">
                         <th className="px-4 py-3 font-semibold">Cliente</th>
-                        <th className="px-4 py-3 font-semibold">Factura</th>
+                        <th className="px-4 py-3 font-semibold">Documento tributario</th>
                         <th className="px-4 py-3 font-semibold">Emisión</th>
                         <th className="px-4 py-3 font-semibold">Vencimiento</th>
                         <th className="px-4 py-3 font-semibold">Descripción</th>
@@ -619,10 +619,10 @@ El correo se enviará inmediatamente.`
             <div className="flex items-start justify-between gap-4">
               <div>
                 <h3 className="text-xl font-semibold text-slate-900">
-                  Registrar pago de factura
+                  Registrar pago
                 </h3>
                 <p className="mt-1 text-sm text-slate-500">
-                  Al confirmar, la factura se marcará como pagada y se reflejará en ingresos y
+                  Al confirmar, el documento se marcará como pagado y se reflejará en ingresos y
                   bancos.
                 </p>
               </div>
@@ -646,7 +646,7 @@ El correo se enviará inmediatamente.`
 
               <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
                 <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                  Factura
+                  Documento tributario
                 </p>
                 <p className="mt-1 text-sm text-slate-900">
                   {selectedItem.numero_factura || '-'}

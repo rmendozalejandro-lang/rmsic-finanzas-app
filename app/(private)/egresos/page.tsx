@@ -404,10 +404,10 @@ export default function EgresosPage() {
         setError('No se pudieron cargar las cuentas bancarias.')
         return
       }
-      if (!categoriasResp.ok) {
-        setError('No se pudieron cargar las categorÃ­as.')
-        return
-      }
+     if (!categoriasResp.ok) {
+  setError('No se pudieron cargar las categorías.')
+  return
+}
       if (!centrosResp.ok) {
         setError('No se pudieron cargar los centros de costo.')
         return
@@ -435,7 +435,7 @@ export default function EgresosPage() {
 
       const proveedoresMap = new Map(proveedoresData.map((item) => [item.id, item.nombre]))
       const cuentasMap = new Map(
-        cuentasData.map((item) => [item.id, `${item.banco} Â· ${item.nombre_cuenta}`])
+        cuentasData.map((item) => [item.id, `${item.banco} · ${item.nombre_cuenta}`])
       )
       const categoriasMap = new Map(categoriasData.map((item) => [item.id, item.nombre]))
       const centrosMap = new Map(centrosData.map((item) => [item.id, item.nombre]))
@@ -743,7 +743,7 @@ export default function EgresosPage() {
     }
 
     const confirmacion = window.confirm(
-      `Â¿Desea archivar el egreso "${item.descripcion}"? No se borrarÃ¡ de la base de datos.`
+      `¿Desea archivar el egreso "${item.descripcion}"? No se borrará de la base de datos.`
     )
     if (!confirmacion) return
 
@@ -906,7 +906,7 @@ export default function EgresosPage() {
 
         <EmpresaActivaBanner
           modulo="Egresos"
-          descripcion="Todos los registros visibles corresponden Ãºnicamente a la empresa activa seleccionada."
+          descripcion="Todos los registros visibles corresponden únicamente a la empresa activa seleccionada."
         />
 
         {!isAdmin && !loading ? (
@@ -921,7 +921,7 @@ export default function EgresosPage() {
           <div className="mb-4 flex flex-col gap-1">
             <h2 className="text-lg font-semibold text-slate-900">Filtros de egresos</h2>
             <p className="text-sm text-slate-500">
-              Busca por fecha, documento, proveedor, descripciÃ³n o monto total/neto.
+              Busca por fecha, documento, proveedor, descripción o monto total/neto.
             </p>
           </div>
 
@@ -961,7 +961,7 @@ export default function EgresosPage() {
             </div>
 
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">NÂ° documento</label>
+              <label className="mb-1 block text-sm font-medium text-slate-700">N° documento</label>
               <input
                 type="text"
                 value={filters.numeroDocumento}
@@ -991,7 +991,7 @@ export default function EgresosPage() {
                 type="text"
                 value={filters.texto}
                 onChange={(e) => setFilters((prev) => ({ ...prev, texto: e.target.value }))}
-                placeholder="Descripción, proveedor, categorÃ­a o monto"
+                placeholder="Descripción, proveedor, categori­a o monto"
                 className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
               />
             </div>
@@ -1310,7 +1310,7 @@ export default function EgresosPage() {
                   onChange={handleChange}
                   className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
                 >
-                  <option value="">Seleccionar categorÃ­a</option>
+                  <option value="">Seleccionar categoria</option>
                   {categorias.map((item) => (
                     <option key={item.id} value={item.id}>{item.nombre}</option>
                   ))}
@@ -1343,7 +1343,7 @@ export default function EgresosPage() {
                 >
                   <option value="">Seleccionar cuenta</option>
                   {cuentas.map((item) => (
-                    <option key={item.id} value={item.id}>{item.banco} Â· {item.nombre_cuenta}</option>
+                    <option key={item.id} value={item.id}>{item.banco} · {item.nombre_cuenta}</option>
                   ))}
                 </select>
               </div>
@@ -1371,5 +1371,6 @@ export default function EgresosPage() {
     </ProtectedModuleRoute>
   )
 }
+
 
 
