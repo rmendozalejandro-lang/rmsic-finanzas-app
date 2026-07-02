@@ -40,6 +40,12 @@ type OTDetalle = {
   supervisor_contratista_cargo: string | null
   herramientas_materiales_utilizados: string | null
   recomendaciones_seguridad: string | null
+  seguridad_permiso_trabajo: boolean | null
+  seguridad_uso_epp: boolean | null
+  seguridad_bloqueo_tarjeta: boolean | null
+  seguridad_observacion: string | null
+  seguridad_validada_at: string | null
+  seguridad_validada_by: string | null
   alcance_trabajo_ejecutado: boolean | null
   alcance_trabajo_observacion: string | null
   ejecutado_segun_programa: boolean | null
@@ -298,6 +304,27 @@ const RECEPCION_SOFTYS_DEFAULT: RecepcionSoftysState = {
   observaciones_recepcion: '',
 }
 
+const DYF_EMPRESA_ID = '73dd5543-2bf7-4d44-9982-4a641c8658f5'
+
+const SOFTYS_SEGURIDAD_ITEMS = [
+  {
+    key: 'seguridad_permiso_trabajo',
+    codigo: '1.1',
+    label: 'Permiso de trabajo seguro debidamente completado y autorizado',
+  },
+  {
+    key: 'seguridad_uso_epp',
+    codigo: '1.2',
+    label: 'Uso de elementos de protección personal',
+    helper: 'Caso de seguridad + protectores auditivos + lentes de seguridad + guantes',
+  },
+  {
+    key: 'seguridad_bloqueo_tarjeta',
+    codigo: '1.3',
+    label: 'Uso de candado de bloqueo + tarjeta NO OPERAR',
+  },
+] as const
+
 type FormState = {
   tipo_servicio_id: string
   estado_id: string
@@ -316,6 +343,10 @@ type FormState = {
   supervisor_contratista_cargo: string
   herramientas_materiales_utilizados: string
   recomendaciones_seguridad: string
+  seguridad_permiso_trabajo: boolean
+  seguridad_uso_epp: boolean
+  seguridad_bloqueo_tarjeta: boolean
+  seguridad_observacion: string
   alcance_trabajo_ejecutado: '' | 'si' | 'no'
   alcance_trabajo_observacion: string
   ejecutado_segun_programa: '' | 'si' | 'no'
@@ -894,6 +925,10 @@ function OTDetalleContent() {
     supervisor_contratista_cargo: '',
     herramientas_materiales_utilizados: '',
     recomendaciones_seguridad: '',
+    seguridad_permiso_trabajo: false,
+    seguridad_uso_epp: false,
+    seguridad_bloqueo_tarjeta: false,
+    seguridad_observacion: '',
     alcance_trabajo_ejecutado: '',
     alcance_trabajo_observacion: '',
     ejecutado_segun_programa: '',
@@ -1262,6 +1297,12 @@ function OTDetalleContent() {
                 supervisor_contratista_cargo,
                 herramientas_materiales_utilizados,
                 recomendaciones_seguridad,
+                seguridad_permiso_trabajo,
+                seguridad_uso_epp,
+                seguridad_bloqueo_tarjeta,
+                seguridad_observacion,
+                seguridad_validada_at,
+                seguridad_validada_by,
                 alcance_trabajo_ejecutado,
                 alcance_trabajo_observacion,
                 ejecutado_segun_programa,
@@ -1632,6 +1673,10 @@ function OTDetalleContent() {
           supervisor_contratista_cargo: detalleData.supervisor_contratista_cargo || '',
           herramientas_materiales_utilizados: detalleData.herramientas_materiales_utilizados || '',
           recomendaciones_seguridad: detalleData.recomendaciones_seguridad || '',
+          seguridad_permiso_trabajo: Boolean(detalleData.seguridad_permiso_trabajo),
+          seguridad_uso_epp: Boolean(detalleData.seguridad_uso_epp),
+          seguridad_bloqueo_tarjeta: Boolean(detalleData.seguridad_bloqueo_tarjeta),
+          seguridad_observacion: detalleData.seguridad_observacion || '',
           alcance_trabajo_ejecutado: siNoFromBoolean(detalleData.alcance_trabajo_ejecutado),
           alcance_trabajo_observacion: detalleData.alcance_trabajo_observacion || '',
           ejecutado_segun_programa: siNoFromBoolean(detalleData.ejecutado_segun_programa),
@@ -1816,6 +1861,18 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
     herramientas_materiales_utilizados:
       form.herramientas_materiales_utilizados.trim() || null,
     recomendaciones_seguridad: form.recomendaciones_seguridad.trim() || null,
+    seguridad_permiso_trabajo: form.seguridad_permiso_trabajo,
+    seguridad_uso_epp: form.seguridad_uso_epp,
+    seguridad_bloqueo_tarjeta: form.seguridad_bloqueo_tarjeta,
+    seguridad_observacion: form.seguridad_observacion.trim() || null,
+    seguridad_validada_at:
+      form.seguridad_permiso_trabajo || form.seguridad_uso_epp || form.seguridad_bloqueo_tarjeta
+        ? new Date().toISOString()
+        : detalle?.seguridad_validada_at ?? null,
+    seguridad_validada_by:
+      form.seguridad_permiso_trabajo || form.seguridad_uso_epp || form.seguridad_bloqueo_tarjeta
+        ? (currentUserId || detalle?.seguridad_validada_by || null)
+        : detalle?.seguridad_validada_by ?? null,
     alcance_trabajo_ejecutado: booleanFromSiNo(form.alcance_trabajo_ejecutado),
     alcance_trabajo_observacion: form.alcance_trabajo_observacion.trim() || null,
     ejecutado_segun_programa: booleanFromSiNo(form.ejecutado_segun_programa),
@@ -2699,7 +2756,58 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
   )
   const tecnicoBloqueado = isClosed || trabajoFinalizadoPorTecnico
   const canManageEquipoTrabajo = Boolean(!tecnicoBloqueado && !isClosed && (canManageOt || isAssignedTechnician))
-  const mostrarEquipoTrabajoDyF = Boolean(esFlujoDyfSoftys || usaTecnicosParticipantes)
+  const mostrarEquipoTrabajoDyF = Boolean(esFlujoDyfSoftys || usaTecnicosParticipantes || detalle.empresa_id === DYF_EMPRESA_ID)
+  const mostrarSeguridadSoftys = Boolean(esFlujoDyfSoftys || detalle.empresa_id === DYF_EMPRESA_ID)
+
+  const renderSeguridadSoftysChecklist = () => (
+    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <SectionTitle
+        title="1.0 Requerimientos de seguridad Softys"
+        subtitle="Checklist de seguridad aplicable a servicios DyF / Softys antes de ejecutar o cerrar el trabajo."
+      />
+
+      <div className="mt-5 space-y-3">
+        {SOFTYS_SEGURIDAD_ITEMS.map((item) => (
+          <label
+            key={item.key}
+            className="flex gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-800"
+          >
+            <input
+              type="checkbox"
+              checked={Boolean(form[item.key])}
+              onChange={(e) => handleChange(item.key, e.target.checked)}
+              disabled={isClosed}
+              className="mt-1 h-4 w-4 rounded border-slate-300 accent-slate-900"
+            />
+
+            <span>
+              <span className="font-semibold">{item.codigo}</span>{' '}
+              {item.label}
+              {'helper' in item && item.helper ? (
+                <span className="mt-1 block text-xs text-slate-500">
+                  {item.helper}
+                </span>
+              ) : null}
+            </span>
+          </label>
+        ))}
+      </div>
+
+      <div className="mt-4">
+        <label className="mb-2 block text-sm font-medium text-slate-700">
+          Observación de seguridad
+        </label>
+        <textarea
+          value={form.seguridad_observacion}
+          onChange={(e) => handleChange('seguridad_observacion', e.target.value)}
+          rows={3}
+          disabled={isClosed}
+          placeholder="Observaciones adicionales sobre permisos, EPP, bloqueo, tarjeta NO OPERAR u otra condición de seguridad."
+          className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-500 disabled:bg-slate-100"
+        />
+      </div>
+    </div>
+  )
 
   if (mostrarVistaTecnica && tecnicoBloqueado) {
     return (
@@ -2844,10 +2952,12 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
               label="Herramientas y materiales"
               value={form.herramientas_materiales_utilizados}
             />
-            <DetailField
-              label="Recomendaciones de seguridad"
-              value={form.recomendaciones_seguridad}
-            />
+            {!mostrarSeguridadSoftys ? (
+              <DetailField
+                label="Recomendaciones de seguridad"
+                value={form.recomendaciones_seguridad}
+              />
+            ) : null}
             <DetailField
               label="Solicitud / objetivo"
               value={form.descripcion_solicitud || form.problema_reportado || form.titulo}
@@ -2855,6 +2965,8 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
             <DetailField label="Equipos asociados" value={equiposAsociados.length || 0} />
           </div>
         </div>
+
+        {mostrarSeguridadSoftys ? renderSeguridadSoftysChecklist() : null}
 
         <form onSubmit={handleSave} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <SectionTitle
@@ -3960,18 +4072,26 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
               />
             </div>
 
-            <div>
-              <label className="mb-2 block text-sm font-medium text-slate-700">
-                Recomendaciones de seguridad para la ejecución del trabajo
-              </label>
-              <textarea
-                value={form.recomendaciones_seguridad}
-                onChange={(e) => handleChange('recomendaciones_seguridad', e.target.value)}
-                rows={3}
-                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-500"
-              />
-            </div>
+            {!mostrarSeguridadSoftys ? (
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  Recomendaciones de seguridad para la ejecución del trabajo
+                </label>
+                <textarea
+                  value={form.recomendaciones_seguridad}
+                  onChange={(e) => handleChange('recomendaciones_seguridad', e.target.value)}
+                  rows={3}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-500"
+                />
+              </div>
+            ) : null}
           </div>
+
+          {mostrarSeguridadSoftys ? (
+            <div className="mt-5">
+              {renderSeguridadSoftysChecklist()}
+            </div>
+          ) : null}
 
         </div>
         ) : null}
