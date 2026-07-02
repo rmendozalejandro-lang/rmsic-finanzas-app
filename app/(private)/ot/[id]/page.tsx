@@ -8,6 +8,7 @@ import { OTEvidenciasPanel } from '../../../../components/ot/ot-evidencias-panel
 import { OTFirmasPanel } from '../../../../components/ot/ot-firmas-panel'
 import { OTChecklistPanel } from '../../../../components/ot/ot-checklist-panel'
 import { OTEquipoChecklistPanel } from '../../../../components/ot/ot-equipo-checklist-panel'
+import { OTEquipoTrabajoDyFPanel } from '../../../../components/ot/ot-equipo-trabajo-dyf-panel'
 import { supabase } from '../../../../lib/supabase/client'
 import type { OTResumen } from '../../../../lib/ot/types'
 
@@ -338,12 +339,6 @@ type FormState = {
   conclusiones_tecnicas: string
   mostrar_nota_valor_hora: boolean
   valor_hora_uf: string
-}
-
-type AssignmentFormState = {
-  tecnico_responsable_id: string
-  supervisor_id: string
-  motivo: string
 }
 
 type TiempoFormState = {
@@ -880,15 +875,6 @@ function OTDetalleContent() {
   const [perfiles, setPerfiles] = useState<PerfilOption[]>([])
   const [currentUserId, setCurrentUserId] = useState('')
   const [currentRole, setCurrentRole] = useState('')
-  const [showAssignmentEditor, setShowAssignmentEditor] = useState(false)
-  const [savingAssignment, setSavingAssignment] = useState(false)
-  const [assignmentError, setAssignmentError] = useState('')
-  const [assignmentSuccess, setAssignmentSuccess] = useState('')
-  const [assignmentForm, setAssignmentForm] = useState<AssignmentFormState>({
-    tecnico_responsable_id: '',
-    supervisor_id: '',
-    motivo: '',
-  })
 
   const [form, setForm] = useState<FormState>({
     tipo_servicio_id: '',
@@ -1007,6 +993,18 @@ function OTDetalleContent() {
   const ejecucionTecnicaIntro = usaChecklistPorEquipo
     ? 'Completa checklist, evidencias, término y firma de recepción.'
     : 'Registra el desarrollo técnico del servicio, término y firma de recepción.'
+
+  const perfilesBitacora = useMemo(() => {
+    if (!esFlujoDyfSoftys) return perfiles
+
+    const idsAsociados = new Set(
+      [form.tecnico_responsable_id, form.supervisor_id]
+        .map((value) => String(value || '').trim())
+        .filter(Boolean)
+    )
+
+    return perfiles.filter((perfil) => idsAsociados.has(perfil.id))
+  }, [esFlujoDyfSoftys, perfiles, form.tecnico_responsable_id, form.supervisor_id])
 
   const estadoCerrada = useMemo(() => {
     return estados.find((item) => item.codigo === 'cerrada') ?? null
@@ -1354,7 +1352,7 @@ function OTDetalleContent() {
         }
         if (!resumenResp.data || !detalleResp.data) {
           throw new Error(
-            'No se encontrÃ³ la OT solicitada o fue archivada. Vuelve al listado y selecciona una OT activa.'
+            'No se encontró la OT solicitada o fue archivada. Vuelve al listado y selecciona una OT activa.'
           )
         }
         if (estadosResp.error) {
@@ -1582,13 +1580,13 @@ function OTDetalleContent() {
 
         if (tecnicoResponsableId && !tecnicoAsignadoValido) {
           perfilesWarning = perfilesWarning
-            ? `${perfilesWarning} AdemÃ¡s, el tÃ©cnico asignado no pertenece a la empresa de esta OT.`
-            : 'El tÃ©cnico asignado no pertenece a la empresa de esta OT. Debes reasignarlo antes de guardar.'
+            ? `${perfilesWarning} Además, el técnico asignado no pertenece a la empresa de esta OT.`
+            : 'El técnico asignado no pertenece a la empresa de esta OT. Debes reasignarlo antes de guardar.'
         }
 
         if (supervisorId && !supervisorAsignadoValido) {
           perfilesWarning = perfilesWarning
-            ? `${perfilesWarning} AdemÃ¡s, el supervisor asignado no pertenece a la empresa de esta OT.`
+            ? `${perfilesWarning} Además, el supervisor asignado no pertenece a la empresa de esta OT.`
             : 'El supervisor asignado no pertenece a la empresa de esta OT. Debes reasignarlo antes de guardar.'
         }
 
@@ -1662,14 +1660,6 @@ function OTDetalleContent() {
               : '2.10',
         })
 
-        setAssignmentForm({
-          tecnico_responsable_id: tecnicoAsignadoValido ? tecnicoResponsableId : '',
-          supervisor_id: supervisorAsignadoValido ? supervisorId : '',
-          motivo: '',
-        })
-        setAssignmentError('')
-        setAssignmentSuccess('')
-
        setTiempoForm((prev) => ({
   usuario_id:
     prev.usuario_id || (tecnicoAsignadoValido ? tecnicoResponsableId : '') || (allowedPerfilIds.has(user.id) ? user.id : '') || '',
@@ -1734,159 +1724,6 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
       ...prev,
       [field]: value,
     }))
-  }
-
-
-  const handleAssignmentChange = <K extends keyof AssignmentFormState>(
-    field: K,
-    value: AssignmentFormState[K]
-  ) => {
-    setAssignmentForm((prev) => ({
-      ...prev,
-      [field]: value,
-    }))
-  }
-
-  const openAssignmentEditor = () => {
-    setAssignmentForm({
-      tecnico_responsable_id: form.tecnico_responsable_id || '',
-      supervisor_id: form.supervisor_id || '',
-      motivo: '',
-    })
-    setAssignmentError('')
-    setAssignmentSuccess('')
-    setShowAssignmentEditor(true)
-  }
-
-  const handleSaveAssignment = async (e: React.FormEvent) => {
-    e.preventDefault()
-
-    const nuevoTecnicoId = assignmentForm.tecnico_responsable_id || ''
-    const nuevoSupervisorId = assignmentForm.supervisor_id || ''
-    const motivo = assignmentForm.motivo.trim()
-
-    if (!canManageOt) {
-      setAssignmentError('No tienes permisos para modificar la asignación de esta OT.')
-      return
-    }
-
-    if (isClosed) {
-      setAssignmentError('No se puede modificar la asignación de una OT cerrada.')
-      return
-    }
-
-    if (!nuevoTecnicoId) {
-      setAssignmentError('Debes seleccionar un técnico responsable.')
-      return
-    }
-
-    if (!motivo) {
-      setAssignmentError('Debes indicar el motivo de la reasignación.')
-      return
-    }
-
-    try {
-      setSavingAssignment(true)
-      setAssignmentError('')
-      setAssignmentSuccess('')
-
-      const tecnicoAnteriorId = detalle?.tecnico_responsable_id || null
-      const supervisorAnteriorId = detalle?.supervisor_id || null
-
-      const { error: updateError } = await supabase
-        .from('ot_ordenes_trabajo')
-        .update({
-          tecnico_responsable_id: nuevoTecnicoId || null,
-          supervisor_id: nuevoSupervisorId || null,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', otId)
-        .eq('activo', true)
-        .is('deleted_at', null)
-
-      if (updateError) {
-        throw new Error(`No se pudo actualizar la asignación de la OT: ${updateError.message}`)
-      }
-
-      const { error: deleteAsignacionesError } = await (supabase as any)
-        .from('ot_asignaciones')
-        .delete()
-        .eq('ot_id', otId)
-        .in('rol_en_ot', ['tecnico', 'supervisor'])
-
-      if (deleteAsignacionesError) {
-        throw new Error(`No se pudieron limpiar las asignaciones anteriores: ${deleteAsignacionesError.message}`)
-      }
-
-      const nuevasAsignaciones = [
-        {
-          ot_id: otId,
-          usuario_id: nuevoTecnicoId,
-          rol_en_ot: 'tecnico',
-          es_principal: true,
-          fecha_asignacion: new Date().toISOString(),
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        },
-      ]
-
-      if (nuevoSupervisorId && nuevoSupervisorId !== nuevoTecnicoId) {
-        nuevasAsignaciones.push({
-          ot_id: otId,
-          usuario_id: nuevoSupervisorId,
-          rol_en_ot: 'supervisor',
-          es_principal: false,
-          fecha_asignacion: new Date().toISOString(),
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        })
-      }
-
-      const { error: insertAsignacionesError } = await (supabase as any)
-        .from('ot_asignaciones')
-        .insert(nuevasAsignaciones)
-
-      if (insertAsignacionesError) {
-        throw new Error(`No se pudieron registrar las nuevas asignaciones: ${insertAsignacionesError.message}`)
-      }
-
-      const { error: historialError } = await (supabase as any)
-        .from('ot_historial_asignaciones')
-        .insert({
-          empresa_id: detalle?.empresa_id,
-          ot_id: otId,
-          tecnico_anterior_id: tecnicoAnteriorId,
-          tecnico_nuevo_id: nuevoTecnicoId || null,
-          supervisor_anterior_id: supervisorAnteriorId,
-          supervisor_nuevo_id: nuevoSupervisorId || null,
-          motivo,
-          cambiado_por: currentUserId || null,
-        })
-
-      if (historialError) {
-        console.warn('No se pudo guardar historial de asignación OT:', historialError.message)
-      }
-
-      setForm((prev) => ({
-        ...prev,
-        tecnico_responsable_id: nuevoTecnicoId,
-        supervisor_id: nuevoSupervisorId,
-      }))
-      setAssignmentForm({
-        tecnico_responsable_id: nuevoTecnicoId,
-        supervisor_id: nuevoSupervisorId,
-        motivo: '',
-      })
-      setShowAssignmentEditor(false)
-      setAssignmentSuccess('Asignación actualizada correctamente. El técnico seleccionado ya podrá ver la OT en terreno.')
-
-      await loadData(false)
-      router.refresh()
-    } catch (err) {
-      setAssignmentError(err instanceof Error ? err.message : 'No se pudo actualizar la asignación de la OT.')
-    } finally {
-      setSavingAssignment(false)
-    }
   }
 
   const handleTiempoChange = <K extends keyof TiempoFormState>(
@@ -2620,12 +2457,12 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
       if (isAsesoria) {
         if (!analisisAsesoria && !conclusionesAsesoria) {
           throw new Error(
-            'El avance quedÃ³ guardado, pero no se pudo cerrar: debes completar al menos el anÃ¡lisis tÃ©cnico o las conclusiones tÃ©cnicas.'
+            'El avance quedó guardado, pero no se pudo cerrar: debes completar al menos el anÃ¡lisis técnico o las conclusiones tÃ©cnicas.'
           )
         }
       } else if (!trabajoPrincipal) {
         throw new Error(
-          'El avance quedÃ³ guardado, pero no se pudo cerrar: debes completar "Trabajo realizado".'
+          'El avance quedó guardado, pero no se pudo cerrar: debes completar "Trabajo realizado".'
         )
       }
 
@@ -2637,13 +2474,13 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
 
         if (checklistError) {
           throw new Error(
-            `El avance quedÃ³ guardado, pero no se pudo validar el checklist: ${checklistError.message}`
+            `El avance quedó guardado, pero no se pudo validar el checklist: ${checklistError.message}`
           )
         }
 
         if ((checklistActual ?? []).length === 0) {
           throw new Error(
-            'El avance quedÃ³ guardado, pero no se pudo cerrar: esta OT requiere checklist técnico por equipo y aún no tiene respuestas registradas.'
+            'El avance quedó guardado, pero no se pudo cerrar: esta OT requiere checklist técnico por equipo y aún no tiene respuestas registradas.'
           )
         }
       }
@@ -2670,7 +2507,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
 
       if (updateError) {
         throw new Error(
-          `El avance quedÃ³ guardado, pero no se pudo cerrar la OT: ${updateError.message}`
+          `El avance quedó guardado, pero no se pudo cerrar la OT: ${updateError.message}`
         )
       }
 
@@ -2806,7 +2643,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
     return (
       <div className="space-y-4">
         <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-sm text-red-700 shadow-sm">
-          No se encontrÃ³ la orden de trabajo.
+          No se encontró la orden de trabajo.
         </div>
 
         <Link
@@ -2861,6 +2698,8 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
     trabajoFueFinalizadoPorTecnico && !detalle.permitir_edicion_tecnico
   )
   const tecnicoBloqueado = isClosed || trabajoFinalizadoPorTecnico
+  const canManageEquipoTrabajo = Boolean(!tecnicoBloqueado && !isClosed && (canManageOt || isAssignedTechnician))
+  const mostrarEquipoTrabajoDyF = Boolean(esFlujoDyfSoftys || usaTecnicosParticipantes)
 
   if (mostrarVistaTecnica && tecnicoBloqueado) {
     return (
@@ -3246,6 +3085,15 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
           </form>
         ) : null}
 
+        {mostrarEquipoTrabajoDyF ? (
+          <OTEquipoTrabajoDyFPanel
+            otId={otId}
+            empresaId={detalle.empresa_id}
+            canManage={canManageEquipoTrabajo}
+            onChanged={() => void loadData(false)}
+          />
+        ) : null}
+
         {esFlujoDyfSoftys ? (
           <section id="recepcion-softys" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <SectionTitle
@@ -3540,118 +3388,6 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
             </Link>
           </div>
         </div>
-      </div>
-
-      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <SectionTitle
-            title="Asignación de OT"
-            subtitle="Define quién opera la OT en terreno y quién supervisa. El equipo participante se registra por separado en la ejecución."
-          />
-
-          {canManageOt && !isClosed ? (
-            <button
-              type="button"
-              onClick={showAssignmentEditor ? () => setShowAssignmentEditor(false) : openAssignmentEditor}
-              className="inline-flex items-center justify-center rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
-            >
-              {showAssignmentEditor ? 'Cancelar edición' : 'Editar asignación'}
-            </button>
-          ) : null}
-        </div>
-
-        <div className="mt-5 grid gap-4 md:grid-cols-2">
-          <DetailField label="Técnico responsable" value={getUserLabel(form.tecnico_responsable_id)} />
-          <DetailField label="Supervisor" value={supervisorLabel} />
-        </div>
-
-        {assignmentSuccess ? (
-          <div className="mt-4 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
-            {assignmentSuccess}
-          </div>
-        ) : null}
-
-        {assignmentError ? (
-          <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-            {assignmentError}
-          </div>
-        ) : null}
-
-        {showAssignmentEditor && canManageOt && !isClosed ? (
-          <form onSubmit={handleSaveAssignment} className="mt-5 space-y-4 rounded-2xl border border-amber-200 bg-amber-50 p-4">
-            <div className="grid gap-4 md:grid-cols-2">
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700">
-                  Técnico responsable *
-                </label>
-                <select
-                  value={assignmentForm.tecnico_responsable_id}
-                  onChange={(e) => handleAssignmentChange('tecnico_responsable_id', e.target.value)}
-                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
-                >
-                  <option value="">Selecciona técnico responsable</option>
-                  {perfiles.map((perfil) => (
-                    <option key={perfil.id} value={perfil.id}>
-                      {perfil.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700">
-                  Supervisor
-                </label>
-                <select
-                  value={assignmentForm.supervisor_id}
-                  onChange={(e) => handleAssignmentChange('supervisor_id', e.target.value)}
-                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
-                >
-                  <option value="">Sin supervisor</option>
-                  {(perfilesSupervisores.length > 0 ? perfilesSupervisores : perfiles).map((perfil) => (
-                    <option key={perfil.id} value={perfil.id}>
-                      {perfil.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm font-medium text-slate-700">
-                Motivo del cambio *
-              </label>
-              <textarea
-                value={assignmentForm.motivo}
-                onChange={(e) => handleAssignmentChange('motivo', e.target.value)}
-                rows={3}
-                placeholder="Ej: técnico seleccionado con correo incorrecto, cambio operativo en terreno, reemplazo por disponibilidad."
-                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-500"
-              />
-              <p className="mt-2 text-xs text-amber-800">
-                Al guardar se actualiza la OT y la tabla de asignaciones. Esto corrige qué técnico puede ver la OT en terreno.
-              </p>
-            </div>
-
-            <div className="flex flex-col gap-3 sm:flex-row">
-              <button
-                type="submit"
-                disabled={savingAssignment}
-                className="inline-flex items-center justify-center rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70"
-              >
-                {savingAssignment ? 'Guardando asignación...' : 'Guardar reasignación'}
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowAssignmentEditor(false)}
-                disabled={savingAssignment}
-                className="inline-flex items-center justify-center rounded-xl border border-slate-300 px-5 py-3 text-sm font-medium text-slate-700 hover:bg-white disabled:cursor-not-allowed disabled:opacity-70"
-              >
-                Cancelar
-              </button>
-            </div>
-          </form>
-        ) : null}
       </div>
 
       {canManageOt && trabajoFueFinalizadoPorTecnico && !isClosed ? (
@@ -4068,7 +3804,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
 
             <div>
               <label className="mb-2 block text-sm font-medium text-slate-700">
-                Ãrea / sector de trabajo
+                Área / sector de trabajo
               </label>
               <input
                 type="text"
@@ -4080,15 +3816,44 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
           </div>
 
           <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-            <h3 className="text-base font-semibold text-slate-900">Asignación</h3>
-            <p className="mt-2 text-sm text-slate-600">
-              La asignación de técnico responsable y supervisor se modifica desde el bloque superior
-              “Asignación de OT”, para mantener sincronizada la vista de terreno y la tabla de asignaciones.
-            </p>
+            <h3 className="text-base font-semibold text-slate-900">Asignacion</h3>
 
             <div className="mt-5 grid gap-4 md:grid-cols-2">
-              <DetailField label="Técnico responsable" value={getUserLabel(form.tecnico_responsable_id)} />
-              <DetailField label="Supervisor" value={supervisorLabel} />
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  Tecnico responsable
+                </label>
+                <select
+                  value={form.tecnico_responsable_id}
+                  onChange={(e) => handleChange('tecnico_responsable_id', e.target.value)}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
+                >
+                  <option value="">Sin asignar</option>
+                  {perfiles.map((perfil) => (
+                    <option key={perfil.id} value={perfil.id}>
+                      {perfil.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  Supervisor
+                </label>
+                <select
+                  value={form.supervisor_id}
+                  onChange={(e) => handleChange('supervisor_id', e.target.value)}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
+                >
+                  <option value="">Sin asignar</option>
+                  {perfilesSupervisores.map((perfil) => (
+                    <option key={perfil.id} value={perfil.id}>
+                      {perfil.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
           </div>
 
@@ -4649,6 +4414,15 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
       </form>
       ) : null}
 
+      {mostrarEquipoTrabajoDyF ? (
+        <OTEquipoTrabajoDyFPanel
+          otId={otId}
+          empresaId={detalle.empresa_id}
+          canManage={canManageEquipoTrabajo}
+          onChanged={() => void loadData(false)}
+        />
+      ) : null}
+
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <SectionTitle
           title="Bitácora opcional de tiempos"
@@ -4666,13 +4440,22 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
                 onChange={(e) => handleTiempoChange('usuario_id', e.target.value)}
                 className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
               >
-                <option value="">Selecciona un usuario</option>
-                {perfiles.map((perfil) => (
+                <option value="">
+                  {perfilesBitacora.length === 0
+                    ? 'No hay usuarios asociados a esta OT'
+                    : 'Selecciona un usuario'}
+                </option>
+                {perfilesBitacora.map((perfil) => (
                   <option key={perfil.id} value={perfil.id}>
                     {perfil.label}
                   </option>
                 ))}
               </select>
+              {esFlujoDyfSoftys && perfilesBitacora.length === 0 ? (
+                <p className="mt-2 text-xs text-amber-700">
+                  Primero asigna un técnico responsable o supervisor a la OT para registrar tiempos.
+                </p>
+              ) : null}
             </div>
 
             <div>
@@ -4782,7 +4565,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
           <div className="flex flex-col gap-3 sm:flex-row">
             <button
               type="submit"
-              disabled={savingTiempo}
+              disabled={savingTiempo || perfilesBitacora.length === 0}
               className="inline-flex items-center justify-center rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70"
             >
               {savingTiempo ? 'Registrando tiempo...' : 'Agregar tiempo'}
