@@ -157,6 +157,7 @@ type FormDataState = {
 
 const STORAGE_ID_KEY = "empresa_activa_id";
 const STORAGE_NAME_KEY = "empresa_activa_nombre";
+const DYF_EMPRESA_ID = "73dd5543-2bf7-4d44-9982-4a641c8658f5";
 
 function todayLocalDate() {
   const now = new Date();
@@ -319,25 +320,29 @@ function NuevaOTContent() {
     selectedTipo?.estructura_ot_codigo === "rmsic_mespack" ||
     Boolean(selectedTipo?.usa_checklist_por_horas);
 
-  const esFlujoDyfSoftys =
+  const esEmpresaDyfSoftys =
+    empresaActivaId === DYF_EMPRESA_ID || form.empresa_id === DYF_EMPRESA_ID;
+
+  const tieneConfiguracionSoftys = Boolean(
     selectedPlantilla?.flujo_ot === "dyf_softys" ||
-    selectedTipo?.flujo_ot === "dyf_softys";
+      selectedTipo?.flujo_ot === "dyf_softys" ||
+      selectedPlantilla?.formato_ot?.includes("softys") ||
+      selectedTipo?.formato_ot?.includes("softys") ||
+      selectedTipo?.codigo?.includes("dyf_softys") ||
+      selectedTipo?.codigo?.includes("softys"),
+  );
+
+  // El formato Softys queda limitado a la empresa DyF para no contaminar RMSIC u otras empresas.
+  const esFlujoDyfSoftys = esEmpresaDyfSoftys && (tieneConfiguracionSoftys || Boolean(selectedTipo));
 
   const mostrarAvisoEquiposDespues =
+    esFlujoDyfSoftys &&
     Boolean(selectedPlantilla?.usa_equipos_multiples) &&
     selectedPlantilla?.requiere_equipo_encabezado === false;
 
-  const mostrarFormatoSoftys =
-    esFlujoDyfSoftys ||
-    selectedPlantilla?.formato_ot === "softys_checklist_equipo" ||
-    selectedTipo?.formato_ot === "softys_checklist_equipo" ||
-    selectedTipo?.formato_ot === "softys_general";
+  const mostrarFormatoSoftys = esFlujoDyfSoftys;
 
-  const mostrarSeguridadSoftys =
-    mostrarFormatoSoftys ||
-    selectedPlantilla?.formato_ot?.includes("softys") ||
-    selectedTipo?.codigo?.includes("dyf_softys") ||
-    selectedTipo?.codigo?.includes("softys");
+  const mostrarSeguridadSoftys = esFlujoDyfSoftys;
   const plantillaRequiereChecklist = tipoServicioRequiereChecklist(
     selectedTipo,
     selectedPlantilla,
@@ -1442,7 +1447,7 @@ function NuevaOTContent() {
 
                 <div>
                   <label className="mb-2 block text-sm font-medium text-slate-700">
-                    Responsable cliente / Softys
+                    {esFlujoDyfSoftys ? "Responsable cliente / Softys" : "Responsable cliente"}
                   </label>
                   <select
                     value={form.contacto_cliente_id}
