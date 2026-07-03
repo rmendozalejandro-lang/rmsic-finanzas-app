@@ -1,36 +1,48 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Tralixia - Checklist seguridad Softys en Crear nueva OT
 
-## Getting Started
+Este paquete corrige la pantalla:
 
-First, run the development server:
-
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+```txt
+app/(private)/ot/nueva/page.tsx
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Objetivo:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```txt
+Crear nueva OT DyF / Softys
+-> mostrar checklist 1.0 Requerimientos de seguridad Softys
+-> guardar campos seguridad_* en ot_ordenes_trabajo
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Aplicación recomendada
 
-## Learn More
+1. Copia el script en la raíz del proyecto `rmsic-finanzas-app`.
+2. Ejecuta en PowerShell:
 
-To learn more about Next.js, take a look at the following resources:
+```powershell
+.\scripts\apply_ot_nueva_seguridad_softys.ps1
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+3. Compila:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+npm run build
+```
 
-## Deploy on Vercel
+4. Si compila bien:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```bash
+git add .
+git commit -m "Agrega checklist seguridad Softys al crear OT"
+git push origin main
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Nota
+
+El script crea backup automático:
+
+```txt
+app/(private)/ot/nueva/page.tsx.bak-seguridad-softys
+```
+
+Si el script muestra advertencias, no subas cambios todavía: revisa el archivo o comparte la advertencia.
