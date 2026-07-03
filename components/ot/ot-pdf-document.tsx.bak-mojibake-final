@@ -40,9 +40,10 @@ type OTDetallePdf = {
   hallazgos: string | null
   conclusiones_tecnicas: string | null
   seguridad_permiso_trabajo?: boolean | null
-  seguridad_uso_epp?: boolean | null
-  seguridad_bloqueo_tarjeta?: boolean | null
-  seguridad_observacion?: string | null
+seguridad_uso_epp?: boolean | null
+seguridad_bloqueo_tarjeta?: boolean | null
+seguridad_observacion?: string | null
+tecnicos_participantes?: TecnicoParticipantePdf[]
   empresa_id?: string | null
   mostrar_nota_valor_hora: boolean
   valor_hora_uf: number | null
@@ -129,7 +130,7 @@ const DYF_EMPRESA_ID = '73dd5543-2bf7-4d44-9982-4a641c8658f5'
 
 const SOFTYS_SEGURIDAD_ITEMS = [
   { key: 'seguridad_permiso_trabajo', codigo: '1.1', label: 'Permiso de trabajo seguro debidamente completado y autorizado' },
-  { key: 'seguridad_uso_epp', codigo: '1.2', label: 'Uso de elementos de protección personal (Casco de seguridad + protectores auditivos + lentes de seguridad + guantes)' },
+  { key: 'seguridad_uso_epp', codigo: '1.2', label: 'Uso de elementos de protecciÃƒÂ³n personal (Casco de seguridad + protectores auditivos + lentes de seguridad + guantes)' },
   { key: 'seguridad_bloqueo_tarjeta', codigo: '1.3', label: 'Uso de candado de bloqueo + tarjeta NO OPERAR' },
 ] as const
 
@@ -654,16 +655,16 @@ function humanizePerson(value: string | null | undefined) {
   const lower = raw.toLowerCase()
 
   const knownMap: Record<string, string> = {
-    'rmendoza@rmsic.cl': 'Raúl Mendoza',
+    'rmendoza@rmsic.cl': 'RaÃƒÂºl Mendoza',
     'dallendes@rmsic.cl': 'David Allendes',
-    'rmendozaalejandro@gmail.com': 'Raúl Mendoza',
-    'raul mendoza': 'Raúl Mendoza',
-    'raúl mendoza': 'Raúl Mendoza',
-    'raul mendoza c.': 'Raúl Mendoza',
-    'raúl mendoza c.': 'Raúl Mendoza',
+    'rmendozaalejandro@gmail.com': 'RaÃƒÂºl Mendoza',
+    'raul mendoza': 'RaÃƒÂºl Mendoza',
+    'raÃƒÂºl mendoza': 'RaÃƒÂºl Mendoza',
+    'raul mendoza c.': 'RaÃƒÂºl Mendoza',
+    'raÃƒÂºl mendoza c.': 'RaÃƒÂºl Mendoza',
     'david allendes': 'David Allendes',
     'david allendes a.': 'David Allendes',
-    'rmendoza': 'Raúl Mendoza',
+    'rmendoza': 'RaÃƒÂºl Mendoza',
     'dallendes': 'David Allendes',
   }
 
@@ -672,9 +673,9 @@ function humanizePerson(value: string | null | undefined) {
   if (
     lower.includes('rmendoza') ||
     (lower.includes('raul') && lower.includes('mendoza')) ||
-    (lower.includes('raúl') && lower.includes('mendoza'))
+    (lower.includes('raÃƒÂºl') && lower.includes('mendoza'))
   ) {
-    return 'Raúl Mendoza'
+    return 'RaÃƒÂºl Mendoza'
   }
 
   if (lower.includes('dallendes') || (lower.includes('david') && lower.includes('allendes'))) {
@@ -799,7 +800,7 @@ function ChecklistTable({ rows }: { rows: ChecklistRow[] }) {
           <Text style={[styles.th, styles.colFrecuencia]}>Frec.</Text>
           <Text style={[styles.th, styles.colActividad]}>Actividad</Text>
           <Text style={[styles.th, styles.colEstado]}>Estado</Text>
-          <Text style={[styles.th, styles.colObs]}>Observación</Text>
+          <Text style={[styles.th, styles.colObs]}>ObservaciÃƒÂ³n</Text>
         </View>
 
         {rows.map((row, index) => {
@@ -827,7 +828,7 @@ function ChecklistTable({ rows }: { rows: ChecklistRow[] }) {
 
 function PhotoCard({ item }: { item: EvidenciaPdf }) {
   const descripcion = item.descripcion?.trim() ?? ''
-  const nombreArchivo = item.archivo_nombre?.trim() ?? 'Registro fotográfico'
+  const nombreArchivo = item.archivo_nombre?.trim() ?? 'Registro fotogrÃƒÂ¡fico'
 
   return (
     <View wrap={false} style={styles.photoCard}>
@@ -910,7 +911,7 @@ export function OTPdfDocument({
       tipoCodigoLower.includes('mantencion') ||
       tipoCodigoLower.includes('mantenimiento'))
   const isAsesoria =
-    tipoCodigoLower.includes('asesoria') || tipoNombreLower.includes('asesoría')
+    tipoCodigoLower.includes('asesoria') || tipoNombreLower.includes('asesorÃƒÂ­a')
 
   const evidenciasImagenes = evidencias.filter((item) =>
     isImageFile(item.archivo_url, item.archivo_nombre)
@@ -959,16 +960,16 @@ export function OTPdfDocument({
   const seguridadSoftysTexto = SOFTYS_SEGURIDAD_ITEMS
     .map((item) => {
       const checked = Boolean(detalle[item.key as keyof OTDetallePdf])
-      return `${checked ? '☑' : '☐'} ${item.codigo} ${item.label}`
+      return `${checked ? 'Ã¢Ëœâ€˜' : 'Ã¢ËœÂ'} ${item.codigo} ${item.label}`
     })
     .join('\n')
   const seguridadSoftysCompleta = detalle.seguridad_observacion
-    ? `${seguridadSoftysTexto}\n\nObservación de seguridad: ${detalle.seguridad_observacion}`
+    ? `${seguridadSoftysTexto}\n\nObservaciÃƒÂ³n de seguridad: ${detalle.seguridad_observacion}`
     : seguridadSoftysTexto
 
   const equipoTrabajoTexto = equipoTrabajoParticipantes
     .map((item, index) => {
-      const rol = item.rol_en_trabajo || (item.es_principal ? 'Técnico principal' : 'Apoyo')
+      const rol = item.rol_en_trabajo || (item.es_principal ? 'TÃƒÂ©cnico principal' : 'Apoyo')
       return `${index + 1}. ${item.nombre || '-'} | RUT: ${item.rut || '-'} | Cargo: ${item.cargo || '-'} | Especialidad: ${item.especialidad || '-'} | Rol: ${rol}`
     })
     .join('\n')
@@ -976,8 +977,8 @@ export function OTPdfDocument({
   return (
     <Document
       title={`${detalle.folio || 'OT'} - ${resumen.cliente_nombre || 'Cliente'} - ${detalle.titulo}`}
-      author="RM Servicios de Ingeniería y Construcción SpA"
-      subject="Informe técnico de servicio en terreno"
+      author="RM Servicios de IngenierÃƒÂ­a y ConstrucciÃƒÂ³n SpA"
+      subject="Informe tÃƒÂ©cnico de servicio en terreno"
       creator="Tralixia / RMSIC"
       producer="Tralixia / RMSIC"
     >
@@ -994,9 +995,9 @@ export function OTPdfDocument({
 
             <View style={styles.headerTextWrap}>
               <Text style={styles.company}>
-                RM SERVICIOS DE INGENIERÍA Y CONSTRUCCIÓN SPA
+                RM SERVICIOS DE INGENIERÃƒÂA Y CONSTRUCCIÃƒâ€œN SPA
               </Text>
-              <Text style={styles.mainTitle}>Informe técnico de servicio</Text>
+              <Text style={styles.mainTitle}>Informe tÃƒÂ©cnico de servicio</Text>
               <Text style={styles.subTitle}>{detalle.titulo}</Text>
             </View>
           </View>
@@ -1026,19 +1027,19 @@ export function OTPdfDocument({
 
           <View style={styles.sectionPanel}>
             <View style={styles.infoGrid}>
-              <InfoCell label="Razón social" value={resumen.cliente_nombre} />
+              <InfoCell label="RazÃƒÂ³n social" value={resumen.cliente_nombre} />
               <InfoCell label="Fecha visita" value={formatDate(detalle.fecha_ot)} />
               <InfoCell label="Hora inicio" value={formatTime(detalle.hora_inicio)} />
-              <InfoCell label="Hora término" value={formatTime(detalle.hora_termino)} />
-              <InfoCell label="Técnico ejecutante" value={nombreTecnico} />
-              <InfoCell label="Área / sector" value={areaTrabajo} />
+              <InfoCell label="Hora tÃƒÂ©rmino" value={formatTime(detalle.hora_termino)} />
+              <InfoCell label="TÃƒÂ©cnico ejecutante" value={nombreTecnico} />
+              <InfoCell label="ÃƒÂrea / sector" value={areaTrabajo} />
             </View>
           </View>
         </View>
 
         {equipoTrabajoTexto ? (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>EQUIPO DE TRABAJO / TÉCNICOS PARTICIPANTES</Text>
+            <Text style={styles.sectionTitle}>EQUIPO DE TRABAJO / TÃƒâ€°CNICOS PARTICIPANTES</Text>
             <TextBlock title="Participantes registrados en la OT" value={equipoTrabajoTexto} />
           </View>
         ) : null}
@@ -1084,34 +1085,34 @@ export function OTPdfDocument({
             />
             <TextBlock title="Causa detectada" value={detalle.causa_probable} />
             <TextBlock
-              title="Solución aplicada"
+              title="SoluciÃƒÂ³n aplicada"
               value={detalle.trabajo_realizado}
             />
             <TextBlock
               title="Resultado del servicio"
               value={detalle.resultado_servicio}
             />
-            <TextBlock title="Recomendaciones técnicas" value={detalle.recomendaciones} />
+            <TextBlock title="Recomendaciones tÃƒÂ©cnicas" value={detalle.recomendaciones} />
             <TextBlock title="Observaciones" value={observaciones} />
           </View>
         ) : null}
 
         {isAsistencia ? (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>DESARROLLO DE ASISTENCIA TÉCNICA</Text>
+            <Text style={styles.sectionTitle}>DESARROLLO DE ASISTENCIA TÃƒâ€°CNICA</Text>
             <TextBlock
               title="Solicitud del cliente"
               value={detalle.descripcion_solicitud}
             />
             <TextBlock
-              title="Desarrollo de asistencia técnica"
+              title="Desarrollo de asistencia tÃƒÂ©cnica"
               value={detalle.trabajo_realizado}
             />
             <TextBlock
-              title="Resultado / observación técnica"
+              title="Resultado / observaciÃƒÂ³n tÃƒÂ©cnica"
               value={detalle.resultado_servicio}
             />
-            <TextBlock title="Recomendaciones técnicas" value={detalle.recomendaciones} />
+            <TextBlock title="Recomendaciones tÃƒÂ©cnicas" value={detalle.recomendaciones} />
             <TextBlock title="Observaciones" value={observaciones} />
 
             {detalle.mostrar_nota_valor_hora ? (
@@ -1120,8 +1121,8 @@ export function OTPdfDocument({
                   <Text style={{ fontWeight: 700 }}>
                     Nota comercial informativa:{' '}
                   </Text>
-                  Este servicio fue atendido bajo modalidad de atención inmediata
-                  en terreno. El valor referencial de atención corresponde a{' '}
+                  Este servicio fue atendido bajo modalidad de atenciÃƒÂ³n inmediata
+                  en terreno. El valor referencial de atenciÃƒÂ³n corresponde a{' '}
                   <Text style={{ fontWeight: 700 }}>
                     {labelOrDash(
                       detalle.valor_hora_uf != null
@@ -1129,7 +1130,7 @@ export function OTPdfDocument({
                         : null
                     )}
                   </Text>
-                  , salvo acuerdo comercial, cotización previa o condiciones
+                  , salvo acuerdo comercial, cotizaciÃƒÂ³n previa o condiciones
                   particulares pactadas con el cliente.
                 </Text>
               </View>
@@ -1149,25 +1150,25 @@ export function OTPdfDocument({
               title="Resultado del servicio"
               value={detalle.resultado_servicio}
             />
-            <TextBlock title="Recomendaciones técnicas" value={detalle.recomendaciones} />
+            <TextBlock title="Recomendaciones tÃƒÂ©cnicas" value={detalle.recomendaciones} />
             <TextBlock title="Observaciones" value={observaciones} />
           </View>
         ) : null}
 
         {isAsesoria ? (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>DESARROLLO DE LA ASESORÍA</Text>
+            <Text style={styles.sectionTitle}>DESARROLLO DE LA ASESORÃƒÂA</Text>
             <TextBlock
-              title="Objetivo de la asesoría"
+              title="Objetivo de la asesorÃƒÂ­a"
               value={detalle.descripcion_solicitud}
             />
             <TextBlock
               title="Antecedentes observados"
               value={detalle.problema_reportado}
             />
-            <TextBlock title="Análisis técnico" value={detalle.diagnostico} />
+            <TextBlock title="AnÃƒÂ¡lisis tÃƒÂ©cnico" value={detalle.diagnostico} />
             <TextBlock
-              title="Conclusiones técnicas"
+              title="Conclusiones tÃƒÂ©cnicas"
               value={detalle.conclusiones_tecnicas}
             />
             <TextBlock title="Recomendaciones" value={detalle.recomendaciones} />
@@ -1186,9 +1187,9 @@ export function OTPdfDocument({
               title="Problema detectado"
               value={detalle.problema_reportado}
             />
-            <TextBlock title="Diagnóstico" value={detalle.diagnostico} />
+            <TextBlock title="DiagnÃƒÂ³stico" value={detalle.diagnostico} />
             <TextBlock
-              title="Solución implementada"
+              title="SoluciÃƒÂ³n implementada"
               value={detalle.trabajo_realizado}
             />
             <TextBlock
@@ -1204,21 +1205,21 @@ export function OTPdfDocument({
 
         {evidenciasImagenes.length > 0 ? (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>REGISTRO FOTOGRÁFICO</Text>
+            <Text style={styles.sectionTitle}>REGISTRO FOTOGRÃƒÂFICO</Text>
             <PhotoGroup title="Antes" items={fotosAntes} />
             <PhotoGroup title="Durante" items={fotosDurante} />
-            <PhotoGroup title="Después" items={fotosDespues} />
+            <PhotoGroup title="DespuÃƒÂ©s" items={fotosDespues} />
             <PhotoGroup title="Otras evidencias" items={otrasFotos} />
           </View>
         ) : null}
 
         <View wrap={false} style={styles.section}>
-          <Text style={styles.sectionTitle}>RECEPCIÓN Y CONFORMIDAD DEL SERVICIO</Text>
+          <Text style={styles.sectionTitle}>RECEPCIÃƒâ€œN Y CONFORMIDAD DEL SERVICIO</Text>
 
           <View style={styles.receptionWrap}>
             <View style={styles.receptionCard}>
               <Text style={styles.receptionNote}>
-                El cliente declara recepción del servicio indicado en este informe, de acuerdo con los antecedentes, evidencias y observaciones registradas.
+                El cliente declara recepciÃƒÂ³n del servicio indicado en este informe, de acuerdo con los antecedentes, evidencias y observaciones registradas.
               </Text>
 
               <Text style={styles.fieldLabel}>Nombre receptor</Text>
@@ -1239,7 +1240,7 @@ export function OTPdfDocument({
         </View>
 
         <View style={styles.footer} fixed>
-          <Text style={styles.footerText}>RM Servicios de Ingeniería y Construcción SpA · Informe generado desde Tralixia</Text>
+          <Text style={styles.footerText}>RM Servicios de IngenierÃƒÂ­a y ConstrucciÃƒÂ³n SpA Ã‚· Informe generado desde Tralixia</Text>
           <Text style={styles.footerText}>{detalle.folio || 'OT'}</Text>
         </View>
       </Page>

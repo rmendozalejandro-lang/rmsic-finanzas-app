@@ -40,9 +40,10 @@ type OTDetallePdf = {
   hallazgos: string | null
   conclusiones_tecnicas: string | null
   seguridad_permiso_trabajo?: boolean | null
-  seguridad_uso_epp?: boolean | null
-  seguridad_bloqueo_tarjeta?: boolean | null
-  seguridad_observacion?: string | null
+seguridad_uso_epp?: boolean | null
+seguridad_bloqueo_tarjeta?: boolean | null
+seguridad_observacion?: string | null
+tecnicos_participantes?: TecnicoParticipantePdf[]
   empresa_id?: string | null
   mostrar_nota_valor_hora: boolean
   valor_hora_uf: number | null
