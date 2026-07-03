@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
@@ -75,7 +75,7 @@ type PlantillaOption = {
   informe_codigo: string | null;
   es_predeterminada: boolean;
 
-  // ConfiguraciÃ³n por plantilla para evitar que el flujo DyF/Softys afecte a RMSIC u otras empresas.
+  // Configuración por plantilla para evitar que el flujo DyF/Softys afecte a RMSIC u otras empresas.
   flujo_ot: string;
   formato_ot: string;
   requiere_equipo_encabezado: boolean;
@@ -540,7 +540,7 @@ function NuevaOTContent() {
             tecnico.nombre_completo?.trim() || perfil?.nombre_completo?.trim();
           const email = perfil?.email?.trim();
           const cargo = tecnico.cargo?.trim();
-          const parts = [nombre || email || "TÃ©cnico OT"];
+          const parts = [nombre || email || "Técnico OT"];
 
           if (cargo) parts.push(cargo);
           if (email) parts.push(email);
@@ -696,11 +696,11 @@ function NuevaOTContent() {
 
         const nextWarning =
           tecnicosData.length === 0
-            ? "La empresa activa no tiene tÃ©cnicos OT activos. Puedes crear la OT sin tÃ©cnico ni supervisor por ahora."
+            ? "La empresa activa no tiene técnicos OT activos. Puedes crear la OT sin técnico ni supervisor por ahora."
             : tecnicosError
-              ? `No se pudieron cargar tÃ©cnicos OT (${tecnicosError.message}). Se usarÃ¡n usuarios de la empresa como respaldo.`
+              ? `No se pudieron cargar técnicos OT (${tecnicosError.message}). Se usarán usuarios de la empresa como respaldo.`
               : supervisoresData.length === 0
-                ? "No hay supervisores OT designados. Revisa la configuraciÃ³n de TÃ©cnicos OT y marca al menos un usuario como supervisor o jefe."
+                ? "No hay supervisores OT designados. Revisa la configuración de Técnicos OT y marca al menos un usuario como supervisor o jefe."
                 : "";
 
         const tecnicoActual = tecnicosData.find((item) => item.id === user.id);
@@ -765,7 +765,7 @@ function NuevaOTContent() {
         setError(
           err instanceof Error
             ? err.message
-            : "No se pudo cargar la informaciÃ³n inicial.",
+            : "No se pudo cargar la información inicial.",
         );
       } finally {
         if (active) {
@@ -946,7 +946,7 @@ function NuevaOTContent() {
 
   const validateForm = () => {
     if (!form.empresa_id) {
-      return "No se detectÃ³ empresa activa.";
+      return "No se detectó empresa activa.";
     }
 
     if (!form.cliente_id) {
@@ -954,7 +954,7 @@ function NuevaOTContent() {
     }
 
     if (!form.plantilla_id) {
-      return "No se detectÃ³ una plantilla OT para la empresa activa.";
+      return "No se detectó una plantilla OT para la empresa activa.";
     }
     if (!form.tipo_servicio_id) {
       return "Debes seleccionar un tipo de servicio.";
@@ -965,7 +965,7 @@ function NuevaOTContent() {
     }
 
     if (!form.titulo.trim()) {
-      return "Debes ingresar un tÃ­tulo para la OT.";
+      return "Debes ingresar un título para la OT.";
     }
 
     return "";
@@ -1091,16 +1091,16 @@ function NuevaOTContent() {
         throw new Error(`No se pudo crear la OT: ${insertError.message}`);
       }
 
-      // Los checklists por equipo se preparan despuÃ©s, cuando el supervisor agrega los motores/equipos a la OM.
+      // Los checklists por equipo se preparan después, cuando el supervisor agrega los motores/equipos a la OM.
 
       setSuccess(
         `OT creada correctamente${data?.folio ? ` (${data.folio})` : ""}.`,
       );
 
       if (data?.id) {
-        // DespuÃ©s de crear la OM, volver siempre al detalle normal de la OT.
-        // La vista Informe DyF / Softys queda disponible como acciÃ³n desde el detalle,
-        // pero no debe reemplazar el flujo de cierre, contacto, envÃ­o e historial.
+        // Después de crear la OM, volver siempre al detalle normal de la OT.
+        // La vista Informe DyF / Softys queda disponible como acción desde el detalle,
+        // pero no debe reemplazar el flujo de cierre, contacto, envío e historial.
         router.push(`/ot/${data.id}`);
         router.refresh();
       }
@@ -1179,7 +1179,7 @@ function NuevaOTContent() {
                   ))}
                 </select>
                 <p className="mt-1 text-xs text-slate-500">
-                  El tipo de servicio define automÃ¡ticamente la estructura de OT,
+                  El tipo de servicio define automáticamente la estructura de OT,
                   plantilla, checklist y equipos permitidos.
                 </p>
               </div>
@@ -1218,16 +1218,16 @@ function NuevaOTContent() {
               {mostrarAvisoEquiposDespues ? (
                 <div className="md:col-span-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
                   <div className="font-semibold">
-                    SelecciÃ³n de equipos/TAG despuÃ©s de crear la OM
+                    Selección de equipos/TAG después de crear la OM
                   </div>
                   <p className="mt-1">
                     En esta pantalla solo se define la plantilla OT. Luego, en
-                    el detalle de la OM, el administrador o supervisor agregarÃ¡
+                    el detalle de la OM, el administrador o supervisor agregará
                     todos los equipos asociados.
                   </p>
                   <p className="mt-1 text-xs">
-                    Esta lÃ³gica aplica solo para plantillas configuradas con
-                    equipos mÃºltiples, como el flujo DyF / Softys. El flujo
+                    Esta lógica aplica solo para plantillas configuradas con
+                    equipos múltiples, como el flujo DyF / Softys. El flujo
                     general de RMSIC mantiene su estructura independiente.
                   </p>
                 </div>
@@ -1249,9 +1249,9 @@ function NuevaOTContent() {
                 {selectedTipo ? (
                   <p className="mt-1 text-xs text-slate-500">
                     Estructura: {selectedTipo.estructura_ot_codigo || "general"}
-                    {plantillaRequiereChecklist ? " Â· usa checklist tÃ©cnico" : ""}
+                    {plantillaRequiereChecklist ? " · usa checklist técnico" : ""}
                     {selectedTipo.tipo_equipo_permitido
-                      ? ` Â· tipo equipo: ${selectedTipo.tipo_equipo_permitido}`
+                      ? ` · tipo equipo: ${selectedTipo.tipo_equipo_permitido}`
                       : ""}
                   </p>
                 ) : null}
@@ -1322,7 +1322,7 @@ function NuevaOTContent() {
                   <option value="baja">Baja</option>
                   <option value="media">Media</option>
                   <option value="alta">Alta</option>
-                  <option value="critica">CrÃ­tica</option>
+                  <option value="critica">Crítica</option>
                 </select>
               </div>
 
@@ -1343,21 +1343,21 @@ function NuevaOTContent() {
 
             {plantillaRequiereChecklist ? (
               <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
-                Esta plantilla generarÃ¡ checklist tÃ©cnico segÃºn la configuraciÃ³n
+                Esta plantilla generará checklist técnico según la configuración
                 del flujo seleccionado.
               </div>
             ) : null}
 
             {isPreventivaMespack ? (
               <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
-                Para OT de mantenciÃ³n preventiva Mespack, el checklist queda
-                marcado automÃ¡ticamente.
+                Para OT de mantención preventiva Mespack, el checklist queda
+                marcado automáticamente.
               </div>
             ) : null}
 
             {tiposServicio.length === 0 || estados.length === 0 ? (
               <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                No se cargaron correctamente los catÃ¡logos de tipo de servicio o
+                No se cargaron correctamente los catálogos de tipo de servicio o
                 estado.
               </div>
             ) : null}
@@ -1370,7 +1370,7 @@ function NuevaOTContent() {
                   Formato OM Softys
                 </h2>
                 <p className="mt-1 text-sm text-slate-500">
-                  Datos generales del informe de OM. Esta informaciÃ³n se
+                  Datos generales del informe de OM. Esta información se
                   registra una sola vez por orden principal.
                 </p>
               </div>
@@ -1378,7 +1378,7 @@ function NuevaOTContent() {
               <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                 <div>
                   <label className="mb-2 block text-sm font-medium text-slate-700">
-                    NÂ° OM / NÂ° Orden cliente
+                    N° OM / N° Orden cliente
                   </label>
                   <input
                     type="text"
@@ -1404,14 +1404,14 @@ function NuevaOTContent() {
                     className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
                   />
                   <p className="mt-1 text-xs text-slate-500">
-                    La fecha se toma desde la fecha OT. El tÃ©rmino se registra
+                    La fecha se toma desde la fecha OT. El término se registra
                     al cerrar o entregar el trabajo.
                   </p>
                 </div>
 
                 <div>
                   <label className="mb-2 block text-sm font-medium text-slate-700">
-                    Cantidad de tÃ©cnicos
+                    Cantidad de técnicos
                   </label>
                   <input
                     type="number"
@@ -1427,7 +1427,7 @@ function NuevaOTContent() {
 
                 <div>
                   <label className="mb-2 block text-sm font-medium text-slate-700">
-                    Ãrea / sector de trabajo
+                    Área / sector de trabajo
                   </label>
                   <input
                     type="text"
@@ -1435,7 +1435,7 @@ function NuevaOTContent() {
                     onChange={(e) =>
                       handleChange("area_trabajo", e.target.value)
                     }
-                    placeholder="Ejemplo: LÃ­nea MP1 / ConversiÃ³n / Servicios industriales"
+                    placeholder="Ejemplo: Línea MP1 / Conversión / Servicios industriales"
                     className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
                   />
                 </div>
@@ -1469,7 +1469,7 @@ function NuevaOTContent() {
                   </select>
                   {selectedContactoCliente ? (
                     <p className="mt-1 text-xs text-slate-500">
-                      Se enviarÃ¡ el informe a:{" "}
+                      Se enviará el informe a:{" "}
                       {selectedContactoCliente.email || "sin email registrado"}
                     </p>
                   ) : (
@@ -1599,7 +1599,7 @@ function NuevaOTContent() {
                           className="mt-1 h-4 w-4"
                         />
                         <span>
-                          <span className="font-semibold">1.2</span> Uso de elementos de protecciÃ³n personal
+                          <span className="font-semibold">1.2</span> Uso de elementos de protección personal
                           <span className="mt-1 block text-xs text-slate-500">
                             Casco de seguridad + protectores auditivos + lentes de seguridad + guantes
                           </span>
@@ -1623,7 +1623,7 @@ function NuevaOTContent() {
 
                     <div className="mt-4">
                       <label className="mb-2 block text-sm font-medium text-slate-700">
-                        ObservaciÃ³n de seguridad
+                        Observación de seguridad
                       </label>
                       <textarea
                         value={form.seguridad_observacion}
@@ -1631,7 +1631,7 @@ function NuevaOTContent() {
                           handleChange("seguridad_observacion", e.target.value)
                         }
                         rows={2}
-                        placeholder="ObservaciÃ³n opcional asociada a los requisitos de seguridad Softys."
+                        placeholder="Observación opcional asociada a los requisitos de seguridad Softys."
                         className="w-full rounded-xl border border-blue-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-blue-500"
                       />
                     </div>
@@ -1639,7 +1639,7 @@ function NuevaOTContent() {
                 ) : (
                   <div>
                     <label className="mb-2 block text-sm font-medium text-slate-700">
-                      Recomendaciones de seguridad para la ejecuciÃ³n del trabajo
+                      Recomendaciones de seguridad para la ejecución del trabajo
                     </label>
                     <textarea
                       value={form.recomendaciones_seguridad}
@@ -1661,19 +1661,19 @@ function NuevaOTContent() {
               Instrucciones para terreno
             </h2>
             <p className="mt-1 text-sm text-slate-500">
-              Esta secciÃ³n solo define el alcance inicial. El checklist, fotos, condiciÃ³n encontrada y acciones se completan en la vista tÃ©cnica despuÃ©s de crear la OT/OM.
+              Esta sección solo define el alcance inicial. El checklist, fotos, condición encontrada y acciones se completan en la vista técnica después de crear la OT/OM.
             </p>
 
             <div className="mt-5 grid gap-4">
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-700">
-                  TÃ­tulo / nombre del trabajo *
+                  Título / nombre del trabajo *
                 </label>
                 <input
                   type="text"
                   value={form.titulo}
                   onChange={(e) => handleChange("titulo", e.target.value)}
-                  placeholder="Ejemplo: RevisiÃ³n sistema de bombeo"
+                  placeholder="Ejemplo: Revisión sistema de bombeo"
                   className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
                 />
               </div>
@@ -1688,14 +1688,14 @@ function NuevaOTContent() {
                     handleChange("descripcion_solicitud", e.target.value)
                   }
                   rows={4}
-                  placeholder="Describe el alcance inicial que recibirÃ¡ el tÃ©cnico en terreno."
+                  placeholder="Describe el alcance inicial que recibirá el técnico en terreno."
                   className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-500"
                 />
               </div>
 
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-700">
-                  ObservaciÃ³n administrativa para el tÃ©cnico
+                  Observación administrativa para el técnico
                 </label>
                 <textarea
                   value={form.problema_reportado}
@@ -1703,7 +1703,7 @@ function NuevaOTContent() {
                     handleChange("problema_reportado", e.target.value)
                   }
                   rows={4}
-                  placeholder="Opcional: restricciones de acceso, coordinaciÃ³n, permisos, seguridad o informaciÃ³n relevante de terreno."
+                  placeholder="Opcional: restricciones de acceso, coordinación, permisos, seguridad o información relevante de terreno."
                   className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-500"
                 />
               </div>
@@ -1711,12 +1711,12 @@ function NuevaOTContent() {
           </div>
 
           <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-            <h2 className="text-lg font-semibold text-slate-900">AsignaciÃ³n</h2>
+            <h2 className="text-lg font-semibold text-slate-900">Asignación</h2>
 
             <div className="mt-5 grid gap-4 md:grid-cols-2">
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-700">
-                  TÃ©cnico responsable
+                  Técnico responsable
                 </label>
                 <select
                   value={form.tecnico_responsable_id}
@@ -1797,7 +1797,7 @@ function NuevaOTContent() {
         open={showClienteModal}
         empresaId={form.empresa_id || empresaActivaId}
         title="Nuevo cliente / mandante"
-        description="Crea el cliente para la empresa activa y selecciÃ³nalo automÃ¡ticamente en esta OT."
+        description="Crea el cliente para la empresa activa y selecciónalo automáticamente en esta OT."
         defaultEstadoComercial="cliente_activo"
         onClose={closeClienteModal}
         onCreated={handleClienteCreado}
