@@ -17,7 +17,6 @@ type ResumenLike = {
 }
 
 type OTDetallePdf = {
-  empresa_id: string
   folio: string | null
   tipo_servicio_id: string
   fecha_ot: string
@@ -28,10 +27,6 @@ type OTDetallePdf = {
   causa_probable: string | null
   trabajo_realizado: string | null
   recomendaciones: string | null
-  seguridad_permiso_trabajo?: boolean | null
-  seguridad_uso_epp?: boolean | null
-  seguridad_bloqueo_tarjeta?: boolean | null
-  seguridad_observacion?: string | null
   tecnico_responsable_id: string | null
   hora_inicio: string | null
   hora_termino: string | null
@@ -44,6 +39,11 @@ type OTDetallePdf = {
   resultado_servicio: string | null
   hallazgos: string | null
   conclusiones_tecnicas: string | null
+  seguridad_permiso_trabajo: boolean | null
+  seguridad_uso_epp: boolean | null
+  seguridad_bloqueo_tarjeta: boolean | null
+  seguridad_observacion: string | null
+  empresa_id?: string | null
   mostrar_nota_valor_hora: boolean
   valor_hora_uf: number | null
 }
@@ -80,26 +80,15 @@ type ChecklistRow = {
   observacion: string
 }
 
-const DYF_EMPRESA_ID = '73dd5543-2bf7-4d44-9982-4a641c8658f5'
-
-const SOFTYS_SEGURIDAD_ITEMS = [
-  {
-    codigo: '1.1',
-    label: 'Permiso de trabajo seguro debidamente completado y autorizado',
-    field: 'seguridad_permiso_trabajo',
-  },
-  {
-    codigo: '1.2',
-    label: 'Uso de elementos de protección personal',
-    helper: 'Casco de seguridad + protectores auditivos + lentes de seguridad + guantes',
-    field: 'seguridad_uso_epp',
-  },
-  {
-    codigo: '1.3',
-    label: 'Uso de candado de bloqueo + tarjeta NO OPERAR',
-    field: 'seguridad_bloqueo_tarjeta',
-  },
-] as const
+type EquipoTrabajoParticipantePdf = {
+  id: string
+  nombre: string | null
+  rut: string | null
+  cargo: string | null
+  especialidad: string | null
+  rol_en_trabajo: string | null
+  es_principal: boolean | null
+}
 
 export type OTPdfDocumentProps = {
   resumen: ResumenLike
@@ -109,6 +98,7 @@ export type OTPdfDocumentProps = {
   perfilesMap: Record<string, string>
   tiposServicio: TipoServicioPdf[]
   logoUrl?: string | null
+  equipoTrabajoParticipantes?: EquipoTrabajoParticipantePdf[]
 }
 
 Font.registerHyphenationCallback((word) => [word])
@@ -134,6 +124,14 @@ const COLORS = {
   red50: '#fef2f2',
   red700: '#b91c1c',
 }
+
+const DYF_EMPRESA_ID = '73dd5543-2bf7-4d44-9982-4a641c8658f5'
+
+const SOFTYS_SEGURIDAD_ITEMS = [
+  { key: 'seguridad_permiso_trabajo', codigo: '1.1', label: 'Permiso de trabajo seguro debidamente completado y autorizado' },
+  { key: 'seguridad_uso_epp', codigo: '1.2', label: 'Uso de elementos de protección personal (Casco de seguridad + protectores auditivos + lentes de seguridad + guantes)' },
+  { key: 'seguridad_bloqueo_tarjeta', codigo: '1.3', label: 'Uso de candado de bloqueo + tarjeta NO OPERAR' },
+] as const
 
 const styles = StyleSheet.create({
   page: {
@@ -437,111 +435,6 @@ logo: {
   statusNoOk: {
     color: COLORS.red700,
     fontWeight: 700,
-  },
-
-  softysSafetyTable: {
-    borderWidth: 1,
-    borderColor: COLORS.slate900,
-    borderRadius: 0,
-    overflow: 'hidden',
-    backgroundColor: COLORS.white,
-  },
-
-  softysSafetyHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.slate200,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.slate900,
-    minHeight: 20,
-  },
-
-  softysSafetyHeaderCode: {
-    width: 42,
-    paddingHorizontal: 7,
-    fontSize: 8,
-    fontWeight: 700,
-    color: COLORS.slate900,
-  },
-
-  softysSafetyHeaderTitle: {
-    flex: 1,
-    textAlign: 'center',
-    fontSize: 8.2,
-    fontWeight: 700,
-    letterSpacing: 0.4,
-    color: COLORS.slate900,
-  },
-
-  softysSafetyRow: {
-    flexDirection: 'row',
-    alignItems: 'stretch',
-    borderBottomWidth: 0.75,
-    borderBottomColor: COLORS.slate300,
-    minHeight: 28,
-  },
-
-  softysSafetyText: {
-    flex: 1,
-    paddingVertical: 6,
-    paddingHorizontal: 8,
-  },
-
-  softysSafetyItem: {
-    fontSize: 8.2,
-    lineHeight: 1.35,
-    color: COLORS.slate900,
-  },
-
-  softysSafetyHelper: {
-    marginTop: 2,
-    fontSize: 7.4,
-    lineHeight: 1.3,
-    color: COLORS.slate600,
-  },
-
-  softysSafetyCheckboxWrap: {
-    width: 42,
-    borderLeftWidth: 1,
-    borderLeftColor: COLORS.slate300,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  softysSafetyCheckbox: {
-    width: 13,
-    height: 13,
-    borderWidth: 1,
-    borderColor: COLORS.slate900,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  softysSafetyCheckMark: {
-    fontSize: 9,
-    fontWeight: 700,
-    color: COLORS.slate900,
-    lineHeight: 1,
-  },
-
-  softysSafetyObservation: {
-    paddingVertical: 6,
-    paddingHorizontal: 8,
-    backgroundColor: COLORS.slate50,
-  },
-
-  softysSafetyObservationTitle: {
-    fontSize: 7.5,
-    fontWeight: 700,
-    color: COLORS.slate700,
-    marginBottom: 2,
-    textTransform: 'uppercase',
-  },
-
-  softysSafetyObservationText: {
-    fontSize: 8,
-    lineHeight: 1.35,
-    color: COLORS.slate700,
   },
 
   photoGroupWrap: {
@@ -932,58 +825,6 @@ function ChecklistTable({ rows }: { rows: ChecklistRow[] }) {
   )
 }
 
-
-function PdfCheckbox({ checked }: { checked: boolean }) {
-  return (
-    <View style={styles.softysSafetyCheckbox}>
-      {checked ? <Text style={styles.softysSafetyCheckMark}>X</Text> : null}
-    </View>
-  )
-}
-
-function SeguridadSoftysPdf({ detalle }: { detalle: OTDetallePdf }) {
-  return (
-    <View style={styles.section} wrap={false}>
-      <View style={styles.softysSafetyTable}>
-        <View style={styles.softysSafetyHeader}>
-          <Text style={styles.softysSafetyHeaderCode}>1.0</Text>
-          <Text style={styles.softysSafetyHeaderTitle}>
-            REQUERIMIENTOS DE SEGURIDAD
-          </Text>
-        </View>
-
-        {SOFTYS_SEGURIDAD_ITEMS.map((item) => (
-          <View key={item.codigo} style={styles.softysSafetyRow}>
-            <View style={styles.softysSafetyText}>
-              <Text style={styles.softysSafetyItem}>
-                {item.codigo} {item.label}
-              </Text>
-              {'helper' in item && item.helper ? (
-                <Text style={styles.softysSafetyHelper}>{item.helper}</Text>
-              ) : null}
-            </View>
-
-            <View style={styles.softysSafetyCheckboxWrap}>
-              <PdfCheckbox checked={Boolean(detalle[item.field])} />
-            </View>
-          </View>
-        ))}
-
-        {detalle.seguridad_observacion ? (
-          <View style={styles.softysSafetyObservation}>
-            <Text style={styles.softysSafetyObservationTitle}>
-              Observación de seguridad
-            </Text>
-            <Text style={styles.softysSafetyObservationText}>
-              {detalle.seguridad_observacion}
-            </Text>
-          </View>
-        ) : null}
-      </View>
-    </View>
-  )
-}
-
 function PhotoCard({ item }: { item: EvidenciaPdf }) {
   const descripcion = item.descripcion?.trim() ?? ''
   const nombreArchivo = item.archivo_nombre?.trim() ?? 'Registro fotográfico'
@@ -1042,6 +883,7 @@ export function OTPdfDocument({
   perfilesMap,
   tiposServicio,
   logoUrl,
+  equipoTrabajoParticipantes = [],
 }: OTPdfDocumentProps) {
   const tipoActual =
     tiposServicio.find((item) => item.id === detalle.tipo_servicio_id) ?? null
@@ -1113,7 +955,23 @@ export function OTPdfDocument({
     detalle.observaciones_cierre
   )
 
-  const esInformeDyfSoftys = detalle.empresa_id === DYF_EMPRESA_ID
+  const esEmpresaDyf = detalle.empresa_id === DYF_EMPRESA_ID
+  const seguridadSoftysTexto = SOFTYS_SEGURIDAD_ITEMS
+    .map((item) => {
+      const checked = Boolean(detalle[item.key as keyof OTDetallePdf])
+      return `${checked ? '☑' : '☐'} ${item.codigo} ${item.label}`
+    })
+    .join('\n')
+  const seguridadSoftysCompleta = detalle.seguridad_observacion
+    ? `${seguridadSoftysTexto}\n\nObservación de seguridad: ${detalle.seguridad_observacion}`
+    : seguridadSoftysTexto
+
+  const equipoTrabajoTexto = equipoTrabajoParticipantes
+    .map((item, index) => {
+      const rol = item.rol_en_trabajo || (item.es_principal ? 'Técnico principal' : 'Apoyo')
+      return `${index + 1}. ${item.nombre || '-'} | RUT: ${item.rut || '-'} | Cargo: ${item.cargo || '-'} | Especialidad: ${item.especialidad || '-'} | Rol: ${rol}`
+    })
+    .join('\n')
 
   return (
     <Document
@@ -1178,8 +1036,19 @@ export function OTPdfDocument({
           </View>
         </View>
 
+        {equipoTrabajoTexto ? (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>EQUIPO DE TRABAJO / TÉCNICOS PARTICIPANTES</Text>
+            <TextBlock title="Participantes registrados en la OT" value={equipoTrabajoTexto} />
+          </View>
+        ) : null}
 
-        {esInformeDyfSoftys ? <SeguridadSoftysPdf detalle={detalle} /> : null}
+        {esEmpresaDyf ? (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>1.0 REQUERIMIENTOS DE SEGURIDAD SOFTYS</Text>
+            <TextBlock title="Checklist de seguridad" value={seguridadSoftysCompleta} />
+          </View>
+        ) : null}
 
         {isPreventiva ? (
           <View style={styles.section}>

@@ -36,12 +36,6 @@ type OTDetalle = {
   supervisor_contratista_cargo: string | null;
   herramientas_materiales_utilizados: string | null;
   recomendaciones_seguridad: string | null;
-  seguridad_permiso_trabajo: boolean;
-  seguridad_uso_epp: boolean;
-  seguridad_bloqueo_tarjeta: boolean;
-  seguridad_observacion: string | null;
-  seguridad_validada_at: string | null;
-  seguridad_validada_by: string | null;
   alcance_trabajo_ejecutado: boolean | null;
   alcance_trabajo_observacion: string | null;
   ejecutado_segun_programa: boolean | null;
@@ -72,6 +66,10 @@ type OTDetalle = {
   resultado_servicio: string | null;
   hallazgos: string | null;
   conclusiones_tecnicas: string | null;
+  seguridad_permiso_trabajo: boolean | null;
+  seguridad_uso_epp: boolean | null;
+  seguridad_bloqueo_tarjeta: boolean | null;
+  seguridad_observacion: string | null;
   mostrar_nota_valor_hora: boolean;
   valor_hora_uf: number | null;
 };
@@ -112,6 +110,16 @@ type TipoServicioOption = {
   usa_equipos_multiples?: boolean | null;
   usa_checklist_por_equipo?: boolean | null;
   tipo_equipo_permitido?: string | null;
+};
+
+type EquipoTrabajoParticipantePdf = {
+  id: string;
+  nombre: string | null;
+  rut: string | null;
+  cargo: string | null;
+  especialidad: string | null;
+  rol_en_trabajo: string | null;
+  es_principal: boolean | null;
 };
 
 type InformeTecnicoMini = {
@@ -562,12 +570,6 @@ export async function GET(
             supervisor_contratista_cargo,
             herramientas_materiales_utilizados,
             recomendaciones_seguridad,
-            seguridad_permiso_trabajo,
-            seguridad_uso_epp,
-            seguridad_bloqueo_tarjeta,
-            seguridad_observacion,
-            seguridad_validada_at,
-            seguridad_validada_by,
             alcance_trabajo_ejecutado,
             alcance_trabajo_observacion,
             ejecutado_segun_programa,
@@ -598,6 +600,10 @@ export async function GET(
             resultado_servicio,
             hallazgos,
             conclusiones_tecnicas,
+            seguridad_permiso_trabajo,
+            seguridad_uso_epp,
+            seguridad_bloqueo_tarjeta,
+            seguridad_observacion,
             mostrar_nota_valor_hora,
             valor_hora_uf
           `,
@@ -713,6 +719,21 @@ export async function GET(
       );
     }
 
+    const equipoTrabajoResp = await adminClient
+      .from("ot_orden_equipo_trabajo")
+      .select("id,nombre,rut,cargo,especialidad,rol_en_trabajo,es_principal")
+      .eq("ot_id", otId)
+      .eq("activo", true)
+      .order("es_principal", { ascending: false })
+      .order("created_at", { ascending: true });
+
+    if (equipoTrabajoResp.error) {
+      return jsonError(
+        `No se pudo cargar el equipo de trabajo participante: ${equipoTrabajoResp.error.message}`,
+        500,
+      );
+    }
+
     const informeTecnicoResp = await adminClient
       .from("ot_informes_tecnicos")
       .select("id, datos")
@@ -739,6 +760,7 @@ export async function GET(
     const resumen = resumenResp.data as OTResumen;
     const detalle = detalleResp.data as OTDetalle;
     const tiempos = (tiemposResp.data ?? []) as TiempoTrabajo[];
+    const equipoTrabajoParticipantes = (equipoTrabajoResp.data ?? []) as EquipoTrabajoParticipantePdf[];
     const horarioDesdeTiempos = obtenerHorarioDesdeTiempos(tiempos);
 
     const detalleHorarioBase: OTDetalle = {
@@ -1407,6 +1429,10 @@ export async function GET(
       resultado_servicio: cleanText(detalle.resultado_servicio),
       hallazgos: cleanText(detalle.hallazgos),
       conclusiones_tecnicas: cleanText(detalle.conclusiones_tecnicas),
+      seguridad_permiso_trabajo: detalle.seguridad_permiso_trabajo,
+      seguridad_uso_epp: detalle.seguridad_uso_epp,
+      seguridad_bloqueo_tarjeta: detalle.seguridad_bloqueo_tarjeta,
+      seguridad_observacion: cleanText(detalle.seguridad_observacion),
       observaciones_cierre: [
         cleanText(detalle.observaciones_cierre)
           ? `OBSERVACIONES FINALES
@@ -1464,6 +1490,7 @@ ${checklistTextoPdf}`
       perfilesMap,
       tiposServicio,
       logoUrl,
+      equipoTrabajoParticipantes,
     }) as React.ReactElement<DocumentProps>;
 
     const buffer = await renderToBuffer(pdfElement);

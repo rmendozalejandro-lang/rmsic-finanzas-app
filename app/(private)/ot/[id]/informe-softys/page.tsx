@@ -56,6 +56,10 @@ type OTDetalle = {
   resultado_servicio: string | null;
   hallazgos: string | null;
   conclusiones_tecnicas: string | null;
+  seguridad_permiso_trabajo: boolean | null;
+  seguridad_uso_epp: boolean | null;
+  seguridad_bloqueo_tarjeta: boolean | null;
+  seguridad_observacion: string | null;
 };
 
 type Evidencia = {
@@ -222,6 +226,36 @@ type EquipoChecklistInforme = {
   item_requiere_evidencia: boolean | null;
 };
 
+type EquipoTrabajoParticipante = {
+  id: string;
+  nombre: string | null;
+  rut: string | null;
+  cargo: string | null;
+  especialidad: string | null;
+  rol_en_trabajo: string | null;
+  es_principal: boolean | null;
+};
+
+const SOFTYS_SEGURIDAD_ITEMS = [
+  {
+    key: "seguridad_permiso_trabajo",
+    codigo: "1.1",
+    label: "Permiso de trabajo seguro debidamente completado y autorizado",
+  },
+  {
+    key: "seguridad_uso_epp",
+    codigo: "1.2",
+    label: "Uso de elementos de protección personal",
+    helper: "Casco de seguridad + protectores auditivos + lentes de seguridad + guantes",
+  },
+  {
+    key: "seguridad_bloqueo_tarjeta",
+    codigo: "1.3",
+    label: "Uso de candado de bloqueo + tarjeta NO OPERAR",
+  },
+] as const;
+
+const DYF_EMPRESA_ID = "73dd5543-2bf7-4d44-9982-4a641c8658f5";
 
 const datosDefault: InformeDatos = {
   numero_orden_cliente: "",
@@ -810,6 +844,7 @@ export default function InformeSoftysPage() {
     ChecklistResultado[]
   >([]);
   const [equiposAsociados, setEquiposAsociados] = useState<EquipoAsociadoInforme[]>([]);
+  const [equipoTrabajoParticipantes, setEquipoTrabajoParticipantes] = useState<EquipoTrabajoParticipante[]>([]);
   const [checklistEquipoResultados, setChecklistEquipoResultados] = useState<
     EquipoChecklistInforme[]
   >([]);
@@ -876,7 +911,11 @@ export default function InformeSoftysPage() {
                 area_trabajo,
                 resultado_servicio,
                 hallazgos,
-                conclusiones_tecnicas
+                conclusiones_tecnicas,
+                seguridad_permiso_trabajo,
+                seguridad_uso_epp,
+                seguridad_bloqueo_tarjeta,
+                seguridad_observacion
               `,
             )
             .eq("id", otId)
@@ -1117,6 +1156,22 @@ export default function InformeSoftysPage() {
         })) as EquipoAsociadoInforme[];
 
         setEquiposAsociados(equiposInforme);
+
+        const { data: equipoTrabajoData, error: equipoTrabajoError } = await db
+          .from("ot_orden_equipo_trabajo")
+          .select("id,nombre,rut,cargo,especialidad,rol_en_trabajo,es_principal")
+          .eq("ot_id", otId)
+          .eq("activo", true)
+          .order("es_principal", { ascending: false })
+          .order("created_at", { ascending: true });
+
+        if (equipoTrabajoError) {
+          throw new Error(
+            `No se pudo cargar el equipo de trabajo participante: ${equipoTrabajoError.message}`,
+          );
+        }
+
+        setEquipoTrabajoParticipantes((equipoTrabajoData ?? []) as EquipoTrabajoParticipante[]);
 
         const { data: checklistEquipoData, error: checklistEquipoError } = await db
           .from("ot_equipo_checklist_resultados")
@@ -1602,6 +1657,11 @@ export default function InformeSoftysPage() {
 
   const recomendacionesSeguridad =
     informeDatos.recomendaciones_seguridad || detalle.recomendaciones;
+
+  const mostrarSeguridadSoftys = detalle.empresa_id === DYF_EMPRESA_ID;
+  const seguridadSoftysTieneObservacion = hasValue(detalle.seguridad_observacion);
+  const equipoTrabajoManual = informeDatos.equipo_trabajo;
+  const tieneEquipoTrabajoParticipante = equipoTrabajoParticipantes.length > 0 || hasValue(equipoTrabajoManual);
 
   const estructuraOtCodigo = (tipoServicioConfig?.estructura_ot_codigo || "").toLowerCase();
   const tipoServicioCodigo = (tipoServicioConfig?.codigo || "").toLowerCase();
@@ -2644,6 +2704,42 @@ export default function InformeSoftysPage() {
             />
           </div>
 
+          {tieneEquipoTrabajoParticipante ? (
+            <Section title="Equipo de trabajo / técnicos participantes">
+              {equipoTrabajoParticipantes.length > 0 ? (
+                <table className="technical-checklist-table">
+                  <thead>
+                    <tr>
+                      <th>Nombre</th>
+                      <th>RUT</th>
+                      <th>Cargo</th>
+                      <th>Especialidad</th>
+                      <th>Rol</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {equipoTrabajoParticipantes.map((item) => (
+                      <tr key={item.id}>
+                        <td>{labelOrDash(item.nombre)}</td>
+                        <td>{labelOrDash(item.rut)}</td>
+                        <td>{labelOrDash(item.cargo)}</td>
+                        <td>{labelOrDash(item.especialidad)}</td>
+                        <td>{item.rol_en_trabajo || (item.es_principal ? "Técnico principal" : "Apoyo")}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : null}
+
+              {hasValue(equipoTrabajoManual) ? (
+                <div style={{ marginTop: equipoTrabajoParticipantes.length > 0 ? 12 : 0 }}>
+                  <p className="label-title">Complemento manual</p>
+                  <TextBox value={equipoTrabajoManual} minHeight={55} />
+                </div>
+              ) : null}
+            </Section>
+          ) : null}
+
           {usaChecklistPorEquipo ? (
             <Section title={tipoServicioConfig?.tipo_equipo_permitido === "valvula" ? "Válvulas asociadas a la OM" : "Equipos / motores asociados a la OM"}>
             {equiposInforme.length > 0 ? (
@@ -2753,6 +2849,44 @@ export default function InformeSoftysPage() {
           {hasValue(herramientasMateriales) ? (
             <Section title="Herramientas y materiales utilizados">
               <TextBox value={herramientasMateriales} minHeight={70} />
+            </Section>
+          ) : null}
+
+          {mostrarSeguridadSoftys ? (
+            <Section title="1.0 Requerimientos de seguridad Softys">
+              <table className="reception-table">
+                <thead>
+                  <tr>
+                    <th>Código</th>
+                    <th>Requisito</th>
+                    <th className="checkbox-cell">Check</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {SOFTYS_SEGURIDAD_ITEMS.map((item) => {
+                    const checked = Boolean(detalle[item.key as keyof OTDetalle]);
+                    return (
+                      <tr key={item.codigo}>
+                        <td>{item.codigo}</td>
+                        <td>
+                          {item.label}
+                          {"helper" in item && item.helper ? (
+                            <div className="small-note">{item.helper}</div>
+                          ) : null}
+                        </td>
+                        <td className="checkbox-cell">{checked ? "☑" : "□"}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+
+              {seguridadSoftysTieneObservacion ? (
+                <div style={{ marginTop: 12 }}>
+                  <p className="label-title">Observación de seguridad</p>
+                  <TextBox value={detalle.seguridad_observacion} minHeight={55} />
+                </div>
+              ) : null}
             </Section>
           ) : null}
 
