@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 
@@ -31,6 +31,12 @@ export type CotizacionFormValues = {
   ejecutivo_nombre: string;
   ejecutivo_email: string;
   ejecutivo_telefono: string;
+  numero_oc?: string | null;
+  fecha_oc?: string | null;
+  aprobacion_sin_oc?: boolean | null;
+  tipo_respaldo_aprobacion?: string | null;
+  referencia_aprobacion?: string | null;
+  ingreso_generado_id?: string | null;
 };
 
 export type CotizacionFormItem = {
@@ -53,6 +59,17 @@ type Props = {
   mode?: "create" | "edit";
   cotizacionId?: string;
   backHref?: string;
+};
+
+type RespaldoAprobacionTipo = "" | "orden_compra" | "correo" | "whatsapp" | "contrato" | "verbal" | "otro";
+
+type AprobacionFinancieraForm = {
+  numero_oc: string;
+  fecha_oc: string;
+  aprobacion_sin_oc: boolean;
+  tipo_respaldo_aprobacion: RespaldoAprobacionTipo;
+  referencia_aprobacion: string;
+  generar_ingreso_financiero: boolean;
 };
 
 function createEmptyItem(): CotizacionFormItem {
@@ -308,6 +325,20 @@ export default function CotizacionForm({
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [ingresoGeneradoId, setIngresoGeneradoId] = useState<string | null>(
+    initialValues.ingreso_generado_id ?? null
+  );
+  const [aprobacionFinanciera, setAprobacionFinanciera] =
+    useState<AprobacionFinancieraForm>({
+      numero_oc: initialValues.numero_oc ?? "",
+      fecha_oc: initialValues.fecha_oc ?? "",
+      aprobacion_sin_oc: Boolean(initialValues.aprobacion_sin_oc),
+      tipo_respaldo_aprobacion:
+        (initialValues.tipo_respaldo_aprobacion as RespaldoAprobacionTipo) || "",
+      referencia_aprobacion: initialValues.referencia_aprobacion ?? "",
+      generar_ingreso_financiero:
+        initialValues.estado === "aprobada" && !initialValues.ingreso_generado_id,
+    });
 
   const summary = useMemo(() => {
     return calculateSummary(
@@ -324,12 +355,73 @@ export default function CotizacionForm({
   ]);
 
   const isEdit = mode === "edit";
+  const mostrarAprobacionFinanciera = form.estado === "aprobada";
+  const puedeGenerarIngresoFinanciero =
+    mostrarAprobacionFinanciera && !ingresoGeneradoId;
+
+  useEffect(() => {
+    if (!cotizacionId || !empresaId || !isEdit) return;
+
+    let isMounted = true;
+
+    async function cargarDatosFinancierosCotizacion() {
+      const { data, error: fetchError } = await supabase
+        .from("cotizaciones")
+        .select(
+          "numero_oc,fecha_oc,aprobacion_sin_oc,tipo_respaldo_aprobacion,referencia_aprobacion,ingreso_generado_id"
+        )
+        .eq("id", cotizacionId)
+        .eq("empresa_id", empresaId)
+        .maybeSingle();
+
+      if (!isMounted || fetchError || !data) return;
+
+      setIngresoGeneradoId(data.ingreso_generado_id ?? null);
+      setAprobacionFinanciera((prev) => ({
+        ...prev,
+        numero_oc: data.numero_oc ?? prev.numero_oc,
+        fecha_oc: data.fecha_oc ?? prev.fecha_oc,
+        aprobacion_sin_oc: Boolean(data.aprobacion_sin_oc),
+        tipo_respaldo_aprobacion:
+          (data.tipo_respaldo_aprobacion as RespaldoAprobacionTipo) ||
+          prev.tipo_respaldo_aprobacion,
+        referencia_aprobacion:
+          data.referencia_aprobacion ?? prev.referencia_aprobacion,
+        generar_ingreso_financiero: !data.ingreso_generado_id,
+      }));
+    }
+
+    cargarDatosFinancierosCotizacion();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [cotizacionId, empresaId, isEdit]);
+
+  useEffect(() => {
+    if (form.estado !== "aprobada") return;
+
+    setAprobacionFinanciera((prev) => ({
+      ...prev,
+      generar_ingreso_financiero: !ingresoGeneradoId,
+    }));
+  }, [form.estado, ingresoGeneradoId]);
 
   function updateFormField<K extends keyof CotizacionFormValues>(
     key: K,
     value: CotizacionFormValues[K]
   ) {
     setForm((prev) => ({
+      ...prev,
+      [key]: value,
+    }));
+  }
+
+  function updateAprobacionFinanciera<K extends keyof AprobacionFinancieraForm>(
+    key: K,
+    value: AprobacionFinancieraForm[K]
+  ) {
+    setAprobacionFinanciera((prev) => ({
       ...prev,
       [key]: value,
     }));
@@ -430,6 +522,26 @@ export default function CotizacionForm({
         return;
       }
 
+      if (
+        form.estado === "aprobada" &&
+        aprobacionFinanciera.generar_ingreso_financiero &&
+        !ingresoGeneradoId
+      ) {
+        const tieneOc = aprobacionFinanciera.numero_oc.trim().length > 0;
+        const tieneRespaldoSinOc =
+          aprobacionFinanciera.aprobacion_sin_oc &&
+          aprobacionFinanciera.tipo_respaldo_aprobacion &&
+          aprobacionFinanciera.referencia_aprobacion.trim().length > 0;
+
+        if (!tieneOc && !tieneRespaldoSinOc) {
+          setError(
+            "Para generar el ingreso financiero debes ingresar una OC o marcar aprobación sin OC con tipo y referencia de respaldo."
+          );
+          setSaving(false);
+          return;
+        }
+      }
+
       const porcentajeIva = Math.min(
         100,
         Math.max(0, toNumber(form.porcentaje_iva))
@@ -471,6 +583,18 @@ export default function CotizacionForm({
         ejecutivo_email: form.ejecutivo_email.trim() || user.email || null,
         ejecutivo_telefono: form.ejecutivo_telefono.trim() || null,
         updated_by: user.id,
+        ...(form.estado === "aprobada"
+          ? {
+              numero_oc: aprobacionFinanciera.numero_oc.trim() || null,
+              fecha_oc: aprobacionFinanciera.fecha_oc || null,
+              aprobacion_sin_oc: aprobacionFinanciera.aprobacion_sin_oc,
+              tipo_respaldo_aprobacion:
+                aprobacionFinanciera.tipo_respaldo_aprobacion || null,
+              referencia_aprobacion:
+                aprobacionFinanciera.referencia_aprobacion.trim() || null,
+              fecha_aceptacion: new Date().toISOString(),
+            }
+          : {}),
       };
 
       let savedId = cotizacionId || "";
@@ -671,6 +795,39 @@ export default function CotizacionForm({
         return;
       }
 
+      if (
+        form.estado === "aprobada" &&
+        aprobacionFinanciera.generar_ingreso_financiero &&
+        !ingresoGeneradoId
+      ) {
+        const { data: ingresoData, error: ingresoError } = await supabase.rpc(
+          "generar_ingreso_financiero_cotizacion",
+          {
+            p_cotizacion_id: savedId,
+            p_numero_oc: aprobacionFinanciera.numero_oc.trim() || null,
+            p_fecha_oc: aprobacionFinanciera.fecha_oc || null,
+            p_aprobacion_sin_oc: aprobacionFinanciera.aprobacion_sin_oc,
+            p_tipo_respaldo_aprobacion:
+              aprobacionFinanciera.tipo_respaldo_aprobacion || null,
+            p_referencia_aprobacion:
+              aprobacionFinanciera.referencia_aprobacion.trim() || null,
+          }
+        );
+
+        if (ingresoError) {
+          setError(
+            ingresoError.message ||
+              "La cotización fue guardada, pero no se pudo generar el ingreso financiero."
+          );
+          setSaving(false);
+          return;
+        }
+
+        if (typeof ingresoData === "string") {
+          setIngresoGeneradoId(ingresoData);
+        }
+      }
+
       router.push(isEdit ? `/cotizaciones/${savedId}` : "/cotizaciones");
       router.refresh();
     } catch (err) {
@@ -778,6 +935,163 @@ export default function CotizacionForm({
                   <option value="vencida">Vencida</option>
                 </select>
               </div>
+
+              {mostrarAprobacionFinanciera ? (
+                <div className="md:col-span-2 rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+                  <div className="flex flex-col gap-1 md:flex-row md:items-start md:justify-between">
+                    <div>
+                      <h3 className="text-sm font-semibold text-emerald-900">
+                        Aceptación comercial e ingreso financiero
+                      </h3>
+                      <p className="mt-1 text-xs text-emerald-800">
+                        Este bloque solo aplica cuando la cotización queda aprobada.
+                        Permite registrar la OC o el respaldo de aprobación y, si
+                        corresponde, generar el ingreso financiero / cuenta por cobrar.
+                      </p>
+                    </div>
+                    {ingresoGeneradoId ? (
+                      <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-800">
+                        Ingreso generado
+                      </span>
+                    ) : (
+                      <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800">
+                        Ingreso pendiente
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="mt-4 grid gap-4 md:grid-cols-2">
+                    <div>
+                      <label className="mb-2 block text-sm font-medium text-slate-700">
+                        N° OC
+                      </label>
+                      <input
+                        value={aprobacionFinanciera.numero_oc}
+                        onChange={(e) =>
+                          updateAprobacionFinanciera("numero_oc", e.target.value)
+                        }
+                        disabled={Boolean(ingresoGeneradoId)}
+                        placeholder="Ejemplo: 4800045627"
+                        className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-100"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="mb-2 block text-sm font-medium text-slate-700">
+                        Fecha OC
+                      </label>
+                      <input
+                        type="date"
+                        value={aprobacionFinanciera.fecha_oc}
+                        onChange={(e) =>
+                          updateAprobacionFinanciera("fecha_oc", e.target.value)
+                        }
+                        disabled={Boolean(ingresoGeneradoId)}
+                        className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-100"
+                      />
+                    </div>
+
+                    <div className="md:col-span-2">
+                      <label className="flex items-start gap-2 rounded-xl border border-emerald-200 bg-white p-3 text-sm text-slate-700">
+                        <input
+                          type="checkbox"
+                          checked={aprobacionFinanciera.aprobacion_sin_oc}
+                          onChange={(e) =>
+                            updateAprobacionFinanciera(
+                              "aprobacion_sin_oc",
+                              e.target.checked
+                            )
+                          }
+                          disabled={Boolean(ingresoGeneradoId)}
+                          className="mt-1"
+                        />
+                        <span>
+                          <span className="font-medium">Aprobada sin OC</span>
+                          <span className="block text-xs text-slate-500">
+                            Usar solo cuando el cliente acepta por correo, WhatsApp,
+                            contrato u otro respaldo comercial.
+                          </span>
+                        </span>
+                      </label>
+                    </div>
+
+                    {aprobacionFinanciera.aprobacion_sin_oc ? (
+                      <>
+                        <div>
+                          <label className="mb-2 block text-sm font-medium text-slate-700">
+                            Tipo de respaldo
+                          </label>
+                          <select
+                            value={aprobacionFinanciera.tipo_respaldo_aprobacion}
+                            onChange={(e) =>
+                              updateAprobacionFinanciera(
+                                "tipo_respaldo_aprobacion",
+                                e.target.value as RespaldoAprobacionTipo
+                              )
+                            }
+                            disabled={Boolean(ingresoGeneradoId)}
+                            className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-100"
+                          >
+                            <option value="">Seleccionar respaldo</option>
+                            <option value="correo">Correo</option>
+                            <option value="whatsapp">WhatsApp</option>
+                            <option value="contrato">Contrato</option>
+                            <option value="verbal">Verbal autorizada</option>
+                            <option value="otro">Otro</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="mb-2 block text-sm font-medium text-slate-700">
+                            Referencia del respaldo
+                          </label>
+                          <input
+                            value={aprobacionFinanciera.referencia_aprobacion}
+                            onChange={(e) =>
+                              updateAprobacionFinanciera(
+                                "referencia_aprobacion",
+                                e.target.value
+                              )
+                            }
+                            disabled={Boolean(ingresoGeneradoId)}
+                            placeholder="Ejemplo: correo del 02-07-2026"
+                            className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-100"
+                          />
+                        </div>
+                      </>
+                    ) : null}
+
+                    {puedeGenerarIngresoFinanciero ? (
+                      <div className="md:col-span-2">
+                        <label className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                          <input
+                            type="checkbox"
+                            checked={
+                              aprobacionFinanciera.generar_ingreso_financiero
+                            }
+                            onChange={(e) =>
+                              updateAprobacionFinanciera(
+                                "generar_ingreso_financiero",
+                                e.target.checked
+                              )
+                            }
+                            className="mt-1"
+                          />
+                          <span>
+                            <span className="font-semibold">
+                              Generar ingreso financiero al guardar
+                            </span>
+                            <span className="block text-xs">
+                              Creará el movimiento de ingreso y la cuenta por cobrar.
+                              No se ejecuta automáticamente si desmarcas esta opción.
+                            </span>
+                          </span>
+                        </label>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
 
               <div className="md:col-span-2">
                 <label className="mb-2 block text-sm font-medium text-slate-700">
