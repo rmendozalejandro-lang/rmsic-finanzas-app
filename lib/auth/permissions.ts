@@ -7,6 +7,7 @@ export type RolEmpresa =
   | 'finanzas'
   | 'gerencia'
   | 'tecnico_ot'
+  | 'demo_cliente'
 
 export type ModuloPrincipal =
   | 'comercial'
@@ -242,6 +243,15 @@ const ROLE_MODULES: Record<RolEmpresa, ModuleKey[]> = {
   ],
 
   tecnico_ot: ['ot'],
+
+  demo_cliente: [
+    'dashboard',
+    'clientes',
+    'proveedores',
+    'contactos',
+    'cotizaciones',
+    'ot',
+  ],
 }
 
 /**
@@ -297,6 +307,12 @@ const ROLE_RESOURCE_PERMISSIONS: Record<
 
   tecnico_ot: {
     clientes: ['ver'],
+    contactos: ['ver'],
+  },
+
+  demo_cliente: {
+    clientes: ['ver'],
+    proveedores: ['ver'],
     contactos: ['ver'],
   },
 }
