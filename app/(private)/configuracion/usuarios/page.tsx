@@ -29,8 +29,8 @@ const roles = [
   { value: 'cobranzas', label: 'Cobranzas' },
   { value: 'comercial', label: 'Comercial' },
   { value: 'tecnico_ot', label: 'Técnico OT / Solo OT' },
+  { value: 'demo_cliente', label: 'Cliente demo / Solo visualización' },
 ]
-
 const STORAGE_ID_KEY = 'empresa_activa_id'
 
 function formatDate(value?: string | null) {

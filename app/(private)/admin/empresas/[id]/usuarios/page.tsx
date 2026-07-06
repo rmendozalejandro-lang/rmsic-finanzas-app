@@ -31,6 +31,7 @@ const roles = [
   { value: 'cobranzas', label: 'Cobranzas' },
   { value: 'comercial', label: 'Comercial' },
   { value: 'tecnico_ot', label: 'Técnico OT / Solo OT' },
+  { value: 'demo_cliente', label: 'Cliente demo / Solo visualización' },
 ]
 
 function formatDate(value?: string | null) {

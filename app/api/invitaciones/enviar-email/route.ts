@@ -19,6 +19,7 @@ const ROLE_LABELS: Record<string, string> = {
   cobranzas: 'Cobranzas',
   comercial: 'Comercial',
   tecnico_ot: 'Técnico OT / Solo OT',
+  demo_cliente: 'Cliente demo / Solo visualización',
 }
 
 export async function POST(request: Request) {
