@@ -304,6 +304,48 @@ export default function AdminEmpresaUsuariosPage() {
     }
   }
 
+  const handleReenviarInvitacion = async (item: UsuarioEmpresaRow) => {
+    if (item.tipo !== 'invitacion') return
+
+    try {
+      setSaving(true)
+      setError('')
+      setSuccess('')
+
+      const { data: sessionData } = await supabase.auth.getSession()
+      const token = sessionData.session?.access_token
+
+      if (!token) {
+        throw new Error('Sesión no disponible para enviar correo de invitación.')
+      }
+
+      const emailResp = await fetch('/api/invitaciones/enviar-email', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          empresaId,
+          email: item.email.trim().toLowerCase(),
+          rol: item.rol,
+        }),
+      })
+
+      const emailJson = await emailResp.json().catch(() => null)
+
+      if (!emailResp.ok) {
+        throw new Error(emailJson?.error || 'No se pudo enviar el correo de invitación.')
+      }
+
+      setSuccess(emailJson?.mensaje || `Invitación reenviada correctamente a ${item.email}.`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudo reenviar la invitación.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   if (loading) {
     return (
       <main className="space-y-6">
@@ -563,14 +605,27 @@ export default function AdminEmpresaUsuariosPage() {
                             {item.activo ? 'Desactivar' : 'Activar'}
                           </button>
                         ) : (
-                          <button
-                            type="button"
-                            onClick={() => void handleCancelarInvitacion(item)}
-                            disabled={saving}
-                            className="rounded-xl border border-rose-300 px-3 py-1.5 text-xs font-medium text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
-                          >
-                            Cancelar
-                          </button>
+                          <div className="flex justify-end gap-2">
+                            {item.estado === 'pendiente' && (
+                              <button
+                                type="button"
+                                onClick={() => void handleReenviarInvitacion(item)}
+                                disabled={saving}
+                                className="rounded-xl border border-sky-300 px-3 py-1.5 text-xs font-medium text-sky-700 hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                Reenviar
+                              </button>
+                            )}
+
+                            <button
+                              type="button"
+                              onClick={() => void handleCancelarInvitacion(item)}
+                              disabled={saving}
+                              className="rounded-xl border border-rose-300 px-3 py-1.5 text-xs font-medium text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              Cancelar
+                            </button>
+                          </div>
                         )}
                       </td>
                     </tr>

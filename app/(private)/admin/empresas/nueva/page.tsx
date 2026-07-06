@@ -82,6 +82,44 @@ export default function NuevaEmpresaPage() {
     return ''
   }
 
+  const enviarCorreoInvitacion = async ({
+    empresaId,
+    emailInvitado,
+    rolInvitado,
+  }: {
+    empresaId: string
+    emailInvitado: string
+    rolInvitado: string
+  }) => {
+    const { data: sessionData } = await supabase.auth.getSession()
+    const token = sessionData.session?.access_token
+
+    if (!token) {
+      throw new Error('Sesión no disponible para enviar correo de invitación.')
+    }
+
+    const emailResp = await fetch('/api/invitaciones/enviar-email', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        empresaId,
+        email: emailInvitado,
+        rol: rolInvitado,
+      }),
+    })
+
+    const emailJson = await emailResp.json().catch(() => null)
+
+    if (!emailResp.ok) {
+      throw new Error(emailJson?.error || 'No se pudo enviar el correo de invitación.')
+    }
+
+    return emailJson?.mensaje || 'Correo de invitación enviado correctamente.'
+  }
+
   const handleCreate = async () => {
     const validationError = validate()
 
@@ -102,6 +140,8 @@ export default function NuevaEmpresaPage() {
       setError('')
       setSuccess('')
 
+      const adminEmailNormalizado = adminEmail.trim().toLowerCase()
+
       const { data, error: rpcError } = await supabase.rpc(
         'crear_empresa_con_estructura_base',
         {
@@ -112,7 +152,7 @@ export default function NuevaEmpresaPage() {
           p_direccion: direccion.trim() || null,
           p_telefono: telefono.trim() || null,
           p_email: email.trim() || null,
-          p_admin_email: adminEmail.trim() || null,
+          p_admin_email: adminEmailNormalizado || null,
           p_empresa_plantilla_id: empresaPlantillaId,
         }
       )
@@ -120,14 +160,31 @@ export default function NuevaEmpresaPage() {
       if (rpcError) throw new Error(rpcError.message)
 
       const result = Array.isArray(data) ? data[0] : data
+      const nuevaEmpresaId = result?.nueva_empresa_id as string | undefined
 
-      setSuccess(
-        `Empresa creada correctamente. Cuentas copiadas: ${result?.cuentas_copiadas ?? 0}. Categorías copiadas: ${result?.categorias_copiadas ?? 0}.`
-      )
+      let mensaje = `Empresa creada correctamente. Cuentas copiadas: ${result?.cuentas_copiadas ?? 0}. Categorías copiadas: ${result?.categorias_copiadas ?? 0}.`
+
+      if (nuevaEmpresaId && adminEmailNormalizado) {
+        try {
+          const mensajeCorreo = await enviarCorreoInvitacion({
+            empresaId: nuevaEmpresaId,
+            emailInvitado: adminEmailNormalizado,
+            rolInvitado: 'admin',
+          })
+
+          mensaje = `${mensaje} ${mensajeCorreo}`
+        } catch (emailError) {
+          mensaje = `${mensaje} Invitación pendiente creada, pero no se pudo enviar el correo: ${
+            emailError instanceof Error ? emailError.message : 'error desconocido'
+          }`
+        }
+      }
+
+      setSuccess(mensaje)
 
       setTimeout(() => {
-        router.push('/admin/empresas')
-      }, 900)
+        router.push(nuevaEmpresaId ? `/admin/empresas/${nuevaEmpresaId}/usuarios` : '/admin/empresas')
+      }, 1200)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo crear la empresa.')
     } finally {
