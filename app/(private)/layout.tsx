@@ -72,6 +72,7 @@ const menuItems: MenuItem[] = [
   { href: '/ot', label: 'OT', moduleKey: 'ot' },
   { href: '/ot/equipos', label: 'Equipos / Activos', moduleKey: 'ot' },
 { href: '/operacional/tecnicos-dyf', label: 'Técnicos DyF', moduleKey: 'ot' },
+  { href: '/informes', label: 'Informes Técnicos', moduleKey: 'ot' },
 
   { href: '/remuneraciones', label: 'Remuneraciones', moduleKey: 'remuneraciones' },
 { href: '/remuneraciones/prestamos', label: 'Prestamos y anticipos', moduleKey: 'remuneraciones' },
@@ -110,6 +111,12 @@ const MENU_GROUP_ORDER: Array<ModuloPrincipal | 'general'> = [
 const MENU_GROUP_LABELS: Record<ModuloPrincipal | 'general', string> = {
   general: 'General',
   ...MODULO_PRINCIPAL_LABELS,
+}
+
+const RMSIC_EMPRESA_ID = '557a054c-71ef-4c5f-8637-594755ad669b'
+
+function empresaTieneInformesTecnicos(empresaId?: string | null) {
+  return empresaId === RMSIC_EMPRESA_ID
 }
 
 export default function PrivateLayout({ children }: PrivateLayoutProps) {
@@ -390,10 +397,18 @@ if (empresaGuardadaValida) {
       return menuItems.filter((item) => item.href === '/ot')
     }
 
-    return menuItems.filter((item) =>
-      canAccessModuleByRoleAndCompany(usuarioRol, item.moduleKey, modulosHabilitados)
-    )
-  }, [usuarioRol, rolResuelto, modulosHabilitados])
+    return menuItems.filter((item) => {
+      if (item.href === '/informes' && !empresaTieneInformesTecnicos(empresaActivaId)) {
+        return false
+      }
+
+      return canAccessModuleByRoleAndCompany(
+        usuarioRol,
+        item.moduleKey,
+        modulosHabilitados
+      )
+    })
+  }, [usuarioRol, rolResuelto, modulosHabilitados, empresaActivaId])
 
   const visibleMenuGroups = useMemo<MenuGroup[]>(() => {
     const grouped = new Map<ModuloPrincipal | 'general', MenuItem[]>()
@@ -422,13 +437,21 @@ if (empresaGuardadaValida) {
       .find((item) => pathname === item.href || pathname.startsWith(`${item.href}/`))
   }, [pathname])
 
+  const isInformesTecnicosRoute =
+    pathname === '/informes' || pathname.startsWith('/informes/')
+
   const isRouteAccessDenied =
     rolResuelto &&
-    Boolean(currentRouteItem) &&
-    !canAccessModuleByRoleAndCompany(
-      usuarioRol,
-      currentRouteItem!.moduleKey,
-      modulosHabilitados
+    (
+      (
+        Boolean(currentRouteItem) &&
+        !canAccessModuleByRoleAndCompany(
+          usuarioRol,
+          currentRouteItem!.moduleKey,
+          modulosHabilitados
+        )
+      ) ||
+      (isInformesTecnicosRoute && !empresaTieneInformesTecnicos(empresaActivaId))
     )
 
   useEffect(() => {
