@@ -962,7 +962,7 @@ function NuevaOTContent() {
       return "No se detectó una plantilla OT para la empresa activa.";
     }
     if (!form.tipo_servicio_id) {
-      return "Debes seleccionar un tipo de servicio.";
+      return "Debes seleccionar una plantilla OT / tipo de trabajo.";
     }
 
     if (!form.estado_id) {
@@ -1040,8 +1040,7 @@ function NuevaOTContent() {
         area_trabajo: form.area_trabajo.trim() || null,
         supervisor_contratista_nombre:
           form.supervisor_contratista_nombre.trim() || null,
-        supervisor_contratista_rut:
-          form.supervisor_contratista_rut.trim() || null,
+        supervisor_contratista_rut: null,
         supervisor_contratista_cargo:
           form.supervisor_contratista_cargo.trim() || null,
         herramientas_materiales_utilizados:
@@ -1125,7 +1124,9 @@ function NuevaOTContent() {
               Nueva OT
             </h1>
             <p className="mt-2 text-sm text-slate-500">
-              Crea una nueva orden de trabajo asociada a la empresa activa.
+              Crea una nueva orden de trabajo asociada a la empresa activa. En
+              esta etapa defines la plantilla; los equipos/TAG se agregan
+              después en el detalle de la OT/OM.
             </p>
           </div>
 
@@ -1163,7 +1164,7 @@ function NuevaOTContent() {
 
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-700">
-                  Tipo de servicio *
+                  Plantilla OT / tipo de trabajo *
                 </label>
                 <select
                   value={form.tipo_servicio_id}
@@ -1175,7 +1176,7 @@ function NuevaOTContent() {
                   <option value="">
                     {tiposServicio.length === 0
                       ? "No hay tipos disponibles"
-                      : "Selecciona un tipo de servicio"}
+                      : "Selecciona una plantilla OT / tipo de trabajo"}
                   </option>
                   {tiposServicio.map((tipo) => (
                     <option key={tipo.id} value={tipo.id}>
@@ -1184,8 +1185,8 @@ function NuevaOTContent() {
                   ))}
                 </select>
                 <p className="mt-1 text-xs text-slate-500">
-                  El tipo de servicio define automáticamente la estructura de OT,
-                  plantilla, checklist y equipos permitidos.
+                  Define la estructura de la OT/OM. Los equipos/TAG se
+                  agregarán después en el detalle de la orden.
                 </p>
               </div>
 
@@ -1518,20 +1519,6 @@ function NuevaOTContent() {
 
                 <div>
                   <label className="mb-2 block text-sm font-medium text-slate-700">
-                    RUT supervisor contratista
-                  </label>
-                  <input
-                    type="text"
-                    value={form.supervisor_contratista_rut}
-                    onChange={(e) =>
-                      handleChange("supervisor_contratista_rut", e.target.value)
-                    }
-                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-slate-700">
                     Cargo supervisor contratista
                   </label>
                   <input
@@ -1818,4 +1805,3 @@ export default function NuevaOTPage() {
     </ProtectedModuleRoute>
   );
 }
-
