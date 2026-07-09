@@ -23,7 +23,11 @@ type Informe = {
   estado: string
   fecha_informe: string
   fecha_emision: string | null
-  version: string
+  version: string | null
+  es_version_actual: boolean | null
+  motivo_version: string | null
+  informe_origen_id: string | null
+  version_anterior_id: string | null
   area_ubicacion: string | null
   equipo_tag: string | null
   resumen_ejecutivo: string | null
@@ -169,6 +173,20 @@ function formatFechaHora(value?: string | null) {
   }
 
   return date.toLocaleString('es-CL')
+}
+
+function versionLabel(version?: string | null) {
+  if (!version || !version.trim()) return 'Sin versión'
+
+  const versionLimpia = version.trim()
+
+  return versionLimpia.toLowerCase().startsWith('v') ? versionLimpia : `v${versionLimpia}`
+}
+
+function fechaEmisionLabel(fechaEmision?: string | null) {
+  if (!fechaEmision) return 'Pendiente de emisión'
+
+  return formatFechaHora(fechaEmision)
 }
 
 function limpiarNombreArchivo(value: string) {
@@ -427,6 +445,11 @@ export default function InformePdfPage() {
     )
   }
 
+  const informeVersionLabel = versionLabel(informe.version)
+  const esHistorica = informe.es_version_actual === false
+  const vigenciaLabel = esHistorica ? 'Histórica' : 'Actual'
+  const informeFechaEmisionLabel = fechaEmisionLabel(informe.fecha_emision)
+
   let numeroSeccion = 1
 
   return (
@@ -517,12 +540,12 @@ export default function InformePdfPage() {
                 <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 text-xs">
                   <div>
                     <dt className="font-semibold text-slate-500">Código</dt>
-                    <dd className="mt-0.5 font-medium text-slate-900">{informe.codigo}</dd>
+                    <dd className="mt-0.5 font-medium text-slate-900">{informe.codigo || 'Sin código'}</dd>
                   </div>
 
                   <div>
                     <dt className="font-semibold text-slate-500">Versión</dt>
-                    <dd className="mt-0.5 font-medium text-slate-900">{informe.version}</dd>
+                    <dd className="mt-0.5 font-medium text-slate-900">{informeVersionLabel}</dd>
                   </div>
 
                   <div>
@@ -533,10 +556,32 @@ export default function InformePdfPage() {
                   </div>
 
                   <div>
-                    <dt className="font-semibold text-slate-500">Fecha</dt>
-                    <dd className="mt-0.5 font-medium text-slate-900">{formatearFecha(informe.fecha_informe)}</dd>
+                    <dt className="font-semibold text-slate-500">Vigencia</dt>
+                    <dd className={`mt-1 inline-flex rounded-full border px-3 py-1 text-[11px] font-medium uppercase tracking-wide ${
+                      esHistorica
+                        ? 'border-amber-200 bg-amber-50 text-amber-800'
+                        : 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                    }`}>
+                      {vigenciaLabel}
+                    </dd>
+                  </div>
+
+                  <div>
+                    <dt className="font-semibold text-slate-500">Fecha informe</dt>
+                    <dd className="mt-0.5 font-medium text-slate-900">{formatearFecha(informe.fecha_informe) || '-'}</dd>
+                  </div>
+
+                  <div>
+                    <dt className="font-semibold text-slate-500">Fecha de emisión</dt>
+                    <dd className="mt-0.5 font-medium text-slate-900">{informeFechaEmisionLabel}</dd>
                   </div>
                 </dl>
+
+                {esHistorica && (
+                  <p className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-900 print:rounded-none">
+                    Este documento corresponde a una versión histórica del informe y se conserva solo para trazabilidad documental.
+                  </p>
+                )}
               </div>
             </div>
 
@@ -900,7 +945,7 @@ export default function InformePdfPage() {
               <div>
                 <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">Fecha de emisión</dt>
                 <dd className="mt-1 font-medium text-slate-900">
-                  {informe.fecha_emision ? formatFechaHora(informe.fecha_emision) : 'Pendiente de emisión'}
+                  {informeFechaEmisionLabel}
                 </dd>
               </div>
 
@@ -927,7 +972,7 @@ export default function InformePdfPage() {
           <footer className="mt-10 border-t-4 border-[#163A5F] pt-4 text-xs leading-5 text-slate-500">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="font-medium text-slate-700">
-                {informe.codigo} · Versión {informe.version} · {estadoLabel(informe.estado)}
+                {informe.codigo || 'Sin código'} · Versión {informeVersionLabel} · {estadoLabel(informe.estado)} · Vigencia {vigenciaLabel}
               </p>
               <p>Documento generado desde Tralixia / RMSIC.</p>
             </div>
