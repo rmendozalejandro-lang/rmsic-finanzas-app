@@ -212,13 +212,16 @@ function limpiarNombreArchivo(nombre: string) {
     .toLowerCase();
 }
 
-function crearStoragePath(empresaId: string, informeId: string, nombre: string) {
+function crearStoragePath(
+  empresaId: string,
+  informeId: string,
+  nombre: string,
+) {
   const limpio = limpiarNombreArchivo(nombre) || "archivo";
   const sufijo = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
   return `${empresaId}/${informeId}/${sufijo}-${limpio}`;
 }
-
 
 function normalizarVersion(version?: string | null) {
   const partes = String(version || "1.0").split(".");
@@ -241,10 +244,15 @@ function calcularNuevaVersion(versionActual: string, tipo: "menor" | "mayor") {
   return `${mayor}.${menor + 1}`;
 }
 
-function obtenerNombreUsuario(user: Awaited<ReturnType<typeof supabase.auth.getUser>>["data"]["user"]) {
+function obtenerNombreUsuario(
+  user: Awaited<ReturnType<typeof supabase.auth.getUser>>["data"]["user"],
+) {
   const metadata = user?.user_metadata ?? {};
 
-  if (typeof metadata.nombre_completo === "string" && metadata.nombre_completo.trim()) {
+  if (
+    typeof metadata.nombre_completo === "string" &&
+    metadata.nombre_completo.trim()
+  ) {
     return metadata.nombre_completo.trim();
   }
 
@@ -334,7 +342,6 @@ export default function VerInformePage() {
   const [recomendacionPlazo, setRecomendacionPlazo] = useState("");
   const [recomendacionRequiereCotizacion, setRecomendacionRequiereCotizacion] =
     useState(false);
-
 
   const [fotoArchivo, setFotoArchivo] = useState<File | null>(null);
   const [fotoTitulo, setFotoTitulo] = useState("");
@@ -443,7 +450,6 @@ export default function VerInformePage() {
             (recomendacionesData ?? []) as InformeRecomendacion[],
           );
         }
-
 
         const { data: fotosData, error: fotosError } = await supabase
           .from("informes_fotos")
@@ -576,7 +582,9 @@ export default function VerInformePage() {
     if (!informe) return;
 
     if (informe.estado !== "emitido") {
-      setErrorMessage("Solo se pueden crear nuevas versiones desde informes emitidos.");
+      setErrorMessage(
+        "Solo se pueden crear nuevas versiones desde informes emitidos.",
+      );
       return;
     }
 
@@ -720,7 +728,8 @@ export default function VerInformePage() {
       if (insertError || !nuevoInforme) {
         console.error("Error creando nueva versión:", insertError?.message);
         setErrorMessage(
-          insertError?.message || "No se pudo crear la nueva versión del informe.",
+          insertError?.message ||
+            "No se pudo crear la nueva versión del informe.",
         );
         return;
       }
@@ -1155,7 +1164,6 @@ export default function VerInformePage() {
     }
   }
 
-
   async function handleAgregarFoto(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
@@ -1294,7 +1302,10 @@ export default function VerInformePage() {
           .remove([foto.archivo_url]);
 
         if (storageError) {
-          console.warn("No se pudo eliminar archivo de Storage:", storageError.message);
+          console.warn(
+            "No se pudo eliminar archivo de Storage:",
+            storageError.message,
+          );
         }
       }
 
@@ -1442,13 +1453,14 @@ export default function VerInformePage() {
           .remove([anexo.archivo_url]);
 
         if (storageError) {
-          console.warn("No se pudo eliminar archivo de Storage:", storageError.message);
+          console.warn(
+            "No se pudo eliminar archivo de Storage:",
+            storageError.message,
+          );
         }
       }
 
-      setAnexos((actuales) =>
-        actuales.filter((item) => item.id !== anexo.id),
-      );
+      setAnexos((actuales) => actuales.filter((item) => item.id !== anexo.id));
     } catch (error) {
       console.error("Error inesperado eliminando anexo:", error);
       setErrorMessage("No se pudo eliminar el anexo del informe.");
@@ -1519,8 +1531,6 @@ export default function VerInformePage() {
     informe.estado === "borrador" || hallazgos.length > 0;
   const mostrarRecomendaciones =
     informe.estado === "borrador" || recomendaciones.length > 0;
-  const mostrarFotos = informe.estado === "borrador" || fotos.length > 0;
-  const mostrarAnexos = informe.estado === "borrador" || anexos.length > 0;
   const mostrarDestinatario =
     hasText(informe.destinatario_nombre) ||
     hasText(informe.destinatario_cargo) ||
@@ -1595,16 +1605,23 @@ export default function VerInformePage() {
               </>
             )}
 
-            {informe.estado === "emitido" && informe.es_version_actual !== false && (
-              <button
-                type="button"
-                onClick={handleCrearNuevaVersion}
-                disabled={creandoVersion}
-                className={buttonPrimary}
-              >
-                {creandoVersion ? "Creando versión..." : "Crear nueva versión"}
-              </button>
-            )}
+            {informe.estado === "emitido" &&
+              informe.es_version_actual !== false && (
+                <button
+                  type="button"
+                  onClick={handleCrearNuevaVersion}
+                  disabled={creandoVersion}
+                  className={buttonPrimary}
+                >
+                  {creandoVersion
+                    ? "Creando versión..."
+                    : "Crear nueva versión"}
+                </button>
+              )}
+
+            <a href="#evidencia-fotografica-anexos" className={buttonPrimary}>
+              Fotos y anexos
+            </a>
 
             <Link
               href={`/informes/${informe.id}/pdf`}
@@ -1630,9 +1647,9 @@ export default function VerInformePage() {
         <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-900">
           <p className="font-semibold">Versión histórica del informe</p>
           <p className="mt-1 leading-6">
-            Estás visualizando {informe.codigo} · v{informe.version}. Esta versión
-            queda disponible solo para trazabilidad documental. No debe ser
-            modificada ni utilizada como versión vigente.
+            Estás visualizando {informe.codigo} · v{informe.version}. Esta
+            versión queda disponible solo para trazabilidad documental. No debe
+            ser modificada ni utilizada como versión vigente.
           </p>
         </div>
       ) : esNuevaVersionEnPreparacion ? (
@@ -1648,8 +1665,8 @@ export default function VerInformePage() {
         <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-4 text-sm text-emerald-900">
           <p className="font-semibold">Versión actual del informe</p>
           <p className="mt-1 leading-6">
-            Estás visualizando la versión vigente de {informe.codigo} ·
-            v{informe.version}.
+            Estás visualizando la versión vigente de {informe.codigo} ·{" "}
+            <span>v{informe.version}</span>.
           </p>
         </div>
       )}
@@ -1717,8 +1734,8 @@ export default function VerInformePage() {
               </p>
               <p className="mt-1 text-sm text-slate-900">
                 {informe.fecha_emision
-  ? new Date(informe.fecha_emision).toLocaleString('es-CL')
-  : 'Pendiente de emisión'}
+                  ? new Date(informe.fecha_emision).toLocaleString("es-CL")
+                  : "Pendiente de emisión"}
               </p>
             </div>
           )}
@@ -1741,7 +1758,9 @@ export default function VerInformePage() {
               </div>
             )}
 
-          {(hasText(informe.motivo_version) || informe.version_anterior_id || informe.informe_origen_id) && (
+          {(hasText(informe.motivo_version) ||
+            informe.version_anterior_id ||
+            informe.informe_origen_id) && (
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 md:col-span-2">
               <p className="text-xs font-medium uppercase text-slate-500">
                 Control de versión
@@ -2189,7 +2208,11 @@ export default function VerInformePage() {
                     onChange={(event) =>
                       setHallazgoSeveridad(
                         event.target.value as
-                          "baja" | "media" | "alta" | "critica" | "",
+                          | "baja"
+                          | "media"
+                          | "alta"
+                          | "critica"
+                          | "",
                       )
                     }
                     className="w-full rounded-2xl border border-slate-300 bg-white px-3 py-2 text-sm"
@@ -2414,352 +2437,371 @@ export default function VerInformePage() {
         </section>
       )}
 
-      {mostrarFotos && (
-        <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
+      <section
+        id="evidencia-fotografica-anexos"
+        className="scroll-mt-6 rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm"
+      >
+        <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
           <div>
-            <h2 className="text-base font-semibold text-slate-900">
-              Evidencia fotográfica
+            <p className="text-xs font-semibold uppercase tracking-wide text-[#0B5C8E]">
+              Fotos y anexos
+            </p>
+            <h2 className="mt-1 text-lg font-semibold text-slate-900">
+              Evidencia fotográfica y anexos
             </h2>
             <p className="mt-1 text-sm text-slate-500">
-              Adjunta fotografías de terreno, tableros, equipos, mediciones o
-              condiciones observadas.
+              Adjunta fotografías de terreno, tableros, equipos, mediciones,
+              condiciones observadas y respaldos documentales del informe.
             </p>
           </div>
+        </div>
 
-          {fotos.length === 0 ? (
-            <div className="mt-5 rounded-2xl border border-dashed border-slate-300 p-5 text-sm text-slate-500">
-              Todavía no existen fotografías registradas para este informe.
-            </div>
-          ) : (
-            <div className="mt-5 grid gap-4 md:grid-cols-2">
-              {fotos.map((foto, index) => (
-                <article
-                  key={foto.id}
-                  className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50"
-                >
-                  <div className="flex aspect-video items-center justify-center bg-white">
-                    {foto.url_firmada ? (
-                      <img
-                        src={foto.url_firmada}
-                        alt={foto.titulo || `Foto ${index + 1}`}
-                        className="h-full w-full object-cover"
-                      />
-                    ) : (
-                      <p className="px-4 text-center text-sm text-slate-500">
-                        No fue posible cargar la vista previa de esta foto.
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="p-4">
-                    <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                      <div>
-                        <p className="text-xs font-medium uppercase text-slate-500">
-                          Foto {index + 1}
-                        </p>
-                        <h3 className="mt-1 text-sm font-semibold text-slate-900">
-                          {foto.titulo || "Sin título"}
-                        </h3>
-                      </div>
-
-                      {informe.estado === "borrador" && (
-                        <button
-                          type="button"
-                          onClick={() => handleEliminarFoto(foto)}
-                          disabled={eliminandoFotoId === foto.id}
-                          className={buttonDangerSmall}
-                        >
-                          {eliminandoFotoId === foto.id
-                            ? "Eliminando..."
-                            : "Eliminar"}
-                        </button>
-                      )}
-                    </div>
-
-                    {hasText(foto.descripcion) && (
-                      <p className="mt-3 whitespace-pre-line text-sm leading-6 text-slate-700">
-                        {foto.descripcion}
-                      </p>
-                    )}
-
-                    <div className="mt-4 flex flex-wrap gap-2 text-xs">
-                      <span className="rounded-full bg-white px-3 py-1 font-medium text-slate-700 ring-1 ring-slate-200">
-                        Fecha: {formatFechaSimple(foto.fecha_foto)}
-                      </span>
-                      <span className="rounded-full bg-white px-3 py-1 font-medium text-slate-700 ring-1 ring-slate-200">
-                        {foto.visible_en_informe
-                          ? "Visible en informe"
-                          : "No visible en PDF"}
-                      </span>
-                    </div>
-                  </div>
-                </article>
-              ))}
-            </div>
-          )}
-
-          {informe.estado === "borrador" && (
-            <form
-              onSubmit={handleAgregarFoto}
-              className="mt-6 rounded-2xl border border-slate-200 p-4"
-            >
-              <h3 className="text-sm font-semibold text-slate-900">
-                Agregar foto
-              </h3>
-
-              <div className="mt-4 grid gap-4 md:grid-cols-2">
-                <label className="space-y-1.5 md:col-span-2">
-                  <span className="text-sm font-medium text-slate-700">
-                    Imagen
-                  </span>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={(event) =>
-                      setFotoArchivo(event.target.files?.[0] ?? null)
-                    }
-                    className="w-full rounded-2xl border border-slate-300 px-3 py-2 text-sm"
-                  />
-                </label>
-
-                <label className="space-y-1.5">
-                  <span className="text-sm font-medium text-slate-700">
-                    Título
-                  </span>
-                  <input
-                    value={fotoTitulo}
-                    onChange={(event) => setFotoTitulo(event.target.value)}
-                    className="w-full rounded-2xl border border-slate-300 px-3 py-2 text-sm"
-                    placeholder="Ej: Tablero general"
-                  />
-                </label>
-
-                <label className="space-y-1.5">
-                  <span className="text-sm font-medium text-slate-700">
-                    Fecha foto
-                  </span>
-                  <input
-                    type="date"
-                    value={fotoFecha}
-                    onChange={(event) => setFotoFecha(event.target.value)}
-                    className="w-full rounded-2xl border border-slate-300 px-3 py-2 text-sm"
-                  />
-                </label>
-
-                <label className="space-y-1.5 md:col-span-2">
-                  <span className="text-sm font-medium text-slate-700">
-                    Descripción
-                  </span>
-                  <textarea
-                    value={fotoDescripcion}
-                    onChange={(event) =>
-                      setFotoDescripcion(event.target.value)
-                    }
-                    rows={3}
-                    className="w-full rounded-2xl border border-slate-300 px-3 py-2 text-sm"
-                    placeholder="Describe brevemente qué evidencia muestra la fotografía."
-                  />
-                </label>
-              </div>
-
-              <label className="mt-4 flex items-center gap-2 text-sm text-slate-700">
-                <input
-                  type="checkbox"
-                  checked={fotoVisibleEnInforme}
-                  onChange={(event) =>
-                    setFotoVisibleEnInforme(event.target.checked)
-                  }
-                  className="h-4 w-4 rounded border-slate-300"
-                />
-                Mostrar esta foto en el informe PDF
-              </label>
-
-              <div className="mt-4 flex justify-end">
-                <button
-                  type="submit"
-                  disabled={guardandoFoto}
-                  className={buttonPrimary}
-                >
-                  {guardandoFoto ? "Subiendo..." : "Agregar foto"}
-                </button>
-              </div>
-            </form>
-          )}
-        </section>
-      )}
-
-      {mostrarAnexos && (
-        <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
-          <div>
-            <h2 className="text-base font-semibold text-slate-900">Anexos</h2>
-            <p className="mt-1 text-sm text-slate-500">
-              Adjunta respaldos, planillas, PDFs, certificados, registros o
-              documentos asociados al informe.
-            </p>
+        {informe.estado === "borrador" ? (
+          <div className="mt-5 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm font-medium text-sky-900">
+            Puedes agregar fotografías y anexos antes de emitir el informe.
           </div>
+        ) : (
+          <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+            Este informe ya fue emitido. Las fotografías y anexos existentes
+            quedan disponibles solo para consulta.
+          </div>
+        )}
 
-          {anexos.length === 0 ? (
-            <div className="mt-5 rounded-2xl border border-dashed border-slate-300 p-5 text-sm text-slate-500">
-              Todavía no existen anexos registrados para este informe.
-            </div>
-          ) : (
-            <div className="mt-5 space-y-3">
-              {anexos.map((anexo, index) => (
-                <article
-                  key={anexo.id}
-                  className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
-                >
+        <div className="mt-6">
+          <h3 className="text-base font-semibold text-slate-900">
+            Fotografías
+          </h3>
+          <p className="mt-1 text-sm text-slate-500">
+            Imágenes que respaldan el levantamiento técnico y pueden mostrarse
+            en el informe PDF.
+          </p>
+        </div>
+
+        {fotos.length === 0 ? (
+          <div className="mt-5 rounded-2xl border border-dashed border-slate-300 p-5 text-sm text-slate-500">
+            Todavía no existen fotografías registradas para este informe.
+          </div>
+        ) : (
+          <div className="mt-5 grid gap-4 md:grid-cols-2">
+            {fotos.map((foto, index) => (
+              <article
+                key={foto.id}
+                className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50"
+              >
+                <div className="flex aspect-video items-center justify-center bg-white">
+                  {foto.url_firmada ? (
+                    <img
+                      src={foto.url_firmada}
+                      alt={foto.titulo || `Foto ${index + 1}`}
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <p className="px-4 text-center text-sm text-slate-500">
+                      No fue posible cargar la vista previa de esta foto.
+                    </p>
+                  )}
+                </div>
+
+                <div className="p-4">
                   <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                     <div>
                       <p className="text-xs font-medium uppercase text-slate-500">
-                        Anexo {index + 1}
+                        Foto {index + 1}
                       </p>
                       <h3 className="mt-1 text-sm font-semibold text-slate-900">
-                        {anexo.nombre}
+                        {foto.titulo || "Sin título"}
                       </h3>
-                      {hasText(anexo.descripcion) && (
-                        <p className="mt-2 whitespace-pre-line text-sm leading-6 text-slate-700">
-                          {anexo.descripcion}
-                        </p>
-                      )}
                     </div>
 
-                    <div className="flex flex-wrap items-center gap-2">
-                      {anexo.url_firmada && (
-                        <a
-                          href={anexo.url_firmada}
-                          target="_blank"
-                          rel="noreferrer"
-                          className={buttonPrimary}
-                        >
-                          Ver / Descargar
-                        </a>
-                      )}
-
-                      {informe.estado === "borrador" && (
-                        <button
-                          type="button"
-                          onClick={() => handleEliminarAnexo(anexo)}
-                          disabled={eliminandoAnexoId === anexo.id}
-                          className={buttonDangerSmall}
-                        >
-                          {eliminandoAnexoId === anexo.id
-                            ? "Eliminando..."
-                            : "Eliminar"}
-                        </button>
-                      )}
-                    </div>
+                    {informe.estado === "borrador" && (
+                      <button
+                        type="button"
+                        onClick={() => handleEliminarFoto(foto)}
+                        disabled={eliminandoFotoId === foto.id}
+                        className={buttonDangerSmall}
+                      >
+                        {eliminandoFotoId === foto.id
+                          ? "Eliminando..."
+                          : "Eliminar"}
+                      </button>
+                    )}
                   </div>
 
+                  {hasText(foto.descripcion) && (
+                    <p className="mt-3 whitespace-pre-line text-sm leading-6 text-slate-700">
+                      {foto.descripcion}
+                    </p>
+                  )}
+
                   <div className="mt-4 flex flex-wrap gap-2 text-xs">
-                    {hasText(anexo.tipo_anexo) && (
-                      <span className="rounded-full bg-white px-3 py-1 font-medium text-slate-700 ring-1 ring-slate-200">
-                        Tipo: {anexo.tipo_anexo}
-                      </span>
-                    )}
                     <span className="rounded-full bg-white px-3 py-1 font-medium text-slate-700 ring-1 ring-slate-200">
-                      {anexo.visible_en_informe
+                      Fecha: {formatFechaSimple(foto.fecha_foto)}
+                    </span>
+                    <span className="rounded-full bg-white px-3 py-1 font-medium text-slate-700 ring-1 ring-slate-200">
+                      {foto.visible_en_informe
                         ? "Visible en informe"
                         : "No visible en PDF"}
                     </span>
                   </div>
-                </article>
-              ))}
-            </div>
-          )}
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
 
-          {informe.estado === "borrador" && (
-            <form
-              onSubmit={handleAgregarAnexo}
-              className="mt-6 rounded-2xl border border-slate-200 p-4"
-            >
-              <h3 className="text-sm font-semibold text-slate-900">
-                Agregar anexo
-              </h3>
+        {informe.estado === "borrador" && (
+          <form
+            onSubmit={handleAgregarFoto}
+            className="mt-6 rounded-2xl border border-slate-200 p-4"
+          >
+            <h3 className="text-sm font-semibold text-slate-900">
+              Agregar foto
+            </h3>
 
-              <div className="mt-4 grid gap-4 md:grid-cols-2">
-                <label className="space-y-1.5 md:col-span-2">
-                  <span className="text-sm font-medium text-slate-700">
-                    Archivo
-                  </span>
-                  <input
-                    type="file"
-                    onChange={(event) => {
-                      const archivo = event.target.files?.[0] ?? null;
-                      setAnexoArchivo(archivo);
-                      if (archivo && !anexoNombre.trim()) {
-                        setAnexoNombre(archivo.name);
-                      }
-                    }}
-                    className="w-full rounded-2xl border border-slate-300 px-3 py-2 text-sm"
-                  />
-                </label>
-
-                <label className="space-y-1.5">
-                  <span className="text-sm font-medium text-slate-700">
-                    Nombre anexo
-                  </span>
-                  <input
-                    value={anexoNombre}
-                    onChange={(event) => setAnexoNombre(event.target.value)}
-                    className="w-full rounded-2xl border border-slate-300 px-3 py-2 text-sm"
-                    placeholder="Ej: Registro de mediciones"
-                  />
-                </label>
-
-                <label className="space-y-1.5">
-                  <span className="text-sm font-medium text-slate-700">
-                    Tipo anexo
-                  </span>
-                  <input
-                    value={anexoTipo}
-                    onChange={(event) => setAnexoTipo(event.target.value)}
-                    className="w-full rounded-2xl border border-slate-300 px-3 py-2 text-sm"
-                    placeholder="Ej: Planilla, PDF, certificado, respaldo"
-                  />
-                </label>
-
-                <label className="space-y-1.5 md:col-span-2">
-                  <span className="text-sm font-medium text-slate-700">
-                    Descripción
-                  </span>
-                  <textarea
-                    value={anexoDescripcion}
-                    onChange={(event) =>
-                      setAnexoDescripcion(event.target.value)
-                    }
-                    rows={3}
-                    className="w-full rounded-2xl border border-slate-300 px-3 py-2 text-sm"
-                    placeholder="Describe brevemente el respaldo adjunto."
-                  />
-                </label>
-              </div>
-
-              <label className="mt-4 flex items-center gap-2 text-sm text-slate-700">
+            <div className="mt-4 grid gap-4 md:grid-cols-2">
+              <label className="space-y-1.5 md:col-span-2">
+                <span className="text-sm font-medium text-slate-700">
+                  Imagen
+                </span>
                 <input
-                  type="checkbox"
-                  checked={anexoVisibleEnInforme}
+                  type="file"
+                  accept="image/*"
                   onChange={(event) =>
-                    setAnexoVisibleEnInforme(event.target.checked)
+                    setFotoArchivo(event.target.files?.[0] ?? null)
                   }
-                  className="h-4 w-4 rounded border-slate-300"
+                  className="w-full rounded-2xl border border-slate-300 px-3 py-2 text-sm"
                 />
-                Mostrar este anexo en el listado del PDF
               </label>
 
-              <div className="mt-4 flex justify-end">
-                <button
-                  type="submit"
-                  disabled={guardandoAnexo}
-                  className={buttonPrimary}
-                >
-                  {guardandoAnexo ? "Subiendo..." : "Agregar anexo"}
-                </button>
-              </div>
-            </form>
-          )}
-        </section>
-      )}
+              <label className="space-y-1.5">
+                <span className="text-sm font-medium text-slate-700">
+                  Título
+                </span>
+                <input
+                  value={fotoTitulo}
+                  onChange={(event) => setFotoTitulo(event.target.value)}
+                  className="w-full rounded-2xl border border-slate-300 px-3 py-2 text-sm"
+                  placeholder="Ej: Tablero general"
+                />
+              </label>
+
+              <label className="space-y-1.5">
+                <span className="text-sm font-medium text-slate-700">
+                  Fecha foto
+                </span>
+                <input
+                  type="date"
+                  value={fotoFecha}
+                  onChange={(event) => setFotoFecha(event.target.value)}
+                  className="w-full rounded-2xl border border-slate-300 px-3 py-2 text-sm"
+                />
+              </label>
+
+              <label className="space-y-1.5 md:col-span-2">
+                <span className="text-sm font-medium text-slate-700">
+                  Descripción
+                </span>
+                <textarea
+                  value={fotoDescripcion}
+                  onChange={(event) => setFotoDescripcion(event.target.value)}
+                  rows={3}
+                  className="w-full rounded-2xl border border-slate-300 px-3 py-2 text-sm"
+                  placeholder="Describe brevemente qué evidencia muestra la fotografía."
+                />
+              </label>
+            </div>
+
+            <label className="mt-4 flex items-center gap-2 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={fotoVisibleEnInforme}
+                onChange={(event) =>
+                  setFotoVisibleEnInforme(event.target.checked)
+                }
+                className="h-4 w-4 rounded border-slate-300"
+              />
+              Mostrar esta foto en el informe PDF
+            </label>
+
+            <div className="mt-4 flex justify-end">
+              <button
+                type="submit"
+                disabled={guardandoFoto}
+                className={buttonPrimary}
+              >
+                {guardandoFoto ? "Subiendo..." : "Agregar foto"}
+              </button>
+            </div>
+          </form>
+        )}
+
+        <div className="mt-8 border-t border-slate-200 pt-6">
+          <h3 className="text-base font-semibold text-slate-900">Anexos</h3>
+          <p className="mt-1 text-sm text-slate-500">
+            Adjunta respaldos, planillas, PDFs, certificados, registros o
+            documentos asociados al informe.
+          </p>
+        </div>
+
+        {anexos.length === 0 ? (
+          <div className="mt-5 rounded-2xl border border-dashed border-slate-300 p-5 text-sm text-slate-500">
+            Todavía no existen anexos registrados para este informe.
+          </div>
+        ) : (
+          <div className="mt-5 space-y-3">
+            {anexos.map((anexo, index) => (
+              <article
+                key={anexo.id}
+                className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
+              >
+                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                  <div>
+                    <p className="text-xs font-medium uppercase text-slate-500">
+                      Anexo {index + 1}
+                    </p>
+                    <h3 className="mt-1 text-sm font-semibold text-slate-900">
+                      {anexo.nombre}
+                    </h3>
+                    {hasText(anexo.descripcion) && (
+                      <p className="mt-2 whitespace-pre-line text-sm leading-6 text-slate-700">
+                        {anexo.descripcion}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    {anexo.url_firmada && (
+                      <a
+                        href={anexo.url_firmada}
+                        target="_blank"
+                        rel="noreferrer"
+                        className={buttonPrimary}
+                      >
+                        Ver / Descargar
+                      </a>
+                    )}
+
+                    {informe.estado === "borrador" && (
+                      <button
+                        type="button"
+                        onClick={() => handleEliminarAnexo(anexo)}
+                        disabled={eliminandoAnexoId === anexo.id}
+                        className={buttonDangerSmall}
+                      >
+                        {eliminandoAnexoId === anexo.id
+                          ? "Eliminando..."
+                          : "Eliminar"}
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="mt-4 flex flex-wrap gap-2 text-xs">
+                  {hasText(anexo.tipo_anexo) && (
+                    <span className="rounded-full bg-white px-3 py-1 font-medium text-slate-700 ring-1 ring-slate-200">
+                      Tipo: {anexo.tipo_anexo}
+                    </span>
+                  )}
+                  <span className="rounded-full bg-white px-3 py-1 font-medium text-slate-700 ring-1 ring-slate-200">
+                    {anexo.visible_en_informe
+                      ? "Visible en informe"
+                      : "No visible en PDF"}
+                  </span>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+
+        {informe.estado === "borrador" && (
+          <form
+            onSubmit={handleAgregarAnexo}
+            className="mt-6 rounded-2xl border border-slate-200 p-4"
+          >
+            <h3 className="text-sm font-semibold text-slate-900">
+              Agregar anexo
+            </h3>
+
+            <div className="mt-4 grid gap-4 md:grid-cols-2">
+              <label className="space-y-1.5 md:col-span-2">
+                <span className="text-sm font-medium text-slate-700">
+                  Archivo
+                </span>
+                <input
+                  type="file"
+                  onChange={(event) => {
+                    const archivo = event.target.files?.[0] ?? null;
+                    setAnexoArchivo(archivo);
+                    if (archivo && !anexoNombre.trim()) {
+                      setAnexoNombre(archivo.name);
+                    }
+                  }}
+                  className="w-full rounded-2xl border border-slate-300 px-3 py-2 text-sm"
+                />
+              </label>
+
+              <label className="space-y-1.5">
+                <span className="text-sm font-medium text-slate-700">
+                  Nombre anexo
+                </span>
+                <input
+                  value={anexoNombre}
+                  onChange={(event) => setAnexoNombre(event.target.value)}
+                  className="w-full rounded-2xl border border-slate-300 px-3 py-2 text-sm"
+                  placeholder="Ej: Registro de mediciones"
+                />
+              </label>
+
+              <label className="space-y-1.5">
+                <span className="text-sm font-medium text-slate-700">
+                  Tipo anexo
+                </span>
+                <input
+                  value={anexoTipo}
+                  onChange={(event) => setAnexoTipo(event.target.value)}
+                  className="w-full rounded-2xl border border-slate-300 px-3 py-2 text-sm"
+                  placeholder="Ej: Planilla, PDF, certificado, respaldo"
+                />
+              </label>
+
+              <label className="space-y-1.5 md:col-span-2">
+                <span className="text-sm font-medium text-slate-700">
+                  Descripción
+                </span>
+                <textarea
+                  value={anexoDescripcion}
+                  onChange={(event) => setAnexoDescripcion(event.target.value)}
+                  rows={3}
+                  className="w-full rounded-2xl border border-slate-300 px-3 py-2 text-sm"
+                  placeholder="Describe brevemente el respaldo adjunto."
+                />
+              </label>
+            </div>
+
+            <label className="mt-4 flex items-center gap-2 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={anexoVisibleEnInforme}
+                onChange={(event) =>
+                  setAnexoVisibleEnInforme(event.target.checked)
+                }
+                className="h-4 w-4 rounded border-slate-300"
+              />
+              Mostrar este anexo en el informe PDF
+            </label>
+
+            <div className="mt-4 flex justify-end">
+              <button
+                type="submit"
+                disabled={guardandoAnexo}
+                className={buttonPrimary}
+              >
+                {guardandoAnexo ? "Subiendo..." : "Agregar anexo"}
+              </button>
+            </div>
+          </form>
+        )}
+      </section>
     </div>
   );
 }
