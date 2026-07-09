@@ -111,6 +111,26 @@ function hasText(value?: string | null) {
   return Boolean(value && value.trim().length > 0)
 }
 
+function renderParrafosTecnicos(texto?: string | null) {
+  const textoNormalizado = texto?.trim()
+
+  if (!textoNormalizado) return null
+
+  return textoNormalizado
+    .split(/\r?\n+/)
+    .map((parrafo) => parrafo.trim())
+    .filter(Boolean)
+    .map((parrafo, parrafoIndex) => (
+      <p
+        key={`${parrafoIndex}-${parrafo.slice(0, 24)}`}
+        className="mb-4 text-justify text-sm leading-7 text-slate-700 last:mb-0 print:leading-[1.7]"
+        style={{ textIndent: '1.5rem' }}
+      >
+        {parrafo}
+      </p>
+    ))
+}
+
 function estadoLabel(estado: string) {
   const labels: Record<string, string> = {
     borrador: 'Borrador',
@@ -681,9 +701,9 @@ export default function InformePdfPage() {
                 <h2 className="text-lg font-semibold text-slate-900">{seccion.titulo}</h2>
               </div>
 
-              <p className="whitespace-pre-line text-sm leading-7 text-slate-700">
-                {seccion.contenido}
-              </p>
+              <div className="space-y-0">
+                {renderParrafosTecnicos(seccion.contenido)}
+              </div>
             </section>
           ))}
 
