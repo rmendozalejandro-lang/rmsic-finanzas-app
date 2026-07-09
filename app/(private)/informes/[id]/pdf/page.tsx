@@ -183,16 +183,28 @@ function formatearFecha(fecha?: string | null) {
 
   return `${dia}-${mes}-${anio}`
 }
-function formatFechaHora(value?: string | null) {
-  if (!value) return '-'
+function formatearFechaEmision(fechaEmision?: string | null) {
+  if (!fechaEmision) return '-'
 
-  const date = new Date(value)
+  const fechaNormalizada = fechaEmision.trim()
+  const coincidenciaIso = fechaNormalizada.match(/^(\d{4})-(\d{2})-(\d{2})/)
 
-  if (Number.isNaN(date.getTime())) {
-    return value
+  if (coincidenciaIso) {
+    const [, anio, mes, dia] = coincidenciaIso
+    return `${dia}-${mes}-${anio}`
   }
 
-  return date.toLocaleString('es-CL')
+  const date = new Date(fechaNormalizada)
+
+  if (Number.isNaN(date.getTime())) {
+    return fechaNormalizada
+  }
+
+  return new Intl.DateTimeFormat('es-CL', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).format(date)
 }
 
 function versionLabel(version?: string | null) {
@@ -206,7 +218,7 @@ function versionLabel(version?: string | null) {
 function fechaEmisionLabel(fechaEmision?: string | null) {
   if (!fechaEmision) return 'Pendiente de emisión'
 
-  return formatFechaHora(fechaEmision)
+  return formatearFechaEmision(fechaEmision)
 }
 
 function limpiarNombreArchivo(value: string) {
@@ -665,7 +677,7 @@ export default function InformePdfPage() {
               {hasText(informe.fecha_emision) && (
                 <div>
                   <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">Fecha emisión</dt>
-                  <dd className="mt-1 font-medium text-slate-900">{formatFechaHora(informe.fecha_emision)}</dd>
+                  <dd className="mt-1 font-medium text-slate-900">{informeFechaEmisionLabel}</dd>
                 </div>
               )}
 
@@ -984,6 +996,14 @@ export default function InformePdfPage() {
               )}
             </div>
 
+            <div className="mt-6 flex justify-center border-t border-slate-100 pt-5">
+              <img
+                src="/logos/rmsic-logo.png"
+                alt="Logo RMSIC"
+                className="w-40 max-w-[180px] object-contain print:w-[160px]"
+              />
+            </div>
+
             <p className="mt-5 rounded-2xl bg-[#F4FAFE] px-4 py-3 text-xs leading-5 text-slate-600 print:rounded-none">
               Documento técnico emitido por RM Servicios de Ingeniería y Construcción SpA para el cliente y destinatario indicado en los datos generales del informe.
             </p>
@@ -996,9 +1016,6 @@ export default function InformePdfPage() {
               </p>
               <p>Documento generado desde Tralixia / RMSIC.</p>
             </div>
-            <p className="mt-2">
-              La información técnica contenida en este informe corresponde a una emisión formal de RMSIC y debe ser revisada por el responsable técnico antes de su envío al cliente.
-            </p>
           </footer>
         </div>
       </article>
