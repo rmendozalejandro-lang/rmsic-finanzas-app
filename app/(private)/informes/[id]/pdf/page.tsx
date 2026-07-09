@@ -112,10 +112,11 @@ function hasText(value?: string | null) {
 }
 
 function renderParrafosTecnicos(texto?: string | null) {
-  if (!hasText(texto)) return null
+  const textoNormalizado = texto?.trim()
 
-  return texto
-    .trim()
+  if (!textoNormalizado) return null
+
+  return textoNormalizado
     .split(/(?:\r?\n)\s*(?:\r?\n)/)
     .map((parrafo) => parrafo.trim())
     .filter(Boolean)
