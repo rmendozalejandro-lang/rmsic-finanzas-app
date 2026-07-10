@@ -612,7 +612,7 @@ export default function HomePage() {
             return acc + Number(item.monto_total || 0)
           }, 0)
 
-          const movimientosDesc = [...movimientos].sort((a, b) => b.fecha.localeCompare(a.fecha))
+          const movimientosActivosDesc = [...movimientosActivos].sort((a, b) => b.fecha.localeCompare(a.fecha))
 
           setResumen({
             saldo_total_bancos: saldoTotalBancos,
@@ -622,7 +622,7 @@ export default function HomePage() {
           })
           setCobranza(Array.isArray(cobranzaJson) ? cobranzaJson : [])
           setMovimientosPeriodo(movimientosActivos)
-          setUltimosMovimientos(movimientosDesc.slice(0, 12))
+          setUltimosMovimientos(movimientosActivosDesc.slice(0, 12))
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Error desconocido')
