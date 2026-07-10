@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../../lib/supabase/client'
 import StatusBadge from '../../components/StatusBadge'
@@ -213,6 +214,9 @@ const formatTipoMovimiento = (value: string) => {
       return value || '-'
   }
 }
+
+const isMovimientoAnulado = (estado?: string | null) =>
+  normalizeText(estado) === 'anulado'
 
 const getSignedIngresoAmount = (item: {
   tipo_movimiento?: string
@@ -588,6 +592,7 @@ export default function HomePage() {
           }
 
           const movimientos = Array.isArray(movimientosJson) ? (movimientosJson as UltimoMovimiento[]) : []
+          const movimientosActivos = movimientos.filter((item) => !isMovimientoAnulado(item.estado))
 
           const saldoTotalBancos = Array.isArray(saldosJson)
             ? saldosJson.reduce((acc: number, item: { saldo_calculado?: number }) => acc + Number(item.saldo_calculado || 0), 0)
@@ -597,12 +602,12 @@ export default function HomePage() {
             ? cobranzaJson.reduce((acc: number, item: CobranzaPendiente) => acc + Number(item.saldo_pendiente || 0), 0)
             : 0
 
-          const ingresosPeriodo = movimientos.reduce((acc, item) => {
+          const ingresosPeriodo = movimientosActivos.reduce((acc, item) => {
             if ((item.tipo_movimiento || '').toLowerCase() !== 'ingreso') return acc
             return acc + getSignedIngresoAmount(item)
           }, 0)
 
-          const egresosPeriodo = movimientos.reduce((acc, item) => {
+          const egresosPeriodo = movimientosActivos.reduce((acc, item) => {
             if ((item.tipo_movimiento || '').toLowerCase() !== 'egreso') return acc
             return acc + Number(item.monto_total || 0)
           }, 0)
@@ -616,7 +621,7 @@ export default function HomePage() {
             egresos_periodo: egresosPeriodo,
           })
           setCobranza(Array.isArray(cobranzaJson) ? cobranzaJson : [])
-          setMovimientosPeriodo(movimientos)
+          setMovimientosPeriodo(movimientosActivos)
           setUltimosMovimientos(movimientosDesc.slice(0, 12))
         }
       } catch (err) {
@@ -1006,12 +1011,12 @@ export default function HomePage() {
                   Resumen de órdenes de trabajo, equipos y clientes/mandantes de la empresa activa.
                 </p>
               </div>
-              <a
+              <Link
                 href="/ot"
                 className="inline-flex items-center justify-center rounded-2xl bg-[#163A5F] px-4 py-2.5 text-sm font-medium text-white transition hover:bg-[#245C90]"
               >
                 Ver OT
-              </a>
+              </Link>
             </div>
           </section>
 
@@ -1034,9 +1039,9 @@ export default function HomePage() {
                 <h2 className="text-2xl font-semibold tracking-tight text-slate-900">Últimas órdenes de trabajo</h2>
                 <p className="mt-2 text-sm text-slate-500">OT recientes de la empresa activa.</p>
               </div>
-              <a href="/ot/nueva" className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50">
+              <Link href="/ot/nueva" className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50">
                 Nueva OT
-              </a>
+              </Link>
             </div>
 
             {ultimasOt.length === 0 ? (
