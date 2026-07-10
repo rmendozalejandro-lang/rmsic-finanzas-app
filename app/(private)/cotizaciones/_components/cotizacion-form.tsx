@@ -63,6 +63,11 @@ type Props = {
 
 type RespaldoAprobacionTipo = "" | "orden_compra" | "correo" | "whatsapp" | "contrato" | "verbal" | "otro";
 
+type MovimientoCotizacionGenerado = {
+  id: string;
+  estado: string | null;
+};
+
 type AprobacionFinancieraForm = {
   numero_oc: string;
   fecha_oc: string;
@@ -96,6 +101,10 @@ function sanitizeDecimalInput(value: string) {
 
   if (parts.length <= 1) return cleaned;
   return `${parts[0]}.${parts.slice(1).join("")}`;
+}
+
+function isMovimientoActivo(estado?: string | null) {
+  return (estado || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim() !== 'anulado';
 }
 
 function toNumber(value: string) {
@@ -401,6 +410,8 @@ export default function CotizacionForm({
   useEffect(() => {
     if (form.estado !== "aprobada") return;
 
+    // Mantiene sincronizado el checkbox derivado del ingreso ya generado.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setAprobacionFinanciera((prev) => ({
       ...prev,
       generar_ingreso_financiero: !ingresoGeneradoId,
@@ -800,6 +811,60 @@ export default function CotizacionForm({
         aprobacionFinanciera.generar_ingreso_financiero &&
         !ingresoGeneradoId
       ) {
+        const { data: cotizacionFinanciera, error: cotizacionFinancieraError } = await supabase
+          .from("cotizaciones")
+          .select("ingreso_generado_id")
+          .eq("id", savedId)
+          .eq("empresa_id", empresaId)
+          .maybeSingle();
+
+        if (cotizacionFinancieraError) {
+          setError(
+            cotizacionFinancieraError.message ||
+              "La cotización fue guardada, pero no se pudo validar si ya tenía un ingreso financiero generado."
+          );
+          setSaving(false);
+          return;
+        }
+
+        if (cotizacionFinanciera?.ingreso_generado_id) {
+          setIngresoGeneradoId(cotizacionFinanciera.ingreso_generado_id);
+          setError(
+            "La cotización ya tiene un ingreso financiero generado. No se creó un movimiento duplicado."
+          );
+          setSaving(false);
+          return;
+        }
+
+        const { data: movimientosCotizacion, error: movimientosCotizacionError } = await supabase
+          .from("movimientos")
+          .select("id,estado")
+          .eq("empresa_id", empresaId)
+          .eq("tipo_movimiento", "ingreso")
+          .eq("cotizacion_id", savedId);
+
+        if (movimientosCotizacionError) {
+          setError(
+            movimientosCotizacionError.message ||
+              "La cotización fue guardada, pero no se pudo verificar si ya existían ingresos para esta cotización."
+          );
+          setSaving(false);
+          return;
+        }
+
+        const ingresoActivoExistente = ((movimientosCotizacion ?? []) as MovimientoCotizacionGenerado[]).find((movimiento) =>
+          isMovimientoActivo(movimiento.estado)
+        );
+
+        if (ingresoActivoExistente) {
+          setIngresoGeneradoId(ingresoActivoExistente.id);
+          setError(
+            "La cotización ya tiene un ingreso financiero activo. No se creó un movimiento duplicado."
+          );
+          setSaving(false);
+          return;
+        }
+
         const { data: ingresoData, error: ingresoError } = await supabase.rpc(
           "generar_ingreso_financiero_cotizacion",
           {
