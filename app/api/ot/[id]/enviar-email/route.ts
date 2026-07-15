@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -61,7 +61,7 @@ function getSenderEmail(fromValue: string) {
 }
 
 async function registrarEnvio(params: {
-  adminClient: any
+  adminClient: SupabaseClient
   empresaId: string
   otId: string
   contactoClienteId: string | null
@@ -115,7 +115,7 @@ export async function POST(
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
     const resendApiKey = process.env.RESEND_API_KEY
     const resendFromEmail =
-      process.env.RESEND_FROM_EMAIL || 'Tralixia <noreply@mail.rmsic.cl>'
+      process.env.RESEND_FROM_EMAIL || 'Tralixia <notificaciones@tralixia.app>'
 
     if (!supabaseUrl || !supabaseAnonKey || !serviceRoleKey) {
       return jsonError('Faltan variables de entorno Supabase.', 500)
@@ -427,6 +427,7 @@ export async function POST(
         contacto_cliente_cargo: contacto.cargo || null,
       })
       .eq('id', otId)
+      .eq('empresa_id', ot.empresa_id)
 
     return jsonResponse({
       ok: true,

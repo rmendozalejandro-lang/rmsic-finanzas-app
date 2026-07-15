@@ -134,7 +134,7 @@ function getDefaultEmpresaLogoUrl(empresaNombre?: string | null) {
     return "/logos/rmsic-logo.png";
   }
 
-  return "/logos/rmsic-logo.png";
+  return "";
 }
 
 function normalizeEmpresaLogoUrl(value?: string | null) {

@@ -28,7 +28,7 @@ const defaultConfig = (empresaId: string, empresaNombre: string): ConfigCorreo =
   sitio_web: '',
   firma_correo: `Área de Administración y Finanzas
 ${empresaNombre || 'Empresa'}`,
-  texto_pie_correo: 'Correo enviado automáticamente desde Tralixia, plataforma modular de gestión empresarial desarrollada por RM Servicios de Ingeniería y Construcción.',
+  texto_pie_correo: 'Correo enviado automáticamente desde Tralixia.',
   activo: true,
 })
 
@@ -228,7 +228,7 @@ export default function ConfiguracionCorreosPage() {
             <input
               value={config.nombre_remitente}
               onChange={(event) => updateField('nombre_remitente', event.target.value)}
-              placeholder="RMSIC Cobranzas"
+              placeholder="Empresa Cobranzas"
               className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-[#163A5F]"
             />
             <p className="mt-1 text-xs text-slate-500">
@@ -343,7 +343,7 @@ export default function ConfiguracionCorreosPage() {
         </h2>
         <div className="mt-3 rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-700">
           <p>
-            <strong>De:</strong> {config.nombre_remitente} &lt;noreply@mail.rmsic.cl&gt;
+            <strong>De:</strong> {config.nombre_remitente} &lt;correo-configurado@empresa.cl&gt;
           </p>
           <p>
             <strong>Responder a:</strong> {config.email_respuesta || '-'}
