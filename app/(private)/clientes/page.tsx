@@ -367,7 +367,7 @@ export default function ClientesPage() {
       };
 
       const url = editingId
-        ? `${baseUrl}/rest/v1/clientes?id=eq.${editingId}`
+        ? `${baseUrl}/rest/v1/clientes?id=eq.${editingId}&empresa_id=eq.${empresaActivaId}`
         : `${baseUrl}/rest/v1/clientes`;
 
       const method = editingId ? "PATCH" : "POST";
@@ -436,7 +436,7 @@ export default function ClientesPage() {
       const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
 
       const resp = await fetch(
-        `${baseUrl}/rest/v1/clientes?id=eq.${cliente.id}`,
+        `${baseUrl}/rest/v1/clientes?id=eq.${cliente.id}&empresa_id=eq.${empresaActivaId}`,
         {
           method: "PATCH",
           headers: {
@@ -1017,7 +1017,7 @@ export default function ClientesPage() {
                 />
                 <p className="mt-1 text-xs text-slate-500">
                   Para condiciones fijas se calcula automáticamente. Usa
-                  "Personalizado" para ingresar otro plazo.
+                  &quot;Personalizado&quot; para ingresar otro plazo.
                 </p>
               </div>
             </div>
