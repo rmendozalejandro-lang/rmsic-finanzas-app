@@ -89,8 +89,8 @@ type PlantillaOption = {
 
 type ChecklistPlantillaOption = {
   id: string;
-  codigo: string;
   nombre: string;
+  tipo_activo: string | null;
 };
 
 type SelectOption = {
@@ -302,8 +302,8 @@ function findChecklistForPlantilla(
   if (checklistMespackDuplexId) {
     return {
       id: checklistMespackDuplexId,
-      codigo: "mespack_duplex",
       nombre: "Mantención Preventiva Mespack Duplex",
+      tipo_activo: "mespack_duplex",
     };
   }
 
@@ -311,7 +311,7 @@ function findChecklistForPlantilla(
 
   if (checklistCodigo) {
     const checklistAsociado = checklists.find(
-      (item) => item.codigo === checklistCodigo,
+      (item) => item.tipo_activo === checklistCodigo,
     );
 
     if (checklistAsociado) return checklistAsociado;
@@ -320,9 +320,11 @@ function findChecklistForPlantilla(
   if (!isMespackTipo(tipo) && !isMespackPlantilla(plantilla)) return null;
 
   return (
+    checklists.find((item) => item.tipo_activo === "mespack_duplex") ??
     checklists.find((item) =>
-      normalizeText(`${item.codigo} ${item.nombre}`).includes("mespack"),
-    ) ?? null
+      normalizeText(`${item.tipo_activo ?? ""} ${item.nombre}`).includes("mespack"),
+    ) ??
+    null
   );
 }
 
@@ -584,7 +586,7 @@ function NuevaOTContent() {
 
           supabase
             .from("ot_plantillas_checklist")
-            .select("id, codigo, nombre")
+            .select("id, nombre, tipo_activo")
             .eq("empresa_id", storedEmpresaId)
             .eq("activa", true)
             .order("nombre", { ascending: true }),
@@ -803,8 +805,8 @@ function NuevaOTContent() {
           checklistPlantillasResp.data ?? []
         ).map((item) => ({
           id: item.id,
-          codigo: item.codigo,
           nombre: item.nombre,
+          tipo_activo: item.tipo_activo,
         }));
 
         const usuariosEmpresaOptions: SelectOption[] = perfilesEmpresa.map(
