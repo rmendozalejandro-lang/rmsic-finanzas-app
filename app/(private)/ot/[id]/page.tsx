@@ -2772,7 +2772,8 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
   const isAssignedTechnician = Boolean(currentUserId && form.tecnico_responsable_id === currentUserId)
   const isAssignedSupervisor = Boolean(currentUserId && form.supervisor_id === currentUserId)
   const canManageOt = adminRoles.has(currentRole) || supervisorRoles.has(currentRole) || isAssignedSupervisor
-  const isTechnicianOnly = !canManageOt && (isAssignedTechnician || technicianRoles.has(currentRole))
+  const canAccessTechnicalExecution = Boolean(isAssignedTechnician || technicianRoles.has(currentRole))
+  const isTechnicianOnly = !canManageOt && canAccessTechnicalExecution
   const hasTechnicalExecutionFlow = Boolean(
     usaChecklistPorEquipo || isServicioTecnicoSimple || usaChecklistRmsicMespack
   )
@@ -2790,6 +2791,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
     trabajoFueFinalizadoPorTecnico && !detalle.permitir_edicion_tecnico
   )
   const tecnicoBloqueado = isClosed || trabajoFinalizadoPorTecnico
+  const mostrarCierreAdministrativo = Boolean(canManageOt && (trabajoFueFinalizadoPorTecnico || isClosed))
   const canManageEquipoTrabajo = Boolean(!tecnicoBloqueado && !isClosed && (canManageOt || isAssignedTechnician))
   const mostrarEquipoTrabajoDyF = Boolean(esFlujoDyfSoftys || usaTecnicosParticipantes || detalle.empresa_id === DYF_EMPRESA_ID)
   const mostrarSeguridadSoftys = Boolean(esFlujoDyfSoftys || detalle.empresa_id === DYF_EMPRESA_ID)
@@ -3504,9 +3506,11 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
                 ) : null}
                 <Link
                   href={`/ot/${otId}?vista=tecnica`}
-                  className="inline-flex w-full items-center justify-center rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700 hover:bg-emerald-100 sm:w-auto sm:py-2"
+                  className={canAccessTechnicalExecution
+                    ? 'inline-flex w-full items-center justify-center rounded-xl bg-emerald-700 px-4 py-3 text-sm font-semibold text-white hover:bg-emerald-800 sm:w-auto sm:py-2'
+                    : 'inline-flex w-full items-center justify-center rounded-xl border border-emerald-300 bg-white px-4 py-3 text-sm font-semibold text-emerald-700 hover:bg-emerald-50 sm:w-auto sm:py-2'}
                 >
-                  Abrir ejecución técnica
+                  {canAccessTechnicalExecution ? 'Abrir ejecución técnica' : 'Ver ejecución técnica'}
                 </Link>
               </>
             ) : (
@@ -3807,7 +3811,26 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
       </div>
       ) : null}
 
-      {!esFlujoDyfSoftys ? (
+      {hasTechnicalExecutionFlow ? (
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <SectionTitle
+            title="Resumen de solicitud"
+            subtitle="Objetivo inicial de solo lectura para evitar repetir la carga técnica después de crear la OT."
+          />
+
+          <div className="mt-5 grid gap-4 md:grid-cols-2">
+            <DetailField
+              label="Solicitud / objetivo inicial"
+              value={form.descripcion_solicitud || form.problema_reportado || detalle.titulo}
+            />
+            <DetailField label="Contacto cliente" value={form.contacto_cliente_nombre} />
+            <DetailField label="Cargo contacto" value={form.contacto_cliente_cargo} />
+            <DetailField label="Email contacto" value={contactoEmailParaEnvio} />
+          </div>
+        </div>
+      ) : null}
+
+      {canManageOt ? (
       <form onSubmit={handleSave} className="space-y-6">
         <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
           <SectionTitle
@@ -4016,7 +4039,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
             </label>
           </div>
 
-          {isPreventiva && !esFlujoDyfSoftys ? (
+          {isPreventiva && !esFlujoDyfSoftys && !hasTechnicalExecutionFlow ? (
             <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
               En mantenimiento preventivo el checklist queda marcado automaticamente.
             </div>
@@ -4131,7 +4154,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
         </div>
         ) : null}
 
-        {esFlujoDyfSoftys ? (
+        {esFlujoDyfSoftys && !hasTechnicalExecutionFlow ? (
           <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
             <SectionTitle
               title="Planificación / instrucciones para terreno"
@@ -4172,7 +4195,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
           </div>
         ) : null}
 
-        {isPreventiva && !esFlujoDyfSoftys ? (
+        {isPreventiva && !esFlujoDyfSoftys && !hasTechnicalExecutionFlow ? (
           <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
             <SectionTitle
               title="Contenido OT: mantenimiento preventivo"
@@ -4243,7 +4266,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
           </div>
         ) : null}
 
-        {isUrgenciaOAsistencia && !esFlujoDyfSoftys ? (
+        {isUrgenciaOAsistencia && !esFlujoDyfSoftys && !hasTechnicalExecutionFlow ? (
           <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
             <SectionTitle
               title="Contenido OT: urgencia / asistencia técnica"
@@ -4371,7 +4394,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
           </div>
         ) : null}
 
-        {isAsesoria && !esFlujoDyfSoftys ? (
+        {isAsesoria && !esFlujoDyfSoftys && !hasTechnicalExecutionFlow ? (
           <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
             <SectionTitle
               title="Contenido OT: consultora / asesoria tecnica"
@@ -4442,7 +4465,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
           </div>
         ) : null}
 
-        {!esFlujoDyfSoftys && !isPreventiva && !isUrgenciaOAsistencia && !isAsesoria ? (
+        {!esFlujoDyfSoftys && !isPreventiva && !isUrgenciaOAsistencia && !isAsesoria && !hasTechnicalExecutionFlow ? (
           <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
             <SectionTitle
               title="Contenido general"
@@ -4578,7 +4601,13 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
         />
       ) : null}
 
-      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+      {mostrarBloquesTecnicosEnDetalle ? (
+      <details className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <summary className="cursor-pointer text-base font-semibold text-slate-900">
+          Ver bitácora de tiempos
+        </summary>
+        <div className="mt-5 space-y-6">
+      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-6">
         <SectionTitle
           title="Bitácora opcional de tiempos"
           subtitle="Registra bloques de trabajo, traslado, espera o supervisión como respaldo operativo. No reemplaza la hora oficial de cierre de la OM."
@@ -4788,6 +4817,9 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
           </div>
         )}
       </div>
+        </div>
+      </details>
+      ) : null}
 
       {mostrarBloquesTecnicosEnDetalle && usaChecklistPorEquipo ? (
       <OTEquipoChecklistPanel
@@ -4852,7 +4884,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
       ) : null}
 
       {!mostrarBloquesTecnicosEnDetalle ? (
-        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-6 shadow-sm">
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
           <SectionTitle
             title="OM lista para ejecución técnica"
             subtitle="La vista administrativa queda limpia. El checklist, fotos, acciones y término del trabajo se completan en la vista técnica."
@@ -4860,9 +4892,11 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
           <div className="mt-5 flex flex-col gap-3 sm:flex-row">
             <Link
               href={`/ot/${otId}?vista=tecnica`}
-              className="inline-flex items-center justify-center rounded-xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white hover:bg-emerald-800"
+              className={canAccessTechnicalExecution
+                ? 'inline-flex items-center justify-center rounded-xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white hover:bg-emerald-800'
+                : 'inline-flex items-center justify-center rounded-xl border border-emerald-300 bg-white px-5 py-3 text-sm font-semibold text-emerald-700 hover:bg-emerald-50'}
             >
-              Abrir ejecución técnica
+              {canAccessTechnicalExecution ? 'Abrir ejecución técnica' : 'Abrir vista técnica'}
             </Link>
             <Link
               href={`/ot/${otId}/informe-softys`}
@@ -4874,6 +4908,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
         </div>
       ) : null}
 
+      {mostrarCierreAdministrativo ? (
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <SectionTitle
           title={`Cierre / entrega de ${documentoTrabajoLabel}`}
@@ -5236,6 +5271,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
           ) : null}
         </div>
       </div>
+      ) : null}
 
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <SectionTitle
