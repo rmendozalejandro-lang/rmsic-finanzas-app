@@ -112,6 +112,7 @@ type UsuarioEmpresaRow = {
 
 type OtTecnicoRow = {
   user_id: string | null;
+  empresa_id?: string | null;
   nombre_completo: string | null;
   cargo: string | null;
   activo: boolean | null;
@@ -168,6 +169,47 @@ const RMSIC_EMPRESA_ID = "557a054c-71ef-4c5f-8637-594755ad669b";
 const RMSIC_MESPACK_TIPO_SERVICIO_ID = "fb66fd91-4f5f-4485-b518-e2cab12d5ab0";
 const RMSIC_MESPACK_ESTRUCTURA_OT = "rmsic_mespack";
 const RMSIC_MESPACK_DUPLEX_CHECKLIST_ID = "8e5e25fa-e439-4d4b-ac2d-74d3cfbc6f83";
+
+
+async function fetchTecnicosOtEmpresaActiva(empresaId: string, usuarioIdsEmpresa: string[]) {
+  const selectWithEmpresa =
+    "user_id, empresa_id, nombre_completo, cargo, activo, puede_crear_ot, puede_cerrar_ot, rol_ot";
+  const selectWithoutEmpresa =
+    "user_id, nombre_completo, cargo, activo, puede_crear_ot, puede_cerrar_ot, rol_ot";
+
+  const scopedResp = await supabase
+    .from("ot_tecnicos")
+    .select(selectWithEmpresa)
+    .eq("empresa_id", empresaId)
+    .eq("activo", true)
+    .order("nombre_completo", { ascending: true });
+
+  if (!scopedResp.error) {
+    return {
+      data: (scopedResp.data ?? []) as OtTecnicoRow[],
+      error: null,
+    };
+  }
+
+  const globalResp = await supabase
+    .from("ot_tecnicos")
+    .select(selectWithoutEmpresa)
+    .eq("activo", true)
+    .order("nombre_completo", { ascending: true });
+
+  if (globalResp.error) {
+    return { data: [] as OtTecnicoRow[], error: globalResp.error };
+  }
+
+  const usuarioIdsEmpresaSet = new Set(usuarioIdsEmpresa);
+
+  return {
+    data: ((globalResp.data ?? []) as OtTecnicoRow[]).filter(
+      (item) => item.user_id && usuarioIdsEmpresaSet.has(item.user_id),
+    ),
+    error: null,
+  };
+}
 
 function todayLocalDate() {
   const now = new Date();
@@ -599,13 +641,15 @@ function NuevaOTContent() {
             .eq("empresa_id", storedEmpresaId)
             .eq("activo", true);
 
-        const { data: tecnicosRaw, error: tecnicosError } = await supabase
-          .from("ot_tecnicos")
-          .select(
-            "user_id, nombre_completo, cargo, activo, puede_crear_ot, puede_cerrar_ot, rol_ot",
-          )
-          .eq("activo", true)
-          .order("nombre_completo", { ascending: true });
+        const usuarioIdsEmpresaActiva = ((usuariosEmpresaRaw ?? []) as UsuarioEmpresaRow[])
+          .map((item) => item.usuario_id)
+          .filter((id): id is string => Boolean(id));
+
+        const { data: tecnicosRaw, error: tecnicosError } =
+          await fetchTecnicosOtEmpresaActiva(
+            storedEmpresaId,
+            usuarioIdsEmpresaActiva,
+          );
 
         if (clientesResp.error) {
           throw new Error(
