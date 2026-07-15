@@ -171,6 +171,18 @@ const RMSIC_MESPACK_ESTRUCTURA_OT = "rmsic_mespack";
 const RMSIC_MESPACK_DUPLEX_CHECKLIST_ID = "8e5e25fa-e439-4d4b-ac2d-74d3cfbc6f83";
 
 
+function isMissingEmpresaIdColumnError(error: { code?: string; message?: string } | null) {
+  if (!error) return false;
+
+  const message = (error.message ?? "").toLowerCase();
+
+  return (
+    error.code === "42703" ||
+    error.code === "PGRST204" ||
+    (message.includes("empresa_id") && message.includes("ot_tecnicos"))
+  );
+}
+
 async function fetchTecnicosOtEmpresaActiva(empresaId: string, usuarioIdsEmpresa: string[]) {
   const selectWithEmpresa =
     "user_id, empresa_id, nombre_completo, cargo, activo, puede_crear_ot, puede_cerrar_ot, rol_ot";
@@ -189,6 +201,10 @@ async function fetchTecnicosOtEmpresaActiva(empresaId: string, usuarioIdsEmpresa
       data: (scopedResp.data ?? []) as OtTecnicoRow[],
       error: null,
     };
+  }
+
+  if (!isMissingEmpresaIdColumnError(scopedResp.error)) {
+    return { data: [] as OtTecnicoRow[], error: scopedResp.error };
   }
 
   const globalResp = await supabase
