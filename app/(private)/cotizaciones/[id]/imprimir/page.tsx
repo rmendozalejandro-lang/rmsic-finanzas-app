@@ -179,6 +179,7 @@ function resolveCotizacionLogoSrc(params: {
 
   const logoDesdeHelper = normalizeLogoSrc(
     getEmpresaLogoSrc({
+      empresaId: cotizacion?.empresa_id,
       empresaLogoUrl: cotizacion?.empresa_logo_url,
       empresaNombre: cotizacion?.empresa_nombre,
       empresaActivaNombre,

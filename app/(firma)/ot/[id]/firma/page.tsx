@@ -9,6 +9,8 @@ import { supabase } from '../../../../../lib/supabase/client'
 import type { OTResumen } from '../../../../../lib/ot/types'
 
 const RMSIC_EMPRESA_ID = '557a054c-71ef-4c5f-8637-594755ad669b'
+const DYF_EMPRESA_ID = '73dd5543-2bf7-4d44-9982-4a641c8658f5'
+const IMA_INDUSTRIAL_EMPRESA_ID = '50985048-9787-4859-9293-10800458d825'
 
 type OTDetalle = {
   id: string
@@ -483,7 +485,14 @@ function FirmaClienteView() {
     return detalle?.area_trabajo || resumen?.ubicacion_nombre || resumen?.activo_nombre || '-'
   }, [detalle, resumen])
 
-  const empresaLogoSrc = detalle?.empresa_id === RMSIC_EMPRESA_ID ? '/logos/rmsic-logo.png' : null
+  const empresaLogoSrc =
+    detalle?.empresa_id === RMSIC_EMPRESA_ID
+      ? '/logos/rmsic-logo.png'
+      : detalle?.empresa_id === DYF_EMPRESA_ID
+        ? '/logos/dyf-logo-transparente.png'
+        : detalle?.empresa_id === IMA_INDUSTRIAL_EMPRESA_ID
+          ? '/logos/ima-industrial-logo.png'
+          : null
   const empresaHeaderNombre = resumen?.empresa_nombre || 'Empresa'
 
   if (loading) {
