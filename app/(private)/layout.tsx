@@ -39,6 +39,10 @@ type EmpresaModuloRow = {
   habilitado: boolean
 }
 
+type UsuarioEmpresaConEmpresaRow = {
+  empresas: Empresa | Empresa[] | null
+}
+
 type MenuGroup = {
   key: ModuloPrincipal | 'general'
   label: string
@@ -114,9 +118,14 @@ const MENU_GROUP_LABELS: Record<ModuloPrincipal | 'general', string> = {
 }
 
 const RMSIC_EMPRESA_ID = '557a054c-71ef-4c5f-8637-594755ad669b'
+const DYF_EMPRESA_ID = '73dd5543-2bf7-4d44-9982-4a641c8658f5'
 
 function empresaTieneInformesTecnicos(empresaId?: string | null) {
   return empresaId === RMSIC_EMPRESA_ID
+}
+
+function empresaTieneTecnicosDyF(empresaId?: string | null) {
+  return empresaId === DYF_EMPRESA_ID
 }
 
 export default function PrivateLayout({ children }: PrivateLayoutProps) {
@@ -321,9 +330,11 @@ if (esSuperAdmin) {
     return
   }
 
-  empresasData = (usuarioEmpresasResp.data ?? [])
-    .map((item: any) => item.empresas)
-    .filter(Boolean) as Empresa[]
+  empresasData = ((usuarioEmpresasResp.data ?? []) as UsuarioEmpresaConEmpresaRow[])
+    .flatMap((item) => {
+      if (!item.empresas) return []
+      return Array.isArray(item.empresas) ? item.empresas : [item.empresas]
+    })
 }
 
 setEmpresas(empresasData)        
@@ -402,6 +413,10 @@ if (empresaGuardadaValida) {
         return false
       }
 
+      if (item.href === '/operacional/tecnicos-dyf' && !empresaTieneTecnicosDyF(empresaActivaId)) {
+        return false
+      }
+
       return canAccessModuleByRoleAndCompany(
         usuarioRol,
         item.moduleKey,
@@ -439,6 +454,9 @@ if (empresaGuardadaValida) {
 
   const isInformesTecnicosRoute =
     pathname === '/informes' || pathname.startsWith('/informes/')
+  const isTecnicosDyFRoute =
+    pathname === '/operacional/tecnicos-dyf' ||
+    pathname.startsWith('/operacional/tecnicos-dyf/')
 
   const isRouteAccessDenied =
     rolResuelto &&
@@ -451,7 +469,8 @@ if (empresaGuardadaValida) {
           modulosHabilitados
         )
       ) ||
-      (isInformesTecnicosRoute && !empresaTieneInformesTecnicos(empresaActivaId))
+      (isInformesTecnicosRoute && !empresaTieneInformesTecnicos(empresaActivaId)) ||
+      (isTecnicosDyFRoute && !empresaTieneTecnicosDyF(empresaActivaId))
     )
 
   useEffect(() => {
