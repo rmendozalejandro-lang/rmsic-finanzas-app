@@ -1376,7 +1376,6 @@ function OTDetalleContent() {
           resumenResp,
           detalleResp,
           estadosResp,
-          tiposResp,
           tiemposResp,
           firmasResp,
           checklistResp,
@@ -1466,13 +1465,6 @@ function OTDetalleContent() {
             .eq('activo', true)
             .order('orden', { ascending: true }),
           supabase
-            .from('ot_tipos_servicio')
-            .select('id, empresa_id, codigo, nombre, descripcion, categoria, plantilla_id, plantilla_codigo, estructura_ot_codigo, flujo_ot, formato_ot, requiere_checklist, usa_equipos_multiples, usa_checklist_por_equipo, usa_checklist_por_horas, tipo_equipo_permitido, usa_recepcion_cliente, usa_firmas, usa_fotos, estado_inicial_default, prioridad_default, orden, config')
-            .eq('empresa_id', empresaActivaId)
-            .eq('activo', true)
-            .order('orden', { ascending: true })
-            .order('nombre', { ascending: true }),
-          supabase
             .from('ot_tiempos_trabajo')
             .select(
               `
@@ -1518,11 +1510,6 @@ function OTDetalleContent() {
         if (estadosResp.error) {
           throw new Error(`No se pudieron cargar los estados: ${estadosResp.error.message}`)
         }
-        if (tiposResp.error) {
-          throw new Error(
-            `No se pudieron cargar los tipos de servicio: ${tiposResp.error.message}`
-          )
-        }
         if (tiemposResp.error) {
           throw new Error(`No se pudieron cargar los tiempos: ${tiemposResp.error.message}`)
         }
@@ -1536,6 +1523,21 @@ function OTDetalleContent() {
         const resumenData = resumenResp.data as OTResumenConEquipo
         const detalleData = detalleResp.data as OTDetalle
         const estadosData = (estadosResp.data ?? []) as EstadoOption[]
+
+        const tiposResp = await supabase
+          .from('ot_tipos_servicio')
+          .select('id, empresa_id, codigo, nombre, descripcion, categoria, plantilla_id, plantilla_codigo, estructura_ot_codigo, flujo_ot, formato_ot, requiere_checklist, usa_equipos_multiples, usa_checklist_por_equipo, usa_checklist_por_horas, tipo_equipo_permitido, usa_recepcion_cliente, usa_firmas, usa_fotos, estado_inicial_default, prioridad_default, orden, config')
+          .eq('empresa_id', detalleData.empresa_id)
+          .eq('activo', true)
+          .order('orden', { ascending: true })
+          .order('nombre', { ascending: true })
+
+        if (tiposResp.error) {
+          throw new Error(
+            `No se pudieron cargar los tipos de servicio: ${tiposResp.error.message}`
+          )
+        }
+
         const tiposRawData = (tiposResp.data ?? []) as TipoServicioOption[]
         const currentTipoData = detalleData.tipo_servicio_id
           ? tiposRawData.find((tipo) => tipo.id === detalleData.tipo_servicio_id) ??
