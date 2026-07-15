@@ -87,6 +87,12 @@ type PlantillaOption = {
   tipo_equipo_permitido: string | null;
 };
 
+type ChecklistPlantillaOption = {
+  id: string;
+  codigo: string;
+  nombre: string;
+};
+
 type SelectOption = {
   id: string;
   label: string;
@@ -158,6 +164,10 @@ type FormDataState = {
 const STORAGE_ID_KEY = "empresa_activa_id";
 const STORAGE_NAME_KEY = "empresa_activa_nombre";
 const DYF_EMPRESA_ID = "73dd5543-2bf7-4d44-9982-4a641c8658f5";
+const RMSIC_EMPRESA_ID = "557a054c-71ef-4c5f-8637-594755ad669b";
+const RMSIC_MESPACK_TIPO_SERVICIO_ID = "fb66fd91-4f5f-4485-b518-e2cab12d5ab0";
+const RMSIC_MESPACK_ESTRUCTURA_OT = "rmsic_mespack";
+const RMSIC_MESPACK_DUPLEX_CHECKLIST_ID = "8e5e25fa-e439-4d4b-ac2d-74d3cfbc6f83";
 
 function todayLocalDate() {
   const now = new Date();
@@ -191,10 +201,137 @@ function normalizePrioridad(value: string | null | undefined): FormDataState["pr
   return "media";
 }
 
+function normalizeText(value: string | null | undefined) {
+  return (value ?? "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+function isMespackTipo(tipo: TipoServicioOption | null) {
+  if (!tipo) return false;
+
+  const textoTipo = normalizeText(
+    [
+      tipo.codigo,
+      tipo.nombre,
+      tipo.plantilla_codigo,
+      tipo.estructura_ot_codigo,
+      tipo.formato_ot,
+      tipo.flujo_ot,
+    ]
+      .filter(Boolean)
+      .join(" "),
+  );
+
+  return Boolean(
+    tipo.usa_checklist_por_horas ||
+      textoTipo.includes("mespack") ||
+      textoTipo.includes("rmsic_mespack"),
+  );
+}
+
+function getChecklistMespackDuplexId(
+  tipo: TipoServicioOption | null,
+  empresaId: string,
+) {
+  if (tipo?.id === RMSIC_MESPACK_TIPO_SERVICIO_ID) {
+    return RMSIC_MESPACK_DUPLEX_CHECKLIST_ID;
+  }
+
+  if (
+    empresaId === RMSIC_EMPRESA_ID &&
+    tipo?.estructura_ot_codigo === RMSIC_MESPACK_ESTRUCTURA_OT
+  ) {
+    return RMSIC_MESPACK_DUPLEX_CHECKLIST_ID;
+  }
+
+  return null;
+}
+
+function isMespackPlantilla(plantilla: PlantillaOption | null) {
+  if (!plantilla) return false;
+
+  const textoPlantilla = normalizeText(
+    [
+      plantilla.codigo,
+      plantilla.nombre,
+      plantilla.checklist_plantilla_codigo,
+      plantilla.formato_ot,
+      plantilla.flujo_ot,
+    ]
+      .filter(Boolean)
+      .join(" "),
+  );
+
+  return Boolean(
+    plantilla.usa_checklist_por_horas || textoPlantilla.includes("mespack"),
+  );
+}
+
+function findPlantillaForTipo(
+  tipo: TipoServicioOption | null,
+  plantillas: PlantillaOption[],
+) {
+  if (!tipo) return null;
+
+  const plantillaAsociada = plantillas.find(
+    (item) =>
+      item.id === tipo.plantilla_id || item.codigo === tipo.plantilla_codigo,
+  );
+
+  if (plantillaAsociada) return plantillaAsociada;
+
+  if (!isMespackTipo(tipo)) return null;
+
+  return (
+    plantillas.find((item) => isMespackPlantilla(item)) ??
+    plantillas.find((item) => item.usa_checklist_por_horas) ??
+    null
+  );
+}
+
+function findChecklistForPlantilla(
+  plantilla: PlantillaOption | null,
+  tipo: TipoServicioOption | null,
+  checklists: ChecklistPlantillaOption[],
+  empresaId: string,
+) {
+  const checklistMespackDuplexId = getChecklistMespackDuplexId(tipo, empresaId);
+
+  if (checklistMespackDuplexId) {
+    return {
+      id: checklistMespackDuplexId,
+      codigo: "mespack_duplex",
+      nombre: "Mantención Preventiva Mespack Duplex",
+    };
+  }
+
+  const checklistCodigo = plantilla?.checklist_plantilla_codigo?.trim();
+
+  if (checklistCodigo) {
+    const checklistAsociado = checklists.find(
+      (item) => item.codigo === checklistCodigo,
+    );
+
+    if (checklistAsociado) return checklistAsociado;
+  }
+
+  if (!isMespackTipo(tipo) && !isMespackPlantilla(plantilla)) return null;
+
+  return (
+    checklists.find((item) =>
+      normalizeText(`${item.codigo} ${item.nombre}`).includes("mespack"),
+    ) ?? null
+  );
+}
+
 function tipoServicioRequiereChecklist(tipo: TipoServicioOption | null, plantilla: PlantillaOption | null) {
   if (tipo) {
     return Boolean(
-      tipo.requiere_checklist ||
+      tipo.id === RMSIC_MESPACK_TIPO_SERVICIO_ID ||
+        tipo.estructura_ot_codigo === RMSIC_MESPACK_ESTRUCTURA_OT ||
+        tipo.requiere_checklist ||
         tipo.usa_checklist_por_equipo ||
         tipo.usa_checklist_por_horas,
     );
@@ -243,6 +380,7 @@ function NuevaOTContent() {
   const [tiposServicio, setTiposServicio] = useState<TipoServicioOption[]>([]);
   const [estados, setEstados] = useState<EstadoOption[]>([]);
   const [plantillas, setPlantillas] = useState<PlantillaOption[]>([]);
+  const [checklistPlantillas, setChecklistPlantillas] = useState<ChecklistPlantillaOption[]>([]);
   const [tecnicos, setTecnicos] = useState<SelectOption[]>([]);
   const [supervisores, setSupervisores] = useState<SelectOption[]>([]);
 
@@ -317,8 +455,7 @@ function NuevaOTContent() {
   }, [contactosCliente, form.contacto_cliente_id]);
 
   const isPreventivaMespack =
-    selectedTipo?.estructura_ot_codigo === "rmsic_mespack" ||
-    Boolean(selectedTipo?.usa_checklist_por_horas);
+    isMespackTipo(selectedTipo) || isMespackPlantilla(selectedPlantilla);
 
   const esEmpresaDyfSoftys =
     empresaActivaId === DYF_EMPRESA_ID || form.empresa_id === DYF_EMPRESA_ID;
@@ -403,6 +540,7 @@ function NuevaOTContent() {
           tiposResp,
           estadosResp,
           plantillasResp,
+          checklistPlantillasResp,
         ] = await Promise.all([
           supabase
             .from("clientes")
@@ -442,6 +580,13 @@ function NuevaOTContent() {
             .eq("empresa_id", storedEmpresaId)
             .eq("activo", true)
             .order("es_predeterminada", { ascending: false })
+            .order("nombre", { ascending: true }),
+
+          supabase
+            .from("ot_plantillas_checklist")
+            .select("id, codigo, nombre")
+            .eq("empresa_id", storedEmpresaId)
+            .eq("activa", true)
             .order("nombre", { ascending: true }),
         ]);
 
@@ -486,6 +631,12 @@ function NuevaOTContent() {
         if (plantillasResp.error) {
           throw new Error(
             `No se pudieron cargar las plantillas OT: ${plantillasResp.error.message}`,
+          );
+        }
+
+        if (checklistPlantillasResp.error) {
+          throw new Error(
+            `No se pudieron cargar las plantillas de checklist: ${checklistPlantillasResp.error.message}`,
           );
         }
 
@@ -648,6 +799,14 @@ function NuevaOTContent() {
           tipo_equipo_permitido: item.tipo_equipo_permitido,
         }));
 
+        const checklistPlantillasData: ChecklistPlantillaOption[] = (
+          checklistPlantillasResp.data ?? []
+        ).map((item) => ({
+          id: item.id,
+          codigo: item.codigo,
+          nombre: item.nombre,
+        }));
+
         const usuariosEmpresaOptions: SelectOption[] = perfilesEmpresa.map(
           (item) => ({
             id: item.id,
@@ -717,18 +876,16 @@ function NuevaOTContent() {
         setTiposServicio(tiposData);
         setEstados(estadosData);
         setPlantillas(plantillasData);
+        setChecklistPlantillas(checklistPlantillasData);
         setTecnicos(tecnicosData);
         setSupervisores(supervisoresData);
         setWarning(nextWarning);
 
         const tipoPredeterminado = tiposData[0] ?? null;
-        const plantillaDesdeTipo = tipoPredeterminado
-          ? plantillasData.find(
-              (item) =>
-                item.id === tipoPredeterminado.plantilla_id ||
-                item.codigo === tipoPredeterminado.plantilla_codigo,
-            )
-          : null;
+        const plantillaDesdeTipo = findPlantillaForTipo(
+          tipoPredeterminado,
+          plantillasData,
+        );
 
         const estadoDefaultCodigo =
           tipoPredeterminado?.estado_inicial_default || "asignada";
@@ -798,11 +955,7 @@ function NuevaOTContent() {
   useEffect(() => {
     if (!selectedTipo) return;
 
-    const plantillaAsociada = plantillas.find(
-      (item) =>
-        item.id === selectedTipo.plantilla_id ||
-        item.codigo === selectedTipo.plantilla_codigo,
-    );
+    const plantillaAsociada = findPlantillaForTipo(selectedTipo, plantillas);
 
     const requiereChecklist = tipoServicioRequiereChecklist(
       selectedTipo,
@@ -837,13 +990,10 @@ function NuevaOTContent() {
     if (field === "tipo_servicio_id") {
       const tipoId = String(value || "");
       const tipoSeleccionado = tiposServicio.find((item) => item.id === tipoId) ?? null;
-      const plantillaAsociada = tipoSeleccionado
-        ? plantillas.find(
-            (item) =>
-              item.id === tipoSeleccionado.plantilla_id ||
-              item.codigo === tipoSeleccionado.plantilla_codigo,
-          )
-        : null;
+      const plantillaAsociada = findPlantillaForTipo(
+        tipoSeleccionado,
+        plantillas,
+      );
 
       setForm((prev) => ({
         ...prev,
@@ -1082,6 +1232,12 @@ function NuevaOTContent() {
         supervisor_id: form.supervisor_id || null,
         prioridad: form.prioridad,
         requiere_checklist: requiereChecklist,
+        plantilla_checklist_id: findChecklistForPlantilla(
+          selectedPlantilla,
+          selectedTipo,
+          checklistPlantillas,
+          form.empresa_id,
+        )?.id ?? null,
         created_by: user.id,
       };
 
