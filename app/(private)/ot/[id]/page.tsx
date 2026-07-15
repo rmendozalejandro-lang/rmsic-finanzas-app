@@ -21,6 +21,7 @@ type OTDetalle = {
   activo_id: string | null
   cotizacion_id: string | null
   tipo_servicio_id: string
+  estructura_ot_codigo: string | null
   plantilla_id: string | null
   estado_id: string
   fecha_ot: string
@@ -305,6 +306,10 @@ const RECEPCION_SOFTYS_DEFAULT: RecepcionSoftysState = {
 }
 
 const DYF_EMPRESA_ID = '73dd5543-2bf7-4d44-9982-4a641c8658f5'
+const RMSIC_EMPRESA_ID = '557a054c-71ef-4c5f-8637-594755ad669b'
+const RMSIC_MESPACK_TIPO_SERVICIO_ID = 'fb66fd91-4f5f-4485-b518-e2cab12d5ab0'
+const RMSIC_MESPACK_ESTRUCTURA_OT = 'rmsic_mespack'
+const RMSIC_MESPACK_DUPLEX_CHECKLIST_ID = '8e5e25fa-e439-4d4b-ac2d-74d3cfbc6f83'
 
 const SOFTYS_SEGURIDAD_ITEMS = [
   {
@@ -977,11 +982,29 @@ function OTDetalleContent() {
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
+  const tipoServicioTextoNormalizado = `${selectedTipo?.codigo ?? ''} ${selectedTipo?.nombre ?? ''}`
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+
+  const isMespackDuplexRmsic = Boolean(
+    detalle &&
+      !detalle.fecha_cierre &&
+      firmas.length === 0 &&
+      (detalle.tipo_servicio_id === RMSIC_MESPACK_TIPO_SERVICIO_ID ||
+        (detalle.empresa_id === RMSIC_EMPRESA_ID &&
+          detalle.estructura_ot_codigo === RMSIC_MESPACK_ESTRUCTURA_OT))
+  )
+  const plantillaChecklistIdEfectiva =
+    detalle?.plantilla_checklist_id ||
+    (isMespackDuplexRmsic ? RMSIC_MESPACK_DUPLEX_CHECKLIST_ID : null)
 
   const isPreventivaMespack =
     tipoCodigoNormalizado === 'preventiva' ||
-    tipoCodigoNormalizado.includes('mantención_mespack') ||
-    tipoCodigoNormalizado.includes('mantenimiento_mespack')
+    tipoServicioTextoNormalizado.includes('mespack') ||
+    tipoServicioTextoNormalizado.includes('rmsic_mespack') ||
+    isMespackDuplexRmsic ||
+    Boolean(plantillaOtConfig?.usa_checklist_por_horas)
   const isPreventivaGeneral =
     tipoCodigoNormalizado === 'preventiva_general' ||
     tipoCodigoNormalizado.includes('mantención_general') ||
@@ -1008,6 +1031,7 @@ function OTDetalleContent() {
   const usaChecklistPorEquipo = esFlujoDyfSoftys && Boolean(plantillaOtConfig?.usa_checklist_por_equipo)
   const usaChecklistRmsicMespack =
     !esFlujoDyfSoftys &&
+    Boolean(plantillaChecklistIdEfectiva) &&
     (isPreventivaMespack || Boolean(plantillaOtConfig?.usa_checklist_por_horas))
   const documentoTrabajoLabel = esFlujoDyfSoftys ? 'OM' : 'OT'
   const isUrgencia = tipoCodigoNormalizado.includes('urgencia')
@@ -1278,6 +1302,7 @@ function OTDetalleContent() {
                 activo_id,
                 cotizacion_id,
                 tipo_servicio_id,
+                estructura_ot_codigo,
                 plantilla_id,
                 estado_id,
                 fecha_ot,
@@ -1435,11 +1460,21 @@ function OTDetalleContent() {
 
         const informeSoftysData = (informeSoftysResp.data ?? null) as InformeSoftysMini | null
 
-        const plantillaChecklistPromise = detalleData.plantilla_checklist_id
+        const plantillaChecklistId =
+          detalleData.plantilla_checklist_id ||
+          (!detalleData.fecha_cierre &&
+          (firmasResp.data ?? []).length === 0 &&
+          (detalleData.tipo_servicio_id === RMSIC_MESPACK_TIPO_SERVICIO_ID ||
+            (detalleData.empresa_id === RMSIC_EMPRESA_ID &&
+              detalleData.estructura_ot_codigo === RMSIC_MESPACK_ESTRUCTURA_OT))
+            ? RMSIC_MESPACK_DUPLEX_CHECKLIST_ID
+            : null)
+
+        const plantillaChecklistPromise = plantillaChecklistId
           ? (supabase as any)
               .from('ot_plantillas_checklist')
               .select('id, nombre, tipo_activo')
-              .eq('id', detalleData.plantilla_checklist_id)
+              .eq('id', plantillaChecklistId)
               .maybeSingle()
           : Promise.resolve({ data: null, error: null })
 
@@ -3018,7 +3053,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
           otId={otId}
           empresaId={detalle.empresa_id}
           currentUserId={currentUserId}
-          plantillaId={detalle.plantilla_checklist_id}
+          plantillaId={plantillaChecklistIdEfectiva}
           requiereChecklist={form.requiere_checklist || usaChecklistPorEquipo || isPreventivaMespack}
           tipoEquipoPermitido={plantillaOtConfig?.tipo_equipo_permitido}
           tipoEquipoLabel={filtroTipoEquipoLabel}
@@ -3053,7 +3088,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
             otId={otId}
             empresaId={detalle.empresa_id}
             currentUserId={currentUserId}
-            initialPlantillaId={detalle.plantilla_checklist_id}
+            initialPlantillaId={plantillaChecklistIdEfectiva}
             requiereChecklist={form.requiere_checklist || usaChecklistPorEquipo || isPreventivaMespack}
             onChanged={() => void loadData(false)}
           />
@@ -4759,7 +4794,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
         otId={otId}
         empresaId={detalle.empresa_id}
         currentUserId={currentUserId}
-        plantillaId={detalle.plantilla_checklist_id}
+        plantillaId={plantillaChecklistIdEfectiva}
         requiereChecklist={form.requiere_checklist || usaChecklistPorEquipo || isPreventivaMespack}
         tipoEquipoPermitido={plantillaOtConfig?.tipo_equipo_permitido}
         tipoEquipoLabel={filtroTipoEquipoLabel}
@@ -4794,7 +4829,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
           otId={otId}
           empresaId={detalle.empresa_id}
           currentUserId={currentUserId}
-          initialPlantillaId={detalle.plantilla_checklist_id}
+          initialPlantillaId={plantillaChecklistIdEfectiva}
           requiereChecklist={form.requiere_checklist || usaChecklistPorEquipo || isPreventivaMespack}
           onChanged={() => void loadData(false)}
         />
