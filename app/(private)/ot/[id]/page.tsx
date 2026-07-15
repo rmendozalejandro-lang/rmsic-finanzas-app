@@ -2794,6 +2794,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
   const mostrarCierreAdministrativo = Boolean(canManageOt && (trabajoFueFinalizadoPorTecnico || isClosed))
   const canManageEquipoTrabajo = Boolean(!tecnicoBloqueado && !isClosed && (canManageOt || isAssignedTechnician))
   const mostrarEquipoTrabajoDyF = Boolean(esFlujoDyfSoftys || usaTecnicosParticipantes || detalle.empresa_id === DYF_EMPRESA_ID)
+  const mostrarInformeDyfSoftys = Boolean(esFlujoDyfSoftys || detalle.empresa_id === DYF_EMPRESA_ID)
   const mostrarSeguridadSoftys = Boolean(esFlujoDyfSoftys || detalle.empresa_id === DYF_EMPRESA_ID)
 
   const renderSeguridadSoftysChecklist = () => (
@@ -4601,6 +4602,24 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
         />
       ) : null}
 
+      {hasTechnicalExecutionFlow ? (
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <SectionTitle
+            title="Resumen técnico registrado"
+            subtitle="Información técnica consolidada en solo lectura para revisión administrativa. La edición continúa en la vista técnica."
+          />
+
+          <div className="mt-5 grid gap-4 md:grid-cols-2">
+            <DetailField label="Objetivo / solicitud inicial" value={form.descripcion_solicitud || form.problema_reportado || detalle.titulo} />
+            <DetailField label="Actividades ejecutadas" value={form.trabajo_realizado} />
+            <DetailField label="Hallazgos detectados" value={form.hallazgos} />
+            <DetailField label="Resultado del servicio" value={form.resultado_servicio} />
+            <DetailField label="Recomendaciones" value={form.recomendaciones} />
+            <DetailField label="Observaciones de cierre" value={form.observaciones_cierre} />
+          </div>
+        </div>
+      ) : null}
+
       {mostrarBloquesTecnicosEnDetalle ? (
       <details className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <summary className="cursor-pointer text-base font-semibold text-slate-900">
@@ -4898,12 +4917,21 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
             >
               {canAccessTechnicalExecution ? 'Abrir ejecución técnica' : 'Abrir vista técnica'}
             </Link>
-            <Link
-              href={`/ot/${otId}/informe-softys`}
-              className="inline-flex items-center justify-center rounded-xl border border-emerald-300 bg-white px-5 py-3 text-sm font-semibold text-emerald-700 hover:bg-emerald-100"
-            >
-              Ver informe OM
-            </Link>
+            {mostrarInformeDyfSoftys ? (
+              <Link
+                href={`/ot/${otId}/informe-softys`}
+                className="inline-flex items-center justify-center rounded-xl border border-emerald-300 bg-white px-5 py-3 text-sm font-semibold text-emerald-700 hover:bg-emerald-100"
+              >
+                Ver informe OM
+              </Link>
+            ) : (
+              <Link
+                href={`/ot/${otId}/imprimir`}
+                className="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+              >
+                Ver informe OT
+              </Link>
+            )}
           </div>
         </div>
       ) : null}
