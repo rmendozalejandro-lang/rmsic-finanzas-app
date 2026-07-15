@@ -650,17 +650,19 @@ function NuevaOTContent() {
 
         const usuariosEmpresa = (usuariosEmpresaRaw ??
           []) as UsuarioEmpresaRow[];
-        const tecnicosOt = tecnicosError
+        const usuarioEmpresaIds = new Set(
+          usuariosEmpresa
+            .map((item) => item.usuario_id)
+            .filter((id): id is string => Boolean(id)),
+        );
+        const tecnicosOtRaw = tecnicosError
           ? []
           : ((tecnicosRaw ?? []) as OtTecnicoRow[]);
-        const usuarioIds = Array.from(
-          new Set(
-            [
-              ...usuariosEmpresa.map((item) => item.usuario_id),
-              ...tecnicosOt.map((item) => item.user_id),
-            ].filter((id): id is string => Boolean(id)),
-          ),
+        const tecnicosOt = tecnicosOtRaw.filter(
+          (item) =>
+            Boolean(item.user_id) && usuarioEmpresaIds.has(item.user_id || ""),
         );
+        const usuarioIds = Array.from(usuarioEmpresaIds);
 
         const perfilesResp =
           usuarioIds.length > 0
@@ -809,13 +811,6 @@ function NuevaOTContent() {
           tipo_activo: item.tipo_activo,
         }));
 
-        const usuariosEmpresaOptions: SelectOption[] = perfilesEmpresa.map(
-          (item) => ({
-            id: item.id,
-            label: buildSupervisorLabel(item),
-          }),
-        );
-
         const tecnicosOtOptions: SelectOption[] = tecnicosOt
           .filter((item) => Boolean(item.user_id))
           .map((item) => ({
@@ -853,21 +848,17 @@ function NuevaOTContent() {
           .filter((item) => Boolean(item.id))
           .sort((a, b) => a.label.localeCompare(b.label, "es"));
 
-        const tecnicosData: SelectOption[] =
-          tecnicosOtOptions.length > 0
-            ? tecnicosOtOptions
-            : usuariosEmpresaOptions;
+        const tecnicosData: SelectOption[] = tecnicosOtOptions;
 
         const supervisoresData: SelectOption[] = supervisoresOtOptions;
 
-        const nextWarning =
-          tecnicosData.length === 0
+        const nextWarning = tecnicosError
+          ? `No se pudieron cargar técnicos OT (${tecnicosError.message}). Puedes crear la OT sin técnico ni supervisor por ahora.`
+          : tecnicosData.length === 0
             ? "La empresa activa no tiene técnicos OT activos. Puedes crear la OT sin técnico ni supervisor por ahora."
-            : tecnicosError
-              ? `No se pudieron cargar técnicos OT (${tecnicosError.message}). Se usarán usuarios de la empresa como respaldo.`
-              : supervisoresData.length === 0
-                ? "No hay supervisores OT designados. Revisa la configuración de Técnicos OT y marca al menos un usuario como supervisor o jefe."
-                : "";
+            : supervisoresData.length === 0
+              ? "No hay supervisores OT designados. Revisa la configuración de Técnicos OT y marca al menos un usuario como supervisor o jefe."
+              : "";
 
         const tecnicoActual = tecnicosData.find((item) => item.id === user.id);
 
