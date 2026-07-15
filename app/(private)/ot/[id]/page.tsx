@@ -1033,7 +1033,8 @@ function OTDetalleContent() {
     !esFlujoDyfSoftys &&
     Boolean(plantillaChecklistIdEfectiva) &&
     (isPreventivaMespack || Boolean(plantillaOtConfig?.usa_checklist_por_horas))
-  const documentoTrabajoLabel = esFlujoDyfSoftys ? 'OM' : 'OT'
+  const canShowInformeDyf = esFlujoDyfSoftys || detalle?.empresa_id === DYF_EMPRESA_ID
+  const documentoTrabajoLabel = canShowInformeDyf ? 'OM' : 'OT'
   const isUrgencia = tipoCodigoNormalizado.includes('urgencia')
   const isAsistencia = tipoCodigoNormalizado.includes('asistencia')
   const isMantenimientoGeneral =
@@ -1044,7 +1045,7 @@ function OTDetalleContent() {
   const isServicioTecnicoSimple =
     !usaChecklistPorEquipo &&
     (esFlujoDyfSoftys || isAsistencia || isUrgencia || isMantenimientoGeneral || isAsesoria)
-  const informePrincipalLabel = esFlujoDyfSoftys
+  const informePrincipalLabel = canShowInformeDyf
     ? usaChecklistPorEquipo
       ? 'Informe OM'
       : 'Informe técnico'
@@ -1284,7 +1285,6 @@ function OTDetalleContent() {
           resumenResp,
           detalleResp,
           estadosResp,
-          tiposResp,
           tiemposResp,
           firmasResp,
           checklistResp,
@@ -1374,11 +1374,6 @@ function OTDetalleContent() {
             .eq('activo', true)
             .order('orden', { ascending: true }),
           supabase
-            .from('ot_tipos_servicio')
-            .select('id, codigo, nombre')
-            .eq('activo', true)
-            .order('nombre', { ascending: true }),
-          supabase
             .from('ot_tiempos_trabajo')
             .select(
               `
@@ -1424,11 +1419,6 @@ function OTDetalleContent() {
         if (estadosResp.error) {
           throw new Error(`No se pudieron cargar los estados: ${estadosResp.error.message}`)
         }
-        if (tiposResp.error) {
-          throw new Error(
-            `No se pudieron cargar los tipos de servicio: ${tiposResp.error.message}`
-          )
-        }
         if (tiemposResp.error) {
           throw new Error(`No se pudieron cargar los tiempos: ${tiemposResp.error.message}`)
         }
@@ -1442,6 +1432,19 @@ function OTDetalleContent() {
         const resumenData = resumenResp.data as OTResumenConEquipo
         const detalleData = detalleResp.data as OTDetalle
         const estadosData = (estadosResp.data ?? []) as EstadoOption[]
+        const tiposResp = await supabase
+          .from('ot_tipos_servicio')
+          .select('id, codigo, nombre')
+          .eq('empresa_id', detalleData.empresa_id)
+          .eq('activo', true)
+          .order('nombre', { ascending: true })
+
+        if (tiposResp.error) {
+          throw new Error(
+            `No se pudieron cargar los tipos de servicio de la empresa de la OT: ${tiposResp.error.message}`
+          )
+        }
+
         const tiposData = (tiposResp.data ?? []) as TipoServicioOption[]
         const tiemposData = (tiemposResp.data ?? []) as TiempoTrabajo[]
         const firmasData = (firmasResp.data ?? []) as FirmaMini[]
@@ -2782,6 +2785,9 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
     searchParams.get('modo') === 'tecnico'
   const mostrarVistaTecnica = hasTechnicalExecutionFlow && (isTechnicianOnly || vistaTecnicaSolicitada)
   const mostrarBloquesTecnicosEnDetalle = !hasTechnicalExecutionFlow
+  const ejecucionTecnicaActionLabel = isAssignedTechnician
+    ? 'Abrir ejecución técnica'
+    : 'Ver ejecución técnica'
   const trabajoFueFinalizadoPorTecnico = Boolean(detalle.finalizado_tecnico_at)
   const edicionTecnicaAutorizada = Boolean(
     trabajoFueFinalizadoPorTecnico && detalle.permitir_edicion_tecnico && !isClosed
@@ -2864,13 +2870,23 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
             </div>
 
             <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:justify-end">
-              <Link
-                href={`/ot/${otId}/informe-softys?oficial=1`}
-                style={{ backgroundColor: '#0f172a', color: '#ffffff' }}
-                className="inline-flex w-full items-center justify-center rounded-xl border border-slate-950 px-5 py-3 text-sm font-bold text-white shadow-sm hover:bg-slate-800 sm:w-auto"
-              >
-                Ver informe oficial
-              </Link>
+              {canShowInformeDyf ? (
+                <Link
+                  href={`/ot/${otId}/informe-softys?oficial=1`}
+                  style={{ backgroundColor: '#0f172a', color: '#ffffff' }}
+                  className="inline-flex w-full items-center justify-center rounded-xl border border-slate-950 px-5 py-3 text-sm font-bold text-white shadow-sm hover:bg-slate-800 sm:w-auto"
+                >
+                  Ver informe oficial
+                </Link>
+              ) : (
+                <Link
+                  href={`/ot/${otId}/imprimir`}
+                  style={{ backgroundColor: '#0f172a', color: '#ffffff' }}
+                  className="inline-flex w-full items-center justify-center rounded-xl border border-slate-950 px-5 py-3 text-sm font-bold text-white shadow-sm hover:bg-slate-800 sm:w-auto"
+                >
+                  Ver informe OT
+                </Link>
+              )}
               {usaChecklistPorEquipo ? (
                 <Link
                   href={`/ot/${otId}/checklists`}
@@ -3475,7 +3491,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
                 </span>
               </p>
             ) : null}
-            {esFlujoDyfSoftys ? (
+            {canShowInformeDyf ? (
               <p className="mt-3 max-w-2xl text-xs text-slate-500 sm:text-sm">
                 {usaChecklistPorEquipo
                   ? 'Servicio con trazabilidad por equipos, checklist técnico y técnicos participantes.'
@@ -3506,7 +3522,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
                   href={`/ot/${otId}?vista=tecnica`}
                   className="inline-flex w-full items-center justify-center rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700 hover:bg-emerald-100 sm:w-auto sm:py-2"
                 >
-                  Abrir ejecución técnica
+                  {ejecucionTecnicaActionLabel}
                 </Link>
               </>
             ) : (
@@ -3522,8 +3538,16 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
                   style={{ backgroundColor: '#163A5F', color: '#ffffff' }}
                   className="inline-flex w-full items-center justify-center rounded-xl bg-[#163A5F] px-4 py-3 text-sm font-semibold text-white hover:bg-[#245C90] sm:w-auto sm:py-2"
                 >
-                  PDF OT
+                  Ver PDF OT
                 </Link>
+                {hasTechnicalExecutionFlow ? (
+                  <Link
+                    href={`/ot/${otId}?vista=tecnica`}
+                    className="inline-flex w-full items-center justify-center rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700 hover:bg-emerald-100 sm:w-auto sm:py-2"
+                  >
+                    {ejecucionTecnicaActionLabel}
+                  </Link>
+                ) : null}
               </>
             )}
 
@@ -4578,9 +4602,13 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
         />
       ) : null}
 
-      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <SectionTitle
-          title="Bitácora opcional de tiempos"
+      <details className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <summary className="cursor-pointer text-sm font-semibold text-slate-900">
+          Ver bitácora de tiempos
+        </summary>
+        <div className="mt-5 rounded-2xl border border-slate-200 bg-white p-6">
+          <SectionTitle
+            title="Bitácora opcional de tiempos"
           subtitle="Registra bloques de trabajo, traslado, espera o supervisión como respaldo operativo. No reemplaza la hora oficial de cierre de la OM."
         />
 
@@ -4787,7 +4815,8 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
             </div>
           </div>
         )}
-      </div>
+        </div>
+      </details>
 
       {mostrarBloquesTecnicosEnDetalle && usaChecklistPorEquipo ? (
       <OTEquipoChecklistPanel
@@ -4851,6 +4880,23 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
         </>
       ) : null}
 
+      {!mostrarVistaTecnica ? (
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <SectionTitle
+            title="Resumen técnico registrado"
+            subtitle="Información técnica capturada en la ejecución, visible en solo lectura desde la vista administrativa."
+          />
+          <div className="mt-5 grid gap-4 md:grid-cols-2">
+            <DetailField label="Objetivo / solicitud inicial" value={form.descripcion_solicitud} />
+            <DetailField label="Actividades ejecutadas" value={form.trabajo_realizado} />
+            <DetailField label="Hallazgos detectados" value={form.hallazgos || form.diagnostico} />
+            <DetailField label="Resultado del servicio" value={form.resultado_servicio || form.conclusiones_tecnicas} />
+            <DetailField label="Recomendaciones" value={form.recomendaciones} />
+            <DetailField label="Observaciones de cierre" value={form.observaciones_cierre} />
+          </div>
+        </div>
+      ) : null}
+
       {!mostrarBloquesTecnicosEnDetalle ? (
         <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-6 shadow-sm">
           <SectionTitle
@@ -4862,14 +4908,23 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
               href={`/ot/${otId}?vista=tecnica`}
               className="inline-flex items-center justify-center rounded-xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white hover:bg-emerald-800"
             >
-              Abrir ejecución técnica
+              {ejecucionTecnicaActionLabel}
             </Link>
-            <Link
-              href={`/ot/${otId}/informe-softys`}
-              className="inline-flex items-center justify-center rounded-xl border border-emerald-300 bg-white px-5 py-3 text-sm font-semibold text-emerald-700 hover:bg-emerald-100"
-            >
-              Ver informe OM
-            </Link>
+            {canShowInformeDyf ? (
+              <Link
+                href={`/ot/${otId}/informe-softys`}
+                className="inline-flex items-center justify-center rounded-xl border border-emerald-300 bg-white px-5 py-3 text-sm font-semibold text-emerald-700 hover:bg-emerald-100"
+              >
+                Ver informe OM
+              </Link>
+            ) : (
+              <Link
+                href={`/ot/${otId}/imprimir`}
+                className="inline-flex items-center justify-center rounded-xl border border-emerald-300 bg-white px-5 py-3 text-sm font-semibold text-emerald-700 hover:bg-emerald-100"
+              >
+                Ver informe OT
+              </Link>
+            )}
           </div>
         </div>
       ) : null}
