@@ -105,7 +105,15 @@ type TipoServicioOption = {
 function formatDate(value: string | null) {
   if (!value) return '-'
 
-  const date = new Date(value)
+  const dateOnlyMatch = value.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  const date = dateOnlyMatch
+    ? new Date(
+        Number(dateOnlyMatch[1]),
+        Number(dateOnlyMatch[2]) - 1,
+        Number(dateOnlyMatch[3])
+      )
+    : new Date(value)
+
   if (Number.isNaN(date.getTime())) return '-'
 
   return new Intl.DateTimeFormat('es-CL', {
