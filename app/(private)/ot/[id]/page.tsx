@@ -198,8 +198,28 @@ type EstadoOption = {
 
 type TipoServicioOption = {
   id: string
-  codigo: string
+  empresa_id?: string | null
+  codigo: string | null
   nombre: string
+  descripcion?: string | null
+  categoria?: string | null
+  plantilla_id?: string | null
+  plantilla_codigo?: string | null
+  estructura_ot_codigo?: string | null
+  flujo_ot?: string | null
+  formato_ot?: string | null
+  requiere_checklist?: boolean | null
+  usa_equipos_multiples?: boolean | null
+  usa_checklist_por_equipo?: boolean | null
+  usa_checklist_por_horas?: boolean | null
+  tipo_equipo_permitido?: string | null
+  usa_recepcion_cliente?: boolean | null
+  usa_firmas?: boolean | null
+  usa_fotos?: boolean | null
+  estado_inicial_default?: string | null
+  prioridad_default?: string | null
+  orden?: number | null
+  config?: Record<string, unknown> | null
 }
 
 type PerfilOption = {
@@ -466,6 +486,78 @@ function formatDuration(minutes: number | null) {
 function labelOrDash(value: string | null | undefined) {
   if (!value || !value.trim()) return '-'
   return value
+}
+
+function normalizeServiceTypeKey(value: string | null | undefined) {
+  return (value ?? '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+}
+
+function serviceTypeCompletenessScore(tipo: TipoServicioOption) {
+  return [
+    tipo.plantilla_id,
+    tipo.plantilla_codigo,
+    tipo.estructura_ot_codigo,
+    tipo.flujo_ot,
+    tipo.formato_ot,
+    tipo.requiere_checklist,
+    tipo.usa_equipos_multiples,
+    tipo.usa_checklist_por_equipo,
+    tipo.usa_checklist_por_horas,
+    tipo.config,
+  ].filter((value) => value !== null && value !== undefined && value !== '').length
+}
+
+function compareServiceTypes(a: TipoServicioOption, b: TipoServicioOption) {
+  const ordenA = a.orden ?? Number.MAX_SAFE_INTEGER
+  const ordenB = b.orden ?? Number.MAX_SAFE_INTEGER
+
+  if (ordenA !== ordenB) return ordenA - ordenB
+
+  const scoreDiff = serviceTypeCompletenessScore(b) - serviceTypeCompletenessScore(a)
+  if (scoreDiff !== 0) return scoreDiff
+
+  return a.nombre.localeCompare(b.nombre, 'es')
+}
+
+function dedupeTiposServicio(
+  tipos: TipoServicioOption[],
+  currentTipo: TipoServicioOption | null,
+) {
+  const byKey = new Map<string, TipoServicioOption>()
+
+  for (const tipo of tipos) {
+    const functionalKey = normalizeServiceTypeKey(tipo.codigo) || normalizeServiceTypeKey(tipo.nombre)
+    const key = functionalKey || tipo.id
+    const existing = byKey.get(key)
+
+    if (!existing || compareServiceTypes(tipo, existing) < 0) {
+      byKey.set(key, tipo)
+    }
+  }
+
+  const unique = Array.from(byKey.values()).sort(compareServiceTypes)
+
+  if (!currentTipo) return unique
+
+  if (unique.some((tipo) => tipo.id === currentTipo.id)) return unique
+
+  const currentKey = normalizeServiceTypeKey(currentTipo.codigo) || normalizeServiceTypeKey(currentTipo.nombre)
+  const duplicateIndex = unique.findIndex((tipo) => {
+    const key = normalizeServiceTypeKey(tipo.codigo) || normalizeServiceTypeKey(tipo.nombre)
+    return key === currentKey
+  })
+
+  if (duplicateIndex >= 0) {
+    unique[duplicateIndex] = currentTipo
+    return unique
+  }
+
+  return [currentTipo, ...unique]
 }
 
 function toTitleCase(text: string) {
@@ -1375,8 +1467,10 @@ function OTDetalleContent() {
             .order('orden', { ascending: true }),
           supabase
             .from('ot_tipos_servicio')
-            .select('id, codigo, nombre')
+            .select('id, empresa_id, codigo, nombre, descripcion, categoria, plantilla_id, plantilla_codigo, estructura_ot_codigo, flujo_ot, formato_ot, requiere_checklist, usa_equipos_multiples, usa_checklist_por_equipo, usa_checklist_por_horas, tipo_equipo_permitido, usa_recepcion_cliente, usa_firmas, usa_fotos, estado_inicial_default, prioridad_default, orden, config')
+            .eq('empresa_id', empresaActivaId)
             .eq('activo', true)
+            .order('orden', { ascending: true })
             .order('nombre', { ascending: true }),
           supabase
             .from('ot_tiempos_trabajo')
@@ -1442,7 +1536,20 @@ function OTDetalleContent() {
         const resumenData = resumenResp.data as OTResumenConEquipo
         const detalleData = detalleResp.data as OTDetalle
         const estadosData = (estadosResp.data ?? []) as EstadoOption[]
-        const tiposData = (tiposResp.data ?? []) as TipoServicioOption[]
+        const tiposRawData = (tiposResp.data ?? []) as TipoServicioOption[]
+        const currentTipoData = detalleData.tipo_servicio_id
+          ? tiposRawData.find((tipo) => tipo.id === detalleData.tipo_servicio_id) ??
+            (resumenData.tipo_servicio_nombre
+              ? {
+                  id: detalleData.tipo_servicio_id,
+                  empresa_id: detalleData.empresa_id,
+                  codigo: null,
+                  nombre: resumenData.tipo_servicio_nombre,
+                  orden: null,
+                }
+              : null)
+          : null
+        const tiposData = dedupeTiposServicio(tiposRawData, currentTipoData)
         const tiemposData = (tiemposResp.data ?? []) as TiempoTrabajo[]
         const firmasData = (firmasResp.data ?? []) as FirmaMini[]
         const checklistData = checklistResp.data ?? []
