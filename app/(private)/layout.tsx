@@ -39,6 +39,10 @@ type EmpresaModuloRow = {
   habilitado: boolean
 }
 
+type UsuarioEmpresaRow = {
+  empresas: Empresa | Empresa[] | null
+}
+
 type MenuGroup = {
   key: ModuloPrincipal | 'general'
   label: string
@@ -114,6 +118,11 @@ const MENU_GROUP_LABELS: Record<ModuloPrincipal | 'general', string> = {
 }
 
 const RMSIC_EMPRESA_ID = '557a054c-71ef-4c5f-8637-594755ad669b'
+const DYF_EMPRESA_ID = '73dd5543-2bf7-4d44-9982-4a641c8658f5'
+
+function empresaTieneTecnicosDyf(empresaId?: string | null) {
+  return empresaId === DYF_EMPRESA_ID
+}
 
 function empresaTieneInformesTecnicos(empresaId?: string | null) {
   return empresaId === RMSIC_EMPRESA_ID
@@ -321,9 +330,9 @@ if (esSuperAdmin) {
     return
   }
 
-  empresasData = (usuarioEmpresasResp.data ?? [])
-    .map((item: any) => item.empresas)
-    .filter(Boolean) as Empresa[]
+  empresasData = ((usuarioEmpresasResp.data ?? []) as UsuarioEmpresaRow[])
+    .flatMap((item) => item.empresas ?? [])
+    .filter((empresa): empresa is Empresa => Boolean(empresa))
 }
 
 setEmpresas(empresasData)        
@@ -398,6 +407,10 @@ if (empresaGuardadaValida) {
     }
 
     return menuItems.filter((item) => {
+      if (item.href === '/operacional/tecnicos-dyf' && !empresaTieneTecnicosDyf(empresaActivaId)) {
+        return false
+      }
+
       if (item.href === '/informes' && !empresaTieneInformesTecnicos(empresaActivaId)) {
         return false
       }
@@ -437,6 +450,10 @@ if (empresaGuardadaValida) {
       .find((item) => pathname === item.href || pathname.startsWith(`${item.href}/`))
   }, [pathname])
 
+  const isTecnicosDyfRoute =
+    pathname === '/operacional/tecnicos-dyf' ||
+    pathname.startsWith('/operacional/tecnicos-dyf/')
+
   const isInformesTecnicosRoute =
     pathname === '/informes' || pathname.startsWith('/informes/')
 
@@ -451,6 +468,7 @@ if (empresaGuardadaValida) {
           modulosHabilitados
         )
       ) ||
+      (isTecnicosDyfRoute && !empresaTieneTecnicosDyf(empresaActivaId)) ||
       (isInformesTecnicosRoute && !empresaTieneInformesTecnicos(empresaActivaId))
     )
 
