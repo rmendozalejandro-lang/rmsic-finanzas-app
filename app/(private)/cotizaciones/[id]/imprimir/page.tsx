@@ -201,7 +201,7 @@ function resolveCotizacionLogoSrc(params: {
     return '/logos/rmsic-logo.png'
   }
 
-  return '/logos/rmsic-logo.png'
+  return null
 }
 function sanitizeFileName(value: string) {
   return value

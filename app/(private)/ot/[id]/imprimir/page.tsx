@@ -7,6 +7,8 @@ import ProtectedModuleRoute from '../../../../../components/ProtectedModuleRoute
 import { supabase } from '../../../../../lib/supabase/client'
 import type { OTResumen } from '../../../../../lib/ot/types'
 
+const RMSIC_EMPRESA_ID = '557a054c-71ef-4c5f-8637-594755ad669b'
+
 type OTDetalle = {
   id: string
   folio: string | null
@@ -640,6 +642,9 @@ function PrintOTPageContent() {
     )
   }, [detalle, resumen])
 
+  const empresaLogoSrc = detalle?.empresa_id === RMSIC_EMPRESA_ID ? '/logos/rmsic-logo.png' : null
+  const empresaHeaderNombre = resumen?.empresa_nombre || 'Empresa'
+
   if (loading) {
     return (
       <div className="mx-auto max-w-5xl rounded-2xl border border-slate-200 bg-white p-8">
@@ -769,17 +774,19 @@ function PrintOTPageContent() {
         <div className="h-2 bg-slate-900" />
         <div className="ot-print-header grid gap-6 p-6 md:grid-cols-[1.3fr_0.7fr]">
           <div className="flex items-start gap-4">
-            <div className="flex h-20 w-28 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-white p-3">
-              <img
-                src="/logos/rmsic-logo.png"
-                alt="RMSIC"
-                className="max-h-full max-w-full object-contain"
-              />
-            </div>
+            {empresaLogoSrc ? (
+              <div className="flex h-20 w-28 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-white p-3">
+                <img
+                  src={empresaLogoSrc}
+                  alt={empresaHeaderNombre}
+                  className="max-h-full max-w-full object-contain"
+                />
+              </div>
+            ) : null}
 
             <div className="pt-1">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                RM Servicios de Ingeniería y Construcción SpA
+                {empresaHeaderNombre}
               </p>
               <h1 className="mt-2 text-2xl font-bold tracking-tight text-slate-900">
                 Informe de servicio en terreno

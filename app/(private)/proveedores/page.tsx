@@ -271,7 +271,7 @@ export default function ProveedoresPage() {
       }
 
       const url = editingId
-        ? `${baseUrl}/rest/v1/proveedores?id=eq.${editingId}`
+        ? `${baseUrl}/rest/v1/proveedores?id=eq.${editingId}&empresa_id=eq.${empresaActivaId}`
         : `${baseUrl}/rest/v1/proveedores`
 
       const method = editingId ? 'PATCH' : 'POST'
@@ -340,7 +340,7 @@ export default function ProveedoresPage() {
       const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
 
       const resp = await fetch(
-        `${baseUrl}/rest/v1/proveedores?id=eq.${proveedor.id}`,
+        `${baseUrl}/rest/v1/proveedores?id=eq.${proveedor.id}&empresa_id=eq.${empresaActivaId}`,
         {
           method: 'PATCH',
           headers: {
@@ -656,7 +656,7 @@ export default function ProveedoresPage() {
                     className="w-full rounded-xl border border-slate-300 px-4 py-3 disabled:bg-slate-100 disabled:text-slate-500"
                   />
                   <p className="mt-1 text-xs text-slate-500">
-                    Para condiciones fijas se calcula automáticamente. Usa "Personalizado"
+                    Para condiciones fijas se calcula automáticamente. Usa &quot;Personalizado&quot;
                     para ingresar otro plazo.
                   </p>
                 </div>
