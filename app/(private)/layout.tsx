@@ -600,7 +600,7 @@ if (empresaGuardadaValida) {
         </aside>
 
         <div className="flex min-h-screen flex-col">
-          <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/90 backdrop-blur print:hidden">
+          <header className="z-20 border-b border-slate-200 bg-white/90 backdrop-blur print:hidden lg:sticky lg:top-0">
             <div className="px-4 py-3 lg:hidden">
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
