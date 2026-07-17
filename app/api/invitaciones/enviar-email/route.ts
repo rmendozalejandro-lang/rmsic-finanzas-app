@@ -2,8 +2,6 @@
 import { Resend } from 'resend'
 import { createClient } from '@supabase/supabase-js'
 
-const resend = new Resend(process.env.RESEND_API_KEY)
-
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
 
@@ -29,13 +27,6 @@ export async function POST(request: Request) {
 
     if (!token) {
       return NextResponse.json({ error: 'No autorizado.' }, { status: 401 })
-    }
-
-    if (!process.env.RESEND_API_KEY) {
-      return NextResponse.json(
-        { error: 'Falta configurar RESEND_API_KEY.' },
-        { status: 500 }
-      )
     }
 
     if (!supabaseUrl || !supabaseAnonKey) {
@@ -108,6 +99,66 @@ export async function POST(request: Request) {
       )
     }
 
+    const { data: invitacion, error: invitacionError } = await supabaseUser
+      .from('invitaciones_empresa')
+      .select('id, email_reintentos')
+      .eq('empresa_id', empresaId)
+      .eq('email', email)
+      .eq('estado', 'pendiente')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (invitacionError) {
+      return NextResponse.json(
+        { error: `No se pudo consultar la invitación pendiente: ${invitacionError.message}` },
+        { status: 500 }
+      )
+    }
+
+    if (!invitacion) {
+      return NextResponse.json(
+        { error: 'No se encontró una invitación pendiente para esta empresa y correo.' },
+        { status: 404 }
+      )
+    }
+
+    const registrarIntento = async (
+      estado: 'enviado' | 'error',
+      resendId: string | null,
+      mensajeError: string | null
+    ) => {
+      const now = new Date().toISOString()
+      const { error: updateError } = await supabaseUser
+        .from('invitaciones_empresa')
+        .update({
+          ...(estado === 'enviado'
+            ? { email_enviado_at: now, email_resend_id: resendId }
+            : {}),
+          ultimo_reenvio_at: now,
+          email_error: mensajeError,
+          email_ultimo_estado: estado,
+          email_reintentos: Number(invitacion.email_reintentos || 0) + 1,
+        })
+        .eq('id', invitacion.id)
+
+      if (updateError) {
+        throw new Error(`No se pudo guardar la trazabilidad del correo: ${updateError.message}`)
+      }
+    }
+
+    const configurationError = !process.env.RESEND_API_KEY
+      ? 'Falta configurar RESEND_API_KEY; el correo de invitación no fue enviado.'
+      : process.env.NODE_ENV === 'production' && !process.env.RESEND_FROM_EMAIL
+        ? 'Falta configurar RESEND_FROM_EMAIL en producción; no se usará onboarding@resend.dev.'
+        : null
+
+    if (configurationError) {
+      console.error(`[invitaciones/enviar-email] ${configurationError}`)
+      await registrarIntento('error', null, configurationError)
+      return NextResponse.json({ error: configurationError }, { status: 500 })
+    }
+
     const appUrl =
       process.env.NEXT_PUBLIC_APP_URL ||
       process.env.NEXT_PUBLIC_SITE_URL ||
@@ -115,8 +166,13 @@ export async function POST(request: Request) {
 
     const registroUrl = `${appUrl.replace(/\/$/, '')}/registro`
     const rolLabel = ROLE_LABELS[rol] || rol
-    const fromEmail =
-      process.env.RESEND_FROM_EMAIL || 'Tralixia <onboarding@resend.dev>'
+    const fromEmail = process.env.RESEND_FROM_EMAIL || 'Tralixia <onboarding@resend.dev>'
+
+    if (!process.env.RESEND_FROM_EMAIL) {
+      console.warn(
+        '[invitaciones/enviar-email] RESEND_FROM_EMAIL no está configurado; se usa el remitente de prueba solo porque el entorno no es producción.'
+      )
+    }
 
     const html = `
       <div style="font-family: Arial, sans-serif; color: #0f172a; line-height: 1.6; max-width: 620px; margin: 0 auto;">
@@ -166,15 +222,35 @@ export async function POST(request: Request) {
       </div>
     `
 
-    const { data, error } = await resend.emails.send({
-      from: fromEmail,
-      to: [email],
-      subject: `Invitación a Tralixia - ${empresa.nombre}`,
-      html,
-    })
+    let data: { id: string } | null = null
 
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 400 })
+    try {
+      const resend = new Resend(process.env.RESEND_API_KEY)
+      const result = await resend.emails.send({
+        from: fromEmail,
+        to: [email],
+        subject: `Invitación a Tralixia - ${empresa.nombre}`,
+        html,
+      })
+
+      if (result.error) {
+        await registrarIntento('error', null, result.error.message)
+        return NextResponse.json(
+          { error: `Resend rechazó el correo de invitación: ${result.error.message}` },
+          { status: 400 }
+        )
+      }
+
+      data = result.data
+      await registrarIntento('enviado', data?.id || null, null)
+    } catch (sendError) {
+      const message = sendError instanceof Error ? sendError.message : 'Error desconocido de Resend.'
+
+      if (!message.startsWith('No se pudo guardar la trazabilidad')) {
+        await registrarIntento('error', null, message)
+      }
+
+      throw sendError
     }
 
     return NextResponse.json({
