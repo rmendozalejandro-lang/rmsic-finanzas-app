@@ -23,6 +23,12 @@ type UsuarioEmpresaRow = {
   activo: boolean
   estado: string
   created_at: string
+  email_enviado_at: string | null
+  email_resend_id: string | null
+  email_error: string | null
+  email_reintentos: number
+  email_ultimo_estado: string | null
+  ultimo_reenvio_at: string | null
 }
 
 const roles = [
@@ -42,6 +48,8 @@ function formatDate(value?: string | null) {
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
   }).format(date)
 }
 
@@ -93,7 +101,7 @@ export default function AdminEmpresaUsuariosPage() {
         return
       }
 
-      const [empresaResp, usuariosResp] = await Promise.all([
+      const [empresaResp, usuariosResp, invitacionesResp] = await Promise.all([
         supabase
           .from('empresas')
           .select('id, nombre, razon_social, rut')
@@ -103,13 +111,29 @@ export default function AdminEmpresaUsuariosPage() {
         supabase.rpc('admin_listar_usuarios_empresa', {
           p_empresa_id: empresaId,
         }),
+
+        supabase
+          .from('invitaciones_empresa')
+          .select(
+            'id, email_enviado_at, email_resend_id, email_error, email_reintentos, email_ultimo_estado, ultimo_reenvio_at'
+          )
+          .eq('empresa_id', empresaId),
       ])
 
       if (empresaResp.error) throw new Error(empresaResp.error.message)
       if (usuariosResp.error) throw new Error(usuariosResp.error.message)
+      if (invitacionesResp.error) throw new Error(invitacionesResp.error.message)
+
+      const auditoriaPorInvitacion = new Map(
+        (invitacionesResp.data || []).map((invitacion) => [invitacion.id, invitacion])
+      )
+      const rows = ((usuariosResp.data || []) as UsuarioEmpresaRow[]).map((item) => ({
+        ...item,
+        ...(item.invitacion_id ? auditoriaPorInvitacion.get(item.invitacion_id) : null),
+      }))
 
       setEmpresa((empresaResp.data || null) as Empresa | null)
-      setItems((usuariosResp.data || []) as UsuarioEmpresaRow[])
+      setItems(rows)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudieron cargar los usuarios.')
     } finally {
@@ -178,6 +202,7 @@ export default function AdminEmpresaUsuariosPage() {
       const mensajeBase = result?.mensaje || 'Usuario o invitación procesada correctamente.'
 
       let mensajeFinal = mensajeBase
+      let falloEnvio = false
 
       try {
         const { data: sessionData } = await supabase.auth.getSession()
@@ -200,6 +225,7 @@ export default function AdminEmpresaUsuariosPage() {
           const emailJson = await emailResp.json()
 
           if (!emailResp.ok) {
+            falloEnvio = true
             mensajeFinal = `${mensajeBase} Pero no se pudo enviar el correo: ${
               emailJson.error || 'error desconocido'
             }`
@@ -207,14 +233,20 @@ export default function AdminEmpresaUsuariosPage() {
             mensajeFinal = `${mensajeBase} Correo de invitación enviado.`
           }
         } else {
+          falloEnvio = true
           mensajeFinal = `${mensajeBase} Pero no se pudo enviar el correo: sesión no disponible.`
         }
       } catch (emailError) {
+        falloEnvio = true
         mensajeFinal = `${mensajeBase} Pero no se pudo enviar el correo de invitación.`
         console.warn(emailError)
       }
 
-      setSuccess(mensajeFinal)
+      if (falloEnvio) {
+        setError(mensajeFinal)
+      } else {
+        setSuccess(mensajeFinal)
+      }
       setEmail('')
       setRol('admin')
       await loadData()
@@ -340,6 +372,7 @@ export default function AdminEmpresaUsuariosPage() {
       }
 
       setSuccess(emailJson?.mensaje || `Invitación reenviada correctamente a ${item.email}.`)
+      await loadData()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo reenviar la invitación.')
     } finally {
@@ -472,9 +505,10 @@ export default function AdminEmpresaUsuariosPage() {
         </div>
 
         <div className="mt-5 rounded-2xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-800">
-          El usuario invitado recibirá un correo desde Tralixia. Para activar el acceso, debe
-          registrarse usando exactamente el mismo email de la invitación. Si el correo no llega,
-          revisa Resend y las carpetas de spam/no deseado.
+          La invitación se crea primero y luego Tralixia intenta enviar el correo. Revisa en la
+          tabla el resultado del último intento; un estado “Enviado” confirma que Resend aceptó
+          el mensaje, no que el destinatario lo haya recibido. Para activar el acceso, el usuario
+          debe registrarse con el mismo email de la invitación.
         </div>
       </section>
 
@@ -519,6 +553,9 @@ export default function AdminEmpresaUsuariosPage() {
                   <th className="px-4 py-3">Usuario / Email</th>
                   <th className="px-4 py-3">Rol</th>
                   <th className="px-4 py-3">Estado</th>
+                  <th className="px-4 py-3">Último envío de correo</th>
+                  <th className="px-4 py-3">Error de correo</th>
+                  <th className="px-4 py-3">Intentos</th>
                   <th className="px-4 py-3">Creado</th>
                   <th className="px-4 py-3 text-right">Acciones</th>
                 </tr>
@@ -527,7 +564,7 @@ export default function AdminEmpresaUsuariosPage() {
               <tbody className="divide-y divide-slate-100 bg-white">
                 {itemsFiltrados.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-4 py-8 text-center text-slate-500">
+                    <td colSpan={9} className="px-4 py-8 text-center text-slate-500">
                       No hay usuarios ni invitaciones para mostrar.
                     </td>
                   </tr>
@@ -585,6 +622,45 @@ export default function AdminEmpresaUsuariosPage() {
                         >
                           {item.estado}
                         </span>
+                      </td>
+
+                      <td className="min-w-[190px] px-4 py-3">
+                        {item.tipo === 'invitacion' ? (
+                          <>
+                            <div
+                              className={`font-semibold ${
+                                item.email_ultimo_estado === 'error'
+                                  ? 'text-rose-700'
+                                  : item.email_ultimo_estado === 'enviado'
+                                    ? 'text-emerald-700'
+                                    : 'text-slate-500'
+                              }`}
+                            >
+                              {item.email_ultimo_estado === 'enviado'
+                                ? 'Enviado'
+                                : item.email_ultimo_estado === 'error'
+                                  ? 'Error'
+                                  : 'Sin intento registrado'}
+                            </div>
+                            <div className="mt-1 text-xs text-slate-500">
+                              {formatDate(item.ultimo_reenvio_at)}
+                            </div>
+                          </>
+                        ) : (
+                          <span className="text-slate-400">No aplica</span>
+                        )}
+                      </td>
+
+                      <td className="max-w-[320px] px-4 py-3">
+                        {item.tipo === 'invitacion' && item.email_error ? (
+                          <span className="text-xs text-rose-700">{item.email_error}</span>
+                        ) : (
+                          <span className="text-slate-400">-</span>
+                        )}
+                      </td>
+
+                      <td className="whitespace-nowrap px-4 py-3 text-center text-slate-700">
+                        {item.tipo === 'invitacion' ? item.email_reintentos || 0 : '-'}
                       </td>
 
                       <td className="whitespace-nowrap px-4 py-3 text-slate-700">
