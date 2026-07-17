@@ -143,7 +143,7 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
   const [usuarioRol, setUsuarioRol] = useState('')
   const [rolResuelto, setRolResuelto] = useState(false)
   const [isSuperAdmin, setIsSuperAdmin] = useState(false)
-  const [collapsedMenuGroups, setCollapsedMenuGroups] = useState<Record<string, boolean>>({})
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
 
   const fetchEmpresaModulos = async (empresaId: string) => {
     if (!empresaId) {
@@ -600,8 +600,117 @@ if (empresaGuardadaValida) {
         </aside>
 
         <div className="flex min-h-screen flex-col">
-          <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/90 backdrop-blur print:hidden">
-            <div className="px-4 py-4 sm:px-6 lg:px-8">
+          <header className="z-20 border-b border-slate-200 bg-white/90 backdrop-blur print:hidden lg:sticky lg:top-0">
+            <div className="px-4 py-3 lg:hidden">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-lg font-semibold tracking-tight text-slate-900">
+                    Tralixia
+                  </p>
+                  <p className="truncate text-xs text-slate-500">
+                    Empresa activa:{' '}
+                    <span className="font-medium text-slate-700">
+                      {empresaActivaNombreVisual}
+                    </span>
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  aria-expanded={isMobileMenuOpen}
+                  aria-controls="mobile-modules-menu"
+                  onClick={() => setIsMobileMenuOpen((isOpen) => !isOpen)}
+                  className="shrink-0 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+                >
+                  Menú
+                </button>
+              </div>
+
+              <div className="mt-3 grid grid-cols-[minmax(0,1fr)_auto] items-end gap-2">
+                <div className="min-w-0">
+                  <label className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-slate-500">
+                    Empresa
+                  </label>
+                  <select
+                    value={empresaActivaId}
+                    onChange={(e) => void handleEmpresaChange(e.target.value)}
+                    className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm outline-none transition focus:border-[#245C90]"
+                    disabled={empresasParaSelector.length === 0}
+                  >
+                    {empresasParaSelector.length === 0 ? (
+                      <option value="">Sin empresas disponibles</option>
+                    ) : (
+                      empresasParaSelector.map((empresa) => (
+                        <option key={empresa.id} value={empresa.id}>
+                          {empresa.nombre}
+                        </option>
+                      ))
+                    )}
+                  </select>
+                </div>
+
+                <button
+                  onClick={() => void handleLogout()}
+                  className="rounded-xl bg-[#163A5F] px-3 py-2 text-sm font-medium text-white transition hover:bg-[#245C90]"
+                >
+                  Cerrar sesión
+                </button>
+              </div>
+
+              <div className="mt-2 min-w-0 text-xs text-slate-500">
+                <span className="font-medium text-slate-800">
+                  {usuarioNombre || usuarioEmail || 'Usuario'}
+                </span>
+                {usuarioRol && <span> · {usuarioRol}</span>}
+              </div>
+
+              {isMobileMenuOpen && (
+                <nav
+                  id="mobile-modules-menu"
+                  aria-label="Módulos"
+                  className="mt-3 max-h-[50vh] overflow-y-auto rounded-2xl border border-slate-200 bg-white p-2 shadow-sm"
+                >
+                  <div className="flex flex-wrap gap-2">
+                    {visibleMenuItems.map((item) => {
+                      const active = isActiveRoute(item.href)
+
+                      return (
+                        <Link
+                          key={item.href}
+                          href={item.href}
+                          onNavigate={() => setIsMobileMenuOpen(false)}
+                          style={active ? { color: '#ffffff' } : undefined}
+                          className={`rounded-xl px-3 py-2 text-sm font-medium no-underline transition ${
+                            active
+                              ? 'bg-[#163A5F] !text-white'
+                              : 'bg-slate-100 text-slate-700 hover:bg-slate-200 hover:text-slate-900'
+                          }`}
+                        >
+                          {item.label}
+                        </Link>
+                      )
+                    })}
+
+                    {isSuperAdmin && !isTecnicoOT && (
+                      <Link
+                        href="/admin/empresas"
+                        onNavigate={() => setIsMobileMenuOpen(false)}
+                        style={isActiveRoute('/admin/empresas') ? { color: '#ffffff' } : undefined}
+                        className={`rounded-xl px-3 py-2 text-sm font-medium no-underline transition ${
+                          isActiveRoute('/admin/empresas')
+                            ? 'bg-[#163A5F] !text-white'
+                            : 'bg-slate-100 text-slate-700 hover:bg-slate-200 hover:text-slate-900'
+                        }`}
+                      >
+                        Admin Empresas
+                      </Link>
+                    )}
+                  </div>
+                </nav>
+              )}
+            </div>
+
+            <div className="hidden px-4 py-4 sm:px-6 lg:block lg:px-8">
               <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
                 <div>
                   <p className="text-sm font-medium text-slate-500">Tralixia</p>
@@ -661,40 +770,6 @@ if (empresaGuardadaValida) {
                 </span>
               </div>
 
-              <nav className="mt-4 flex flex-wrap gap-2 lg:hidden">
-                {visibleMenuItems.map((item) => {
-                  const active = isActiveRoute(item.href)
-
-                  return (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      style={active ? { color: '#ffffff' } : undefined}
-                      className={`rounded-2xl px-4 py-2 text-sm font-medium no-underline transition ${
-                        active
-                          ? 'bg-[#163A5F] !text-white'
-                          : 'bg-slate-100 text-slate-700 hover:bg-slate-200 hover:text-slate-900'
-                      }`}
-                    >
-                      {item.label}
-                    </Link>
-                  )
-                })}
-
-                {isSuperAdmin && !isTecnicoOT && (
-                  <Link
-                    href="/admin/empresas"
-                    style={isActiveRoute('/admin/empresas') ? { color: '#ffffff' } : undefined}
-                    className={`rounded-2xl px-4 py-2 text-sm font-medium no-underline transition ${
-                      isActiveRoute('/admin/empresas')
-                        ? 'bg-[#163A5F] !text-white'
-                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200 hover:text-slate-900'
-                    }`}
-                  >
-                    Admin Empresas
-                  </Link>
-                )}
-              </nav>
             </div>
           </header>
 
@@ -738,4 +813,3 @@ if (empresaGuardadaValida) {
     </div>
   )
 }
-
