@@ -40,6 +40,7 @@ type UltimoMovimiento = {
   monto_total: number
   estado: string
   empresa_id: string
+  activo?: boolean | null
 }
 
 type OtResumenDashboard = {
@@ -218,6 +219,15 @@ const formatTipoMovimiento = (value: string) => {
 const isMovimientoAnulado = (estado?: string | null) =>
   normalizeText(estado) === 'anulado'
 
+const isMovimientoActivo = (item: { estado?: string | null; activo?: boolean | null }) =>
+  !isMovimientoAnulado(item.estado) && item.activo !== false
+
+const isFactura = (tipoDocumento?: string | null) =>
+  normalizeText(tipoDocumento) === 'factura'
+
+const isPagado = (estado?: string | null) =>
+  normalizeText(estado) === 'pagado'
+
 const getSignedIngresoAmount = (item: {
   tipo_movimiento?: string
   tipo_documento?: string | null
@@ -395,7 +405,7 @@ function FlowChart({ data }: { data: ChartPoint[] }) {
         })}
       </svg>
 
-      <p className="text-xs text-slate-500">La línea muestra el flujo neto del período seleccionado.</p>
+      <p className="text-xs text-slate-500">La línea muestra la evolución de caja registrada del período seleccionado.</p>
     </div>
   )
 }
@@ -592,7 +602,7 @@ export default function HomePage() {
           }
 
           const movimientos = Array.isArray(movimientosJson) ? (movimientosJson as UltimoMovimiento[]) : []
-          const movimientosActivos = movimientos.filter((item) => !isMovimientoAnulado(item.estado))
+          const movimientosActivos = movimientos.filter(isMovimientoActivo)
 
           const saldoTotalBancos = Array.isArray(saldosJson)
             ? saldosJson.reduce((acc: number, item: { saldo_calculado?: number }) => acc + Number(item.saldo_calculado || 0), 0)
@@ -652,10 +662,42 @@ export default function HomePage() {
     return ultimosMovimientos.filter((item) => item.tipo_movimiento === filtroMovimientos)
   }, [ultimosMovimientos, filtroMovimientos])
 
-  const flujoNeto = useMemo(() => {
-    if (!resumen) return 0
-    return Number(resumen.ingresos_periodo || 0) - Number(resumen.egresos_periodo || 0)
-  }, [resumen])
+  const metricasFinancieras = useMemo(() => {
+    const ventasFacturadasPeriodo = movimientosPeriodo.reduce((acc, item) => {
+      if ((item.tipo_movimiento || '').toLowerCase() !== 'ingreso') return acc
+      if (!isFactura(item.tipo_documento)) return acc
+      if (isMovimientoAnulado(item.estado)) return acc
+      return acc + getSignedIngresoAmount(item)
+    }, 0)
+
+    const cobrosPorVentas = movimientosPeriodo.reduce((acc, item) => {
+      if ((item.tipo_movimiento || '').toLowerCase() !== 'ingreso') return acc
+      if (!isFactura(item.tipo_documento)) return acc
+      if (!isPagado(item.estado)) return acc
+      return acc + getSignedIngresoAmount(item)
+    }, 0)
+
+    const otrosCobros = movimientosPeriodo.reduce((acc, item) => {
+      if ((item.tipo_movimiento || '').toLowerCase() !== 'ingreso') return acc
+      if (isFactura(item.tipo_documento)) return acc
+      if (!isPagado(item.estado)) return acc
+      return acc + getSignedIngresoAmount(item)
+    }, 0)
+
+    const egresosPagados = movimientosPeriodo.reduce((acc, item) => {
+      if ((item.tipo_movimiento || '').toLowerCase() !== 'egreso') return acc
+      if (!isPagado(item.estado)) return acc
+      return acc + Number(item.monto_total || 0)
+    }, 0)
+
+    return {
+      ventasFacturadasPeriodo,
+      cobrosPorVentas,
+      otrosCobros,
+      egresosPagados,
+      flujoCajaReal: cobrosPorVentas + otrosCobros - egresosPagados,
+    }
+  }, [movimientosPeriodo])
 
   const chartData = useMemo(() => {
     if (movimientosPeriodo.length === 0) return []
@@ -674,8 +716,8 @@ export default function HomePage() {
 
       if ((item.tipo_movimiento || '').toLowerCase() === 'ingreso') current.ingresos += getSignedIngresoAmount(item)
       if ((item.tipo_movimiento || '').toLowerCase() === 'egreso') current.egresos += Number(item.monto_total || 0)
-
-      current.flujo = current.ingresos - current.egresos
+      if ((item.tipo_movimiento || '').toLowerCase() === 'ingreso' && isPagado(item.estado)) current.flujo += getSignedIngresoAmount(item)
+      if ((item.tipo_movimiento || '').toLowerCase() === 'egreso' && isPagado(item.estado)) current.flujo -= Number(item.monto_total || 0)
       bucket.set(label, current)
     })
 
@@ -821,40 +863,79 @@ export default function HomePage() {
             </div>
           </section>
 
-          <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <KpiCard title="Saldo total bancos" value={`$${Number(resumen.saldo_total_bancos).toLocaleString('es-CL')}`} meta="Estado actual consolidado de cuentas bancarias." />
-            <KpiCard title="Cobranza pendiente" value={`$${Number(resumen.total_por_cobrar).toLocaleString('es-CL')}`} meta="Saldo actual pendiente de cobro." />
-            <KpiCard title="Ingresos del período" value={formatSignedCLP(resumen.ingresos_periodo)} meta={`Calculado para ${rangoActual.label.toLowerCase()}.`} />
-            <KpiCard title="Egresos del período" value={`$${Number(resumen.egresos_periodo).toLocaleString('es-CL')}`} meta={`Calculado para ${rangoActual.label.toLowerCase()}.`} />
+          <section className="rounded-[28px] border border-amber-200 bg-amber-50 p-5 text-amber-900 shadow-sm">
+            <p className="text-sm font-semibold">Período en carga / información parcial</p>
+            <p className="mt-2 text-sm leading-6">
+              Los valores corresponden a documentos registrados en el sistema para el período seleccionado. Si el período no está cerrado,
+              los montos pueden variar.
+            </p>
           </section>
 
-          <section className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <section className="space-y-4">
+            <div>
+              <p className="text-sm font-medium uppercase tracking-[0.16em] text-slate-400">Resultado comercial</p>
+              <h3 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">Documentos facturados del período</h3>
+            </div>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+              <KpiCard title="Ventas facturadas del período" value={formatSignedCLP(metricasFinancieras.ventasFacturadasPeriodo)} meta="Facturas activas no anuladas emitidas en el período." />
+              <KpiCard title="Facturas pagadas del período" value={formatSignedCLP(metricasFinancieras.cobrosPorVentas)} meta="Facturas pagadas dentro del período." />
+              <KpiCard title="Facturas pendientes del período" value={formatSignedCLP(Math.max(0, metricasFinancieras.ventasFacturadasPeriodo - metricasFinancieras.cobrosPorVentas))} meta="Diferencia entre ventas facturadas y facturas pagadas del período." />
+            </div>
+          </section>
+
+          <section className="space-y-4">
+            <div>
+              <p className="text-sm font-medium uppercase tracking-[0.16em] text-slate-400">Caja / movimientos reales</p>
+              <h3 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">Cobros y pagos registrados</h3>
+            </div>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <KpiCard title="Cobros por ventas" value={formatSignedCLP(metricasFinancieras.cobrosPorVentas)} meta="Facturas pagadas dentro del período." />
+              <KpiCard title="Otros cobros / recuperaciones" value={formatSignedCLP(metricasFinancieras.otrosCobros)} meta="Ingresos no comerciales como recuperaciones o abonos." />
+              <KpiCard title="Egresos pagados" value={`$${Number(metricasFinancieras.egresosPagados).toLocaleString('es-CL')}`} meta="Egresos con estado pagado registrados en el período." />
+              <KpiCard title="Flujo de caja real" value={formatSignedCLP(metricasFinancieras.flujoCajaReal)} meta="Cobros reales menos egresos pagados registrados." />
+            </div>
+          </section>
+
+          <section className="space-y-4">
+            <div>
+              <p className="text-sm font-medium uppercase tracking-[0.16em] text-slate-400">Cartera</p>
+              <h3 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">Cuentas por cobrar</h3>
+            </div>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+              <KpiCard title="Cuentas por cobrar vigentes" value={`$${Number(resumen.total_por_cobrar).toLocaleString('es-CL')}`} meta="Saldo pendiente de documentos activos, incluso de períodos anteriores." />
+              <KpiCard title="Facturas vencidas" value={String(facturasVencidas.length)} meta={`Saldo vencido: $${montoVencidoTotal.toLocaleString('es-CL')}.`} />
+              <KpiCard title="Por vencer esta semana" value={String(porVencerSemana.length)} meta="Documentos pendientes o parciales con vencimiento dentro de los próximos 7 días." />
+            </div>
+          </section>
+
+          <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <AlertCard title="Período en carga" value="Parcial" tone="amber" />
             <AlertCard title="Facturas vencidas" value={String(facturasVencidas.length)} tone="red" />
-            <AlertCard title="Monto vencido total" value={`$${montoVencidoTotal.toLocaleString('es-CL')}`} tone="amber" />
             <AlertCard title="Por vencer esta semana" value={String(porVencerSemana.length)} tone="blue" />
+            <AlertCard title="Cobros no comerciales" value={metricasFinancieras.otrosCobros > 0 ? formatSignedCLP(metricasFinancieras.otrosCobros) : 'Sin registros'} tone="blue" />
           </section>
 
           <section className="grid grid-cols-1 gap-4 xl:grid-cols-12">
             <div className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm xl:col-span-8">
               <div className="mb-6">
-                <h2 className="text-2xl font-semibold tracking-tight text-slate-900">Ingresos vs egresos</h2>
-                <p className="mt-2 text-sm text-slate-500">Comparativo del período seleccionado.</p>
+                <h2 className="text-2xl font-semibold tracking-tight text-slate-900">Movimientos registrados del período</h2>
+                <p className="mt-2 text-sm text-slate-500">Comparativo de ingresos y egresos registrados para el período seleccionado.</p>
               </div>
               <ComparisonChart data={chartData} />
             </div>
 
             <div className="space-y-4 xl:col-span-4">
               <div className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
-                <h2 className="text-2xl font-semibold tracking-tight text-slate-900">Flujo neto del período</h2>
-                <p className="mt-2 text-sm text-slate-500">Ingresos menos egresos para el rango seleccionado.</p>
-                <p className="mt-4 text-3xl font-semibold tracking-tight text-slate-900">{formatSignedCLP(flujoNeto)}</p>
+                <h2 className="text-2xl font-semibold tracking-tight text-slate-900">Flujo de caja real</h2>
+                <p className="mt-2 text-sm text-slate-500">Cobros reales menos egresos pagados registrados.</p>
+                <p className="mt-4 text-3xl font-semibold tracking-tight text-slate-900">{formatSignedCLP(metricasFinancieras.flujoCajaReal)}</p>
               </div>
 
               <div className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
                 <h2 className="text-2xl font-semibold tracking-tight text-slate-900">Estado actual</h2>
                 <div className="mt-4 space-y-3 text-sm text-slate-600">
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                    Cobranza pendiente vigente: <span className="font-medium text-slate-900">{cobranza.length}</span> documentos.
+                    Cuentas por cobrar vigentes: <span className="font-medium text-slate-900">{cobranza.length}</span> documentos.
                   </div>
                   <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-red-800">
                     Facturas vencidas: <span className="font-medium">{facturasVencidas.length}</span>
@@ -869,15 +950,15 @@ export default function HomePage() {
 
           <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm md:p-8">
             <div className="mb-6">
-              <h2 className="text-2xl font-semibold tracking-tight text-slate-900">Evolución del flujo neto</h2>
-              <p className="mt-2 text-sm text-slate-500">Tendencia del flujo neto dentro del período seleccionado.</p>
+              <h2 className="text-2xl font-semibold tracking-tight text-slate-900">Evolución de caja registrada</h2>
+              <p className="mt-2 text-sm text-slate-500">Tendencia de cobros reales menos egresos pagados dentro del período seleccionado.</p>
             </div>
             <FlowChart data={chartData} />
           </section>
 
           <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm md:p-8">
             <div className="mb-6">
-              <h2 className="text-2xl font-semibold tracking-tight text-slate-900">Cobranza pendiente</h2>
+              <h2 className="text-2xl font-semibold tracking-tight text-slate-900">Cuentas por cobrar vigentes</h2>
               <p className="mt-2 text-sm text-slate-500">Facturas activas pendientes de cobro de la empresa activa.</p>
             </div>
 
