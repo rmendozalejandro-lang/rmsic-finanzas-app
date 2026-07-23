@@ -2,7 +2,15 @@
 // Helpers reutilizables para logos y datos públicos de empresa.
 // Acepta nombres de campos históricos y nuevos para mantener compatibilidad.
 
+export const IMA_INDUSTRIAL_EMPRESA_ID = '50985048-9787-4859-9293-10800458d825'
+export const IMA_INDUSTRIAL_LOGO_SRC = '/logos/ima-industrial-logo.png'
+
 type EmpresaBrandingLike = {
+  // Identificador de empresa para branding multiempresa explícito
+  empresa_id?: string | null
+  empresaId?: string | null
+  id?: string | null
+
   // Logo guardado en cotizaciones / empresas
   empresa_logo_url?: string | null
   empresaLogoUrl?: string | null
@@ -52,6 +60,12 @@ function normalizePublicAssetPath(value?: string | null): string | null {
 
 export function getEmpresaLogoSrc(empresa?: EmpresaBrandingLike | null): string | null {
   if (!empresa) return null
+
+  const empresaId = clean(empresa.empresa_id) || clean(empresa.empresaId) || clean(empresa.id)
+
+  if (empresaId === IMA_INDUSTRIAL_EMPRESA_ID) {
+    return IMA_INDUSTRIAL_LOGO_SRC
+  }
 
   return (
     normalizePublicAssetPath(empresa.empresa_logo_url) ||

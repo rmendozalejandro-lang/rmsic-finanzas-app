@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
+import { IMA_INDUSTRIAL_EMPRESA_ID, IMA_INDUSTRIAL_LOGO_SRC } from "@/lib/empresa-branding";
 
 type ClienteOption = {
   id: string;
@@ -37,6 +38,7 @@ export type CotizacionFormValues = {
   tipo_respaldo_aprobacion?: string | null;
   referencia_aprobacion?: string | null;
   ingreso_generado_id?: string | null;
+  empresa_id?: string | null;
 };
 
 export type CotizacionFormItem = {
@@ -125,7 +127,9 @@ function formatCurrency(value: number, currency = "CLP") {
   }).format(value);
 }
 
-function getDefaultEmpresaLogoUrl(empresaNombre?: string | null) {
+function getDefaultEmpresaLogoUrl(empresaNombre?: string | null, empresaId?: string | null) {
+  if (empresaId === IMA_INDUSTRIAL_EMPRESA_ID) return IMA_INDUSTRIAL_LOGO_SRC;
+
   const nombre = (empresaNombre || "").toLowerCase();
 
   if (nombre.includes("rukalaf")) return "/logos/rukalaf-logo.png";
@@ -157,7 +161,7 @@ function withDefaultEmpresaLogo(
   values: CotizacionFormValues
 ): CotizacionFormValues {
   const currentLogo = normalizeEmpresaLogoUrl(values.empresa_logo_url);
-  const fallbackLogo = getDefaultEmpresaLogoUrl(values.empresa_nombre);
+  const fallbackLogo = getDefaultEmpresaLogoUrl(values.empresa_nombre, values.empresa_id);
 
   return {
     ...values,
@@ -323,7 +327,10 @@ export default function CotizacionForm({
 }: Props) {
   const router = useRouter();
   const [form, setForm] = useState<CotizacionFormValues>(() =>
-    withDefaultEmpresaLogo(initialValues)
+    withDefaultEmpresaLogo({
+      ...initialValues,
+      empresa_id: initialValues.empresa_id || empresaId,
+    })
   );
   const [items, setItems] = useState<CotizacionFormItem[]>(() => {
     const initial = initialItems && initialItems.length > 0
@@ -585,7 +592,7 @@ export default function CotizacionForm({
         empresa_nombre: form.empresa_nombre.trim() || null,
         empresa_logo_url:
           normalizeEmpresaLogoUrl(form.empresa_logo_url) ||
-          getDefaultEmpresaLogoUrl(form.empresa_nombre),
+          getDefaultEmpresaLogoUrl(form.empresa_nombre, empresaId),
         empresa_email: form.empresa_email.trim() || null,
         empresa_telefono: form.empresa_telefono.trim() || null,
         empresa_web: form.empresa_web.trim() || null,
