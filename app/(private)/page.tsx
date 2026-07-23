@@ -41,6 +41,7 @@ type UltimoMovimiento = {
   estado: string
   empresa_id: string
   activo?: boolean | null
+  deleted_at?: string | null
 }
 
 type OtResumenDashboard = {
@@ -219,8 +220,8 @@ const formatTipoMovimiento = (value: string) => {
 const isMovimientoAnulado = (estado?: string | null) =>
   normalizeText(estado) === 'anulado'
 
-const isMovimientoActivo = (item: { estado?: string | null; activo?: boolean | null }) =>
-  !isMovimientoAnulado(item.estado) && item.activo !== false
+const isMovimientoActivo = (item: { estado?: string | null; activo?: boolean | null; deleted_at?: string | null }) =>
+  !isMovimientoAnulado(item.estado) && item.activo !== false && !item.deleted_at
 
 const isFactura = (tipoDocumento?: string | null) =>
   normalizeText(tipoDocumento) === 'factura'
@@ -577,7 +578,7 @@ export default function HomePage() {
               { headers }
             ),
             fetch(
-              `${baseUrl}/rest/v1/movimientos?select=id,fecha,tipo_movimiento,tipo_documento,numero_documento,descripcion,monto_total,estado,empresa_id&empresa_id=eq.${empresaActivaId}&fecha=gte.${from}&fecha=lte.${to}&order=fecha.asc`,
+              `${baseUrl}/rest/v1/movimientos?select=id,fecha,tipo_movimiento,tipo_documento,numero_documento,descripcion,monto_total,estado,empresa_id,activo,deleted_at&empresa_id=eq.${empresaActivaId}&fecha=gte.${from}&fecha=lte.${to}&order=fecha.asc`,
               { headers }
             ),
           ])
