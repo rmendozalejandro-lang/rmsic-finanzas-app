@@ -197,7 +197,7 @@ export default function LoginPage() {
           router.replace(targetRoute)
           return
         }
-      } catch (_error) {
+      } catch {
         // no-op
       } finally {
         setCheckingSession(false)
@@ -412,7 +412,7 @@ export default function LoginPage() {
                       Contraseña
                     </label>
                     <Link
-                      href="#"
+                      href="/recuperar-password"
                       className="text-xs font-medium text-[#18B7A8] hover:text-[#11998E]"
                     >
                       ¿Olvidaste tu contraseña?
