@@ -5,17 +5,22 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../../lib/supabase/client'
 
-const INVALID_LINK_MESSAGE = 'El enlace de recuperación expiró o no es válido. Solicita uno nuevo.'
+const INVALID_LINK_MESSAGE =
+  'El enlace de recuperación expiró o ya fue utilizado. Solicita un nuevo enlace e intenta nuevamente.'
 
-function hasRecoveryMarker() {
+function getRecoveryLinkState() {
   if (typeof window === 'undefined') {
-    return false
+    return { hasRecoveryMarker: false, isExpiredOtp: false }
   }
 
   const searchParams = new URLSearchParams(window.location.search)
   const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''))
+  const isExpiredOtp = hashParams.get('error_code') === 'otp_expired'
 
-  return searchParams.get('type') === 'recovery' || hashParams.get('type') === 'recovery'
+  return {
+    hasRecoveryMarker: searchParams.get('type') === 'recovery' || hashParams.get('type') === 'recovery',
+    isExpiredOtp,
+  }
 }
 
 function TralixiaSymbol({ className = 'h-14 w-14' }: { className?: string }) {
@@ -56,10 +61,20 @@ export default function ActualizarPasswordPage() {
     let mounted = true
 
     const validateRecoverySession = async () => {
+      const { hasRecoveryMarker, isExpiredOtp } = getRecoveryLinkState()
+
+      if (isExpiredOtp) {
+        if (mounted) {
+          setHasValidSession(false)
+          setCheckingLink(false)
+        }
+        return
+      }
+
       const { data } = await supabase.auth.getSession()
 
       if (mounted) {
-        setHasValidSession(hasRecoveryMarker() && Boolean(data.session))
+        setHasValidSession(hasRecoveryMarker && Boolean(data.session))
         setCheckingLink(false)
       }
     }

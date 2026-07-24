@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { supabase } from '../../lib/supabase/client'
 
 const SAFE_RESET_MESSAGE =
-  'Si el correo está registrado, recibirás un enlace para crear una nueva contraseña.'
+  'Revisa el correo más reciente, spam o promociones. No solicites varios enlaces seguidos.'
 
 function TralixiaSymbol({ className = 'h-14 w-14' }: { className?: string }) {
   return (
@@ -45,6 +45,10 @@ export default function RecuperarPasswordPage() {
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    if (success) {
+      return
+    }
+
     setError('')
     setSuccess('')
 
@@ -100,6 +104,7 @@ export default function RecuperarPasswordPage() {
                 autoComplete="email"
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
+                disabled={Boolean(success)}
                 placeholder="nombre@empresa.cl"
                 className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-[#18B7A8] focus:ring-4 focus:ring-cyan-100"
               />
@@ -108,8 +113,8 @@ export default function RecuperarPasswordPage() {
             {error ? <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div> : null}
             {success ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{success}</div> : null}
 
-            <button type="submit" disabled={loading} className="w-full rounded-2xl bg-[#18B7A8] px-4 py-3.5 text-sm font-medium text-white transition hover:bg-[#11998E] disabled:cursor-not-allowed disabled:opacity-70">
-              {loading ? 'Enviando...' : 'Enviar enlace de recuperación'}
+            <button type="submit" disabled={loading || Boolean(success)} className="w-full rounded-2xl bg-[#18B7A8] px-4 py-3.5 text-sm font-medium text-white transition hover:bg-[#11998E] disabled:cursor-not-allowed disabled:opacity-70">
+              {success ? 'Enlace enviado' : loading ? 'Enviando...' : 'Enviar enlace de recuperación'}
             </button>
           </form>
 
