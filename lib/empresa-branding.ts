@@ -60,8 +60,27 @@ export function getEmpresaLogoSrc(empresa?: EmpresaBrandingLike | null): string 
     normalizePublicAssetPath(empresa.logoUrl) ||
     normalizePublicAssetPath(empresa.logo) ||
     normalizePublicAssetPath(empresa.url_logo) ||
-    normalizePublicAssetPath(empresa.urlLogo)
+    normalizePublicAssetPath(empresa.urlLogo) ||
+    getEmpresaDefaultLogoSrc(getEmpresaNombreFallback(empresa))
   )
+}
+
+export function getEmpresaDefaultLogoSrc(empresaNombre?: string | null): string | null {
+  const nombre = clean(empresaNombre).toLowerCase()
+
+  if (nombre.includes('ima industrial') || nombre === 'ima') {
+    return '/logos/ima-industrial-logo.png'
+  }
+
+  if (nombre.includes('rukalaf')) return '/logos/rukalaf-logo.png'
+  if (nombre.includes('dyf') || nombre.includes('d&f')) {
+    return '/logos/dyf-logo-transparente.png'
+  }
+  if (nombre.includes('rmsic') || nombre.includes('rm servicios')) {
+    return '/logos/rmsic-logo.png'
+  }
+
+  return null
 }
 
 export function getEmpresaWebFallback(empresa?: EmpresaBrandingLike | null): string {
