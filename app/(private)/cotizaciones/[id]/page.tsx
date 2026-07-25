@@ -428,6 +428,7 @@ export default function CotizacionDetallePage() {
   const totalItems = useMemo(() => items.length, [items])
   const empresaLogoSrc = useMemo(() => {
     return getEmpresaLogoSrc({
+      empresaId: cotizacion?.empresa_id,
       empresaLogoUrl: cotizacion?.empresa_logo_url,
       empresaNombre: cotizacion?.empresa_nombre,
       empresaActivaNombre,

@@ -14,6 +14,7 @@ type ResumenLike = {
   activo_nombre?: string | null
   tecnico_nombre?: string | null
   tipo_servicio_nombre?: string | null
+  empresa_nombre?: string | null
 }
 
 type OTDetallePdf = {
@@ -988,7 +989,7 @@ export function OTPdfDocument({
               {logoUrl ? (
                 <Image src={logoUrl} style={styles.logo} />
               ) : (
-                <Text style={styles.logoFallback}>RMSIC</Text>
+                <Text style={styles.logoFallback}>{resumen.empresa_nombre || 'Empresa'}</Text>
               )}
             </View>
 

@@ -256,6 +256,7 @@ export default function NuevaCotizacionPage() {
           ]) || empresaActivaNombre || ''
 
         const empresaLogoUrl = getEmpresaLogoSrc({
+          empresaId: empresaActivaId,
           empresaLogoUrl: pickFirstString(empresaRow, [
             'logo_url',
             'logo',

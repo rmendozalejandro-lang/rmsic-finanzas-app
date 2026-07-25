@@ -124,12 +124,17 @@ type EquipoTrabajoParticipantePdf = {
 
 type InformeTecnicoMini = {
   id: string;
-  datos: Record<string, any> | null;
+  datos: Record<string, unknown> | null;
+};
+
+type OTResumenPdf = OTResumen & {
+  fecha_visita?: string | null;
 };
 
 const CHILE_TIME_ZONE = "America/Santiago";
 const DYF_EMPRESA_ID = "73dd5543-2bf7-4d44-9982-4a641c8658f5";
 const RMSIC_EMPRESA_ID = "557a054c-71ef-4c5f-8637-594755ad669b";
+const IMA_INDUSTRIAL_EMPRESA_ID = "50985048-9787-4859-9293-10800458d825";
 
 
 const pickPublicLogoUrl = (request: NextRequest, candidates: string[]) => {
@@ -151,6 +156,7 @@ const DYF_LOGO_CANDIDATES = [
 ];
 
 const RMSIC_LOGO_CANDIDATES = ["/logos/rmsic-logo.png"];
+const IMA_INDUSTRIAL_LOGO_CANDIDATES = ["/logos/ima-industrial-logo.png"];
 
 type DateTimeParts = {
   year: string;
@@ -1206,9 +1212,12 @@ export async function GET(
     const esFlujoDyfSoftys = esEmpresaDyf || esClienteSoftys;
 
     const informeTecnico = informeTecnicoResp.data as InformeTecnicoMini | null;
-    const informeDatos = (informeTecnico?.datos ?? {}) as Record<string, any>;
+    const informeDatos = (informeTecnico?.datos ?? {}) as Record<string, unknown>;
     const checklistRecepcion = (informeDatos.checklist_recepcion ??
-      {}) as Record<string, any>;
+      {}) as Record<string, unknown>;
+
+    const getStringValue = (value: unknown) =>
+      typeof value === "string" ? value : null;
 
     const optionalRecepcionBoolLine = (label: string, value: unknown) => {
       if (
@@ -1248,11 +1257,11 @@ export async function GET(
         ),
         optionalTextBlock(
           "EvaluaciÃ³n general",
-          informeDatos.evaluacion_general,
+          getStringValue(informeDatos.evaluacion_general),
         ),
         optionalTextBlock(
           "Observaciones recepciÃ³n",
-          informeDatos.observaciones_recepcion,
+          getStringValue(informeDatos.observaciones_recepcion),
         ),
       ],
     );
@@ -1463,24 +1472,23 @@ ${checklistTextoPdf}`
     const firmas = (firmasResp.data ?? []) as Firma[];
     const logoUrl =
       detalle.empresa_id === RMSIC_EMPRESA_ID
-        ? new URL("/logos/rmsic-logo.png", request.url).toString()
+        ? pickPublicLogoUrl(request, RMSIC_LOGO_CANDIDATES)
         : detalle.empresa_id === DYF_EMPRESA_ID
-          ? new URL("/logos/dyf-logo-transparente.png", request.url).toString()
-          : null;
+          ? pickPublicLogoUrl(request, DYF_LOGO_CANDIDATES)
+          : detalle.empresa_id === IMA_INDUSTRIAL_EMPRESA_ID
+            ? pickPublicLogoUrl(request, IMA_INDUSTRIAL_LOGO_CANDIDATES)
+            : null;
 
-    const resumenPdf = {
-      ...resumen,
-      fecha_ot: detalleHorarioBase.fecha_ot || (resumen as any).fecha_ot,
-      fecha_visita:
-        detalleHorarioBase.fecha_ot || (resumen as any).fecha_visita,
-      hora_inicio:
-        detalleHorarioBase.hora_inicio || (resumen as any).hora_inicio,
-      hora_termino:
-        detalleHorarioBase.hora_termino || (resumen as any).hora_termino,
+    const resumenBase = resumen as OTResumenPdf;
+    const resumenPdf: OTResumenPdf = {
+      ...resumenBase,
+      fecha_ot: detalleHorarioBase.fecha_ot || resumenBase.fecha_ot,
+      fecha_visita: detalleHorarioBase.fecha_ot || resumenBase.fecha_visita,
+      hora_inicio: detalleHorarioBase.hora_inicio || resumenBase.hora_inicio,
+      hora_termino: detalleHorarioBase.hora_termino || resumenBase.hora_termino,
       duracion_minutos:
-        detalleHorarioBase.duracion_minutos ??
-        (resumen as any).duracion_minutos,
-    } as OTResumen;
+        detalleHorarioBase.duracion_minutos ?? resumenBase.duracion_minutos,
+    };
 
     const pdfElement = React.createElement(OTPdfDocument, {
       resumen: resumenPdf,
