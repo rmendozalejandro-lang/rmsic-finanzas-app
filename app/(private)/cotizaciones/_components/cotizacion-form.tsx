@@ -4,6 +4,10 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
+import {
+  getEmpresaDefaultLogoSrc,
+  getEmpresaLogoSrc,
+} from "@/lib/empresa-branding";
 
 type ClienteOption = {
   id: string;
@@ -126,15 +130,7 @@ function formatCurrency(value: number, currency = "CLP") {
 }
 
 function getDefaultEmpresaLogoUrl(empresaNombre?: string | null) {
-  const nombre = (empresaNombre || "").toLowerCase();
-
-  if (nombre.includes("rukalaf")) return "/logos/rukalaf-logo.png";
-  if (nombre.includes("dyf")) return "/logos/dyf-logo-transparente.png";
-  if (nombre.includes("rmsic") || nombre.includes("rm servicios")) {
-    return "/logos/rmsic-logo.png";
-  }
-
-  return "";
+  return getEmpresaDefaultLogoSrc(empresaNombre) || "";
 }
 
 function normalizeEmpresaLogoUrl(value?: string | null) {
@@ -567,6 +563,32 @@ export default function CotizacionForm({
         descuentoGlobalValor = Math.min(100, descuentoGlobalValor);
       }
 
+      // En creación, toma el branding nuevamente desde la empresa activa para
+      // guardar un snapshot confiable aunque el formulario lleve tiempo abierto.
+      // En edición se conserva el snapshot existente de la cotización.
+      let empresaLogoSnapshot =
+        normalizeEmpresaLogoUrl(form.empresa_logo_url) ||
+        getDefaultEmpresaLogoUrl(form.empresa_nombre);
+
+      if (!isEdit) {
+        const { data: empresaActiva, error: empresaError } = await supabase
+          .from("empresas")
+          .select("*")
+          .eq("id", empresaId)
+          .maybeSingle();
+
+        if (empresaError || !empresaActiva) {
+          setError("No se pudo obtener el logo de la empresa activa.");
+          setSaving(false);
+          return;
+        }
+
+        empresaLogoSnapshot = getEmpresaLogoSrc({
+          ...empresaActiva,
+          empresaNombre: form.empresa_nombre,
+        }) || "";
+      }
+
       const cotizacionPayload = {
         empresa_id: empresaId,
         cliente_id: form.cliente_id || null,
@@ -583,9 +605,7 @@ export default function CotizacionForm({
           normalizeDiscountType(form.descuento_global_tipo) ?? null,
         descuento_global_valor: round2(descuentoGlobalValor),
         empresa_nombre: form.empresa_nombre.trim() || null,
-        empresa_logo_url:
-          normalizeEmpresaLogoUrl(form.empresa_logo_url) ||
-          getDefaultEmpresaLogoUrl(form.empresa_nombre),
+        empresa_logo_url: empresaLogoSnapshot || null,
         empresa_email: form.empresa_email.trim() || null,
         empresa_telefono: form.empresa_telefono.trim() || null,
         empresa_web: form.empresa_web.trim() || null,

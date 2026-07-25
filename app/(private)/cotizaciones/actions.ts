@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { getEmpresaLogoSrc } from "@/lib/empresa-branding";
 
 export type CreateCotizacionActionState = {
   error: string | null;
@@ -148,7 +149,20 @@ export async function createCotizacionAction(
   }
 
   const empresaNombre = asNullableString(formData.get("empresa_nombre"));
-  const empresaLogoUrl = asNullableString(formData.get("empresa_logo_url"));
+  const { data: empresaActiva, error: empresaError } = await supabase
+    .from("empresas")
+    .select("*")
+    .eq("id", empresaActivaId)
+    .maybeSingle();
+
+  if (empresaError || !empresaActiva) {
+    return { error: "No se pudo obtener el logo de la empresa activa." };
+  }
+
+  const empresaLogoUrl = getEmpresaLogoSrc({
+    ...empresaActiva,
+    empresaNombre,
+  });
   const empresaEmail = asNullableString(formData.get("empresa_email"));
   const empresaTelefono = asNullableString(formData.get("empresa_telefono"));
   const empresaWeb = asNullableString(formData.get("empresa_web"));
