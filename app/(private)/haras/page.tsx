@@ -35,6 +35,7 @@ const areas = [
     title: 'Reportes mensuales',
     description: 'Indicadores sanitarios, reproductivos, operativos y de existencias.',
     accent: 'bg-indigo-500',
+    href: '/haras/reportes',
   },
 ]
 
