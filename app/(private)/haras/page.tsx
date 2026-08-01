@@ -2,6 +2,12 @@ import Link from 'next/link'
 
 const areas = [
   {
+    title: 'Dashboard Haras',
+    description: 'Resumen gerencial de animales, gestaciones, procedimientos, stock y alertas.',
+    accent: 'bg-cyan-500',
+    href: '/haras/dashboard',
+  },
+  {
     title: 'Animales',
     description: 'Registro de animales, yeguas madres, nacimientos y trazabilidad del haras.',
     accent: 'bg-emerald-500',
