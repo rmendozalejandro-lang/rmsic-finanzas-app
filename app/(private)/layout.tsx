@@ -52,6 +52,8 @@ type MenuGroup = {
 const menuItems: MenuItem[] = [
   { href: '/', label: 'Dashboard', moduleKey: 'dashboard' },
 
+  { href: '/haras', label: 'Tralixia Haras', moduleKey: 'haras' },
+
   { href: '/clientes', label: 'Clientes', moduleKey: 'clientes' },
   { href: '/cotizaciones', label: 'Cotizaciones', moduleKey: 'cotizaciones' },
   { href: '/ingresos', label: 'Ingresos / Ventas', moduleKey: 'ingresos' },
@@ -110,6 +112,7 @@ const MENU_GROUP_ORDER: Array<ModuloPrincipal | 'general'> = [
   'operacional',
   'rrhh',
   'administracion',
+  'haras',
 ]
 
 const MENU_GROUP_LABELS: Record<ModuloPrincipal | 'general', string> = {

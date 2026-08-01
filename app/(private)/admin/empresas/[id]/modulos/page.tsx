@@ -30,6 +30,7 @@ const MODULO_DESCRIPCIONES: Record<ModuloPrincipal, string> = {
   operacional: 'Órdenes de trabajo, evidencias, informes técnicos y registro de tiempos.',
   rrhh: 'Remuneraciones, personal, contratos y gestión de recursos humanos.',
   administracion: 'Empresas, usuarios, roles y configuración interna.',
+  haras: 'Gestión veterinaria y administrativa de animales, insumos y procedimientos.',
 }
 
 export default function EmpresaModulosPage() {

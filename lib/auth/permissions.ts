@@ -16,6 +16,7 @@ export type ModuloPrincipal =
   | 'operacional'
   | 'rrhh'
   | 'administracion'
+  | 'haras'
 
 export type ModuleKey =
   | 'dashboard'
@@ -34,6 +35,7 @@ export type ModuleKey =
   | 'ot'
   | 'configuracion_usuarios'
   | 'configuracion_auditoria'
+  | 'haras'
 
 /**
  * Recursos maestros/transversales.
@@ -61,6 +63,7 @@ export const MODULOS_PRINCIPALES: ModuloPrincipal[] = [
   'operacional',
   'rrhh',
   'administracion',
+  'haras',
 ]
 
 export const MODULO_PRINCIPAL_LABELS: Record<ModuloPrincipal, string> = {
@@ -70,6 +73,7 @@ export const MODULO_PRINCIPAL_LABELS: Record<ModuloPrincipal, string> = {
   operacional: 'Operacional',
   rrhh: 'Recursos Humanos',
   administracion: 'Administración',
+  haras: 'Tralixia Haras',
 }
 
 /**
@@ -106,6 +110,7 @@ const MODULE_TO_PRINCIPAL: Record<ModuleKey, ModuloPrincipal | null> = {
 
   configuracion_usuarios: 'administracion',
   configuracion_auditoria: 'administracion',
+  haras: 'haras',
 }
 
 /**
@@ -166,6 +171,7 @@ const ROLE_MODULES: Record<RolEmpresa, ModuleKey[]> = {
     'ot',
     'configuracion_usuarios',
     'configuracion_auditoria',
+    'haras',
   ],
 
   administracion_financiera: [
@@ -215,6 +221,7 @@ const ROLE_MODULES: Record<RolEmpresa, ModuleKey[]> = {
     'ot',
     'configuracion_usuarios',
     'configuracion_auditoria',
+    'haras',
   ],
 
   cobranzas: [
