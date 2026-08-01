@@ -106,7 +106,7 @@ export default function DashboardHarasPage() {
     activeAnimals.forEach(item => categoryMap.set(item.categoria, (categoryMap.get(item.categoria) ?? 0) + 1))
     const stateMap = new Map<string, number>()
     procedimientos.forEach(item => stateMap.set(item.estado, (stateMap.get(item.estado) ?? 0) + 1))
-    const lowStock = insumos.filter(item => item.activo).map(item => ({ ...item, stock: activeStockLots.filter(lot => lot.insumo_id === item.id && (!lot.fecha_vencimiento || lot.fecha_vencimiento >= current)).reduce((sum, lot) => sum + lot.cantidad_actual, 0) })).filter(item => item.stock <= item.stock_minimo)
+    const lowStock = insumos.filter(item => item.activo && item.stock_minimo > 0).map(item => ({ ...item, stock: activeStockLots.filter(lot => lot.insumo_id === item.id && (!lot.fecha_vencimiento || lot.fecha_vencimiento >= current)).reduce((sum, lot) => sum + lot.cantidad_actual, 0) })).filter(item => item.stock <= item.stock_minimo)
     return { current, animalNames, supplyNames, protocolNames, activeAnimals, openBirths, upcoming, delayedBirths, expiredLots, expiringLots, criticalLots, validProcedures, lowStock,
       averageGestation: gestationDays.length ? gestationDays.reduce((sum, value) => sum + value, 0) / gestationDays.length : null,
       attended: [...attendance.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5),
