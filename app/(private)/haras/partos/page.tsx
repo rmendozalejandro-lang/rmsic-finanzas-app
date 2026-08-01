@@ -4,6 +4,7 @@ import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import ModuleAccessGuard from "@/components/ModuleAccessGuard";
 import { supabase } from "@/lib/supabase/client";
+import OfflinePartoPanel from "./OfflinePartoPanel";
 
 const EMPRESA_KEY = "empresa_activa_id";
 const DAY_MS = 86_400_000;
@@ -107,13 +108,13 @@ const emptyParto: PartoForm = {
   hora_primera_mamada: "",
 };
 type TimeKey =
-  | 'hora_inicio_parto'
-  | 'hora_expulsion_cria'
-  | 'hora_parada_yegua'
-  | 'hora_corte_cordon'
-  | 'hora_parada_potrillo'
-  | 'hora_expulsion_placenta'
-  | 'hora_primera_mamada'
+  | "hora_inicio_parto"
+  | "hora_expulsion_cria"
+  | "hora_parada_yegua"
+  | "hora_corte_cordon"
+  | "hora_parada_potrillo"
+  | "hora_expulsion_placenta"
+  | "hora_primera_mamada";
 const timeFields: { key: TimeKey; label: string }[] = [
   { key: "hora_inicio_parto", label: "Inicio del parto" },
   { key: "hora_expulsion_cria", label: "Expulsión de la cría" },
@@ -188,6 +189,10 @@ export default function PartosPage() {
   }, []);
   const loadData = useCallback(async () => {
     if (!empresaId) {
+      setLoading(false);
+      return;
+    }
+    if (!navigator.onLine) {
       setLoading(false);
       return;
     }
@@ -462,6 +467,29 @@ export default function PartosPage() {
               {success}
             </p>
           )}
+          <OfflinePartoPanel
+            empresaId={empresaId}
+            madres={mothers.map(({ id, nombre }) => ({ id, nombre }))}
+            gestaciones={partos
+              .filter(
+                (parto) =>
+                  !parto.fecha_parto_real &&
+                  parto.estado_reproductivo !== "anulado",
+              )
+              .map((parto) => ({
+                id: parto.id,
+                madre_id: parto.madre_id,
+                padre_id: parto.padre_id,
+                fecha_ultima_monta: parto.fecha_ultima_monta,
+                fecha_probable_parto: parto.fecha_probable_parto,
+                estado_reproductivo: parto.estado_reproductivo,
+                madre_nombre: names.get(parto.madre_id),
+                padre_nombre: parto.padre_id
+                  ? names.get(parto.padre_id)
+                  : undefined,
+              }))}
+            onSynced={loadData}
+          />
           <section className="mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
             <div className="border-b border-slate-200 px-5 py-4">
               <h2 className="font-semibold text-slate-900">
