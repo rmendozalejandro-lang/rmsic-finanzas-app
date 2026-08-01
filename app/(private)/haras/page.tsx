@@ -37,6 +37,12 @@ const areas = [
     accent: 'bg-indigo-500',
     href: '/haras/reportes',
   },
+  {
+    title: 'Alertas y calendario',
+    description: 'Próximos partos, vacunas, protocolos e insumos críticos.',
+    accent: 'bg-orange-500',
+    href: '/haras/calendario',
+  },
 ]
 
 export default function HarasPage() {
