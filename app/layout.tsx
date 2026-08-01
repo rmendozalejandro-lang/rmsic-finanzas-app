@@ -1,4 +1,4 @@
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import type { ReactNode } from 'react'
 import { Inter } from 'next/font/google'
 import './globals.css'
@@ -9,11 +9,22 @@ const inter = Inter({
 })
 
 export const metadata: Metadata = {
+  applicationName: 'Tralixia',
   title: {
     default: 'Tralixia',
     template: '%s | Tralixia',
   },
   description: 'Tralixia, plataforma modular de gestión empresarial desarrollada por RM Servicios de Ingeniería y Construcción',
+  manifest: '/manifest.webmanifest',
+  appleWebApp: {
+    capable: true,
+    title: 'Tralixia',
+    statusBarStyle: 'black-translucent',
+  },
+}
+
+export const viewport: Viewport = {
+  themeColor: '#020617',
 }
 
 export default function RootLayout({

@@ -58,6 +58,41 @@ export default function HarasPage() {
           </div>
         </section>
 
+        <aside
+          className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50/70 px-5 py-4 sm:px-6"
+          aria-labelledby="instalar-tralixia"
+        >
+          <div className="flex items-start gap-4">
+            <div
+              className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white sm:flex"
+              aria-hidden="true"
+            >
+              <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
+                <rect x="6.5" y="2.5" width="11" height="19" rx="2" />
+                <path d="M10 18.5h4" />
+              </svg>
+            </div>
+            <div className="min-w-0">
+              <h2 id="instalar-tralixia" className="text-base font-semibold text-slate-900">
+                Usar en celular
+              </h2>
+              <p className="mt-1 text-sm leading-6 text-slate-700">
+                Puedes agregar Tralixia a la pantalla de inicio para usarlo como una app.
+              </p>
+              <ul className="mt-3 grid gap-2 text-sm text-slate-600 md:grid-cols-2">
+                <li>
+                  <span className="font-semibold text-slate-800">Android:</span>{' '}
+                  Chrome → menú ⋮ → Instalar app o Agregar a pantalla principal
+                </li>
+                <li>
+                  <span className="font-semibold text-slate-800">iPhone:</span>{' '}
+                  Safari → Compartir → Agregar a pantalla de inicio
+                </li>
+              </ul>
+            </div>
+          </div>
+        </aside>
+
         <section className="mt-8" aria-labelledby="areas-haras">
           <div className="mb-5">
             <p className="text-sm font-medium text-emerald-700">Estructura inicial</p>
