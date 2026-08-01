@@ -23,6 +23,7 @@ const areas = [
     title: 'Procedimientos',
     description: 'Atenciones veterinarias y consumo trazable de medicamentos e insumos.',
     accent: 'bg-amber-500',
+    href: '/haras/procedimientos',
   },
   {
     title: 'Partos y nacimientos',
