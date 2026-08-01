@@ -4,11 +4,13 @@ import Link from 'next/link'
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import ModuleAccessGuard from '@/components/ModuleAccessGuard'
 import { supabase } from '@/lib/supabase/client'
+import MarcacionEjemplar, { Marca } from './MarcacionEjemplar'
 
 const EMPRESA_KEY = 'empresa_activa_id'
 const categorias = ['yegua', 'cria', 'año', 'potro', 'chileno', 'otro'] as const
 const estados = ['activo', 'inactivo', 'fallecido', 'vendido'] as const
 const sexos = ['hembra', 'macho', 'desconocido'] as const
+const coloresPelaje = ['alazan', 'colorado', 'mulato', 'negro', 'rosillo', 'tordillo', 'otro'] as const
 
 type Animal = {
   id: string
@@ -21,6 +23,13 @@ type Animal = {
   identificador: string | null
   estado: (typeof estados)[number]
   observaciones: string | null
+  color_pelaje: (typeof coloresPelaje)[number] | null
+  senales_cabeza: string | null
+  senales_mano_izquierda: string | null
+  senales_mano_derecha: string | null
+  senales_pata_izquierda: string | null
+  senales_pata_derecha: string | null
+  observaciones_marcas: string | null
 }
 
 type AnimalForm = {
@@ -33,17 +42,28 @@ type AnimalForm = {
   identificador: string
   estado: Animal['estado']
   observaciones: string
+  color_pelaje: '' | NonNullable<Animal['color_pelaje']>
+  senales_cabeza: string
+  senales_mano_izquierda: string
+  senales_mano_derecha: string
+  senales_pata_izquierda: string
+  senales_pata_derecha: string
+  observaciones_marcas: string
 }
 
 const emptyForm: AnimalForm = {
   nombre: '', categoria: 'otro', sexo: 'desconocido', fecha_nacimiento: '',
   madre_id: '', padre_id: '', identificador: '', estado: 'activo', observaciones: '',
+  color_pelaje: '', senales_cabeza: '', senales_mano_izquierda: '', senales_mano_derecha: '',
+  senales_pata_izquierda: '', senales_pata_derecha: '', observaciones_marcas: '',
 }
 
 const labels: Record<string, string> = {
   cria: 'Cría', 'año': 'Año', yegua: 'Yegua', potro: 'Potro', chileno: 'Chileno',
   otro: 'Otro', hembra: 'Hembra', macho: 'Macho', desconocido: 'Desconocido',
   activo: 'Activo', inactivo: 'Inactivo', fallecido: 'Fallecido', vendido: 'Vendido',
+  alazan: 'Alazán', colorado: 'Colorado', mulato: 'Mulato', negro: 'Negro',
+  rosillo: 'Rosillo', tordillo: 'Tordillo',
 }
 
 function formatDate(value: string | null) {
@@ -64,9 +84,12 @@ export default function AnimalesPage() {
   const [search, setSearch] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
+  const [marcas, setMarcas] = useState<Marca[]>([])
+  const [originalMarkIds, setOriginalMarkIds] = useState<string[]>([])
 
   useEffect(() => {
-    setEmpresaId(window.localStorage.getItem(EMPRESA_KEY))
+    const timer = window.setTimeout(() => setEmpresaId(window.localStorage.getItem(EMPRESA_KEY)), 0)
+    return () => window.clearTimeout(timer)
   }, [])
 
   const loadAnimals = useCallback(async () => {
@@ -78,7 +101,7 @@ export default function AnimalesPage() {
     setError(null)
     const { data, error: queryError } = await supabase
       .from('vet_animales')
-      .select('id, nombre, categoria, sexo, fecha_nacimiento, madre_id, padre_id, identificador, estado, observaciones')
+      .select('id, nombre, categoria, sexo, fecha_nacimiento, madre_id, padre_id, identificador, estado, observaciones, color_pelaje, senales_cabeza, senales_mano_izquierda, senales_mano_derecha, senales_pata_izquierda, senales_pata_derecha, observaciones_marcas')
       .eq('empresa_id', empresaId)
       .order('nombre')
 
@@ -87,7 +110,10 @@ export default function AnimalesPage() {
     setLoading(false)
   }, [empresaId])
 
-  useEffect(() => { void loadAnimals() }, [loadAnimals])
+  useEffect(() => {
+    const timer = window.setTimeout(() => void loadAnimals(), 0)
+    return () => window.clearTimeout(timer)
+  }, [loadAnimals])
 
   const animalNames = useMemo(() => new Map(animales.map((animal) => [animal.id, animal.nombre])), [animales])
   const filteredAnimals = useMemo(() => {
@@ -101,22 +127,40 @@ export default function AnimalesPage() {
   function openNew() {
     setEditingId(null)
     setForm(emptyForm)
+    setMarcas([])
+    setOriginalMarkIds([])
     setError(null)
     setSuccess(null)
     setShowForm(true)
   }
 
-  function openEdit(animal: Animal) {
+  async function openEdit(animal: Animal) {
     setEditingId(animal.id)
+    setMarcas([])
+    setOriginalMarkIds([])
     setForm({
       nombre: animal.nombre, categoria: animal.categoria, sexo: animal.sexo ?? 'desconocido',
       fecha_nacimiento: animal.fecha_nacimiento ?? '', madre_id: animal.madre_id ?? '',
       padre_id: animal.padre_id ?? '', identificador: animal.identificador ?? '',
       estado: animal.estado, observaciones: animal.observaciones ?? '',
+      color_pelaje: animal.color_pelaje ?? '', senales_cabeza: animal.senales_cabeza ?? '',
+      senales_mano_izquierda: animal.senales_mano_izquierda ?? '', senales_mano_derecha: animal.senales_mano_derecha ?? '',
+      senales_pata_izquierda: animal.senales_pata_izquierda ?? '', senales_pata_derecha: animal.senales_pata_derecha ?? '',
+      observaciones_marcas: animal.observaciones_marcas ?? '',
     })
     setError(null)
     setSuccess(null)
     setShowForm(true)
+    if (!empresaId) return
+    const { data, error: marksError } = await supabase.from('vet_animal_marcas')
+      .select('id, vista, tipo_marca, x, y, descripcion')
+      .eq('empresa_id', empresaId).eq('animal_id', animal.id).order('created_at')
+    if (marksError) setError(`No fue posible cargar las marcas: ${marksError.message}`)
+    else {
+      const loaded = (data ?? []).map((marca) => ({...marca, x: Number(marca.x), y: Number(marca.y), descripcion: marca.descripcion ?? ''})) as Marca[]
+      setMarcas(loaded)
+      setOriginalMarkIds(loaded.map((marca) => marca.id))
+    }
   }
 
   async function saveAnimal(event: FormEvent<HTMLFormElement>) {
@@ -134,21 +178,53 @@ export default function AnimalesPage() {
       fecha_nacimiento: form.fecha_nacimiento || null, madre_id: form.madre_id || null,
       padre_id: form.padre_id || null, identificador: form.identificador.trim() || null,
       estado: form.estado, observaciones: form.observaciones.trim() || null,
+      color_pelaje: form.color_pelaje || null,
+      senales_cabeza: form.senales_cabeza.trim() || null,
+      senales_mano_izquierda: form.senales_mano_izquierda.trim() || null,
+      senales_mano_derecha: form.senales_mano_derecha.trim() || null,
+      senales_pata_izquierda: form.senales_pata_izquierda.trim() || null,
+      senales_pata_derecha: form.senales_pata_derecha.trim() || null,
+      observaciones_marcas: form.observaciones_marcas.trim() || null,
       updated_at: new Date().toISOString(),
     }
 
     const response = editingId
-      ? await supabase.from('vet_animales').update(payload).eq('id', editingId).eq('empresa_id', empresaId)
-      : await supabase.from('vet_animales').insert(payload)
+      ? await supabase.from('vet_animales').update(payload).eq('id', editingId).eq('empresa_id', empresaId).select('id').single()
+      : await supabase.from('vet_animales').insert(payload).select('id').single()
 
     if (response.error) {
       const duplicate = response.error.code === '23505'
       setError(duplicate ? 'El identificador o microchip ya está registrado en esta empresa.' : `No fue posible guardar: ${response.error.message}`)
-    } else {
+    } else if (response.data) {
+      const animalId = response.data.id
+      const deletedIds = originalMarkIds.filter((id) => !marcas.some((marca) => marca.id === id))
+      if (deletedIds.length) {
+        const { error: deleteError } = await supabase.from('vet_animal_marcas').delete()
+          .eq('empresa_id', empresaId).eq('animal_id', animalId).in('id', deletedIds)
+        if (deleteError) {
+          setError(`El ejemplar se guardó, pero no fue posible eliminar marcas: ${deleteError.message}`)
+          setSaving(false)
+          return
+        }
+      }
+      if (marcas.length) {
+        const { error: marksError } = await supabase.from('vet_animal_marcas').upsert(marcas.map((marca) => ({
+          id: marca.id, empresa_id: empresaId, animal_id: animalId, vista: marca.vista,
+          tipo_marca: marca.tipo_marca, x: marca.x, y: marca.y,
+          descripcion: marca.descripcion.trim() || null, updated_at: new Date().toISOString(),
+        })), { onConflict: 'id' })
+        if (marksError) {
+          setError(`El ejemplar se guardó, pero no fue posible guardar sus marcas: ${marksError.message}`)
+          setSaving(false)
+          return
+        }
+      }
       setSuccess(editingId ? 'Ejemplar actualizado correctamente.' : 'Ejemplar creado correctamente.')
       setShowForm(false)
       setEditingId(null)
       setForm(emptyForm)
+      setMarcas([])
+      setOriginalMarkIds([])
       await loadAnimals()
     }
     setSaving(false)
@@ -191,6 +267,28 @@ export default function AnimalesPage() {
                 <label className="text-sm font-medium text-slate-700">Identificador / microchip<input value={form.identificador} onChange={(e) => setForm({...form, identificador: e.target.value})} className={inputClass} /></label>
                 <label className="text-sm font-medium text-slate-700">Estado<select value={form.estado} onChange={(e) => setForm({...form, estado: e.target.value as Animal['estado']})} className={inputClass}>{estados.map((value) => <option key={value} value={value}>{labels[value]}</option>)}</select></label>
                 <label className="text-sm font-medium text-slate-700 md:col-span-2 lg:col-span-3">Observaciones<textarea rows={3} value={form.observaciones} onChange={(e) => setForm({...form, observaciones: e.target.value})} className={inputClass} /></label>
+                <fieldset className="rounded-2xl border border-emerald-200 bg-emerald-50/40 p-4 md:col-span-2 lg:col-span-3 sm:p-5">
+                  <legend className="px-2 text-lg font-semibold text-slate-900">Identificación física / señas particulares</legend>
+                  <p className="text-sm text-slate-600">Todos los campos son opcionales. Registra las señas que permitan reconocer al ejemplar en el tiempo.</p>
+                  <div className="mt-4 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                    <label className="text-sm font-medium text-slate-700">Color de pelaje
+                      <select value={form.color_pelaje} onChange={(e) => setForm({...form, color_pelaje: e.target.value as AnimalForm['color_pelaje']})} className={inputClass}>
+                        <option value="">Sin registrar</option>{coloresPelaje.map((value) => <option key={value} value={value}>{labels[value]}</option>)}
+                      </select>
+                    </label>
+                    <label className="text-sm font-medium text-slate-700 md:col-span-2">Señales en la cabeza<textarea rows={2} value={form.senales_cabeza} onChange={(e) => setForm({...form, senales_cabeza: e.target.value})} className={inputClass} /></label>
+                    <label className="text-sm font-medium text-slate-700">Mano izquierda<textarea rows={2} value={form.senales_mano_izquierda} onChange={(e) => setForm({...form, senales_mano_izquierda: e.target.value})} className={inputClass} /></label>
+                    <label className="text-sm font-medium text-slate-700">Mano derecha<textarea rows={2} value={form.senales_mano_derecha} onChange={(e) => setForm({...form, senales_mano_derecha: e.target.value})} className={inputClass} /></label>
+                    <label className="text-sm font-medium text-slate-700">Pata izquierda<textarea rows={2} value={form.senales_pata_izquierda} onChange={(e) => setForm({...form, senales_pata_izquierda: e.target.value})} className={inputClass} /></label>
+                    <label className="text-sm font-medium text-slate-700">Pata derecha<textarea rows={2} value={form.senales_pata_derecha} onChange={(e) => setForm({...form, senales_pata_derecha: e.target.value})} className={inputClass} /></label>
+                    <label className="text-sm font-medium text-slate-700 md:col-span-2">Observaciones de marcas<textarea rows={2} value={form.observaciones_marcas} onChange={(e) => setForm({...form, observaciones_marcas: e.target.value})} className={inputClass} /></label>
+                  </div>
+                  <MarcacionEjemplar marcas={marcas} onChange={setMarcas} />
+                  <div className="mt-4 rounded-xl border border-dashed border-slate-300 bg-white px-4 py-3">
+                    <p className="text-sm font-semibold text-slate-800">Fotos del ejemplar</p>
+                    <p className="mt-1 text-sm text-slate-500">Fotos próximamente</p>
+                  </div>
+                </fieldset>
                 <div className="flex gap-3 md:col-span-2 lg:col-span-3">
                   <button disabled={saving} className="rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60">{saving ? 'Guardando…' : 'Guardar ejemplar'}</button>
                   <button type="button" onClick={() => setShowForm(false)} className="rounded-xl border border-slate-300 px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">Cancelar</button>
