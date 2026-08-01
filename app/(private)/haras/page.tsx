@@ -17,6 +17,7 @@ const areas = [
     title: 'Protocolos',
     description: 'Base para planes sanitarios y protocolos veterinarios reutilizables.',
     accent: 'bg-violet-500',
+    href: '/haras/protocolos',
   },
   {
     title: 'Procedimientos',
