@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title description">
+  <title id="title">Tralixia Haras</title>
+  <desc id="description">Símbolo de Tralixia Haras sobre fondo oscuro</desc>
+  <rect width="512" height="512" rx="112" fill="#020617"/>
+  <circle cx="256" cy="236" r="152" fill="#064e3b"/>
+  <path d="M166 326V154h48v62h84v-62h48v172h-48v-66h-84v66z" fill="#f8fafc"/>
+  <path d="M190 358c38 20 94 20 132 0" fill="none" stroke="#6ee7b7" stroke-width="16" stroke-linecap="round"/>
+  <text x="256" y="421" fill="#f8fafc" font-family="Arial, sans-serif" font-size="32" font-weight="700" text-anchor="middle" letter-spacing="4">HARAS</text>
+</svg>
