@@ -79,8 +79,8 @@ begin
     if v_insumo_id is not null and not exists (select 1 from public.vet_insumos where empresa_id=p_empresa_id and id=v_insumo_id) then raise exception 'Insumo no disponible'; end if;
     v_costo_unitario := null; v_costo_item := 0;
     if v_lote_id is not null then
-      select * into v_lote from public.vet_lotes_insumo where empresa_id=p_empresa_id and id=v_lote_id and insumo_id=v_insumo_id for update;
-      if not found then raise exception 'Lote no disponible para el insumo'; end if;
+      select * into v_lote from public.vet_lotes_insumo where empresa_id=p_empresa_id and id=v_lote_id and insumo_id=v_insumo_id and activo = true for update;
+      if not found then raise exception 'Lote activo no disponible para el insumo'; end if;
       if v_lote.fecha_vencimiento is not null and v_lote.fecha_vencimiento < p_fecha::date then raise exception 'No se permite consumir un lote vencido'; end if;
       if p_estado='registrado' and v_lote.cantidad_actual < v_cantidad then raise exception 'Stock insuficiente en lote %', v_lote.numero_lote; end if;
       v_costo_unitario := coalesce(v_lote.costo_unitario,0);
