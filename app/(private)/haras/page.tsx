@@ -1,8 +1,11 @@
+import Link from 'next/link'
+
 const areas = [
   {
     title: 'Animales',
     description: 'Registro de animales, yeguas madres, nacimientos y trazabilidad del haras.',
     accent: 'bg-emerald-500',
+    href: '/haras/animales',
   },
   {
     title: 'Insumos y stock',
@@ -67,9 +70,18 @@ export default function HarasPage() {
                 <div className={`h-1.5 w-12 rounded-full ${area.accent}`} aria-hidden="true" />
                 <h3 className="mt-5 text-lg font-semibold text-slate-900">{area.title}</h3>
                 <p className="mt-2 min-h-12 text-sm leading-6 text-slate-600">{area.description}</p>
-                <span className="mt-5 inline-flex rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
-                  Próximamente
-                </span>
+                {area.href ? (
+                  <Link
+                    href={area.href}
+                    className="mt-5 inline-flex rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2"
+                  >
+                    Abrir Animales
+                  </Link>
+                ) : (
+                  <span className="mt-5 inline-flex rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
+                    Próximamente
+                  </span>
+                )}
               </article>
             ))}
           </div>
