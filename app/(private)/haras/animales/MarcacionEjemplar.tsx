@@ -1,6 +1,7 @@
 'use client'
 
 import { MouseEvent, useState } from 'react'
+import Image from 'next/image'
 
 export const vistas = ['lateral_izquierda', 'lateral_derecha', 'cabeza_frontal', 'cabeza_perfil', 'manos_posterior', 'patas_posterior'] as const
 export const tiposMarca = ['remolino', 'mancha_blanca', 'mancha_negra', 'cicatriz', 'marca_piel', 'otro'] as const
@@ -23,11 +24,35 @@ const colores: Record<TipoMarca, string> = {
   cicatriz: '#dc2626', marca_piel: '#d97706', otro: '#7c3aed',
 }
 
-function Silueta() {
+const imagenesVista: Record<Vista, string> = {
+  lateral_izquierda: '/haras/siluetas/lateral-izquierda.png',
+  lateral_derecha: '/haras/siluetas/lateral-derecha.png',
+  cabeza_frontal: '/haras/siluetas/cabeza-frontal.png',
+  cabeza_perfil: '/haras/siluetas/cabeza-perfil.png',
+  manos_posterior: '/haras/siluetas/manos-posterior.png',
+  patas_posterior: '/haras/siluetas/patas-posterior.png',
+}
+
+function Silueta({ vista }: { vista: Vista }) {
+  const [noDisponible, setNoDisponible] = useState(false)
+
+  if (noDisponible) {
+    return (
+      <span aria-hidden="true" className="pointer-events-none absolute inset-0 flex items-center justify-center px-4 text-center text-xs font-medium text-slate-400">
+        Silueta no disponible
+      </span>
+    )
+  }
+
   return (
-    <span aria-hidden="true" className="pointer-events-none absolute inset-0 flex items-center justify-center px-4 text-center text-xs font-medium uppercase tracking-[0.16em] text-slate-400">
-      Plantilla visual en mejora
-    </span>
+    <Image
+      src={imagenesVista[vista]}
+      alt=""
+      fill
+      sizes="(min-width: 1280px) 33vw, (min-width: 768px) 50vw, 100vw"
+      onError={() => setNoDisponible(true)}
+      className="pointer-events-none object-contain p-2"
+    />
   )
 }
 
@@ -60,7 +85,7 @@ export default function MarcacionEjemplar({ marcas, onChange }: { marcas: Marca[
           <article key={vista} className="rounded-xl border border-slate-200 bg-white p-3">
             <h4 className="text-sm font-semibold text-slate-800">{nombresVista[vista]}</h4>
             <button type="button" onClick={(event) => addMark(event, vista)} aria-label={`Agregar ${nombresMarca[tipo].toLowerCase()} en ${nombresVista[vista].toLowerCase()}`} className="relative mt-2 block aspect-[16/9] w-full cursor-crosshair overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
-              <Silueta />
+              <Silueta vista={vista} />
               {marcas.filter((marca) => marca.vista === vista).map((marca) => (
                 <span key={marca.id} title={`${nombresMarca[marca.tipo_marca]}${marca.descripcion ? `: ${marca.descripcion}` : ''}`} className="pointer-events-none absolute h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow ring-1 ring-slate-600" style={{ left: `${marca.x * 100}%`, top: `${marca.y * 100}%`, backgroundColor: colores[marca.tipo_marca] }} />
               ))}
