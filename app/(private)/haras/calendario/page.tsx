@@ -20,7 +20,13 @@ type Alert = { id: string; date: string; type: AlertType; typeLabel: string; des
 
 const parseDate = (value: string) => new Date(`${value.slice(0, 10)}T00:00:00Z`)
 const isoDate = (date: Date) => date.toISOString().slice(0, 10)
-const today = () => isoDate(new Date())
+const today = () => {
+  const date = new Date()
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
 const addDays = (value: string, days: number) => { const date = parseDate(value); date.setUTCDate(date.getUTCDate() + days); return isoDate(date) }
 const dateDiff = (later: string, earlier: string) => Math.round((parseDate(later).getTime() - parseDate(earlier).getTime()) / DAY_MS)
 const formatDate = (value: string) => new Intl.DateTimeFormat('es-CL', { timeZone: 'UTC' }).format(parseDate(value))
