@@ -29,6 +29,7 @@ const areas = [
     title: 'Partos y nacimientos',
     description: 'Seguimiento de gestaciones, partos, crías y resultados clínicos.',
     accent: 'bg-rose-500',
+    href: '/haras/partos',
   },
   {
     title: 'Reportes mensuales',
