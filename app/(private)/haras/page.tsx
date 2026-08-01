@@ -11,6 +11,7 @@ const areas = [
     title: 'Insumos y stock',
     description: 'Medicamentos, insumos, proveedores, lotes, vencimientos y stock real.',
     accent: 'bg-sky-500',
+    href: '/haras/insumos',
   },
   {
     title: 'Protocolos',
@@ -75,7 +76,7 @@ export default function HarasPage() {
                     href={area.href}
                     className="mt-5 inline-flex rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2"
                   >
-                    Abrir Animales
+                    Abrir {area.title}
                   </Link>
                 ) : (
                   <span className="mt-5 inline-flex rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
