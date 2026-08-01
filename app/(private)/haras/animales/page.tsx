@@ -20,6 +20,8 @@ type Animal = {
   fecha_nacimiento: string | null
   madre_id: string | null
   padre_id: string | null
+  madre_nombre_externo: string | null
+  padre_nombre_externo: string | null
   identificador: string | null
   estado: (typeof estados)[number]
   observaciones: string | null
@@ -39,6 +41,8 @@ type AnimalForm = {
   fecha_nacimiento: string
   madre_id: string
   padre_id: string
+  madre_nombre_externo: string
+  padre_nombre_externo: string
   identificador: string
   estado: Animal['estado']
   observaciones: string
@@ -53,7 +57,8 @@ type AnimalForm = {
 
 const emptyForm: AnimalForm = {
   nombre: '', categoria: 'otro', sexo: 'desconocido', fecha_nacimiento: '',
-  madre_id: '', padre_id: '', identificador: '', estado: 'activo', observaciones: '',
+  madre_id: '', padre_id: '', madre_nombre_externo: '', padre_nombre_externo: '',
+  identificador: '', estado: 'activo', observaciones: '',
   color_pelaje: '', senales_cabeza: '', senales_mano_izquierda: '', senales_mano_derecha: '',
   senales_pata_izquierda: '', senales_pata_derecha: '', observaciones_marcas: '',
 }
@@ -101,7 +106,7 @@ export default function AnimalesPage() {
     setError(null)
     const { data, error: queryError } = await supabase
       .from('vet_animales')
-      .select('id, nombre, categoria, sexo, fecha_nacimiento, madre_id, padre_id, identificador, estado, observaciones, color_pelaje, senales_cabeza, senales_mano_izquierda, senales_mano_derecha, senales_pata_izquierda, senales_pata_derecha, observaciones_marcas')
+      .select('id, nombre, categoria, sexo, fecha_nacimiento, madre_id, padre_id, madre_nombre_externo, padre_nombre_externo, identificador, estado, observaciones, color_pelaje, senales_cabeza, senales_mano_izquierda, senales_mano_derecha, senales_pata_izquierda, senales_pata_derecha, observaciones_marcas')
       .eq('empresa_id', empresaId)
       .order('nombre')
 
@@ -141,7 +146,8 @@ export default function AnimalesPage() {
     setForm({
       nombre: animal.nombre, categoria: animal.categoria, sexo: animal.sexo ?? 'desconocido',
       fecha_nacimiento: animal.fecha_nacimiento ?? '', madre_id: animal.madre_id ?? '',
-      padre_id: animal.padre_id ?? '', identificador: animal.identificador ?? '',
+      padre_id: animal.padre_id ?? '', madre_nombre_externo: animal.madre_nombre_externo ?? '',
+      padre_nombre_externo: animal.padre_nombre_externo ?? '', identificador: animal.identificador ?? '',
       estado: animal.estado, observaciones: animal.observaciones ?? '',
       color_pelaje: animal.color_pelaje ?? '', senales_cabeza: animal.senales_cabeza ?? '',
       senales_mano_izquierda: animal.senales_mano_izquierda ?? '', senales_mano_derecha: animal.senales_mano_derecha ?? '',
@@ -176,7 +182,10 @@ export default function AnimalesPage() {
       empresa_id: empresaId,
       nombre: form.nombre.trim(), categoria: form.categoria, sexo: form.sexo,
       fecha_nacimiento: form.fecha_nacimiento || null, madre_id: form.madre_id || null,
-      padre_id: form.padre_id || null, identificador: form.identificador.trim() || null,
+      padre_id: form.padre_id || null,
+      madre_nombre_externo: form.madre_nombre_externo.trim() || null,
+      padre_nombre_externo: form.padre_nombre_externo.trim() || null,
+      identificador: form.identificador.trim() || null,
       estado: form.estado, observaciones: form.observaciones.trim() || null,
       color_pelaje: form.color_pelaje || null,
       senales_cabeza: form.senales_cabeza.trim() || null,
@@ -262,8 +271,20 @@ export default function AnimalesPage() {
                 <label className="text-sm font-medium text-slate-700">Categoría<select value={form.categoria} onChange={(e) => setForm({...form, categoria: e.target.value as Animal['categoria']})} className={inputClass}>{categorias.map((value) => <option key={value} value={value}>{labels[value]}</option>)}</select></label>
                 <label className="text-sm font-medium text-slate-700">Sexo<select value={form.sexo} onChange={(e) => setForm({...form, sexo: e.target.value as AnimalForm['sexo']})} className={inputClass}>{sexos.map((value) => <option key={value} value={value}>{labels[value]}</option>)}</select></label>
                 <label className="text-sm font-medium text-slate-700">Fecha de nacimiento<input type="date" value={form.fecha_nacimiento} onChange={(e) => setForm({...form, fecha_nacimiento: e.target.value})} className={inputClass} /></label>
-                <label className="text-sm font-medium text-slate-700">Madre<select value={form.madre_id} onChange={(e) => setForm({...form, madre_id: e.target.value})} className={inputClass}><option value="">Sin registrar</option>{animales.filter((a) => a.id !== editingId && a.sexo !== 'macho').map((a) => <option key={a.id} value={a.id}>{a.nombre}</option>)}</select></label>
-                <label className="text-sm font-medium text-slate-700">Padre<select value={form.padre_id} onChange={(e) => setForm({...form, padre_id: e.target.value})} className={inputClass}><option value="">Sin registrar</option>{animales.filter((a) => a.id !== editingId && a.sexo !== 'hembra').map((a) => <option key={a.id} value={a.id}>{a.nombre}</option>)}</select></label>
+                <fieldset className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 lg:col-span-3">
+                  <legend className="px-2 text-base font-semibold text-slate-900">Filiación genealógica</legend>
+                  <p className="text-sm text-slate-600">Usa el nombre externo cuando el ejemplar no está registrado en el sistema.</p>
+                  <div className="mt-4 grid gap-4 md:grid-cols-2">
+                    <div className="grid gap-3 rounded-xl border border-slate-200 bg-white p-4">
+                      <label className="text-sm font-medium text-slate-700">Madre registrada<select value={form.madre_id} onChange={(e) => setForm({...form, madre_id: e.target.value})} className={inputClass}><option value="">Sin madre registrada</option>{animales.filter((a) => a.id !== editingId && a.sexo !== 'macho').map((a) => <option key={a.id} value={a.id}>{a.nombre}</option>)}</select></label>
+                      <label className="text-sm font-medium text-slate-700">Madre externa / no registrada<input value={form.madre_nombre_externo} onChange={(e) => setForm({...form, madre_nombre_externo: e.target.value})} placeholder="Nombre genealógico externo" className={inputClass} /></label>
+                    </div>
+                    <div className="grid gap-3 rounded-xl border border-slate-200 bg-white p-4">
+                      <label className="text-sm font-medium text-slate-700">Padre registrado<select value={form.padre_id} onChange={(e) => setForm({...form, padre_id: e.target.value})} className={inputClass}><option value="">Sin padre registrado</option>{animales.filter((a) => a.id !== editingId && a.sexo !== 'hembra').map((a) => <option key={a.id} value={a.id}>{a.nombre}</option>)}</select></label>
+                      <label className="text-sm font-medium text-slate-700">Padre externo / no registrado<input value={form.padre_nombre_externo} onChange={(e) => setForm({...form, padre_nombre_externo: e.target.value})} placeholder="Nombre genealógico externo" className={inputClass} /></label>
+                    </div>
+                  </div>
+                </fieldset>
                 <label className="text-sm font-medium text-slate-700">Identificador / microchip<input value={form.identificador} onChange={(e) => setForm({...form, identificador: e.target.value})} className={inputClass} /></label>
                 <label className="text-sm font-medium text-slate-700">Estado<select value={form.estado} onChange={(e) => setForm({...form, estado: e.target.value as Animal['estado']})} className={inputClass}>{estados.map((value) => <option key={value} value={value}>{labels[value]}</option>)}</select></label>
                 <label className="text-sm font-medium text-slate-700 md:col-span-2 lg:col-span-3">Observaciones<textarea rows={3} value={form.observaciones} onChange={(e) => setForm({...form, observaciones: e.target.value})} className={inputClass} /></label>
@@ -311,7 +332,7 @@ export default function AnimalesPage() {
                 <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500"><tr>{['Nombre', 'Categoría', 'Sexo', 'Fecha nacimiento', 'Madre', 'Padre', 'Identificador / microchip', 'Estado', 'Acciones'].map((heading) => <th key={heading} className="whitespace-nowrap px-4 py-3 font-semibold">{heading}</th>)}</tr></thead>
                 <tbody className="divide-y divide-slate-100 text-slate-700">
                   {loading ? <tr><td colSpan={9} className="px-4 py-10 text-center">Cargando ejemplares…</td></tr> : filteredAnimals.length === 0 ? <tr><td colSpan={9} className="px-4 py-10 text-center text-slate-500">No hay ejemplares que coincidan con los filtros.</td></tr> : filteredAnimals.map((animal) => (
-                    <tr key={animal.id} className="hover:bg-slate-50"><td className="whitespace-nowrap px-4 py-3 font-semibold text-slate-900">{animal.nombre}</td><td className="whitespace-nowrap px-4 py-3">{labels[animal.categoria]}</td><td className="whitespace-nowrap px-4 py-3">{labels[animal.sexo ?? 'desconocido']}</td><td className="whitespace-nowrap px-4 py-3">{formatDate(animal.fecha_nacimiento)}</td><td className="whitespace-nowrap px-4 py-3">{animal.madre_id ? animalNames.get(animal.madre_id) ?? '—' : '—'}</td><td className="whitespace-nowrap px-4 py-3">{animal.padre_id ? animalNames.get(animal.padre_id) ?? '—' : '—'}</td><td className="whitespace-nowrap px-4 py-3">{animal.identificador || '—'}</td><td className="whitespace-nowrap px-4 py-3"><span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold">{labels[animal.estado]}</span></td><td className="px-4 py-3"><button type="button" onClick={() => openEdit(animal)} className="font-semibold text-emerald-700 hover:text-emerald-900">Editar</button></td></tr>
+                    <tr key={animal.id} className="hover:bg-slate-50"><td className="whitespace-nowrap px-4 py-3 font-semibold text-slate-900">{animal.nombre}</td><td className="whitespace-nowrap px-4 py-3">{labels[animal.categoria]}</td><td className="whitespace-nowrap px-4 py-3">{labels[animal.sexo ?? 'desconocido']}</td><td className="whitespace-nowrap px-4 py-3">{formatDate(animal.fecha_nacimiento)}</td><td className="whitespace-nowrap px-4 py-3">{animal.madre_id ? animalNames.get(animal.madre_id) ?? 'Sin madre registrada' : animal.madre_nombre_externo ? <>{animal.madre_nombre_externo} <span className="ml-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">externa</span></> : 'Sin madre registrada'}</td><td className="whitespace-nowrap px-4 py-3">{animal.padre_id ? animalNames.get(animal.padre_id) ?? 'Sin padre registrado' : animal.padre_nombre_externo ? <>{animal.padre_nombre_externo} <span className="ml-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">externo</span></> : 'Sin padre registrado'}</td><td className="whitespace-nowrap px-4 py-3">{animal.identificador || '—'}</td><td className="whitespace-nowrap px-4 py-3"><span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold">{labels[animal.estado]}</span></td><td className="px-4 py-3"><button type="button" onClick={() => openEdit(animal)} className="font-semibold text-emerald-700 hover:text-emerald-900">Editar</button></td></tr>
                   ))}
                 </tbody>
               </table>
