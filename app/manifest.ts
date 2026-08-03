@@ -4,8 +4,8 @@ export default function manifest(): MetadataRoute.Manifest {
   return {
     name: 'Tralixia',
     short_name: 'Tralixia',
-    description: 'Gestión operacional, financiera y veterinaria Haras',
-    start_url: '/haras',
+    description: 'Plataforma modular de gestión empresarial',
+    start_url: '/',
     scope: '/',
     display: 'standalone',
     background_color: '#020617',
@@ -14,7 +14,7 @@ export default function manifest(): MetadataRoute.Manifest {
     lang: 'es-CL',
     icons: [
       {
-        src: '/haras/icons/tralixia-haras.svg',
+        src: '/tralixia.svg',
         sizes: 'any',
         type: 'image/svg+xml',
         // El manifest admite varios propósitos separados por espacios; el tipo

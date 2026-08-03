@@ -16,6 +16,10 @@ export const metadata: Metadata = {
   },
   description: 'Tralixia, plataforma modular de gestión empresarial desarrollada por RM Servicios de Ingeniería y Construcción',
   manifest: '/manifest.webmanifest',
+  icons: {
+    icon: '/tralixia.svg',
+    apple: '/tralixia.svg',
+  },
   appleWebApp: {
     capable: true,
     title: 'Tralixia',
