@@ -303,6 +303,8 @@ type EquipoChecklistPdf = {
   observacion_despues: string | null;
   accion_realizada: string | null;
   recomendacion_tecnica: string | null;
+  condicion_equipo: string | null;
+  accion_checklist: string | null;
   evidencia_antes_url: string | null;
   evidencia_despues_url: string | null;
   item_zona: string | null;
@@ -310,6 +312,23 @@ type EquipoChecklistPdf = {
   item_actividad: string | null;
   item_orden: number | null;
 };
+
+function hasPdfValue(value: string | null | undefined) {
+  return Boolean(value && value.trim());
+}
+
+function isApplicablePdfValue(value: string | null | undefined) {
+  const normalized = String(value || "").trim().toLowerCase().replace(/[áàä]/g, "a");
+  return Boolean(normalized) && !["na", "n/a", "no aplica", "no_aplica", "no corresponde", "pendiente", "sin respuesta"].includes(normalized);
+}
+
+function shouldShowPdfChecklistItem(item: EquipoChecklistPdf) {
+  return item.respuesta_texto === "ok" || item.respuesta_texto === "no_ok" ||
+    isApplicablePdfValue(item.condicion_equipo) || isApplicablePdfValue(item.accion_checklist) ||
+    hasPdfValue(item.observacion_antes) || hasPdfValue(item.observacion_despues) ||
+    hasPdfValue(item.accion_realizada) || hasPdfValue(item.recomendacion_tecnica) ||
+    hasPdfValue(item.evidencia_antes_url) || hasPdfValue(item.evidencia_despues_url);
+}
 
 function toValidTime(value: string | null | undefined) {
   if (!value) return null;
@@ -858,6 +877,7 @@ export async function GET(
         };
 
         checklistTextoPdf = checklistRaw
+          .filter((respuesta) => respuesta.respuesta_texto === "ok" || respuesta.respuesta_texto === "no_ok" || hasPdfValue(respuesta.observacion))
           .map((respuesta) => {
             const item = checklistItemsMap[respuesta.plantilla_item_id];
             if (!item) return null;
@@ -973,7 +993,7 @@ export async function GET(
     const checklistEquipoResp = await adminClient
       .from("ot_equipo_checklist_resultados")
       .select(
-        "id,ot_orden_equipo_id,equipo_id,plantilla_item_id,respuesta_texto,observacion_antes,observacion_despues,accion_realizada,recomendacion_tecnica,evidencia_antes_url,evidencia_despues_url",
+        "id,ot_orden_equipo_id,equipo_id,plantilla_item_id,respuesta_texto,observacion_antes,observacion_despues,accion_realizada,recomendacion_tecnica,condicion_equipo,accion_checklist,evidencia_antes_url,evidencia_despues_url",
       )
       .eq("ot_id", otId);
 
@@ -994,6 +1014,8 @@ export async function GET(
       observacion_despues: string | null;
       accion_realizada: string | null;
       recomendacion_tecnica: string | null;
+      condicion_equipo: string | null;
+      accion_checklist: string | null;
       evidencia_antes_url: string | null;
       evidencia_despues_url: string | null;
     }>;
@@ -1059,6 +1081,7 @@ export async function GET(
           plantillaItemsEquipoMap.get(row.plantilla_item_id)?.item_orden ??
           null,
       }))
+      .filter(shouldShowPdfChecklistItem)
       .sort(
         (a, b) => (a.item_orden ?? 9999) - (b.item_orden ?? 9999),
       ) as EquipoChecklistPdf[];
@@ -1114,6 +1137,12 @@ export async function GET(
                       : "",
                     item.recomendacion_tecnica
                       ? `  RecomendaciÃ³n: ${item.recomendacion_tecnica}`
+                      : "",
+                    isApplicablePdfValue(item.condicion_equipo)
+                      ? `  CondiciÃ³n: ${item.condicion_equipo}`
+                      : "",
+                    isApplicablePdfValue(item.accion_checklist)
+                      ? `  GestiÃ³n: ${item.accion_checklist}`
                       : "",
                     item.evidencia_antes_url ? "  Foto antes: registrada" : "",
                     item.evidencia_despues_url
@@ -1517,4 +1546,3 @@ ${checklistTextoPdf}`
     return jsonError(message, 500);
   }
 }
-

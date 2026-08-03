@@ -597,6 +597,25 @@ function hasChecklistEvidence(item: EquipoChecklistInforme) {
   return Boolean(item.evidencia_antes_url || item.evidencia_despues_url);
 }
 
+function isApplicableChecklistValue(value: string | null | undefined) {
+  const normalized = String(value || "").trim().toLowerCase().replace(/[áàä]/g, "a");
+  return Boolean(normalized) && !["na", "n/a", "no aplica", "no_aplica", "no corresponde", "pendiente", "sin respuesta"].includes(normalized);
+}
+
+function shouldShowEquipmentChecklistItem(item: EquipoChecklistInforme) {
+  return item.respuesta_texto === "ok" || item.respuesta_texto === "no_ok" ||
+    isApplicableChecklistValue(item.condicion_equipo) || isApplicableChecklistValue(item.accion_checklist) ||
+    hasValue(item.observacion_antes) || hasValue(item.observacion_despues) ||
+    hasValue(item.accion_realizada) || hasValue(item.recomendacion_tecnica) ||
+    hasChecklistEvidence(item) || hasMedicionesMotor(item.datos);
+}
+
+function shouldShowChecklistItem(item: ChecklistResultado) {
+  return item.estado === "ok" || item.estado === "observado" ||
+    isApplicableChecklistValue(item.valor_texto) || item.valor_numero !== null ||
+    hasValue(item.observacion);
+}
+
 function sanitizeFileName(value: string) {
   return value
     .normalize("NFD")
@@ -1693,7 +1712,10 @@ export default function InformeSoftysPage() {
     tiempos.map((item) => nombreUsuarioTiempo(item)).filter(Boolean),
   ).size;
 
-  const checklistPorSeccion = checklistResultados.reduce<
+  const checklistVisible = checklistResultados.filter(shouldShowChecklistItem);
+  const checklistEquipoVisible = checklistEquipoResultados.filter(shouldShowEquipmentChecklistItem);
+
+  const checklistPorSeccion = checklistVisible.reduce<
     Record<string, ChecklistResultado[]>
   >((acc, item) => {
     const key = item.seccion || "Checklist técnico";
@@ -1730,7 +1752,7 @@ export default function InformeSoftysPage() {
         ] as EquipoAsociadoInforme[]
       : [];
 
-  const checklistEquipoPorAsociacion = checklistEquipoResultados.reduce<
+  const checklistEquipoPorAsociacion = checklistEquipoVisible.reduce<
     Record<string, EquipoChecklistInforme[]>
   >((acc, item) => {
     const key = item.ot_orden_equipo_id;
@@ -1739,14 +1761,14 @@ export default function InformeSoftysPage() {
     return acc;
   }, {});
 
-  const totalChecklistEquipo = checklistEquipoResultados.length;
-  const totalChecklistRespondido = checklistEquipoResultados.filter((item) =>
+  const totalChecklistEquipo = checklistEquipoVisible.length;
+  const totalChecklistRespondido = checklistEquipoVisible.filter((item) =>
     Boolean(item.respuesta_texto),
   ).length;
-  const totalChecklistObservado = checklistEquipoResultados.filter(
+  const totalChecklistObservado = checklistEquipoVisible.filter(
     (item) => item.respuesta_texto === "no_ok",
   ).length;
-  const totalFotosChecklist = checklistEquipoResultados.reduce(
+  const totalFotosChecklist = checklistEquipoVisible.reduce(
     (total, item) =>
       total + (item.evidencia_antes_url ? 1 : 0) + (item.evidencia_despues_url ? 1 : 0),
     0,
@@ -2306,7 +2328,7 @@ export default function InformeSoftysPage() {
           .evidence-card img {
             width: 100%;
             height: 230px;
-            object-fit: cover;
+            object-fit: contain;
             display: block;
             background: #f8fafc;
           }
@@ -2516,7 +2538,7 @@ export default function InformeSoftysPage() {
           .no-image {
             width: 100%;
             height: 170px;
-            object-fit: cover;
+            object-fit: contain;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -2890,11 +2912,11 @@ export default function InformeSoftysPage() {
             </Section>
           ) : null}
 
-          {usaChecklistPorEquipo ? (
+          {usaChecklistPorEquipo && checklistEquipoVisible.length > 0 ? (
             <Section title={tipoServicioConfig?.tipo_equipo_permitido === "valvula" ? "Checklist técnico por equipo / válvula" : "Checklist técnico por equipo / motor"}>
             {equiposInforme.length > 0 ? (
               <div className="equipment-checklist-list">
-                {equiposInforme.map((equipo, index) => {
+                {equiposInforme.filter((equipo) => (checklistEquipoPorAsociacion[equipo.id] || []).length > 0).map((equipo, index) => {
                   const itemsEquipo = checklistEquipoPorAsociacion[equipo.id] || [];
 
                   return (
@@ -3025,14 +3047,12 @@ export default function InformeSoftysPage() {
                             </div>
                           ))}
                         </div>
-                      ) : (
-                        <TextBox value="Este equipo aún no tiene respuestas de checklist registradas." minHeight={55} />
-                      )}
+                      ) : null}
                     </div>
                   );
                 })}
               </div>
-            ) : checklistResultados.length > 0 ? (
+            ) : checklistVisible.length > 0 ? (
               <>
                 {(Object.entries(checklistPorSeccion) as [string, ChecklistResultado[]][]).map(([seccion, items]) => (
                   <div key={seccion} style={{ marginBottom: 14 }}>
@@ -3060,9 +3080,7 @@ export default function InformeSoftysPage() {
                   </div>
                 ))}
               </>
-            ) : (
-              <TextBox value="Checklist técnico pendiente de cargar para esta OT." minHeight={60} />
-            )}
+            ) : null}
           </Section>
           ) : null}
 
