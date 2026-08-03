@@ -255,6 +255,10 @@ export default function EditarCotizacionPage() {
             typeof cotizacionRow.cliente_id === 'string'
               ? cotizacionRow.cliente_id
               : '',
+          contacto_id:
+            typeof cotizacionRow.contacto_id === 'string'
+              ? cotizacionRow.contacto_id
+              : '',
           estado:
             cotizacionRow.estado === 'borrador' ||
             cotizacionRow.estado === 'enviada' ||

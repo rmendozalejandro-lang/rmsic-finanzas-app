@@ -24,6 +24,11 @@ type Cotizacion = {
   id: string
   empresa_id: string
   cliente_id: string | null
+  contacto_id: string | null
+  contacto_nombre_snapshot: string | null
+  contacto_email_snapshot: string | null
+  contacto_telefono_snapshot: string | null
+  contacto_cargo_snapshot: string | null
   folio: number | null
   codigo: string | null
   estado: EstadoCotizacion
@@ -689,6 +694,17 @@ export default function CotizacionImprimirPage() {
                         </p>
                       </div>
                     </div>
+                    {cotizacion.contacto_nombre_snapshot ? (
+                      <div className="border-t border-slate-200 pt-2">
+                        <div>
+                          <span className="font-semibold">Atención a:</span>{' '}
+                          {cotizacion.contacto_nombre_snapshot}
+                        </div>
+                        {cotizacion.contacto_cargo_snapshot ? <div>{cotizacion.contacto_cargo_snapshot}</div> : null}
+                        {cotizacion.contacto_email_snapshot ? <div>{cotizacion.contacto_email_snapshot}</div> : null}
+                        {cotizacion.contacto_telefono_snapshot ? <div>{cotizacion.contacto_telefono_snapshot}</div> : null}
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               </section>
