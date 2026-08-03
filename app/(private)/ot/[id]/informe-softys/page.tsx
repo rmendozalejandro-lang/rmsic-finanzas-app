@@ -2306,7 +2306,7 @@ export default function InformeSoftysPage() {
           .evidence-card img {
             width: 100%;
             height: 230px;
-            object-fit: cover;
+            object-fit: contain;
             display: block;
             background: #f8fafc;
           }
@@ -2516,7 +2516,7 @@ export default function InformeSoftysPage() {
           .no-image {
             width: 100%;
             height: 170px;
-            object-fit: cover;
+            object-fit: contain;
             display: flex;
             align-items: center;
             justify-content: center;
