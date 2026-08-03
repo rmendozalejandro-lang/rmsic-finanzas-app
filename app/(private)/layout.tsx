@@ -492,6 +492,27 @@ if (empresaGuardadaValida) {
     }
   }, [isTecnicoOT, pathname, rolResuelto, router])
 
+  useEffect(() => {
+    setIsMobileMenuOpen(false)
+  }, [pathname])
+
+  useEffect(() => {
+    if (!isMobileMenuOpen) return
+
+    const previousOverflow = document.body.style.overflow
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsMobileMenuOpen(false)
+    }
+
+    document.body.style.overflow = 'hidden'
+    window.addEventListener('keydown', closeOnEscape)
+
+    return () => {
+      document.body.style.overflow = previousOverflow
+      window.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [isMobileMenuOpen])
+
   const empresaActivaNombreVisual =
     empresaActiva?.nombre || empresaActivaNombreLocal || 'Sin empresa activa'
 
@@ -526,7 +547,7 @@ if (empresaGuardadaValida) {
   }
 
   return (
-    <div className="min-h-screen bg-[#F6F8FB] text-slate-900 print:bg-white">
+    <div className="min-h-screen max-w-full overflow-x-hidden bg-[#F6F8FB] text-slate-900 print:bg-white">
       <AceptarInvitacionesPendientes />
       <div className="grid min-h-screen lg:grid-cols-[300px_minmax(0,1fr)]">
         <aside className="hidden border-r border-slate-200 bg-white print:hidden lg:flex lg:flex-col">
@@ -610,8 +631,8 @@ if (empresaGuardadaValida) {
           </div>
         </aside>
 
-        <div className="flex min-h-screen flex-col">
-          <header className="z-20 border-b border-slate-200 bg-white/90 backdrop-blur print:hidden lg:sticky lg:top-0">
+        <div className="flex min-h-screen min-w-0 flex-col">
+          <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 print:hidden lg:backdrop-blur">
             <div className="px-4 py-3 lg:hidden">
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
@@ -631,8 +652,12 @@ if (empresaGuardadaValida) {
                   aria-expanded={isMobileMenuOpen}
                   aria-controls="mobile-modules-menu"
                   onClick={() => setIsMobileMenuOpen((isOpen) => !isOpen)}
-                  className="shrink-0 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+                  aria-label={isMobileMenuOpen ? 'Cerrar menú de navegación' : 'Abrir menú de navegación'}
+                  className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
                 >
+                  <span aria-hidden="true" className="text-lg leading-none">
+                    {isMobileMenuOpen ? '×' : '☰'}
+                  </span>
                   Menú
                 </button>
               </div>
@@ -676,13 +701,40 @@ if (empresaGuardadaValida) {
               </div>
 
               {isMobileMenuOpen && (
-                <nav
-                  id="mobile-modules-menu"
-                  aria-label="Módulos"
-                  className="mt-3 max-h-[50vh] overflow-y-auto rounded-2xl border border-slate-200 bg-white p-2 shadow-sm"
-                >
-                  <div className="flex flex-wrap gap-2">
-                    {visibleMenuItems.map((item) => {
+                <div className="fixed inset-0 top-[var(--mobile-header-height,0px)] z-50 lg:hidden">
+                  <button
+                    type="button"
+                    aria-label="Cerrar menú"
+                    onClick={() => setIsMobileMenuOpen(false)}
+                    className="absolute inset-0 bg-slate-950/40"
+                  />
+                  <nav
+                    id="mobile-modules-menu"
+                    aria-label="Módulos"
+                    className="absolute inset-y-0 left-0 flex w-[min(86vw,340px)] flex-col overflow-y-auto bg-white px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-4 shadow-2xl"
+                  >
+                    <div className="mb-4 flex items-center justify-between border-b border-slate-100 pb-3">
+                      <div>
+                        <p className="font-semibold text-slate-900">Navegación</p>
+                        <p className="text-xs text-slate-500">Selecciona un módulo</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setIsMobileMenuOpen(false)}
+                        className="flex h-11 w-11 items-center justify-center rounded-xl border border-slate-200 text-2xl text-slate-600"
+                        aria-label="Cerrar menú de navegación"
+                      >
+                        ×
+                      </button>
+                    </div>
+                    <div className="space-y-5">
+                      {visibleMenuGroups.map((group) => (
+                        <div key={group.key}>
+                          <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                            {group.label}
+                          </p>
+                          <div className="space-y-1">
+                            {group.items.map((item) => {
                       const active = isActiveRoute(item.href)
 
                       return (
@@ -691,7 +743,7 @@ if (empresaGuardadaValida) {
                           href={item.href}
                           onNavigate={() => setIsMobileMenuOpen(false)}
                           style={active ? { color: '#ffffff' } : undefined}
-                          className={`rounded-xl px-3 py-2 text-sm font-medium no-underline transition ${
+                          className={`flex min-h-11 w-full items-center rounded-xl px-3 py-2 text-sm font-medium no-underline transition ${
                             active
                               ? 'bg-[#163A5F] !text-white'
                               : 'bg-slate-100 text-slate-700 hover:bg-slate-200 hover:text-slate-900'
@@ -700,14 +752,17 @@ if (empresaGuardadaValida) {
                           {item.label}
                         </Link>
                       )
-                    })}
+                            })}
+                          </div>
+                        </div>
+                      ))}
 
                     {isSuperAdmin && !isTecnicoOT && (
                       <Link
                         href="/admin/empresas"
                         onNavigate={() => setIsMobileMenuOpen(false)}
                         style={isActiveRoute('/admin/empresas') ? { color: '#ffffff' } : undefined}
-                        className={`rounded-xl px-3 py-2 text-sm font-medium no-underline transition ${
+                        className={`flex min-h-11 w-full items-center rounded-xl px-3 py-2 text-sm font-medium no-underline transition ${
                           isActiveRoute('/admin/empresas')
                             ? 'bg-[#163A5F] !text-white'
                             : 'bg-slate-100 text-slate-700 hover:bg-slate-200 hover:text-slate-900'
@@ -716,8 +771,9 @@ if (empresaGuardadaValida) {
                         Admin Empresas
                       </Link>
                     )}
+                    </div>
+                  </nav>
                   </div>
-                </nav>
               )}
             </div>
 
@@ -784,7 +840,7 @@ if (empresaGuardadaValida) {
             </div>
           </header>
 
-          <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8 print:max-w-none print:px-0 print:py-0">
+          <main className="min-w-0 max-w-full flex-1 overflow-x-hidden px-4 py-6 sm:px-6 lg:px-8 print:max-w-none print:overflow-visible print:px-0 print:py-0">
             {isRouteAccessDenied ? (
               <section className="mx-auto max-w-3xl rounded-[28px] border border-amber-200 bg-amber-50 p-6 shadow-sm">
                 <p className="text-sm font-medium text-amber-700">Acceso restringido</p>

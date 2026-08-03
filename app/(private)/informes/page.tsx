@@ -170,17 +170,17 @@ export default function InformesPage() {
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3 md:justify-end">
+        <div className="flex w-full flex-col gap-3 sm:flex-row sm:flex-wrap md:w-auto md:items-center md:justify-end">
           <Link
             href="/informes/plantillas"
-            className={`${buttonPrimary} shrink-0 whitespace-nowrap`}
+            className={`${buttonPrimary} min-h-11 w-full shrink-0 justify-center whitespace-nowrap sm:w-auto`}
           >
             Administrar plantillas
           </Link>
 
           <Link
             href="/informes/nuevo"
-            className={`${buttonPrimary} shrink-0 gap-2 whitespace-nowrap`}
+            className={`${buttonPrimary} min-h-11 w-full shrink-0 justify-center gap-2 whitespace-nowrap sm:w-auto`}
           >
             <span className={buttonIconCircle}>+</span>
             Nuevo informe
