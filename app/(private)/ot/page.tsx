@@ -543,11 +543,11 @@ function OTPageContent() {
           </p>
         </div>
 
-        <div className="flex flex-wrap gap-3">
+        <div className="flex w-full flex-col gap-3 sm:flex-row sm:flex-wrap md:w-auto">
           {canManageTecnicos && !checkingRole ? (
             <Link
               href="/ot/tecnicos"
-              className="inline-flex items-center justify-center rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+              className="inline-flex min-h-11 w-full items-center justify-center rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 sm:w-auto"
             >
               Técnicos OT
             </Link>
@@ -556,7 +556,7 @@ function OTPageContent() {
           <Link
             href="/ot/nueva"
             style={{ backgroundColor: '#163A5F', color: '#ffffff' }}
-            className="inline-flex items-center justify-center rounded-xl bg-[#163A5F] px-4 py-2 text-sm font-semibold text-white hover:bg-[#245C90]"
+            className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-[#163A5F] px-4 py-2 text-sm font-semibold text-white hover:bg-[#245C90] sm:w-auto"
           >
             Nueva OT
           </Link>

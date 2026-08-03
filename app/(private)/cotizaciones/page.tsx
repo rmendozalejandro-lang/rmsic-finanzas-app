@@ -498,11 +498,11 @@ export default function CotizacionesPage() {
             </p>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex w-full items-center gap-3 md:w-auto">
             {isAdmin ? (
               <Link
                 href="/cotizaciones/nueva"
-                className="inline-flex items-center rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                className="inline-flex min-h-11 w-full items-center justify-center rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 md:w-auto"
               >
                 Nueva cotización
               </Link>
