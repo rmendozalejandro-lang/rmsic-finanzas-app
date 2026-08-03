@@ -1000,7 +1000,7 @@ export default function ChecklistsIndividualesPage() {
           .no-image {
             width: 100%;
             height: 165px;
-            object-fit: cover;
+            object-fit: contain;
             display: flex;
             align-items: center;
             justify-content: center;
