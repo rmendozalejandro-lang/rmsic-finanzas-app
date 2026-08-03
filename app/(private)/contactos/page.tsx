@@ -64,6 +64,17 @@ export default function ContactosPage() {
     return () => window.removeEventListener('empresa-activa-cambiada', sync)
   }, [])
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const clienteId = params.get('cliente_id') || ''
+    const proveedorId = params.get('proveedor_id') || ''
+
+    // Los parámetros de navegación inicializan los filtros del maestro transversal.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setClienteFilter(clienteId)
+    setProveedorFilter(proveedorId)
+  }, [])
+
   const loadData = useCallback(async () => {
     if (!empresaId) return
     setLoading(true)
@@ -113,6 +124,18 @@ export default function ContactosPage() {
   }, [contactos, search, estado, clienteFilter, proveedorFilter])
 
   const closeForm = () => { setShowForm(false); setEditingId(null); setForm(emptyForm) }
+  const openNewContact = () => {
+    setEditingId(null)
+    setForm({ ...emptyForm, cliente_id: clienteFilter, proveedor_id: proveedorFilter })
+    setShowForm(true)
+    setSuccess('')
+    setError('')
+  }
+  const clearAssociationFilter = () => {
+    setClienteFilter('')
+    setProveedorFilter('')
+    router.replace('/contactos')
+  }
   const edit = (item: Contacto) => {
     setEditingId(item.id)
     setForm({
@@ -150,10 +173,31 @@ export default function ContactosPage() {
           <div><p className="text-sm font-semibold uppercase tracking-widest text-[#245C90]">Maestros</p>
             <h1 className="text-3xl font-semibold text-slate-900">Contactos</h1>
             <p className="mt-1 text-sm text-slate-500">Directorio transversal de clientes y proveedores.</p></div>
-          {canCreate && <button onClick={() => { closeForm(); setShowForm(true); setSuccess(''); setError('') }} className="rounded-xl bg-[#163A5F] px-5 py-3 text-sm font-semibold text-white shadow-sm hover:bg-[#245C90]">Nuevo contacto</button>}
+          {canCreate && <button onClick={openNewContact} className="rounded-xl bg-[#163A5F] px-5 py-3 text-sm font-semibold text-white shadow-sm hover:bg-[#245C90]">Nuevo contacto</button>}
         </header>
 
         {(error || success) && <div role="status" className={`rounded-xl border px-4 py-3 text-sm ${error ? 'border-red-200 bg-red-50 text-red-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>{error || success}</div>}
+
+        {(clienteFilter || proveedorFilter) && (
+          <section className="flex flex-col gap-3 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-wrap items-center gap-2 text-sm text-blue-900">
+              <span className="font-semibold">Filtro aplicado:</span>
+              {clienteFilter && (
+                <span className="rounded-full border border-blue-200 bg-white px-3 py-1 font-medium">
+                  Contactos asociados al cliente{clientesById.get(clienteFilter) ? `: ${clientesById.get(clienteFilter)}` : ''}
+                </span>
+              )}
+              {proveedorFilter && (
+                <span className="rounded-full border border-blue-200 bg-white px-3 py-1 font-medium">
+                  Contactos asociados al proveedor{proveedoresById.get(proveedorFilter) ? `: ${proveedoresById.get(proveedorFilter)}` : ''}
+                </span>
+              )}
+            </div>
+            <button type="button" onClick={clearAssociationFilter} className="self-start rounded-xl border border-blue-300 bg-white px-3 py-2 text-sm font-semibold text-blue-800 hover:bg-blue-100 sm:self-auto">
+              Ver todos los contactos
+            </button>
+          </section>
+        )}
 
         <section className="grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:grid-cols-4">
           <input aria-label="Buscar contactos" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar nombre, email o teléfono" className="rounded-xl border border-slate-300 px-3 py-2 text-sm" />

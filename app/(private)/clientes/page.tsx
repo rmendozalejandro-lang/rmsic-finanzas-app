@@ -898,6 +898,18 @@ export default function ClientesPage() {
 
                           <button
                             type="button"
+                            onClick={() =>
+                              router.push(
+                                `/contactos?cliente_id=${encodeURIComponent(item.id)}`,
+                              )
+                            }
+                            className="rounded-xl border border-blue-200 px-3 py-2 text-xs font-medium text-blue-700 hover:bg-blue-50"
+                          >
+                            Ver contactos
+                          </button>
+
+                          <button
+                            type="button"
                             onClick={() => toggleActivo(item)}
                             disabled={updatingId === item.id}
                             className="rounded-xl border border-slate-300 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
