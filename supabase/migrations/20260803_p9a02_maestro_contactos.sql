@@ -57,13 +57,13 @@ alter table public.contactos enable row level security;
 
 create policy "contactos_select_empresa" on public.contactos
 for select to authenticated
-using (public.usuario_tiene_empresa_activa(empresa_id));
+using (public.usuario_tiene_empresa(empresa_id));
 
 create policy "contactos_insert_empresa" on public.contactos
 for insert to authenticated
-with check (public.usuario_tiene_empresa_activa(empresa_id));
+with check (public.usuario_tiene_empresa(empresa_id));
 
 create policy "contactos_update_empresa" on public.contactos
 for update to authenticated
-using (public.usuario_tiene_empresa_activa(empresa_id))
-with check (public.usuario_tiene_empresa_activa(empresa_id));
+using (public.usuario_tiene_empresa(empresa_id))
+with check (public.usuario_tiene_empresa(empresa_id));
