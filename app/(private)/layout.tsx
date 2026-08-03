@@ -56,8 +56,6 @@ const menuItems: MenuItem[] = [
   { href: '/haras', label: 'Tralixia Haras', moduleKey: 'haras' },
 
   { href: '/clientes', label: 'Clientes', moduleKey: 'clientes' },
-  // Los contactos se administran actualmente dentro de Clientes; se conserva esa ruta.
-  { href: '/clientes#contactos', label: 'Contactos', moduleKey: 'contactos' },
   { href: '/cotizaciones', label: 'Cotizaciones', moduleKey: 'cotizaciones' },
   { href: '/ingresos', label: 'Ingresos / Ventas', moduleKey: 'ingresos' },
   { href: '/cobranza', label: 'Cobranzas', moduleKey: 'cobranza' },
