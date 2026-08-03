@@ -56,6 +56,7 @@ const menuItems: MenuItem[] = [
   { href: '/haras', label: 'Tralixia Haras', moduleKey: 'haras' },
 
   { href: '/clientes', label: 'Clientes', moduleKey: 'clientes' },
+  { href: '/contactos', label: 'Contactos', moduleKey: 'contactos' },
   { href: '/cotizaciones', label: 'Cotizaciones', moduleKey: 'cotizaciones' },
   { href: '/ingresos', label: 'Ingresos / Ventas', moduleKey: 'ingresos' },
   { href: '/cobranza', label: 'Cobranzas', moduleKey: 'cobranza' },
