@@ -289,7 +289,7 @@ function PhotoGroup({
             <img
               src={item.archivo_url}
               alt={item.archivo_nombre ?? 'Evidencia'}
-              className="ot-print-photo-img h-60 w-full object-cover print:h-48"
+              className="ot-print-photo-img h-80 w-full bg-slate-50 object-contain print:h-64"
             />
             <div className="space-y-2 p-4">
               <p className="text-sm font-semibold text-slate-900">
@@ -750,8 +750,9 @@ function PrintOTPageContent() {
           }
 
           .ot-print-root .ot-print-photo-img {
-            height: 165px !important;
-            object-fit: cover !important;
+            height: 250px !important;
+            object-fit: contain !important;
+            background: #f8fafc !important;
           }
 
           .ot-print-root .ot-print-reception {
