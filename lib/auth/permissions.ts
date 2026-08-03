@@ -56,6 +56,51 @@ export type AccionRecurso =
   | 'editar'
   | 'administrar'
 
+/**
+ * Nombres estables para permisos de registros centrales.
+ *
+ * Se mantienen separados de AccionRecurso para conservar la compatibilidad con
+ * las comprobaciones actuales basadas en recurso + acción.
+ */
+export const PERMISOS_RECURSOS = {
+  clientes: {
+    ver: 'ver_clientes',
+    crear: 'crear_clientes',
+    editar: 'editar_clientes',
+  },
+  proveedores: {
+    ver: 'ver_proveedores',
+    crear: 'crear_proveedores',
+    editar: 'editar_proveedores',
+  },
+  contactos: {
+    ver: 'ver_contactos',
+    crear: 'crear_contactos',
+    editar: 'editar_contactos',
+  },
+} as const
+
+type PermisosPorRecurso = typeof PERMISOS_RECURSOS
+
+export type PermisoRecurso = {
+  [Recurso in keyof PermisosPorRecurso]: PermisosPorRecurso[Recurso][keyof PermisosPorRecurso[Recurso]]
+}[keyof PermisosPorRecurso]
+
+const PERMISSION_TO_RESOURCE_ACTION: Record<
+  PermisoRecurso,
+  { recurso: RecursoTransversal; accion: Exclude<AccionRecurso, 'administrar'> }
+> = {
+  ver_clientes: { recurso: 'clientes', accion: 'ver' },
+  crear_clientes: { recurso: 'clientes', accion: 'crear' },
+  editar_clientes: { recurso: 'clientes', accion: 'editar' },
+  ver_proveedores: { recurso: 'proveedores', accion: 'ver' },
+  crear_proveedores: { recurso: 'proveedores', accion: 'crear' },
+  editar_proveedores: { recurso: 'proveedores', accion: 'editar' },
+  ver_contactos: { recurso: 'contactos', accion: 'ver' },
+  crear_contactos: { recurso: 'contactos', accion: 'crear' },
+  editar_contactos: { recurso: 'contactos', accion: 'editar' },
+}
+
 export const MODULOS_PRINCIPALES: ModuloPrincipal[] = [
   'comercial',
   'financiero',
@@ -364,6 +409,30 @@ export function canAccessResource(
   if (!accionesPermitidas) return false
 
   return accionesPermitidas.includes(accion)
+}
+
+export function canAccessResourcePermission(
+  rol: RolEmpresa | string | null | undefined,
+  permiso: PermisoRecurso
+) {
+  const { recurso, accion } = PERMISSION_TO_RESOURCE_ACTION[permiso]
+
+  return canAccessResource(rol, recurso, accion)
+}
+
+export function canAccessResourcePermissionByRoleAndCompany(
+  rol: RolEmpresa | string | null | undefined,
+  permiso: PermisoRecurso,
+  modulosHabilitados: Array<ModuloPrincipal | string> | null | undefined
+) {
+  const { recurso, accion } = PERMISSION_TO_RESOURCE_ACTION[permiso]
+
+  return canAccessResourceByRoleAndCompany(
+    rol,
+    recurso,
+    accion,
+    modulosHabilitados
+  )
 }
 
 export function getModulesForRole(

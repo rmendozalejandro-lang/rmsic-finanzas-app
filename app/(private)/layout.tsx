@@ -8,6 +8,7 @@ import {
   MODULO_PRINCIPAL_LABELS,
   canAccessModuleByRoleAndCompany,
   getModuloPrincipal,
+  getRecursoTransversalFromModule,
   type ModuleKey,
   type ModuloPrincipal,
 } from '../../lib/auth/permissions'
@@ -44,7 +45,7 @@ type UsuarioEmpresaRow = {
 }
 
 type MenuGroup = {
-  key: ModuloPrincipal | 'general'
+  key: ModuloPrincipal | 'general' | 'maestros'
   label: string
   items: MenuItem[]
 }
@@ -104,8 +105,11 @@ const menuItems: MenuItem[] = [
 const STORAGE_ID_KEY = 'empresa_activa_id'
 const STORAGE_NAME_KEY = 'empresa_activa_nombre'
 
-const MENU_GROUP_ORDER: Array<ModuloPrincipal | 'general'> = [
+type MenuGroupKey = ModuloPrincipal | 'general' | 'maestros'
+
+const MENU_GROUP_ORDER: MenuGroupKey[] = [
   'general',
+  'maestros',
   'comercial',
   'financiero',
   'contable',
@@ -115,8 +119,9 @@ const MENU_GROUP_ORDER: Array<ModuloPrincipal | 'general'> = [
   'haras',
 ]
 
-const MENU_GROUP_LABELS: Record<ModuloPrincipal | 'general', string> = {
+const MENU_GROUP_LABELS: Record<MenuGroupKey, string> = {
   general: 'General',
+  maestros: 'Maestros',
   ...MODULO_PRINCIPAL_LABELS,
 }
 
@@ -427,10 +432,12 @@ if (empresaGuardadaValida) {
   }, [usuarioRol, rolResuelto, modulosHabilitados, empresaActivaId])
 
   const visibleMenuGroups = useMemo<MenuGroup[]>(() => {
-    const grouped = new Map<ModuloPrincipal | 'general', MenuItem[]>()
+    const grouped = new Map<MenuGroupKey, MenuItem[]>()
 
     for (const item of visibleMenuItems) {
-      const groupKey = getModuloPrincipal(item.moduleKey) ?? 'general'
+      const groupKey = getRecursoTransversalFromModule(item.moduleKey)
+        ? 'maestros'
+        : getModuloPrincipal(item.moduleKey) ?? 'general'
       const currentItems = grouped.get(groupKey) ?? []
       grouped.set(groupKey, [...currentItems, item])
     }
