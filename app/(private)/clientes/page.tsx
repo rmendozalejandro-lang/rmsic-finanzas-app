@@ -893,7 +893,19 @@ export default function ClientesPage() {
                             onClick={() => void openContactosCliente(item)}
                             className="rounded-xl border border-blue-200 px-3 py-2 text-xs font-medium text-blue-700 hover:bg-blue-50"
                           >
-                            Contactos
+                            Responsables OT
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              router.push(
+                                `/contactos?cliente_id=${encodeURIComponent(item.id)}`,
+                              )
+                            }
+                            className="rounded-xl border border-blue-200 px-3 py-2 text-xs font-medium text-blue-700 hover:bg-blue-50"
+                          >
+                            Ver contactos
                           </button>
 
                           <button
