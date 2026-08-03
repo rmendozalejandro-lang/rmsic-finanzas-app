@@ -2327,7 +2327,7 @@ export default function InformeSoftysPage() {
 
           .evidence-card img {
             width: 100%;
-            height: 230px;
+            height: 320px;
             object-fit: contain;
             display: block;
             background: #f8fafc;
@@ -2537,7 +2537,7 @@ export default function InformeSoftysPage() {
           .checklist-evidence-card img,
           .no-image {
             width: 100%;
-            height: 170px;
+            height: 280px;
             object-fit: contain;
             display: flex;
             align-items: center;
@@ -2649,7 +2649,7 @@ export default function InformeSoftysPage() {
             .evidence-card img,
             .checklist-evidence-card img,
             .no-image {
-              height: 132px;
+              height: 240px;
             }
           }
         `}</style>
