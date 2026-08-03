@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../../lib/supabase/client";
 import StatusBadge from "../../../components/StatusBadge";
@@ -101,20 +101,6 @@ function getDiasPorCondicion(
   return condicionesPago.find((item) => item.value === condicion)?.dias ?? 0;
 }
 
-function getCondicionLabel(
-  condicion: string | null | undefined,
-  diasCredito: number | null | undefined,
-) {
-  const value = condicion || "contado";
-  const option = condicionesPago.find((item) => item.value === value);
-
-  if (value === "personalizado") {
-    return `Personalizado (${diasCredito ?? 0} días)`;
-  }
-
-  return option?.label ?? "Contado";
-}
-
 function getEstadoComercialLabel(estado: string | null | undefined) {
   return (
     estadosComerciales.find((item) => item.value === estado)?.label ??
@@ -149,6 +135,9 @@ export default function ClientesPage() {
   const [deleteTarget, setDeleteTarget] = useState<Cliente | null>(null);
   const [deleteMotivo, setDeleteMotivo] = useState("");
   const [deleting, setDeleting] = useState(false);
+  const [busqueda, setBusqueda] = useState("");
+  const [filtroActivo, setFiltroActivo] = useState("todos");
+  const [filtroEstadoComercial, setFiltroEstadoComercial] = useState("todos");
 
   const [contactoCliente, setContactoCliente] = useState<Cliente | null>(null);
   const [contactosCliente, setContactosCliente] = useState<ClienteContacto[]>([]);
@@ -172,6 +161,31 @@ export default function ClientesPage() {
     estado_comercial: "cliente_activo",
     activo: "true",
   });
+
+  const clientesFiltrados = useMemo(() => {
+    const termino = busqueda.trim().toLocaleLowerCase("es-CL");
+
+    return clientes.filter((cliente) => {
+      const coincideBusqueda =
+        !termino ||
+        [
+          cliente.nombre,
+          cliente.rut,
+          cliente.email,
+          cliente.telefono,
+          cliente.contacto,
+        ].some((valor) => valor?.toLocaleLowerCase("es-CL").includes(termino));
+      const coincideActivo =
+        filtroActivo === "todos" ||
+        String(cliente.activo) === filtroActivo;
+      const estadoComercial = cliente.estado_comercial || "cliente_activo";
+      const coincideEstado =
+        filtroEstadoComercial === "todos" ||
+        estadoComercial === filtroEstadoComercial;
+
+      return coincideBusqueda && coincideActivo && coincideEstado;
+    });
+  }, [busqueda, clientes, filtroActivo, filtroEstadoComercial]);
 
   useEffect(() => {
     const syncEmpresaActiva = () => {
@@ -755,11 +769,16 @@ export default function ClientesPage() {
 
   return (
     <main className="space-y-6">
-      <div>
-        <h1 className="text-4xl font-semibold text-slate-900">Clientes</h1>
-        <p className="text-slate-600 mt-2">
-          Administración de clientes por empresa activa.
-        </p>
+      <div className="space-y-3">
+        <span className="inline-flex rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-blue-700">
+          Maestros
+        </span>
+        <div>
+          <h1 className="text-4xl font-semibold text-slate-900">Clientes</h1>
+          <p className="mt-2 text-slate-600">
+            Maestro transversal de clientes de la empresa activa.
+          </p>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
@@ -771,6 +790,41 @@ export default function ClientesPage() {
             Clientes registrados para la empresa activa.
           </p>
 
+          <div className="mb-5 grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 md:grid-cols-2 xl:grid-cols-4">
+            <div className="md:col-span-2">
+              <label htmlFor="buscar-clientes" className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Buscar
+              </label>
+              <input
+                id="buscar-clientes"
+                type="search"
+                value={busqueda}
+                onChange={(event) => setBusqueda(event.target.value)}
+                placeholder="Nombre, RUT, email, teléfono o contacto"
+                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+              />
+            </div>
+            <div>
+              <label htmlFor="estado-clientes" className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Estado interno
+              </label>
+              <select id="estado-clientes" value={filtroActivo} onChange={(event) => setFiltroActivo(event.target.value)} className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm">
+                <option value="todos">Todos</option>
+                <option value="true">Activos</option>
+                <option value="false">Inactivos</option>
+              </select>
+            </div>
+            <div>
+              <label htmlFor="comercial-clientes" className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Estado comercial
+              </label>
+              <select id="comercial-clientes" value={filtroEstadoComercial} onChange={(event) => setFiltroEstadoComercial(event.target.value)} className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm">
+                <option value="todos">Todos</option>
+                {estadosComerciales.map((estado) => <option key={estado.value} value={estado.value}>{estado.label}</option>)}
+              </select>
+            </div>
+          </div>
+
           {loading && (
             <div className="text-slate-500">Cargando clientes...</div>
           )}
@@ -781,24 +835,29 @@ export default function ClientesPage() {
             </div>
           )}
 
-          {!loading && !error && clientes.length > 0 && (
+          {!loading && !error && clientes.length > 0 && clientesFiltrados.length === 0 && (
+            <div className="rounded-xl border border-dashed border-slate-300 px-4 py-8 text-center text-sm text-slate-500">
+              No hay clientes que coincidan con la búsqueda y los filtros seleccionados.
+            </div>
+          )}
+
+          {!loading && !error && clientesFiltrados.length > 0 && (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-slate-200 text-left text-slate-500">
-                    <th className="py-3 pr-4">Nombre</th>
+                    <th className="py-3 pr-4">Nombre / Razón social</th>
                     <th className="py-3 pr-4">RUT</th>
-                    <th className="py-3 pr-4">Contacto</th>
+                    <th className="py-3 pr-4">Contacto principal</th>
                     <th className="py-3 pr-4">Email</th>
                     <th className="py-3 pr-4">Teléfono</th>
-                    <th className="py-3 pr-4">Tipo cliente</th>
-                    <th className="py-3 pr-4">Condición pago</th>
-                    <th className="py-3 pr-4">Estado</th>
+                    <th className="py-3 pr-4">Estado comercial</th>
+                    <th className="py-3 pr-4">Estado interno</th>
                     <th className="py-3 pr-4">Acciones</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {clientes.map((item) => (
+                  {clientesFiltrados.map((item) => (
                     <tr key={item.id} className="border-b border-slate-100">
                       <td className="py-3 pr-4 font-medium">{item.nombre}</td>
                       <td className="py-3 pr-4">{item.rut ?? "-"}</td>
@@ -813,12 +872,6 @@ export default function ClientesPage() {
                         >
                           {getEstadoComercialLabel(item.estado_comercial)}
                         </span>
-                      </td>
-                      <td className="py-3 pr-4">
-                        {getCondicionLabel(
-                          item.condicion_pago,
-                          item.dias_credito,
-                        )}
                       </td>
                       <td className="py-3 pr-4">
                         <StatusBadge
