@@ -19,6 +19,12 @@ type Contacto = {
   telefono: string | null
   tipo_contacto: string
   observaciones: string | null
+  es_principal: boolean
+  recibe_cotizaciones: boolean
+  recibe_oc: boolean
+  recibe_informes_ot: boolean
+  recibe_cobranza: boolean
+  recibe_comunicaciones_generales: boolean
   activo: boolean
 }
 
@@ -27,12 +33,27 @@ const tipos = [
   ['administrativo', 'Administrativo'],
   ['tecnico', 'Técnico'],
   ['cobranza', 'Cobranza'],
+  ['compras', 'Compras'],
+  ['operaciones', 'Operaciones'],
+  ['gerencia', 'Gerencia'],
   ['otro', 'Otro'],
 ] as const
 
+const usos = [
+  ['recibe_cotizaciones', 'Cotizaciones'],
+  ['recibe_oc', 'OC'],
+  ['recibe_informes_ot', 'Informes OT'],
+  ['recibe_cobranza', 'Cobranza'],
+  ['recibe_comunicaciones_generales', 'Comunicaciones'],
+] as const
+
+type UsoKey = typeof usos[number][0]
+
 const emptyForm = {
   nombre: '', cargo: '', email: '', telefono: '', cliente_id: '', proveedor_id: '',
-  tipo_contacto: 'otro', observaciones: '', activo: 'true',
+  tipo_contacto: 'otro', observaciones: '', activo: 'true', es_principal: false,
+  recibe_cotizaciones: false, recibe_oc: false, recibe_informes_ot: false,
+  recibe_cobranza: false, recibe_comunicaciones_generales: true,
 }
 
 export default function ContactosPage() {
@@ -50,6 +71,8 @@ export default function ContactosPage() {
   const [showForm, setShowForm] = useState(false)
   const [search, setSearch] = useState('')
   const [estado, setEstado] = useState('todos')
+  const [tipoFilter, setTipoFilter] = useState('todos')
+  const [usoFilter, setUsoFilter] = useState<'todos' | UsoKey>('todos')
   const [clienteFilter, setClienteFilter] = useState('')
   const [proveedorFilter, setProveedorFilter] = useState('')
   const [form, setForm] = useState(emptyForm)
@@ -118,10 +141,12 @@ export default function ContactosPage() {
       const matchesSearch = !query || [item.nombre, item.email, item.telefono]
         .some((value) => value?.toLocaleLowerCase('es').includes(query))
       return matchesSearch && (estado === 'todos' || String(item.activo) === estado)
+        && (tipoFilter === 'todos' || item.tipo_contacto === tipoFilter)
+        && (usoFilter === 'todos' || item[usoFilter])
         && (!clienteFilter || item.cliente_id === clienteFilter)
         && (!proveedorFilter || item.proveedor_id === proveedorFilter)
     })
-  }, [contactos, search, estado, clienteFilter, proveedorFilter])
+  }, [contactos, search, estado, tipoFilter, usoFilter, clienteFilter, proveedorFilter])
 
   const closeForm = () => { setShowForm(false); setEditingId(null); setForm(emptyForm) }
   const openNewContact = () => {
@@ -141,7 +166,10 @@ export default function ContactosPage() {
     setForm({
       nombre: item.nombre, cargo: item.cargo || '', email: item.email || '', telefono: item.telefono || '',
       cliente_id: item.cliente_id || '', proveedor_id: item.proveedor_id || '', tipo_contacto: item.tipo_contacto,
-      observaciones: item.observaciones || '', activo: String(item.activo),
+      observaciones: item.observaciones || '', activo: String(item.activo), es_principal: item.es_principal,
+      recibe_cotizaciones: item.recibe_cotizaciones, recibe_oc: item.recibe_oc,
+      recibe_informes_ot: item.recibe_informes_ot, recibe_cobranza: item.recibe_cobranza,
+      recibe_comunicaciones_generales: item.recibe_comunicaciones_generales,
     })
     setShowForm(true); setError(''); setSuccess('')
   }
@@ -156,6 +184,10 @@ export default function ContactosPage() {
       email: form.email.trim() || null, telefono: form.telefono.trim() || null,
       cliente_id: form.cliente_id || null, proveedor_id: form.proveedor_id || null,
       tipo_contacto: form.tipo_contacto, observaciones: form.observaciones.trim() || null,
+      es_principal: form.es_principal, recibe_cotizaciones: form.recibe_cotizaciones,
+      recibe_oc: form.recibe_oc, recibe_informes_ot: form.recibe_informes_ot,
+      recibe_cobranza: form.recibe_cobranza,
+      recibe_comunicaciones_generales: form.recibe_comunicaciones_generales,
       activo: form.activo === 'true',
     }
     const response = editingId
@@ -199,16 +231,18 @@ export default function ContactosPage() {
           </section>
         )}
 
-        <section className="grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:grid-cols-4">
+        <section className="grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:grid-cols-3 xl:grid-cols-6">
           <input aria-label="Buscar contactos" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar nombre, email o teléfono" className="rounded-xl border border-slate-300 px-3 py-2 text-sm" />
           <select aria-label="Filtrar por estado" value={estado} onChange={(e) => setEstado(e.target.value)} className="rounded-xl border border-slate-300 px-3 py-2 text-sm"><option value="todos">Todos los estados</option><option value="true">Activos</option><option value="false">Inactivos</option></select>
+          <select aria-label="Filtrar por tipo" value={tipoFilter} onChange={(e) => setTipoFilter(e.target.value)} className="rounded-xl border border-slate-300 px-3 py-2 text-sm"><option value="todos">Todos los tipos</option>{tipos.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
+          <select aria-label="Filtrar por uso" value={usoFilter} onChange={(e) => setUsoFilter(e.target.value as 'todos' | UsoKey)} className="rounded-xl border border-slate-300 px-3 py-2 text-sm"><option value="todos">Todos los usos</option>{usos.map(([value, label]) => <option key={value} value={value}>Recibe {label.toLocaleLowerCase('es')}</option>)}</select>
           <select aria-label="Filtrar por cliente" value={clienteFilter} onChange={(e) => setClienteFilter(e.target.value)} className="rounded-xl border border-slate-300 px-3 py-2 text-sm"><option value="">Todos los clientes</option>{clientes.map((item) => <option key={item.id} value={item.id}>{item.nombre}</option>)}</select>
           <select aria-label="Filtrar por proveedor" value={proveedorFilter} onChange={(e) => setProveedorFilter(e.target.value)} className="rounded-xl border border-slate-300 px-3 py-2 text-sm"><option value="">Todos los proveedores</option>{proveedores.map((item) => <option key={item.id} value={item.id}>{item.nombre}</option>)}</select>
         </section>
 
         <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
           {loading ? <p className="p-8 text-center text-sm text-slate-500">Cargando contactos...</p> : filtered.length === 0 ? <p className="p-8 text-center text-sm text-slate-500">No hay contactos que coincidan con los filtros.</p> :
-            <div className="overflow-x-auto"><table className="min-w-full text-left text-sm"><thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500"><tr>{['Nombre', 'Cargo', 'Email', 'Teléfono', 'Tipo', 'Cliente', 'Proveedor', 'Estado', ''].map((head) => <th key={head} className="px-4 py-3">{head}</th>)}</tr></thead><tbody className="divide-y divide-slate-100">{filtered.map((item) => <tr key={item.id} className="hover:bg-slate-50"><td className="px-4 py-3 font-medium text-slate-900">{item.nombre}</td><td className="px-4 py-3">{item.cargo || '—'}</td><td className="px-4 py-3">{item.email || '—'}</td><td className="px-4 py-3">{item.telefono || '—'}</td><td className="px-4 py-3">{tipos.find(([value]) => value === item.tipo_contacto)?.[1] || item.tipo_contacto}</td><td className="px-4 py-3">{item.cliente_id ? clientesById.get(item.cliente_id) || '—' : '—'}</td><td className="px-4 py-3">{item.proveedor_id ? proveedoresById.get(item.proveedor_id) || '—' : '—'}</td><td className="px-4 py-3"><StatusBadge status={item.activo ? 'activo' : 'inactivo'} /></td><td className="px-4 py-3">{canEdit && <button onClick={() => edit(item)} className="font-semibold text-[#245C90] hover:underline">Editar</button>}</td></tr>)}</tbody></table></div>}
+            <div className="overflow-x-auto"><table className="min-w-full text-left text-sm"><thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500"><tr>{['Contacto', 'Email / teléfono', 'Tipo', 'Usos', 'Cliente', 'Proveedor', 'Estado', ''].map((head) => <th key={head} className="px-4 py-3">{head}</th>)}</tr></thead><tbody className="divide-y divide-slate-100">{filtered.map((item) => <tr key={item.id} className="hover:bg-slate-50"><td className="px-4 py-3"><div className="flex items-center gap-2 font-medium text-slate-900">{item.nombre}{item.es_principal && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">Principal</span>}</div><div className="text-xs text-slate-500">{item.cargo || 'Sin cargo'}</div></td><td className="px-4 py-3"><div>{item.email || '—'}</div><div className="text-xs text-slate-500">{item.telefono || '—'}</div></td><td className="px-4 py-3"><span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">{tipos.find(([value]) => value === item.tipo_contacto)?.[1] || item.tipo_contacto}</span></td><td className="px-4 py-3"><div className="flex max-w-xs flex-wrap gap-1">{usos.filter(([key]) => item[key]).map(([key, label]) => <span key={key} className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">{label}</span>)}{!usos.some(([key]) => item[key]) && <span className="text-slate-400">—</span>}</div></td><td className="px-4 py-3">{item.cliente_id ? clientesById.get(item.cliente_id) || '—' : '—'}</td><td className="px-4 py-3">{item.proveedor_id ? proveedoresById.get(item.proveedor_id) || '—' : '—'}</td><td className="px-4 py-3"><StatusBadge status={item.activo ? 'activo' : 'inactivo'} /></td><td className="px-4 py-3">{canEdit && <button onClick={() => edit(item)} className="font-semibold text-[#245C90] hover:underline">Editar</button>}</td></tr>)}</tbody></table></div>}
         </section>
 
         {showForm && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4" onMouseDown={(e) => { if (e.currentTarget === e.target) closeForm() }}><form onSubmit={save} className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-6 shadow-xl"><div className="mb-5 flex items-center justify-between"><h2 className="text-xl font-semibold">{editingId ? 'Editar contacto' : 'Nuevo contacto'}</h2><button type="button" onClick={closeForm} className="text-sm text-slate-500">Cerrar</button></div><div className="grid gap-4 sm:grid-cols-2">
@@ -220,7 +254,8 @@ export default function ContactosPage() {
           <Field label="Proveedor"><select value={form.proveedor_id} onChange={(e) => setForm({ ...form, proveedor_id: e.target.value })} className="input"><option value="">Sin proveedor</option>{proveedores.map((item) => <option key={item.id} value={item.id}>{item.nombre}</option>)}</select></Field>
           <Field label="Tipo de contacto"><select value={form.tipo_contacto} onChange={(e) => setForm({ ...form, tipo_contacto: e.target.value })} className="input">{tipos.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></Field>
           <Field label="Estado"><select value={form.activo} onChange={(e) => setForm({ ...form, activo: e.target.value })} className="input"><option value="true">Activo</option><option value="false">Inactivo</option></select></Field>
-          <div className="sm:col-span-2"><Field label="Observaciones"><textarea rows={3} value={form.observaciones} onChange={(e) => setForm({ ...form, observaciones: e.target.value })} className="input" /></Field></div>
+          <div className="sm:col-span-2 rounded-xl border border-slate-200 bg-slate-50 p-4"><p className="mb-3 text-sm font-semibold text-slate-800">Rol y comunicaciones</p><div className="grid gap-3 sm:grid-cols-2"><CheckField label="Contacto principal" checked={form.es_principal} onChange={(checked) => setForm({ ...form, es_principal: checked })} />{usos.map(([key, label]) => <CheckField key={key} label={`Recibe ${label.toLocaleLowerCase('es')}`} checked={form[key]} onChange={(checked) => setForm({ ...form, [key]: checked })} />)}</div></div>
+          <div className="sm:col-span-2"><Field label="Notas"><textarea rows={3} value={form.observaciones} onChange={(e) => setForm({ ...form, observaciones: e.target.value })} className="input" /></Field></div>
         </div><div className="mt-6 flex justify-end gap-3"><button type="button" onClick={closeForm} className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold">Cancelar</button><button disabled={saving} className="rounded-xl bg-[#163A5F] px-5 py-2 text-sm font-semibold text-white disabled:opacity-60">{saving ? 'Guardando...' : 'Guardar contacto'}</button></div></form></div>}
         <style jsx>{`.input { width: 100%; border: 1px solid rgb(203 213 225); border-radius: .75rem; padding: .625rem .75rem; font-size: .875rem; background: white; }`}</style>
       </main>
@@ -230,4 +265,8 @@ export default function ContactosPage() {
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return <label className="block text-sm font-medium text-slate-700"><span className="mb-1.5 block">{label}</span>{children}</label>
+}
+
+function CheckField({ label, checked, onChange }: { label: string; checked: boolean; onChange: (checked: boolean) => void }) {
+  return <label className="flex items-center gap-2 text-sm text-slate-700"><input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} className="size-4 rounded border-slate-300 text-[#245C90]" />{label}</label>
 }
