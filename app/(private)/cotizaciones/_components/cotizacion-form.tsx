@@ -14,8 +14,20 @@ type ClienteOption = {
   label: string;
 };
 
+type ContactoOption = {
+  id: string;
+  nombre: string;
+  cargo: string | null;
+  email: string | null;
+  telefono: string | null;
+  tipo_contacto: string;
+  es_principal: boolean;
+  recibe_cotizaciones: boolean;
+};
+
 export type CotizacionFormValues = {
   cliente_id: string;
+  contacto_id: string;
   estado: "borrador" | "enviada" | "aprobada" | "rechazada" | "vencida";
   titulo: string;
   descripcion: string;
@@ -330,6 +342,10 @@ export default function CotizacionForm({
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [contactos, setContactos] = useState<ContactoOption[]>([]);
+  const [loadingContactos, setLoadingContactos] = useState(
+    Boolean(initialValues.cliente_id)
+  );
   const [ingresoGeneradoId, setIngresoGeneradoId] = useState<string | null>(
     initialValues.ingreso_generado_id ?? null
   );
@@ -363,6 +379,43 @@ export default function CotizacionForm({
   const mostrarAprobacionFinanciera = form.estado === "aprobada";
   const puedeGenerarIngresoFinanciero =
     mostrarAprobacionFinanciera && !ingresoGeneradoId;
+
+  useEffect(() => {
+    let active = true;
+
+    if (!form.cliente_id) {
+      return;
+    }
+
+    supabase
+      .from("contactos")
+      .select("id,nombre,cargo,email,telefono,tipo_contacto,es_principal,recibe_cotizaciones")
+      .eq("empresa_id", empresaId)
+      .eq("cliente_id", form.cliente_id)
+      .eq("activo", true)
+      .then(({ data, error: contactosError }) => {
+        if (!active) return;
+        if (contactosError) {
+          setContactos([]);
+          setError("No se pudieron cargar los contactos del cliente.");
+        } else {
+          const rows = (data ?? []) as ContactoOption[];
+          rows.sort((a, b) => {
+            const score = (contacto: ContactoOption) =>
+              Number(contacto.recibe_cotizaciones) * 4 +
+              Number(contacto.es_principal) * 2 +
+              Number(["comercial", "gerencia"].includes(contacto.tipo_contacto));
+            return score(b) - score(a) || a.nombre.localeCompare(b.nombre, "es");
+          });
+          setContactos(rows);
+        }
+        setLoadingContactos(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [empresaId, form.cliente_id]);
 
   useEffect(() => {
     if (!cotizacionId || !empresaId || !isEdit) return;
@@ -589,9 +642,24 @@ export default function CotizacionForm({
         }) || "";
       }
 
+      const contactoSeleccionado = contactos.find(
+        (contacto) => contacto.id === form.contacto_id
+      );
+
+      if (form.contacto_id && !contactoSeleccionado) {
+        setError("El contacto destinatario no pertenece al cliente seleccionado.");
+        setSaving(false);
+        return;
+      }
+
       const cotizacionPayload = {
         empresa_id: empresaId,
         cliente_id: form.cliente_id || null,
+        contacto_id: contactoSeleccionado?.id || null,
+        contacto_nombre_snapshot: contactoSeleccionado?.nombre || null,
+        contacto_email_snapshot: contactoSeleccionado?.email || null,
+        contacto_telefono_snapshot: contactoSeleccionado?.telefono || null,
+        contacto_cargo_snapshot: contactoSeleccionado?.cargo || null,
         estado: form.estado,
         titulo: form.titulo.trim(),
         descripcion: form.descripcion.trim() || null,
@@ -987,7 +1055,12 @@ export default function CotizacionForm({
                 </label>
                 <select
                   value={form.cliente_id}
-                  onChange={(e) => updateFormField("cliente_id", e.target.value)}
+                  onChange={(e) => {
+                    updateFormField("cliente_id", e.target.value);
+                    updateFormField("contacto_id", "");
+                    setContactos([]);
+                    setLoadingContactos(Boolean(e.target.value));
+                  }}
                   className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
                 >
                   <option value="">Sin cliente asociado</option>
@@ -997,6 +1070,45 @@ export default function CotizacionForm({
                     </option>
                   ))}
                 </select>
+              </div>
+
+              <div>
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <label className="block text-sm font-medium text-slate-700">
+                    Contacto destinatario
+                  </label>
+                  {form.cliente_id ? (
+                    <Link
+                      href={`/contactos?cliente_id=${encodeURIComponent(form.cliente_id)}`}
+                      className="text-xs font-medium text-blue-700 hover:underline"
+                    >
+                      Administrar contactos
+                    </Link>
+                  ) : null}
+                </div>
+                <select
+                  value={form.contacto_id}
+                  onChange={(e) => updateFormField("contacto_id", e.target.value)}
+                  disabled={!form.cliente_id || loadingContactos}
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-100"
+                >
+                  <option value="">
+                    {loadingContactos ? "Cargando contactos..." : "Sin contacto destinatario"}
+                  </option>
+                  {contactos.map((contacto) => (
+                    <option key={contacto.id} value={contacto.id}>
+                      {contacto.nombre}
+                      {contacto.cargo ? ` — ${contacto.cargo}` : ""}
+                      {contacto.recibe_cotizaciones ? " · Cotizaciones" : ""}
+                      {contacto.es_principal ? " · Principal" : ""}
+                    </option>
+                  ))}
+                </select>
+                {form.cliente_id && !loadingContactos && contactos.length === 0 ? (
+                  <p className="mt-2 text-xs text-amber-700">
+                    Este cliente aún no tiene contactos asociados para cotizaciones.
+                  </p>
+                ) : null}
               </div>
 
               <div>

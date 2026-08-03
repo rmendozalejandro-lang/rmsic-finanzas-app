@@ -19,6 +19,8 @@ type CotizacionRow = {
   id: string;
   empresa_id: string;
   cliente_id: string | null;
+  contacto_nombre_snapshot: string | null;
+  contacto_email_snapshot: string | null;
   folio: number | null;
   codigo: string | null;
   estado: EstadoCotizacion;
@@ -261,7 +263,7 @@ export default function CotizacionesPage() {
 
         const [cotizacionesResp, clientesResp, rolResp] = await Promise.all([
           fetch(
-            `${baseUrl}/rest/v1/cotizaciones?empresa_id=eq.${empresaActivaId}&activo=eq.true&deleted_at=is.null&select=id,empresa_id,cliente_id,folio,codigo,estado,titulo,fecha_emision,fecha_vencimiento,moneda,porcentaje_iva,descuento_global_tipo,descuento_global_valor,subtotal_neto,subtotal_exento,monto_iva,total,created_at&order=created_at.desc`,
+            `${baseUrl}/rest/v1/cotizaciones?empresa_id=eq.${empresaActivaId}&activo=eq.true&deleted_at=is.null&select=id,empresa_id,cliente_id,contacto_nombre_snapshot,contacto_email_snapshot,folio,codigo,estado,titulo,fecha_emision,fecha_vencimiento,moneda,porcentaje_iva,descuento_global_tipo,descuento_global_valor,subtotal_neto,subtotal_exento,monto_iva,total,created_at&order=created_at.desc`,
             {
               headers: {
                 apikey: apiKey,
@@ -689,7 +691,15 @@ export default function CotizacionesPage() {
                           </div>
                         </td>
                         <td className="px-5 py-4 text-slate-700">
-                          {getClienteDisplayName(cliente)}
+                          <div>{getClienteDisplayName(cliente)}</div>
+                          {row.contacto_nombre_snapshot ? (
+                            <div className="mt-1 text-xs text-slate-500">
+                              Atención: {row.contacto_nombre_snapshot}
+                              {row.contacto_email_snapshot
+                                ? ` · ${row.contacto_email_snapshot}`
+                                : ""}
+                            </div>
+                          ) : null}
                         </td>
                         <td className="px-5 py-4 text-slate-700">
                           {formatDate(row.fecha_emision)}

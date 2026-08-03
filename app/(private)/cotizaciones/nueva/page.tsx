@@ -93,6 +93,7 @@ export default function NuevaCotizacionPage() {
   const [clientes, setClientes] = useState<ClienteOption[]>([])
   const [initialValues, setInitialValues] = useState<{
     cliente_id: string
+    contacto_id: string
     estado: 'borrador' | 'enviada' | 'aprobada' | 'rechazada' | 'vencida'
     titulo: string
     descripcion: string
@@ -319,6 +320,7 @@ export default function NuevaCotizacionPage() {
         setClientes(clientesOptions)
         setInitialValues({
           cliente_id: '',
+          contacto_id: '',
           estado: 'borrador',
           titulo: '',
           descripcion: '',
@@ -374,6 +376,7 @@ export default function NuevaCotizacionPage() {
         ? {
             ...prev,
             cliente_id: cliente.id,
+            contacto_id: '',
           }
         : prev
     )
