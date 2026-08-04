@@ -26,7 +26,7 @@ import {
   readTerrainRegistry,
   type TerrainRegistry,
 } from '../../lib/offline/terrain-registry'
-import { isOTPendingPayload, mergeOTOfflineCache, OT_PENDING_ACTION, type OTOfflinePendingPayload } from '../../lib/offline/ot'
+import { isOTPendingPayload, mergeOTOfflineCache, OT_PENDING_ACTION, readOTOfflineCache, type OTOfflinePendingPayload } from '../../lib/offline/ot'
 
 type PrivateLayoutProps = {
   children: ReactNode
@@ -537,21 +537,53 @@ if (empresaGuardadaValida) {
     for (const item of pendingItems) {
       const payload = item.payload as OTOfflinePendingPayload
       try {
-        const nota = [
-          payload.observacion_terreno && `Observación terreno: ${payload.observacion_terreno}`,
-          payload.estado_local_avance && `Estado local: ${payload.estado_local_avance}`,
-          payload.notas_internas_ejecucion && `Notas internas: ${payload.notas_internas_ejecucion}`,
-        ].filter(Boolean).join('\n')
-
-        const updateResp = await supabase
+        const { data: otActual, error: otReadError } = await supabase
           .from('ot_ordenes_trabajo')
-          .update({ trabajo_realizado: nota || null, updated_at: new Date().toISOString() })
+          .select('id, empresa_id, trabajo_realizado, updated_at')
           .eq('id', payload.ot_id)
           .eq('empresa_id', payload.empresa_id)
+          .maybeSingle()
 
-        if (updateResp.error) throw updateResp.error
-        window.localStorage.removeItem(`tralixia_ot_draft_${payload.empresa_id}_${payload.user_id}_${payload.ot_id}`)
+        if (otReadError) throw otReadError
+        if (!otActual) throw new Error('No se encontró la OT para sincronizar el avance offline.')
+
+        const updatedAtActual = typeof otActual.updated_at === 'string' ? otActual.updated_at : null
+        if (updatedAtActual !== payload.base_updated_at) {
+          throw new Error('La OT cambió en línea después de prepararse offline. Revisa y sincroniza manualmente.')
+        }
+
+        const lineasAvance = [
+          payload.observacion_terreno.trim() && `Observación terreno: ${payload.observacion_terreno.trim()}`,
+          payload.estado_local_avance.trim() && `Estado local: ${payload.estado_local_avance.trim()}`,
+          payload.notas_internas_ejecucion.trim() && `Notas internas: ${payload.notas_internas_ejecucion.trim()}`,
+        ].filter(Boolean)
+
         const { removeOfflineQueueItem } = await import('../../lib/offline/offline-queue')
+
+        if (lineasAvance.length > 0) {
+          const fechaSincronizacion = new Date().toISOString()
+          const avanceOffline = [
+            '--- Avance registrado offline ---',
+            `Fecha sincronización: ${fechaSincronizacion}`,
+            ...lineasAvance,
+          ].join('\n')
+          const trabajoRealizadoActual = typeof otActual.trabajo_realizado === 'string'
+            ? otActual.trabajo_realizado.trim()
+            : ''
+          const trabajoRealizado = trabajoRealizadoActual
+            ? `${trabajoRealizadoActual}\n\n${avanceOffline}`
+            : avanceOffline
+
+          const updateResp = await supabase
+            .from('ot_ordenes_trabajo')
+            .update({ trabajo_realizado: trabajoRealizado })
+            .eq('id', payload.ot_id)
+            .eq('empresa_id', payload.empresa_id)
+
+          if (updateResp.error) throw updateResp.error
+        }
+
+        window.localStorage.removeItem(`tralixia_ot_draft_${payload.empresa_id}_${payload.user_id}_${payload.ot_id}`)
         removeOfflineQueueItem(item.id)
       } catch (error) {
         const { updateOfflineQueueItem } = await import('../../lib/offline/offline-queue')
@@ -733,9 +765,20 @@ if (empresaGuardadaValida) {
     item.payload && typeof item.payload === 'object' &&
     (item.payload as { empresa_id?: string }).empresa_id === empresaActivaId
   ).length
+  const isCachedOtDetailRoute = useMemo(() => {
+    if (!empresaActivaId || !usuarioId) return false
+    const match = pathname.match(/^\/ot\/([^/]+)$/)
+    if (!match?.[1]) return false
+    const cache = readOTOfflineCache(empresaActivaId, usuarioId)
+    return Boolean(cache?.detalles.some((detalle) => detalle.id === match[1]))
+  }, [empresaActivaId, pathname, usuarioId])
+
   const isOfflineSafeRoute = pathname === HARAS_PARTOS_ROUTE ||
-    pathname.startsWith(`${HARAS_PARTOS_ROUTE}/`) || pathname === OT_ROUTE || pathname.startsWith(`${OT_ROUTE}/`)
+    pathname.startsWith(`${HARAS_PARTOS_ROUTE}/`) ||
+    pathname === OT_ROUTE ||
+    isCachedOtDetailRoute
   const showOfflineRouteBlocked = isOffline && !isOfflineSafeRoute
+  const showOtOfflineRouteBlocked = showOfflineRouteBlocked && pathname.startsWith(`${OT_ROUTE}/`)
 
   if (checkingSession) {
     return (
@@ -1092,7 +1135,7 @@ if (empresaGuardadaValida) {
                   Modo terreno activo
                 </p>
                 <h2 className="mt-2 text-2xl font-semibold text-amber-950">
-                  Este módulo requiere conexión.
+                  {showOtOfflineRouteBlocked ? 'Esta acción requiere conexión.' : 'Este módulo requiere conexión.'}
                 </h2>
                 <p className="mt-3 text-sm text-amber-800">
                   Solo puedes abrir módulos preparados para esta empresa y
@@ -1100,12 +1143,14 @@ if (empresaGuardadaValida) {
                 </p>
                 {terrainRegistry?.lastSafeRoute ? (
                   <Link
-                    href={terrainRegistry.lastSafeRoute}
+                    href={showOtOfflineRouteBlocked ? OT_ROUTE : terrainRegistry.lastSafeRoute}
                     className="mt-5 inline-flex rounded-2xl bg-[#163A5F] px-4 py-3 text-sm font-semibold text-white no-underline"
                   >
-                    {terrainRegistry?.lastModule
-                      ? "Volver al último trabajo offline"
-                      : "Volver a Partos"}
+                    {showOtOfflineRouteBlocked
+                      ? "Volver a OT"
+                      : terrainRegistry?.lastModule
+                        ? "Volver al último trabajo offline"
+                        : "Volver a Partos"}
                   </Link>
                 ) : (
                   <p className="mt-4 font-medium text-amber-950">
