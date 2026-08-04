@@ -8,6 +8,7 @@ import {
   OFFLINE_QUEUE_STORAGE_KEY,
   listOfflineQueue,
   removeOfflineQueueItem,
+  updateOfflineQueueItem,
   type AddOfflineQueueItem,
 } from '@/lib/offline/offline-queue'
 
@@ -31,12 +32,18 @@ export function useOfflineQueue() {
   const addPending = useCallback((input: AddOfflineQueueItem) => addOfflineQueueItem(input), [])
   const removePending = useCallback((id: string) => removeOfflineQueueItem(id), [])
   const clearPending = useCallback(() => clearOfflineQueue(), [])
+  const updatePending = useCallback(
+    (id: string, changes: Parameters<typeof updateOfflineQueueItem>[1]) =>
+      updateOfflineQueueItem(id, changes),
+    [],
+  )
 
   return {
     items,
     pendingCount: items.length,
     addPending,
     removePending,
+    updatePending,
     clearPending,
   }
 }
