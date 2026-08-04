@@ -625,7 +625,7 @@ export default function PartosPage() {
   const inputClass =
     "mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100";
   return (
-    <ModuleAccessGuard moduleKey="haras">
+    <ModuleAccessGuard moduleKey="haras" allowOfflineTerrainAccess>
       <main className="min-h-full bg-slate-50 px-4 py-8 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-7xl">
           <header className="flex flex-col gap-5 rounded-3xl bg-slate-950 px-6 py-8 text-white shadow-sm sm:flex-row sm:items-center sm:justify-between sm:px-10">
