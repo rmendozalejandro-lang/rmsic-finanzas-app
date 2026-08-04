@@ -499,12 +499,47 @@ if (empresaGuardadaValida) {
       const ids = ots.map((ot) => ot.id).filter(Boolean)
       const detallesResp = await supabase
         .from('ot_ordenes_trabajo')
-        .select('id, empresa_id, folio, cliente_id, titulo, descripcion_solicitud, problema_reportado, diagnostico, trabajo_realizado, recomendaciones, requiere_checklist, plantilla_checklist_id, fecha_ot, fecha_programada, fecha_cierre, tecnico_responsable_id, created_by, updated_at')
+        .select('id, empresa_id, folio, cliente_id, titulo, descripcion_solicitud, problema_reportado, numero_om_cliente, hora_inicio, hora_termino, duracion_minutos, cantidad_tecnicos, horas_hombre_utilizadas, supervisor_contratista_nombre, supervisor_contratista_rut, supervisor_contratista_cargo, herramientas_materiales_utilizados, recomendaciones_seguridad, seguridad_permiso_trabajo, seguridad_uso_epp, seguridad_bloqueo_tarjeta, seguridad_observacion, alcance_trabajo_ejecutado, alcance_trabajo_observacion, ejecutado_segun_programa, ejecutado_segun_programa_observacion, diagnostico, causa_probable, trabajo_realizado, resultado_servicio, hallazgos, conclusiones_tecnicas, recomendaciones, observaciones_cierre, area_trabajo, prioridad, requiere_checklist, plantilla_checklist_id, fecha_ot, fecha_programada, fecha_cierre, tecnico_responsable_id, created_by, updated_at')
         .eq('empresa_id', empresaActivaId)
         .in('id', ids)
         .is('deleted_at', null)
 
       if (detallesResp.error) return
+
+      const [tiemposResp, equiposAsociadosResp] = await Promise.all([
+        supabase
+          .from('ot_tiempos_trabajo')
+          .select('ot_id, fecha, hora_inicio, hora_termino, duracion_minutos, tipo_tiempo, observacion')
+          .in('ot_id', ids)
+          .eq('activo', true)
+          .is('deleted_at', null)
+          .order('fecha', { ascending: true }),
+        supabase
+          .from('ot_orden_equipos')
+          .select('ot_id, equipo_id, descripcion_trabajo, observacion, orden')
+          .in('ot_id', ids)
+          .eq('activo', true)
+          .is('deleted_at', null)
+          .order('orden', { ascending: true }),
+      ])
+
+      const tiemposPorOt = new Map<string, Array<Record<string, unknown>>>()
+      if (!tiemposResp.error) {
+        ;((tiemposResp.data ?? []) as Array<Record<string, unknown>>).forEach((tiempo) => {
+          const otId = String(tiempo.ot_id ?? '')
+          if (!otId) return
+          tiemposPorOt.set(otId, [...(tiemposPorOt.get(otId) ?? []), tiempo])
+        })
+      }
+
+      const equiposPorOt = new Map<string, Array<Record<string, unknown>>>()
+      if (!equiposAsociadosResp.error) {
+        ;((equiposAsociadosResp.data ?? []) as Array<Record<string, unknown>>).forEach((equipo) => {
+          const otId = String(equipo.ot_id ?? '')
+          if (!otId) return
+          equiposPorOt.set(otId, [...(equiposPorOt.get(otId) ?? []), equipo])
+        })
+      }
 
       const routeResponse = await fetch(OT_ROUTE, { credentials: 'same-origin' })
       if (!routeResponse.ok) return
@@ -516,6 +551,8 @@ if (empresaGuardadaValida) {
       const resumenPorId = new Map(ots.map((ot) => [String(ot.id), ot]))
       const detallesEnriquecidos = (detallesResp.data ?? []).map((detalle) => {
         const resumen = resumenPorId.get(String(detalle.id))
+
+        const detalleId = String(detalle.id)
 
         return {
           ...detalle,
@@ -538,6 +575,8 @@ if (empresaGuardadaValida) {
           equipo_modelo: resumen?.equipo_modelo ?? null,
           equipo_serie: resumen?.equipo_serie ?? null,
           equipo_potencia: resumen?.equipo_potencia ?? null,
+          tiempos_trabajo: tiemposPorOt.get(detalleId) ?? [],
+          equipos_asociados: equiposPorOt.get(detalleId) ?? [],
         }
       })
 

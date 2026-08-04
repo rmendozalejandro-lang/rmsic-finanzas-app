@@ -93,6 +93,21 @@ function buildOfflineEquipoCaracteristicas(detail: OTOfflineDetail) {
   ].filter(Boolean).join(' / ')
 }
 
+function offlineBooleanLabel(value: unknown) {
+  if (value === true) return 'Sí'
+  if (value === false) return 'No'
+  return 'No disponible'
+}
+
+function offlineMinutesLabel(value: unknown) {
+  const text = offlineValue(value)
+  return text ? `${text} min` : 'No disponible'
+}
+
+function getOfflineArray(value: unknown): Array<Record<string, unknown>> {
+  return Array.isArray(value) ? value.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object') : []
+}
+
 function normalizarFechaFiltro(fecha: string) {
   if (!fecha) return ''
 
@@ -914,32 +929,99 @@ function OTPageContent() {
               </section>
 
               <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-                <h3 className="text-xl font-semibold text-slate-900">Solicitud / problema reportado</h3>
+                <h3 className="text-xl font-semibold text-slate-900">Planificación / tiempos</h3>
+                <dl className="mt-4 grid gap-4 text-sm md:grid-cols-2">
+                  <OfflineInfoItem label="OM cliente" value={selectedOfflineDetail.numero_om_cliente} />
+                  <OfflineInfoItem label="Hora inicio" value={selectedOfflineDetail.hora_inicio} />
+                  <OfflineInfoItem label="Hora término" value={selectedOfflineDetail.hora_termino} />
+                  <OfflineInfoItem label="Duración" value={offlineMinutesLabel(selectedOfflineDetail.duracion_minutos)} />
+                  <OfflineInfoItem label="Cantidad técnicos" value={selectedOfflineDetail.cantidad_tecnicos} />
+                  <OfflineInfoItem label="Horas hombre" value={selectedOfflineDetail.horas_hombre_utilizadas} />
+                  <OfflineInfoItem label="Supervisor contratista" value={selectedOfflineDetail.supervisor_contratista_nombre} />
+                  <OfflineInfoItem label="Cargo supervisor" value={selectedOfflineDetail.supervisor_contratista_cargo} />
+                </dl>
+                <div className="mt-5 space-y-3 text-sm">
+                  {getOfflineArray(selectedOfflineDetail.tiempos_trabajo).length > 0 ? (
+                    getOfflineArray(selectedOfflineDetail.tiempos_trabajo).map((tiempo, index) => (
+                      <div key={`${offlineValue(tiempo.fecha)}-${index}`} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                        <p className="font-semibold text-slate-800">Registro de tiempo {index + 1}</p>
+                        <p className="mt-1 text-slate-600">{offlineValue(tiempo.fecha).slice(0, 10) || 'Sin fecha'} · {offlineValue(tiempo.hora_inicio) || '--:--'} - {offlineValue(tiempo.hora_termino) || '--:--'} · {offlineMinutesLabel(tiempo.duracion_minutos)}</p>
+                        <p className="mt-1 text-slate-600">Tipo: {offlineValue(tiempo.tipo_tiempo) || 'No disponible'}</p>
+                        {offlineValue(tiempo.observacion) ? <p className="mt-1 whitespace-pre-wrap text-slate-600">{offlineValue(tiempo.observacion)}</p> : null}
+                      </div>
+                    ))
+                  ) : <p className="text-slate-500">No hay registros de tiempo preparados offline.</p>}
+                </div>
+              </section>
+
+              <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                <h3 className="text-xl font-semibold text-slate-900">Seguridad / condiciones de trabajo</h3>
+                <dl className="mt-4 grid gap-4 text-sm md:grid-cols-3">
+                  <OfflineInfoItem label="Permiso de trabajo" value={offlineBooleanLabel(selectedOfflineDetail.seguridad_permiso_trabajo)} />
+                  <OfflineInfoItem label="Uso EPP" value={offlineBooleanLabel(selectedOfflineDetail.seguridad_uso_epp)} />
+                  <OfflineInfoItem label="Bloqueo / tarjeta" value={offlineBooleanLabel(selectedOfflineDetail.seguridad_bloqueo_tarjeta)} />
+                </dl>
+                <div className="mt-4 grid gap-4 text-sm">
+                  <OfflineTextSection title="Observación seguridad" value={selectedOfflineDetail.seguridad_observacion} />
+                  <OfflineTextSection title="Recomendaciones seguridad" value={selectedOfflineDetail.recomendaciones_seguridad} />
+                  <OfflineTextSection title="Herramientas / materiales utilizados" value={selectedOfflineDetail.herramientas_materiales_utilizados} />
+                </div>
+              </section>
+
+              <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                <h3 className="text-xl font-semibold text-slate-900">Desarrollo técnico</h3>
+                <dl className="mt-4 grid gap-4 text-sm md:grid-cols-2">
+                  <OfflineInfoItem label="Alcance ejecutado" value={offlineBooleanLabel(selectedOfflineDetail.alcance_trabajo_ejecutado)} />
+                  <OfflineInfoItem label="Ejecutado según programa" value={offlineBooleanLabel(selectedOfflineDetail.ejecutado_segun_programa)} />
+                  <OfflineInfoItem label="Área de trabajo" value={selectedOfflineDetail.area_trabajo} />
+                  <OfflineInfoItem label="Prioridad" value={selectedOfflineDetail.prioridad} />
+                </dl>
                 <div className="mt-4 grid gap-4 text-sm">
                   <OfflineTextSection title="Descripción de la solicitud" value={selectedOfflineDetail.descripcion_solicitud} />
                   <OfflineTextSection title="Problema reportado" value={selectedOfflineDetail.problema_reportado} />
-                </div>
-              </section>
-
-              <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-                <h3 className="text-xl font-semibold text-slate-900">Diagnóstico / ejecución</h3>
-                <div className="mt-4 grid gap-4 text-sm">
                   <OfflineTextSection title="Diagnóstico" value={selectedOfflineDetail.diagnostico} />
+                  <OfflineTextSection title="Causa probable" value={selectedOfflineDetail.causa_probable} />
                   <OfflineTextSection title="Trabajo realizado" value={selectedOfflineDetail.trabajo_realizado} />
+                  <OfflineTextSection title="Resultado servicio" value={selectedOfflineDetail.resultado_servicio} />
+                  <OfflineTextSection title="Hallazgos" value={selectedOfflineDetail.hallazgos} />
+                  <OfflineTextSection title="Conclusiones técnicas" value={selectedOfflineDetail.conclusiones_tecnicas} />
                   <OfflineTextSection title="Recomendaciones" value={selectedOfflineDetail.recomendaciones} />
-                  <OfflineTextSection title="Observaciones" value={selectedOfflineDetail.observaciones_cierre} />
+                  <OfflineTextSection title="Observación alcance" value={selectedOfflineDetail.alcance_trabajo_observacion} />
+                  <OfflineTextSection title="Observación programa" value={selectedOfflineDetail.ejecutado_segun_programa_observacion} />
+                  <OfflineTextSection title="Observaciones cierre" value={selectedOfflineDetail.observaciones_cierre} />
                 </div>
               </section>
 
               <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-                <h3 className="text-xl font-semibold text-slate-900">Equipos / checklist</h3>
+                <h3 className="text-xl font-semibold text-slate-900">Equipos asociados</h3>
                 <dl className="mt-4 grid gap-4 text-sm md:grid-cols-2">
-                  <OfflineInfoItem label="Equipo / TAG" value={buildOfflineEquipoResumen(selectedOfflineDetail) || selectedOfflineOt.equipo_tag} />
+                  <OfflineInfoItem label="Equipo principal / TAG" value={buildOfflineEquipoResumen(selectedOfflineDetail) || selectedOfflineOt.equipo_tag} />
                   <OfflineInfoItem label="Ubicación equipo" value={buildOfflineEquipoUbicacion(selectedOfflineDetail)} />
                   <OfflineInfoItem label="Características equipo" value={buildOfflineEquipoCaracteristicas(selectedOfflineDetail)} />
+                </dl>
+                <div className="mt-5 space-y-3 text-sm">
+                  {getOfflineArray(selectedOfflineDetail.equipos_asociados).length > 0 ? (
+                    getOfflineArray(selectedOfflineDetail.equipos_asociados).map((equipo, index) => (
+                      <div key={`${offlineValue(equipo.equipo_id)}-${index}`} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                        <p className="font-semibold text-slate-800">Equipo asociado {offlineValue(equipo.orden) || index + 1}</p>
+                        <p className="mt-1 text-slate-600">ID equipo: {offlineValue(equipo.equipo_id) || 'No disponible'}</p>
+                        <OfflineTextSection title="Descripción trabajo" value={equipo.descripcion_trabajo} />
+                        <OfflineTextSection title="Observación" value={equipo.observacion} />
+                      </div>
+                    ))
+                  ) : <p className="text-slate-500">No hay equipos asociados preparados offline.</p>}
+                </div>
+              </section>
+
+              <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                <h3 className="text-xl font-semibold text-slate-900">Checklist / plantilla</h3>
+                <dl className="mt-4 grid gap-4 text-sm md:grid-cols-2">
                   <OfflineInfoItem label="Checklist requerido" value={selectedOfflineDetail.requiere_checklist ? 'Sí' : 'No'} />
                   <OfflineInfoItem label="Plantilla checklist" value={selectedOfflineDetail.plantilla_checklist_id} />
                 </dl>
+                <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                  Checklist completo requiere conexión. Checklist offline avanzado se implementará en OFF-OT-02.
+                </p>
               </section>
 
               <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
