@@ -13,6 +13,7 @@ import {
   type ModuloPrincipal,
 } from '../../lib/auth/permissions'
 import AceptarInvitacionesPendientes from '../../components/AceptarInvitacionesPendientes'
+import OfflineStatusBanner from '../../components/offline/OfflineStatusBanner'
 
 type PrivateLayoutProps = {
   children: ReactNode
@@ -839,6 +840,8 @@ if (empresaGuardadaValida) {
 
             </div>
           </header>
+
+          <OfflineStatusBanner />
 
           <main className="min-w-0 max-w-full flex-1 overflow-x-hidden px-4 py-6 sm:px-6 lg:px-8 print:max-w-none print:overflow-visible print:px-0 print:py-0">
             {isRouteAccessDenied ? (
