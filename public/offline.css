@@ -100,3 +100,36 @@ button:focus-visible {
   outline: 3px solid rgba(36, 92, 144, 0.35);
   outline-offset: 3px;
 }
+
+.terrain-link {
+  display: block;
+  width: 100%;
+  margin-top: 24px;
+  padding: 13px 20px;
+  border-radius: 16px;
+  background: #163a5f;
+  color: #fff;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.terrain-link:hover,
+.terrain-link:focus-visible {
+  background: #245c90;
+}
+
+.offline-warning {
+  margin-top: 20px;
+  padding: 12px;
+  border: 1px solid #fcd34d;
+  border-radius: 14px;
+  background: #fffbeb;
+  color: #78350f;
+  font-weight: 700;
+}
+
+.terrain-link + button {
+  margin-top: 12px;
+  background: #e2e8f0;
+  color: #163a5f;
+}

@@ -1,68 +1,82 @@
-const CACHE_VERSION = 'tralixia-offline-v1'
-const OFFLINE_URL = '/offline.html'
+const CACHE_VERSION = "tralixia-offline-v2";
+const OFFLINE_URL = "/offline.html";
 const APP_SHELL = [
   OFFLINE_URL,
-  '/offline.css',
-  '/offline.js',
-  '/tralixia.svg',
-  '/manifest.webmanifest',
-]
+  "/offline.css",
+  "/offline.js",
+  "/tralixia.svg",
+  "/manifest.webmanifest",
+];
 
-self.addEventListener('install', (event) => {
+self.addEventListener("install", (event) => {
   event.waitUntil(
     caches
       .open(CACHE_VERSION)
       .then((cache) => cache.addAll(APP_SHELL))
-      .then(() => self.skipWaiting())
-  )
-})
+      .then(() => self.skipWaiting()),
+  );
+});
 
-self.addEventListener('activate', (event) => {
+self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches
       .keys()
       .then((keys) =>
         Promise.all(
           keys
-            .filter((key) => key.startsWith('tralixia-offline-') && key !== CACHE_VERSION)
-            .map((key) => caches.delete(key))
-        )
+            .filter(
+              (key) =>
+                key.startsWith("tralixia-offline-") && key !== CACHE_VERSION,
+            )
+            .map((key) => caches.delete(key)),
+        ),
       )
-      .then(() => self.clients.claim())
-  )
-})
+      .then(() => self.clients.claim()),
+  );
+});
 
-self.addEventListener('fetch', (event) => {
-  const { request } = event
+self.addEventListener("fetch", (event) => {
+  const { request } = event;
 
-  if (request.method !== 'GET') return
+  if (request.method !== "GET") return;
 
-  const url = new URL(request.url)
-  if (url.origin !== self.location.origin || url.pathname.startsWith('/api/')) return
+  const url = new URL(request.url);
+  if (url.origin !== self.location.origin || url.pathname.startsWith("/api/"))
+    return;
 
-  if (request.mode === 'navigate') {
-    event.respondWith(fetch(request).catch(() => caches.match(OFFLINE_URL)))
-    return
+  if (request.mode === "navigate") {
+    event.respondWith(
+      fetch(request).catch(async () => {
+        if (url.pathname === "/haras/partos") {
+          const preparedRoute = await caches.match("/haras/partos");
+          if (preparedRoute) return preparedRoute;
+        }
+        return caches.match(OFFLINE_URL);
+      }),
+    );
+    return;
   }
 
   const isStaticResource =
-    url.pathname.startsWith('/_next/static/') ||
-    ['font', 'image', 'script', 'style'].includes(request.destination)
+    url.pathname.startsWith("/_next/static/") ||
+    ["font", "image", "script", "style"].includes(request.destination);
 
-  if (!isStaticResource) return
+  if (!isStaticResource) return;
 
   event.respondWith(
     caches.match(request).then((cachedResponse) => {
-      if (cachedResponse) return cachedResponse
+      if (cachedResponse) return cachedResponse;
 
       return fetch(request).then((networkResponse) => {
         if (networkResponse.ok) {
-          const responseToCache = networkResponse.clone()
-          void caches.open(CACHE_VERSION).then((cache) => cache.put(request, responseToCache))
+          const responseToCache = networkResponse.clone();
+          void caches
+            .open(CACHE_VERSION)
+            .then((cache) => cache.put(request, responseToCache));
         }
 
-        return networkResponse
-      })
-    })
-  )
-})
+        return networkResponse;
+      });
+    }),
+  );
+});
