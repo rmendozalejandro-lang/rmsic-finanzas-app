@@ -499,7 +499,7 @@ if (empresaGuardadaValida) {
       const ids = ots.map((ot) => ot.id).filter(Boolean)
       const detallesResp = await supabase
         .from('ot_ordenes_trabajo')
-        .select('id, empresa_id, folio, cliente_id, titulo, descripcion_solicitud, problema_reportado, diagnostico, trabajo_realizado, recomendaciones, requiere_checklist, plantilla_checklist_id, fecha_ot, fecha_programada, fecha_cierre, tecnico_responsable_id, created_by, updated_at')
+        .select('id, empresa_id, folio, cliente_id, titulo, descripcion_solicitud, problema_reportado, diagnostico, trabajo_realizado, recomendaciones, observaciones_cierre, requiere_checklist, plantilla_checklist_id, fecha_ot, fecha_programada, fecha_cierre, tecnico_responsable_id, contacto_cliente_id, contacto_cliente_nombre, contacto_cliente_email, contacto_cliente_cargo, created_by, updated_at')
         .eq('empresa_id', empresaActivaId)
         .in('id', ids)
         .is('deleted_at', null)
@@ -523,6 +523,21 @@ if (empresaGuardadaValida) {
           estado_nombre: resumen?.estado_nombre ?? null,
           folio: detalle.folio ?? resumen?.folio ?? null,
           titulo: detalle.titulo ?? resumen?.titulo ?? null,
+          tipo_servicio_nombre: resumen?.tipo_servicio_nombre ?? null,
+          tecnico_nombre: resumen?.tecnico_nombre ?? null,
+          equipo_id: resumen?.equipo_id ?? null,
+          equipo_tag: resumen?.equipo_tag ?? null,
+          equipo_nombre: resumen?.equipo_nombre ?? null,
+          equipo_descripcion: resumen?.equipo_descripcion ?? null,
+          equipo_tipo: resumen?.equipo_tipo ?? null,
+          equipo_planta: resumen?.equipo_planta ?? null,
+          equipo_area: resumen?.equipo_area ?? null,
+          equipo_linea: resumen?.equipo_linea ?? null,
+          equipo_ubicacion: resumen?.equipo_ubicacion ?? null,
+          equipo_marca: resumen?.equipo_marca ?? null,
+          equipo_modelo: resumen?.equipo_modelo ?? null,
+          equipo_serie: resumen?.equipo_serie ?? null,
+          equipo_potencia: resumen?.equipo_potencia ?? null,
         }
       })
 

@@ -33,6 +33,66 @@ function pickStringValue(ot: OTResumen, keys: string[]) {
   return ''
 }
 
+
+function offlineValue(value: unknown) {
+  if (value === null || value === undefined) return ''
+  if (typeof value === 'string') return value.trim()
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  return ''
+}
+
+function OfflineInfoItem({ label, value }: { label: string; value: unknown }) {
+  const text = offlineValue(value) || 'No disponible'
+
+  return (
+    <div>
+      <dt className="text-slate-500">{label}</dt>
+      <dd className="font-semibold">{text}</dd>
+    </div>
+  )
+}
+
+function OfflineTextSection({ title, value }: { title: string; value: unknown }) {
+  const text = offlineValue(value)
+  if (!text) return null
+
+  return (
+    <div>
+      <p className="font-semibold text-slate-700">{title}</p>
+      <p className="mt-1 whitespace-pre-wrap text-slate-600">{text}</p>
+    </div>
+  )
+}
+
+function buildOfflineEquipoResumen(detail: OTOfflineDetail) {
+  const parts = [
+    offlineValue(detail.equipo_tag),
+    offlineValue(detail.equipo_nombre),
+    offlineValue(detail.equipo_descripcion),
+  ].filter(Boolean)
+
+  return parts.join(' - ')
+}
+
+function buildOfflineEquipoUbicacion(detail: OTOfflineDetail) {
+  return [
+    offlineValue(detail.equipo_planta),
+    offlineValue(detail.equipo_area),
+    offlineValue(detail.equipo_linea),
+    offlineValue(detail.equipo_ubicacion),
+  ].filter(Boolean).join(' / ')
+}
+
+function buildOfflineEquipoCaracteristicas(detail: OTOfflineDetail) {
+  return [
+    offlineValue(detail.equipo_tipo),
+    offlineValue(detail.equipo_marca),
+    offlineValue(detail.equipo_modelo),
+    offlineValue(detail.equipo_serie),
+    offlineValue(detail.equipo_potencia),
+  ].filter(Boolean).join(' / ')
+}
+
 function normalizarFechaFiltro(fecha: string) {
   if (!fecha) return ''
 
@@ -838,19 +898,48 @@ function OTPageContent() {
               </section>
 
               <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-                <h3 className="text-xl font-semibold text-slate-900">Detalle básico</h3>
+                <h3 className="text-xl font-semibold text-slate-900">Datos generales</h3>
                 <dl className="mt-4 grid gap-4 text-sm md:grid-cols-2">
-                  <div><dt className="text-slate-500">Título</dt><dd className="font-semibold">{String(selectedOfflineDetail.titulo ?? selectedOfflineOt.titulo ?? 'Sin título')}</dd></div>
-                  <div><dt className="text-slate-500">Cliente</dt><dd className="font-semibold">{String(selectedOfflineDetail.cliente_nombre ?? selectedOfflineOt.cliente_nombre ?? 'Sin cliente')}</dd></div>
-                  <div><dt className="text-slate-500">Estado online cacheado</dt><dd className="font-semibold">{String(selectedOfflineDetail.estado_nombre ?? selectedOfflineOt.estado_nombre ?? 'No disponible')}</dd></div>
-                  <div><dt className="text-slate-500">Fecha</dt><dd className="font-semibold">{String(selectedOfflineDetail.fecha_ot ?? selectedOfflineOt.fecha_ot ?? selectedOfflineOt.fecha_programada ?? 'No disponible').slice(0, 10)}</dd></div>
+                  <OfflineInfoItem label="Folio" value={selectedOfflineDetail.folio ?? selectedOfflineOt.folio} />
+                  <OfflineInfoItem label="Título" value={selectedOfflineDetail.titulo ?? selectedOfflineOt.titulo} />
+                  <OfflineInfoItem label="Cliente" value={selectedOfflineDetail.cliente_nombre ?? selectedOfflineOt.cliente_nombre} />
+                  <OfflineInfoItem label="Estado online cacheado" value={selectedOfflineDetail.estado_nombre ?? selectedOfflineOt.estado_nombre} />
+                  <OfflineInfoItem label="Tipo de servicio" value={selectedOfflineDetail.tipo_servicio_nombre ?? selectedOfflineOt.tipo_servicio_nombre} />
+                  <OfflineInfoItem label="Técnico responsable" value={selectedOfflineDetail.tecnico_nombre ?? selectedOfflineOt.tecnico_nombre} />
+                  <OfflineInfoItem label="Fecha OT" value={offlineValue(selectedOfflineDetail.fecha_ot ?? selectedOfflineOt.fecha_ot).slice(0, 10)} />
+                  <OfflineInfoItem label="Fecha programada" value={offlineValue(selectedOfflineDetail.fecha_programada ?? selectedOfflineOt.fecha_programada).slice(0, 10)} />
+                  <OfflineInfoItem label="Contacto cliente" value={selectedOfflineDetail.contacto_cliente_nombre} />
+                  <OfflineInfoItem label="Email contacto" value={selectedOfflineDetail.contacto_cliente_email} />
                 </dl>
-                <div className="mt-5 grid gap-4 text-sm">
-                  {selectedOfflineDetail.descripcion_solicitud ? <div><p className="font-semibold text-slate-700">Descripción</p><p className="mt-1 whitespace-pre-wrap text-slate-600">{String(selectedOfflineDetail.descripcion_solicitud)}</p></div> : null}
-                  {selectedOfflineDetail.problema_reportado ? <div><p className="font-semibold text-slate-700">Problema reportado</p><p className="mt-1 whitespace-pre-wrap text-slate-600">{String(selectedOfflineDetail.problema_reportado)}</p></div> : null}
-                  {selectedOfflineDetail.trabajo_realizado ? <div><p className="font-semibold text-slate-700">Trabajo realizado</p><p className="mt-1 whitespace-pre-wrap text-slate-600">{String(selectedOfflineDetail.trabajo_realizado)}</p></div> : null}
-                  {selectedOfflineDetail.recomendaciones ? <div><p className="font-semibold text-slate-700">Recomendaciones</p><p className="mt-1 whitespace-pre-wrap text-slate-600">{String(selectedOfflineDetail.recomendaciones)}</p></div> : null}
+              </section>
+
+              <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                <h3 className="text-xl font-semibold text-slate-900">Solicitud / problema reportado</h3>
+                <div className="mt-4 grid gap-4 text-sm">
+                  <OfflineTextSection title="Descripción de la solicitud" value={selectedOfflineDetail.descripcion_solicitud} />
+                  <OfflineTextSection title="Problema reportado" value={selectedOfflineDetail.problema_reportado} />
                 </div>
+              </section>
+
+              <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                <h3 className="text-xl font-semibold text-slate-900">Diagnóstico / ejecución</h3>
+                <div className="mt-4 grid gap-4 text-sm">
+                  <OfflineTextSection title="Diagnóstico" value={selectedOfflineDetail.diagnostico} />
+                  <OfflineTextSection title="Trabajo realizado" value={selectedOfflineDetail.trabajo_realizado} />
+                  <OfflineTextSection title="Recomendaciones" value={selectedOfflineDetail.recomendaciones} />
+                  <OfflineTextSection title="Observaciones" value={selectedOfflineDetail.observaciones_cierre} />
+                </div>
+              </section>
+
+              <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                <h3 className="text-xl font-semibold text-slate-900">Equipos / checklist</h3>
+                <dl className="mt-4 grid gap-4 text-sm md:grid-cols-2">
+                  <OfflineInfoItem label="Equipo / TAG" value={buildOfflineEquipoResumen(selectedOfflineDetail) || selectedOfflineOt.equipo_tag} />
+                  <OfflineInfoItem label="Ubicación equipo" value={buildOfflineEquipoUbicacion(selectedOfflineDetail)} />
+                  <OfflineInfoItem label="Características equipo" value={buildOfflineEquipoCaracteristicas(selectedOfflineDetail)} />
+                  <OfflineInfoItem label="Checklist requerido" value={selectedOfflineDetail.requiere_checklist ? 'Sí' : 'No'} />
+                  <OfflineInfoItem label="Plantilla checklist" value={selectedOfflineDetail.plantilla_checklist_id} />
+                </dl>
               </section>
 
               <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
