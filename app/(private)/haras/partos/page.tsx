@@ -3,9 +3,11 @@
 import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import ModuleAccessGuard from "@/components/ModuleAccessGuard";
+import { useNetworkStatus } from "@/hooks/useNetworkStatus";
 import { useOfflineQueue } from "@/hooks/useOfflineQueue";
 import {
   HARAS_PARTO_ACTION,
+  isHarasPartoPayload,
   isNetworkFailure,
   type HarasPartoPendingPayload,
 } from "@/lib/offline/haras-partos";
@@ -67,6 +69,12 @@ type Parto = {
   hora_expulsion_placenta: string | null;
   hora_primera_mamada: string | null;
 };
+type PartosTerrainCache = {
+  empresa_id: string;
+  updated_at: string | null;
+  animales: Animal[];
+  gestaciones: Parto[];
+};
 type GestacionForm = {
   madre_id: string;
   padre_id: string;
@@ -113,6 +121,65 @@ const emptyParto: PartoForm = {
   hora_expulsion_placenta: "",
   hora_primera_mamada: "",
 };
+
+function terrainCacheKey(empresaId: string) {
+  return `tralixia_haras_partos_cache_${empresaId}`;
+}
+
+function readTerrainCache(empresaId: string): PartosTerrainCache | null {
+  try {
+    const raw = localStorage.getItem(terrainCacheKey(empresaId));
+    if (!raw) return null;
+    const value = JSON.parse(raw) as {
+      empresa_id?: string;
+      updated_at?: string;
+      animales?: Animal[];
+      madres?: Animal[];
+      gestaciones?: Partial<Parto>[];
+    };
+    if (value.empresa_id !== empresaId || !Array.isArray(value.gestaciones))
+      return null;
+    return {
+      empresa_id: empresaId,
+      updated_at: value.updated_at ?? null,
+      animales: Array.isArray(value.animales)
+        ? value.animales
+        : Array.isArray(value.madres)
+          ? value.madres
+          : [],
+      gestaciones: value.gestaciones
+        .filter(
+          (item): item is Partial<Parto> & Pick<Parto, "id" | "madre_id"> =>
+            typeof item.id === "string" && typeof item.madre_id === "string",
+        )
+        .map((item) => ({
+          id: item.id,
+          madre_id: item.madre_id,
+          padre_id: item.padre_id ?? null,
+          cria_id: item.cria_id ?? null,
+          fecha_ultima_monta: item.fecha_ultima_monta ?? null,
+          fecha_probable_parto: item.fecha_probable_parto ?? null,
+          fecha_parto_real: item.fecha_parto_real ?? null,
+          dias_gestacion_real: item.dias_gestacion_real ?? null,
+          estado_reproductivo: item.estado_reproductivo ?? "en_gestacion",
+          sexo_cria: item.sexo_cria ?? null,
+          nombre_cria: item.nombre_cria ?? null,
+          peso_cria: item.peso_cria ?? null,
+          peso_placenta: item.peso_placenta ?? null,
+          observaciones: item.observaciones ?? null,
+          hora_inicio_parto: item.hora_inicio_parto ?? null,
+          hora_expulsion_cria: item.hora_expulsion_cria ?? null,
+          hora_parada_yegua: item.hora_parada_yegua ?? null,
+          hora_corte_cordon: item.hora_corte_cordon ?? null,
+          hora_parada_potrillo: item.hora_parada_potrillo ?? null,
+          hora_expulsion_placenta: item.hora_expulsion_placenta ?? null,
+          hora_primera_mamada: item.hora_primera_mamada ?? null,
+        })),
+    };
+  } catch {
+    return null;
+  }
+}
 type TimeKey =
   | "hora_inicio_parto"
   | "hora_expulsion_cria"
@@ -171,7 +238,8 @@ function visualState(parto: Parto): EstadoReproductivo {
 }
 
 export default function PartosPage() {
-  const { addPending } = useOfflineQueue();
+  const { items: offlineItems, addPending } = useOfflineQueue();
+  const { isOnline, isOffline } = useNetworkStatus();
   const [empresaId, setEmpresaId] = useState<string | null>(null);
   const [animales, setAnimales] = useState<Animal[]>([]);
   const [partos, setPartos] = useState<Parto[]>([]);
@@ -179,6 +247,8 @@ export default function PartosPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [cacheUpdatedAt, setCacheUpdatedAt] = useState<string | null>(null);
+  const [hasTerrainCache, setHasTerrainCache] = useState(false);
   const [showGestacion, setShowGestacion] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [registering, setRegistering] = useState<Parto | null>(null);
@@ -199,44 +269,105 @@ export default function PartosPage() {
       setLoading(false);
       return;
     }
-    if (!navigator.onLine) {
+    const restoreCachedData = () => {
+      const cache = readTerrainCache(empresaId);
+      setHasTerrainCache(Boolean(cache));
+      setCacheUpdatedAt(cache?.updated_at ?? null);
+      if (cache) {
+        setAnimales(cache.animales);
+        setPartos(cache.gestaciones);
+      } else {
+        setAnimales([]);
+        setPartos([]);
+      }
       setLoading(false);
-      return;
-    }
+      return Boolean(cache);
+    };
+    if (!navigator.onLine) return void restoreCachedData();
     setLoading(true);
     setError(null);
-    const [animalsResponse, partosResponse] = await Promise.all([
-      supabase
-        .from("vet_animales")
-        .select("id, nombre, categoria, sexo")
-        .eq("empresa_id", empresaId)
-        .order("nombre"),
-      supabase
-        .from("vet_partos")
-        .select(
-          "id, madre_id, padre_id, cria_id, fecha_ultima_monta, fecha_probable_parto, fecha_parto_real, dias_gestacion_real, estado_reproductivo, sexo_cria, nombre_cria, peso_cria, peso_placenta, observaciones, hora_inicio_parto, hora_expulsion_cria, hora_parada_yegua, hora_corte_cordon, hora_parada_potrillo, hora_expulsion_placenta, hora_primera_mamada",
-        )
-        .eq("empresa_id", empresaId)
-        .order("fecha_probable_parto", { ascending: true }),
-    ]);
-    if (animalsResponse.error || partosResponse.error)
-      setError(
-        `No fue posible cargar el calendario: ${animalsResponse.error?.message ?? partosResponse.error?.message}`,
-      );
-    else {
-      setAnimales((animalsResponse.data ?? []) as Animal[]);
-      setPartos((partosResponse.data ?? []) as Parto[]);
+    try {
+      const [animalsResponse, partosResponse] = await Promise.all([
+        supabase
+          .from("vet_animales")
+          .select("id, nombre, categoria, sexo")
+          .eq("empresa_id", empresaId)
+          .order("nombre"),
+        supabase
+          .from("vet_partos")
+          .select(
+            "id, madre_id, padre_id, cria_id, fecha_ultima_monta, fecha_probable_parto, fecha_parto_real, dias_gestacion_real, estado_reproductivo, sexo_cria, nombre_cria, peso_cria, peso_placenta, observaciones, hora_inicio_parto, hora_expulsion_cria, hora_parada_yegua, hora_corte_cordon, hora_parada_potrillo, hora_expulsion_placenta, hora_primera_mamada",
+          )
+          .eq("empresa_id", empresaId)
+          .order("fecha_probable_parto", { ascending: true }),
+      ]);
+      const requestError = animalsResponse.error || partosResponse.error;
+      if (requestError && isNetworkFailure(requestError)) {
+        restoreCachedData();
+        return;
+      }
+      if (requestError) {
+        setError(
+          `No fue posible cargar el calendario: ${requestError.message}`,
+        );
+        setLoading(false);
+        return;
+      }
+      const loadedAnimals = (animalsResponse.data ?? []) as Animal[];
+      const loadedPartos = (partosResponse.data ?? []) as Parto[];
+      setAnimales(loadedAnimals);
+      setPartos(loadedPartos);
+      const cache: PartosTerrainCache = {
+        empresa_id: empresaId,
+        updated_at: new Date().toISOString(),
+        animales: loadedAnimals,
+        gestaciones: loadedPartos.filter(
+          (parto) =>
+            !parto.fecha_parto_real && parto.estado_reproductivo !== "anulado",
+        ),
+      };
+      try {
+        localStorage.setItem(terrainCacheKey(empresaId), JSON.stringify(cache));
+        setHasTerrainCache(true);
+        setCacheUpdatedAt(cache.updated_at);
+      } catch {
+        setHasTerrainCache(false);
+        setCacheUpdatedAt(null);
+      }
+    } catch (caught) {
+      if (isNetworkFailure(caught)) restoreCachedData();
+      else
+        setError(
+          "No fue posible cargar Partos. Intenta nuevamente en unos momentos.",
+        );
     }
     setLoading(false);
   }, [empresaId]);
   useEffect(() => {
     const timer = setTimeout(() => void loadData(), 0);
     return () => clearTimeout(timer);
-  }, [loadData]);
+  }, [isOnline, loadData]);
 
   const names = useMemo(
     () => new Map(animales.map((animal) => [animal.id, animal.nombre])),
     [animales],
+  );
+  const locallyPendingPartoIds = useMemo(
+    () =>
+      new Set(
+        offlineItems
+          .filter(
+            (item) =>
+              item.module === "haras_partos" &&
+              item.action === HARAS_PARTO_ACTION &&
+              isHarasPartoPayload(item.payload) &&
+              item.payload.empresa_id === empresaId,
+          )
+          .map((item) =>
+            isHarasPartoPayload(item.payload) ? item.payload.parto_id : "",
+          ),
+      ),
+    [empresaId, offlineItems],
   );
   const mothers = useMemo(
     () =>
@@ -517,12 +648,14 @@ export default function PartosPage() {
               >
                 Volver
               </Link>
-              <button
-                onClick={newGestacion}
-                className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold hover:bg-emerald-700"
-              >
-                Nueva gestación
-              </button>
+              {isOnline && (
+                <button
+                  onClick={newGestacion}
+                  className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold hover:bg-emerald-700"
+                >
+                  Nueva gestación
+                </button>
+              )}
             </div>
           </header>
           {error && (
@@ -538,7 +671,12 @@ export default function PartosPage() {
               {success}
             </p>
           )}
-          <OfflinePartoPanel empresaId={empresaId} onSynced={loadData} />
+          <OfflinePartoPanel
+            empresaId={empresaId}
+            hasCachedData={hasTerrainCache}
+            cacheUpdatedAt={cacheUpdatedAt}
+            onSynced={loadData}
+          />
           <section className="mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
             <div className="border-b border-slate-200 px-5 py-4">
               <h2 className="font-semibold text-slate-900">
@@ -587,7 +725,9 @@ export default function PartosPage() {
                         colSpan={10}
                         className="px-4 py-10 text-center text-slate-500"
                       >
-                        Aún no hay gestaciones registradas.
+                        {isOffline && !hasTerrainCache
+                          ? "No hay datos locales disponibles."
+                          : "Aún no hay gestaciones pendientes."}
                       </td>
                     </tr>
                   ) : (
@@ -666,20 +806,28 @@ export default function PartosPage() {
                               >
                                 Detalle
                               </button>
-                              {!parto.fecha_parto_real && (
+                              {!parto.fecha_parto_real &&
+                                !locallyPendingPartoIds.has(parto.id) && (
+                                  <button
+                                    onClick={() => openParto(parto)}
+                                    className="font-semibold text-emerald-700 hover:underline"
+                                  >
+                                    Registrar parto
+                                  </button>
+                                )}
+                              {locallyPendingPartoIds.has(parto.id) && (
+                                <span className="font-semibold text-amber-700">
+                                  Pendiente local
+                                </span>
+                              )}
+                              {isOnline && (
                                 <button
-                                  onClick={() => openParto(parto)}
-                                  className="font-semibold text-emerald-700 hover:underline"
+                                  onClick={() => editGestacion(parto)}
+                                  className="font-semibold text-slate-700 hover:underline"
                                 >
-                                  Registrar parto
+                                  Editar
                                 </button>
                               )}
-                              <button
-                                onClick={() => editGestacion(parto)}
-                                className="font-semibold text-slate-700 hover:underline"
-                              >
-                                Editar
-                              </button>
                             </div>
                           </td>
                         </tr>

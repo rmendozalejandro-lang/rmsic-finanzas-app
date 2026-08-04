@@ -41,9 +41,13 @@ function legacyPendingKey(empresaId: string) {
 
 export default function OfflinePartoPanel({
   empresaId,
+  hasCachedData,
+  cacheUpdatedAt,
   onSynced,
 }: {
   empresaId: string | null;
+  hasCachedData: boolean;
+  cacheUpdatedAt: string | null;
   onSynced: () => Promise<void>;
 }) {
   const { isOnline, isOffline } = useNetworkStatus();
@@ -220,12 +224,25 @@ export default function OfflinePartoPanel({
               ? "Sincronizando…"
               : hasErrors
                 ? "Error al sincronizar. Tus datos siguen guardados."
-                : isOffline
-                  ? "Puedes registrar partos; se guardarán en este dispositivo."
-                  : pending.length
-                    ? "Se sincronizarán automáticamente o cuando tú lo indiques."
-                    : "Todo está sincronizado."}
+                : isOffline && !hasCachedData
+                  ? "No hay datos de Partos preparados en este dispositivo. Abre esta pantalla con conexión antes de usarla en terreno."
+                  : isOffline
+                    ? "Puedes registrar partos; se guardarán en este dispositivo."
+                    : pending.length
+                      ? "Se sincronizarán automáticamente o cuando tú lo indiques."
+                      : "Todo está sincronizado."}
           </p>
+          {hasCachedData && (
+            <p className="mt-1 text-xs text-slate-500">
+              Datos de terreno preparados
+              {cacheUpdatedAt
+                ? ` · ${new Intl.DateTimeFormat("es-CL", {
+                    dateStyle: "short",
+                    timeStyle: "short",
+                  }).format(new Date(cacheUpdatedAt))}`
+                : ""}
+            </p>
+          )}
         </div>
         {isOnline && pending.length > 0 && (
           <button
