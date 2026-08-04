@@ -513,11 +513,24 @@ if (empresaGuardadaValida) {
       const routeCache = await window.caches.open('tralixia-terrain-v1')
       await routeCache.put(OT_ROUTE, routeResponse.clone())
 
+      const resumenPorId = new Map(ots.map((ot) => [String(ot.id), ot]))
+      const detallesEnriquecidos = (detallesResp.data ?? []).map((detalle) => {
+        const resumen = resumenPorId.get(String(detalle.id))
+
+        return {
+          ...detalle,
+          cliente_nombre: resumen?.cliente_nombre ?? null,
+          estado_nombre: resumen?.estado_nombre ?? null,
+          folio: detalle.folio ?? resumen?.folio ?? null,
+          titulo: detalle.titulo ?? resumen?.titulo ?? null,
+        }
+      })
+
       mergeOTOfflineCache({
         empresa_id: empresaActivaId,
         user_id: usuarioId,
         ots: ots as Parameters<typeof mergeOTOfflineCache>[0]['ots'],
-        detalles: (detallesResp.data ?? []) as Parameters<typeof mergeOTOfflineCache>[0]['detalles'],
+        detalles: detallesEnriquecidos as Parameters<typeof mergeOTOfflineCache>[0]['detalles'],
       })
 
       setTerrainRegistry(upsertTerrainModule(empresaActivaId, usuarioId, OT_MODULE, OT_ROUTE))
@@ -530,13 +543,17 @@ if (empresaGuardadaValida) {
     if (!isOnline || !empresaActivaId || !usuarioId) return
 
     const pendingItems = offlineQueueItems.filter((item) =>
-      item.module === OT_MODULE && item.action === OT_PENDING_ACTION && isOTPendingPayload(item.payload) &&
-      item.payload.empresa_id === empresaActivaId && item.payload.user_id === usuarioId
+      item.module === OT_MODULE && item.action === OT_PENDING_ACTION && item.status === 'pendiente' &&
+      isOTPendingPayload(item.payload) && item.payload.empresa_id === empresaActivaId &&
+      item.payload.user_id === usuarioId
     )
 
     for (const item of pendingItems) {
       const payload = item.payload as OTOfflinePendingPayload
       try {
+        const { updateOfflineQueueItem } = await import('../../lib/offline/offline-queue')
+        updateOfflineQueueItem(item.id, { status: 'sincronizando', error: undefined })
+
         const { data: otActual, error: otReadError } = await supabase
           .from('ot_ordenes_trabajo')
           .select('id, empresa_id, trabajo_realizado, updated_at')
