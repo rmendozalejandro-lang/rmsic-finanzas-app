@@ -6,7 +6,7 @@ import ProtectedModuleRoute from '../../../components/ProtectedModuleRoute'
 import { OTDataTable } from '../../../components/ot/ot-data-table'
 import { supabase } from '../../../lib/supabase/client'
 import type { OTResumen } from '../../../lib/ot/types'
-import { readOTOfflineCache, otHasPendingLocalChanges } from '../../../lib/offline/ot'
+import { addOTOfflineDraft, findCachedOTDetail, readOTOfflineCache, otHasPendingLocalChanges, type OTOfflineDetail, type OTOfflineDraft } from '../../../lib/offline/ot'
 
 const STORAGE_ID_KEY = 'empresa_activa_id'
 
@@ -137,6 +137,15 @@ function OTPageContent() {
   const [generandoPdfLote, setGenerandoPdfLote] = useState(false)
   const [isOffline, setIsOffline] = useState(() => typeof navigator !== 'undefined' && !navigator.onLine)
   const [currentUserId, setCurrentUserId] = useState('')
+  const [selectedOfflineOtId, setSelectedOfflineOtId] = useState('')
+  const [offlineDraft, setOfflineDraft] = useState<OTOfflineDraft>({
+    observacion_terreno: '',
+    estado_local_avance: '',
+    checklist_local: {},
+    notas_internas_ejecucion: '',
+  })
+  const [offlineDraftSuccess, setOfflineDraftSuccess] = useState('')
+  const [offlinePendingRefresh, setOfflinePendingRefresh] = useState(0)
 
   const [empresaActivaId, setEmpresaActivaId] = useState(() =>
     typeof window !== 'undefined' ? window.localStorage.getItem(STORAGE_ID_KEY) || '' : ''
@@ -190,6 +199,8 @@ function OTPageContent() {
     setFechaDesde('')
     setFechaHasta('')
     setOtIdsSeleccionadas(new Set())
+    setSelectedOfflineOtId('')
+    setOfflineDraftSuccess('')
   }, [empresaActivaId])
 
   useEffect(() => {
@@ -438,9 +449,72 @@ function OTPageContent() {
 
   const filtrosActivos = Boolean(filtroCliente || fechaDesde || fechaHasta)
   const otsConPendiente = useMemo(
-    () => new Set(ots.map((ot) => otHasPendingLocalChanges(empresaActivaId, currentUserId, ot.id) ? ot.id : '').filter(Boolean)),
-    [empresaActivaId, currentUserId, ots]
+    () => {
+      void offlinePendingRefresh
+      return new Set(ots.map((ot) => otHasPendingLocalChanges(empresaActivaId, currentUserId, ot.id) ? ot.id : '').filter(Boolean))
+    },
+    [empresaActivaId, currentUserId, offlinePendingRefresh, ots]
   )
+
+  const selectedOfflineOt = useMemo(() => {
+    if (!selectedOfflineOtId) return null
+    return ots.find((ot) => ot.id === selectedOfflineOtId) ?? null
+  }, [ots, selectedOfflineOtId])
+
+  const selectedOfflineDetail = useMemo<OTOfflineDetail | null>(() => {
+    if (!selectedOfflineOtId || !empresaActivaId || !currentUserId) return null
+    return findCachedOTDetail(empresaActivaId, currentUserId, selectedOfflineOtId)
+  }, [empresaActivaId, currentUserId, selectedOfflineOtId])
+
+  const selectOfflineOt = (otId: string) => {
+    const detail = findCachedOTDetail(empresaActivaId, currentUserId, otId)
+    setSelectedOfflineOtId(otId)
+    setOfflineDraftSuccess('')
+
+    try {
+      const draftRaw = window.localStorage.getItem(`tralixia_ot_draft_${empresaActivaId}_${currentUserId}_${otId}`)
+      setOfflineDraft(draftRaw ? JSON.parse(draftRaw) as OTOfflineDraft : {
+        observacion_terreno: '',
+        estado_local_avance: '',
+        checklist_local: {},
+        notas_internas_ejecucion: '',
+      })
+    } catch {
+      setOfflineDraft({
+        observacion_terreno: '',
+        estado_local_avance: '',
+        checklist_local: {},
+        notas_internas_ejecucion: '',
+      })
+    }
+
+    if (!detail) {
+      setError('Esta OT no tiene detalle offline preparado. Vuelve a sincronizar con conexión.')
+    }
+  }
+
+  const volverAlListadoOffline = () => {
+    setSelectedOfflineOtId('')
+    setOfflineDraftSuccess('')
+  }
+
+  const guardarAvanceOffline = () => {
+    if (!selectedOfflineDetail || !currentUserId) return
+
+    window.localStorage.setItem(
+      `tralixia_ot_draft_${selectedOfflineDetail.empresa_id}_${currentUserId}_${selectedOfflineDetail.id}`,
+      JSON.stringify(offlineDraft),
+    )
+    addOTOfflineDraft({
+      empresa_id: selectedOfflineDetail.empresa_id,
+      user_id: currentUserId,
+      ot_id: selectedOfflineDetail.id,
+      base_updated_at: selectedOfflineDetail.updated_at ?? null,
+      ...offlineDraft,
+    })
+    setOfflinePendingRefresh((value) => value + 1)
+    setOfflineDraftSuccess('Avance local guardado. Se sincronizará cuando vuelva la conexión.')
+  }
 
   const totalAsignadas = useMemo(
     () =>
@@ -742,20 +816,76 @@ function OTPageContent() {
           No se encontraron OT con los filtros seleccionados.
         </div>
       ) : isOffline ? (
-          <div className="space-y-3">
-            {otsFiltradas.map((ot) => (
-              <Link key={ot.id} href={`/ot/${ot.id}`} className="block rounded-2xl border border-slate-200 bg-white p-4 text-slate-900 no-underline shadow-sm">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-semibold text-slate-500">{ot.folio || 'OT preparada'}</p>
-                    <h3 className="mt-1 text-lg font-semibold">{ot.titulo}</h3>
-                    <p className="mt-1 text-sm text-slate-600">{ot.cliente_nombre || 'Sin cliente'} · {ot.estado_nombre || 'Estado no disponible'}</p>
-                  </div>
-                  {otsConPendiente.has(ot.id) ? <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800">Pendiente local</span> : null}
+          selectedOfflineOt && selectedOfflineDetail ? (
+            <div className="space-y-5">
+              <button
+                type="button"
+                onClick={volverAlListadoOffline}
+                className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Volver al listado OT
+              </button>
+
+              <section className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-amber-900 shadow-sm">
+                <p className="text-sm font-semibold uppercase tracking-wide">Modo terreno OT</p>
+                <h2 className="mt-2 text-2xl font-bold text-amber-950">
+                  {String(selectedOfflineDetail.folio ?? selectedOfflineOt.folio ?? 'OT preparada')}
+                </h2>
+                <p className="mt-1 text-sm">Trabajo local en borrador. Cierre, firmas y PDF oficial requieren conexión.</p>
+                {otsConPendiente.has(selectedOfflineOt.id) ? (
+                  <p className="mt-3 rounded-xl bg-white px-3 py-2 text-sm font-semibold">Esta OT tiene cambios pendientes locales.</p>
+                ) : null}
+              </section>
+
+              <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                <h3 className="text-xl font-semibold text-slate-900">Detalle básico</h3>
+                <dl className="mt-4 grid gap-4 text-sm md:grid-cols-2">
+                  <div><dt className="text-slate-500">Título</dt><dd className="font-semibold">{String(selectedOfflineDetail.titulo ?? selectedOfflineOt.titulo ?? 'Sin título')}</dd></div>
+                  <div><dt className="text-slate-500">Cliente</dt><dd className="font-semibold">{String(selectedOfflineDetail.cliente_nombre ?? selectedOfflineOt.cliente_nombre ?? 'Sin cliente')}</dd></div>
+                  <div><dt className="text-slate-500">Estado online cacheado</dt><dd className="font-semibold">{String(selectedOfflineDetail.estado_nombre ?? selectedOfflineOt.estado_nombre ?? 'No disponible')}</dd></div>
+                  <div><dt className="text-slate-500">Fecha</dt><dd className="font-semibold">{String(selectedOfflineDetail.fecha_ot ?? selectedOfflineOt.fecha_ot ?? selectedOfflineOt.fecha_programada ?? 'No disponible').slice(0, 10)}</dd></div>
+                </dl>
+                <div className="mt-5 grid gap-4 text-sm">
+                  {selectedOfflineDetail.descripcion_solicitud ? <div><p className="font-semibold text-slate-700">Descripción</p><p className="mt-1 whitespace-pre-wrap text-slate-600">{String(selectedOfflineDetail.descripcion_solicitud)}</p></div> : null}
+                  {selectedOfflineDetail.problema_reportado ? <div><p className="font-semibold text-slate-700">Problema reportado</p><p className="mt-1 whitespace-pre-wrap text-slate-600">{String(selectedOfflineDetail.problema_reportado)}</p></div> : null}
+                  {selectedOfflineDetail.trabajo_realizado ? <div><p className="font-semibold text-slate-700">Trabajo realizado</p><p className="mt-1 whitespace-pre-wrap text-slate-600">{String(selectedOfflineDetail.trabajo_realizado)}</p></div> : null}
+                  {selectedOfflineDetail.recomendaciones ? <div><p className="font-semibold text-slate-700">Recomendaciones</p><p className="mt-1 whitespace-pre-wrap text-slate-600">{String(selectedOfflineDetail.recomendaciones)}</p></div> : null}
                 </div>
-              </Link>
-            ))}
-          </div>
+              </section>
+
+              <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                <h3 className="text-xl font-semibold text-slate-900">Avance local de terreno</h3>
+                {offlineDraftSuccess ? (
+                  <p className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{offlineDraftSuccess}</p>
+                ) : null}
+                <div className="mt-4 grid gap-4">
+                  <label className="text-sm font-medium text-slate-700">Observación de terreno<textarea rows={3} value={offlineDraft.observacion_terreno} onChange={(event) => setOfflineDraft((prev) => ({ ...prev, observacion_terreno: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2" /></label>
+                  <label className="text-sm font-medium text-slate-700">Estado local de avance<select value={offlineDraft.estado_local_avance} onChange={(event) => setOfflineDraft((prev) => ({ ...prev, estado_local_avance: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2"><option value="">Seleccionar</option><option value="iniciado">Iniciado</option><option value="en_proceso">En proceso</option><option value="pausado">Pausado</option><option value="listo_para_revision_online">Listo para revisión online</option></select></label>
+                  {selectedOfflineDetail.requiere_checklist ? <label className="flex items-center gap-2 text-sm font-medium text-slate-700"><input type="checkbox" checked={Boolean(offlineDraft.checklist_local.revision_general)} onChange={(event) => setOfflineDraft((prev) => ({ ...prev, checklist_local: { ...prev.checklist_local, revision_general: event.target.checked } }))} /> Checklist local revisado en terreno</label> : null}
+                  <label className="text-sm font-medium text-slate-700">Notas internas de ejecución<textarea rows={3} value={offlineDraft.notas_internas_ejecucion} onChange={(event) => setOfflineDraft((prev) => ({ ...prev, notas_internas_ejecucion: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2" /></label>
+                </div>
+                <div className="mt-5 flex flex-wrap gap-3">
+                  <button type="button" onClick={guardarAvanceOffline} className="rounded-xl bg-[#163A5F] px-4 py-2 text-sm font-semibold text-white">Guardar avance local</button>
+                  <button type="button" onClick={() => alert('Esta acción requiere conexión.')} className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700">Cerrar / firmar / PDF oficial</button>
+                </div>
+              </section>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {otsFiltradas.map((ot) => (
+                <button key={ot.id} type="button" onClick={() => selectOfflineOt(ot.id)} className="block w-full rounded-2xl border border-slate-200 bg-white p-4 text-left text-slate-900 shadow-sm">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-500">{ot.folio || 'OT preparada'}</p>
+                      <h3 className="mt-1 text-lg font-semibold">{ot.titulo}</h3>
+                      <p className="mt-1 text-sm text-slate-600">{ot.cliente_nombre || 'Sin cliente'} · {ot.estado_nombre || 'Estado no disponible'}</p>
+                    </div>
+                    {otsConPendiente.has(ot.id) ? <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800">Pendiente local</span> : null}
+                  </div>
+                </button>
+              ))}
+            </div>
+          )
         ) : (
         <OTDataTable
           data={otsFiltradas}
