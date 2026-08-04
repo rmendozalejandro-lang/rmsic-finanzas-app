@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#020617" />
+    <title>Sin conexión | Tralixia</title>
+    <link rel="stylesheet" href="/offline.css" />
+  </head>
+  <body>
+    <main class="offline-shell">
+      <section class="offline-card" aria-labelledby="offline-title">
+        <img class="offline-logo" src="/tralixia.svg" alt="Tralixia" />
+        <div class="status-pill"><span aria-hidden="true"></span> Sin conexión</div>
+        <h1 id="offline-title">Tralixia está en modo terreno</h1>
+        <p>Puedes usar datos preparados disponibles cuando el módulo lo permita.</p>
+        <p>Conecta a internet para actualizar información.</p>
+        <button id="retry-button" type="button">Volver a intentar</button>
+      </section>
+    </main>
+    <script src="/offline.js" defer></script>
+  </body>
+</html>
