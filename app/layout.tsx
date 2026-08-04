@@ -1,7 +1,6 @@
 import type { Metadata, Viewport } from 'next'
 import type { ReactNode } from 'react'
 import { Inter } from 'next/font/google'
-import ServiceWorkerRegistrar from '@/components/pwa/ServiceWorkerRegistrar'
 import './globals.css'
 
 const inter = Inter({
@@ -42,7 +41,6 @@ export default function RootLayout({
   return (
     <html lang="es">
       <body className={`${inter.className} bg-[#F6F8FB] text-slate-900 antialiased`}>
-        <ServiceWorkerRegistrar />
         {children}
       </body>
     </html>

@@ -24,3 +24,6 @@ export default function manifest(): MetadataRoute.Manifest {
     ],
   }
 }
+
+// P8B-10 incorporará la estrategia offline. Esta base no registra un service
+// worker ni almacena en caché datos clínicos, operacionales o de Supabase.
