@@ -99,6 +99,19 @@ export function removeOfflineQueueItem(id: string) {
   persistQueue(listOfflineQueue().filter((item) => item.id !== id))
 }
 
+export function updateOfflineQueueItem(
+  id: string,
+  changes: Partial<Pick<OfflineQueueItem, 'payload' | 'status' | 'error'>>,
+) {
+  persistQueue(
+    listOfflineQueue().map((item) =>
+      item.id === id
+        ? { ...item, ...changes, updatedAt: new Date().toISOString() }
+        : item,
+    ),
+  )
+}
+
 export function countOfflineQueue() {
   return listOfflineQueue().length
 }

@@ -3,6 +3,12 @@
 import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import ModuleAccessGuard from "@/components/ModuleAccessGuard";
+import { useOfflineQueue } from "@/hooks/useOfflineQueue";
+import {
+  HARAS_PARTO_ACTION,
+  isNetworkFailure,
+  type HarasPartoPendingPayload,
+} from "@/lib/offline/haras-partos";
 import { supabase } from "@/lib/supabase/client";
 import OfflinePartoPanel from "./OfflinePartoPanel";
 
@@ -165,6 +171,7 @@ function visualState(parto: Parto): EstadoReproductivo {
 }
 
 export default function PartosPage() {
+  const { addPending } = useOfflineQueue();
   const [empresaId, setEmpresaId] = useState<string | null>(null);
   const [animales, setAnimales] = useState<Animal[]>([]);
   const [partos, setPartos] = useState<Parto[]>([]);
@@ -333,6 +340,35 @@ export default function PartosPage() {
       ),
     } as PartoForm);
   }
+  function savePartoLocally(
+    parto: Parto,
+    criaId: string | null = parto.cria_id,
+  ) {
+    if (!empresaId) return;
+    const localId = crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
+    const payload: HarasPartoPendingPayload = {
+      ...partoForm,
+      local_id: localId,
+      empresa_id: empresaId,
+      parto_id: parto.id,
+      gestacion_id: parto.id,
+      madre_id: parto.madre_id,
+      padre_id: parto.padre_id,
+      fecha_ultima_monta: parto.fecha_ultima_monta,
+      nombre_cria: partoForm.nombre_cria.trim(),
+      observaciones: partoForm.observaciones.trim(),
+      cria_id_creada: criaId,
+    };
+    addPending({
+      module: "haras_partos",
+      action: HARAS_PARTO_ACTION,
+      payload,
+    });
+    setRegistering(null);
+    setSuccess(
+      "Parto guardado localmente. Se sincronizará cuando vuelva la conexión.",
+    );
+  }
   async function saveParto(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!empresaId || !registering)
@@ -356,25 +392,47 @@ export default function PartosPage() {
     setSaving(true);
     setError(null);
     let criaId = registering.cria_id;
+    if (!navigator.onLine) {
+      savePartoLocally(registering, criaId);
+      setSaving(false);
+      return;
+    }
     if (partoForm.crear_cria && !criaId) {
-      const child = await supabase
-        .from("vet_animales")
-        .insert({
-          empresa_id: empresaId,
-          nombre: partoForm.nombre_cria.trim(),
-          sexo:
-            partoForm.sexo_cria === "no_definido"
-              ? "desconocido"
-              : partoForm.sexo_cria,
-          fecha_nacimiento: partoForm.fecha_parto_real,
-          madre_id: registering.madre_id,
-          padre_id: registering.padre_id,
-          categoria: "cria",
-          estado: "activo",
-        })
-        .select("id")
-        .single();
+      let child;
+      try {
+        child = await supabase
+          .from("vet_animales")
+          .insert({
+            empresa_id: empresaId,
+            nombre: partoForm.nombre_cria.trim(),
+            sexo:
+              partoForm.sexo_cria === "no_definido"
+                ? "desconocido"
+                : partoForm.sexo_cria,
+            fecha_nacimiento: partoForm.fecha_parto_real,
+            madre_id: registering.madre_id,
+            padre_id: registering.padre_id,
+            categoria: "cria",
+            estado: "activo",
+          })
+          .select("id")
+          .single();
+      } catch (caught) {
+        if (isNetworkFailure(caught)) {
+          savePartoLocally(registering);
+          setSaving(false);
+          return;
+        }
+        setError("No fue posible crear la cría.");
+        setSaving(false);
+        return;
+      }
       if (child.error) {
+        if (isNetworkFailure(child.error)) {
+          savePartoLocally(registering);
+          setSaving(false);
+          return;
+        }
         setError(`No fue posible crear la cría: ${child.error.message}`);
         setSaving(false);
         return;
@@ -387,30 +445,43 @@ export default function PartosPage() {
     const times = Object.fromEntries(
       timeFields.map(({ key }) => [key, partoForm[key] || null]),
     );
-    const response = await supabase
-      .from("vet_partos")
-      .update({
-        ...times,
-        cria_id: criaId,
-        fecha_parto_real: partoForm.fecha_parto_real,
-        fecha_parto: `${partoForm.fecha_parto_real}T12:00:00`,
-        dias_gestacion_real: realDays,
-        estado_reproductivo: "parto_registrado",
-        estado: "ocurrido",
-        nombre_cria: partoForm.nombre_cria.trim() || null,
-        sexo_cria: partoForm.sexo_cria,
-        peso_cria:
-          partoForm.peso_cria === "" ? null : Number(partoForm.peso_cria),
-        peso_placenta:
-          partoForm.peso_placenta === ""
-            ? null
-            : Number(partoForm.peso_placenta),
-        observaciones: partoForm.observaciones.trim() || null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", registering.id)
-      .eq("empresa_id", empresaId);
-    if (response.error)
+    let response;
+    try {
+      response = await supabase
+        .from("vet_partos")
+        .update({
+          ...times,
+          cria_id: criaId,
+          fecha_parto_real: partoForm.fecha_parto_real,
+          fecha_parto: `${partoForm.fecha_parto_real}T12:00:00`,
+          dias_gestacion_real: realDays,
+          estado_reproductivo: "parto_registrado",
+          estado: "ocurrido",
+          nombre_cria: partoForm.nombre_cria.trim() || null,
+          sexo_cria: partoForm.sexo_cria,
+          peso_cria:
+            partoForm.peso_cria === "" ? null : Number(partoForm.peso_cria),
+          peso_placenta:
+            partoForm.peso_placenta === ""
+              ? null
+              : Number(partoForm.peso_placenta),
+          observaciones: partoForm.observaciones.trim() || null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", registering.id)
+        .eq("empresa_id", empresaId);
+    } catch (caught) {
+      if (isNetworkFailure(caught)) {
+        savePartoLocally(registering, criaId);
+      } else {
+        setError("No fue posible registrar el parto.");
+      }
+      setSaving(false);
+      return;
+    }
+    if (response.error && isNetworkFailure(response.error)) {
+      savePartoLocally(registering, criaId);
+    } else if (response.error)
       setError(`No fue posible registrar el parto: ${response.error.message}`);
     else {
       setSuccess("Parto y datos de nacimiento registrados.");
@@ -467,29 +538,7 @@ export default function PartosPage() {
               {success}
             </p>
           )}
-          <OfflinePartoPanel
-            empresaId={empresaId}
-            madres={mothers.map(({ id, nombre }) => ({ id, nombre }))}
-            gestaciones={partos
-              .filter(
-                (parto) =>
-                  !parto.fecha_parto_real &&
-                  parto.estado_reproductivo !== "anulado",
-              )
-              .map((parto) => ({
-                id: parto.id,
-                madre_id: parto.madre_id,
-                padre_id: parto.padre_id,
-                fecha_ultima_monta: parto.fecha_ultima_monta,
-                fecha_probable_parto: parto.fecha_probable_parto,
-                estado_reproductivo: parto.estado_reproductivo,
-                madre_nombre: names.get(parto.madre_id),
-                padre_nombre: parto.padre_id
-                  ? names.get(parto.padre_id)
-                  : undefined,
-              }))}
-            onSynced={loadData}
-          />
+          <OfflinePartoPanel empresaId={empresaId} onSynced={loadData} />
           <section className="mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
             <div className="border-b border-slate-200 px-5 py-4">
               <h2 className="font-semibold text-slate-900">
