@@ -5514,7 +5514,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
 
 export default function OTDetallePage() {
   return (
-    <ProtectedModuleRoute moduleKey="ot">
+    <ProtectedModuleRoute moduleKey="ot" allowOfflineTerrainAccess>
       <OTDetalleContent />
     </ProtectedModuleRoute>
   )

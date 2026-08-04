@@ -775,7 +775,7 @@ function OTPageContent() {
 
 export default function OTPage() {
   return (
-    <ProtectedModuleRoute moduleKey="ot">
+    <ProtectedModuleRoute moduleKey="ot" allowOfflineTerrainAccess>
       <OTPageContent />
     </ProtectedModuleRoute>
   )
