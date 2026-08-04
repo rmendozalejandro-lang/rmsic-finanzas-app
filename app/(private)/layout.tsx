@@ -532,14 +532,36 @@ if (empresaGuardadaValida) {
         })
       }
 
-      const equiposPorOt = new Map<string, Array<Record<string, unknown>>>()
-      if (!equiposAsociadosResp.error) {
-        ;((equiposAsociadosResp.data ?? []) as Array<Record<string, unknown>>).forEach((equipo) => {
-          const otId = String(equipo.ot_id ?? '')
-          if (!otId) return
-          equiposPorOt.set(otId, [...(equiposPorOt.get(otId) ?? []), equipo])
+      const equiposAsociadosRaw = equiposAsociadosResp.error
+        ? []
+        : (equiposAsociadosResp.data ?? []) as Array<Record<string, unknown>>
+      const equipoIds = Array.from(new Set(
+        equiposAsociadosRaw
+          .map((equipo) => String(equipo.equipo_id ?? ''))
+          .filter(Boolean)
+      ))
+      const equiposVisualResp = equipoIds.length > 0
+        ? await supabase
+            .from('ot_vw_equipos')
+            .select('id, tag, nombre, descripcion, tipo_equipo, planta, area, linea, ubicacion, marca, modelo, serie, potencia')
+            .in('id', equipoIds)
+        : { data: [], error: null }
+      const equiposVisualPorId = new Map<string, Record<string, unknown>>()
+
+      if (!equiposVisualResp.error) {
+        ;((equiposVisualResp.data ?? []) as Array<Record<string, unknown>>).forEach((equipo) => {
+          const equipoId = String(equipo.id ?? '')
+          if (equipoId) equiposVisualPorId.set(equipoId, equipo)
         })
       }
+
+      const equiposPorOt = new Map<string, Array<Record<string, unknown>>>()
+      equiposAsociadosRaw.forEach((equipo) => {
+        const otId = String(equipo.ot_id ?? '')
+        if (!otId) return
+        const visual = equiposVisualPorId.get(String(equipo.equipo_id ?? '')) ?? {}
+        equiposPorOt.set(otId, [...(equiposPorOt.get(otId) ?? []), { ...equipo, equipo: visual }])
+      })
 
       const routeResponse = await fetch(OT_ROUTE, { credentials: 'same-origin' })
       if (!routeResponse.ok) return

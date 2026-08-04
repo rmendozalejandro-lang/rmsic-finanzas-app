@@ -108,6 +108,31 @@ function getOfflineArray(value: unknown): Array<Record<string, unknown>> {
   return Array.isArray(value) ? value.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object') : []
 }
 
+function getOfflineRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
+}
+
+function buildAssociatedEquipoTitle(equipoAsociado: Record<string, unknown>) {
+  const equipo = getOfflineRecord(equipoAsociado.equipo)
+  return [offlineValue(equipo.tag), offlineValue(equipo.nombre), offlineValue(equipo.descripcion)]
+    .filter(Boolean)
+    .join(' - ') || `Equipo asociado ${offlineValue(equipoAsociado.orden) || ''}`.trim()
+}
+
+function buildAssociatedEquipoUbicacion(equipoAsociado: Record<string, unknown>) {
+  const equipo = getOfflineRecord(equipoAsociado.equipo)
+  return [offlineValue(equipo.planta), offlineValue(equipo.area), offlineValue(equipo.linea), offlineValue(equipo.ubicacion)]
+    .filter(Boolean)
+    .join(' / ')
+}
+
+function buildAssociatedEquipoTecnico(equipoAsociado: Record<string, unknown>) {
+  const equipo = getOfflineRecord(equipoAsociado.equipo)
+  return [offlineValue(equipo.tipo_equipo), offlineValue(equipo.marca), offlineValue(equipo.modelo), offlineValue(equipo.serie), offlineValue(equipo.potencia)]
+    .filter(Boolean)
+    .join(' / ')
+}
+
 function normalizarFechaFiltro(fecha: string) {
   if (!fecha) return ''
 
@@ -1003,8 +1028,9 @@ function OTPageContent() {
                   {getOfflineArray(selectedOfflineDetail.equipos_asociados).length > 0 ? (
                     getOfflineArray(selectedOfflineDetail.equipos_asociados).map((equipo, index) => (
                       <div key={`${offlineValue(equipo.equipo_id)}-${index}`} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                        <p className="font-semibold text-slate-800">Equipo asociado {offlineValue(equipo.orden) || index + 1}</p>
-                        <p className="mt-1 text-slate-600">ID equipo: {offlineValue(equipo.equipo_id) || 'No disponible'}</p>
+                        <p className="font-semibold text-slate-800">{buildAssociatedEquipoTitle(equipo)}</p>
+                        <p className="mt-1 text-slate-600">Ubicación: {buildAssociatedEquipoUbicacion(equipo) || 'No disponible'}</p>
+                        <p className="mt-1 text-slate-600">Características: {buildAssociatedEquipoTecnico(equipo) || 'No disponible'}</p>
                         <OfflineTextSection title="Descripción trabajo" value={equipo.descripcion_trabajo} />
                         <OfflineTextSection title="Observación" value={equipo.observacion} />
                       </div>
