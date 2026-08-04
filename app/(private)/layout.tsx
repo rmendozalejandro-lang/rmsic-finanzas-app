@@ -499,7 +499,7 @@ if (empresaGuardadaValida) {
       const ids = ots.map((ot) => ot.id).filter(Boolean)
       const detallesResp = await supabase
         .from('ot_ordenes_trabajo')
-        .select('id, empresa_id, folio, cliente_id, titulo, descripcion_solicitud, problema_reportado, diagnostico, trabajo_realizado, recomendaciones, observaciones_cierre, requiere_checklist, plantilla_checklist_id, fecha_ot, fecha_programada, fecha_cierre, tecnico_responsable_id, contacto_cliente_id, contacto_cliente_nombre, contacto_cliente_email, contacto_cliente_cargo, created_by, updated_at')
+        .select('id, empresa_id, folio, cliente_id, titulo, descripcion_solicitud, problema_reportado, diagnostico, trabajo_realizado, recomendaciones, requiere_checklist, plantilla_checklist_id, fecha_ot, fecha_programada, fecha_cierre, tecnico_responsable_id, created_by, updated_at')
         .eq('empresa_id', empresaActivaId)
         .in('id', ids)
         .is('deleted_at', null)
