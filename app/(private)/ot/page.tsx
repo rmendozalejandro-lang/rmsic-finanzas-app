@@ -6,6 +6,7 @@ import ProtectedModuleRoute from '../../../components/ProtectedModuleRoute'
 import { OTDataTable } from '../../../components/ot/ot-data-table'
 import { supabase } from '../../../lib/supabase/client'
 import type { OTResumen } from '../../../lib/ot/types'
+import { readOTOfflineCache, otHasPendingLocalChanges } from '../../../lib/offline/ot'
 
 const STORAGE_ID_KEY = 'empresa_activa_id'
 
@@ -134,6 +135,8 @@ function OTPageContent() {
   const [fechaHasta, setFechaHasta] = useState('')
   const [otIdsSeleccionadas, setOtIdsSeleccionadas] = useState<Set<string>>(new Set())
   const [generandoPdfLote, setGenerandoPdfLote] = useState(false)
+  const [isOffline, setIsOffline] = useState(() => typeof navigator !== 'undefined' && !navigator.onLine)
+  const [currentUserId, setCurrentUserId] = useState('')
 
   const [empresaActivaId, setEmpresaActivaId] = useState(() =>
     typeof window !== 'undefined' ? window.localStorage.getItem(STORAGE_ID_KEY) || '' : ''
@@ -190,6 +193,17 @@ function OTPageContent() {
   }, [empresaActivaId])
 
   useEffect(() => {
+    const syncNetwork = () => setIsOffline(!navigator.onLine)
+    window.addEventListener('online', syncNetwork)
+    window.addEventListener('offline', syncNetwork)
+    syncNetwork()
+    return () => {
+      window.removeEventListener('online', syncNetwork)
+      window.removeEventListener('offline', syncNetwork)
+    }
+  }, [])
+
+  useEffect(() => {
     let active = true
 
     const load = async () => {
@@ -212,6 +226,16 @@ function OTPageContent() {
         }
 
         const userId = session.user.id
+        setCurrentUserId(userId)
+
+        if (typeof navigator !== 'undefined' && !navigator.onLine) {
+          const cache = readOTOfflineCache(empresaActivaId, userId)
+          if (!cache || cache.ots.length === 0) {
+            throw new Error('No hay OT preparadas para trabajar sin conexión.')
+          }
+          if (active) setOts(cache.ots)
+          return
+        }
 
         const { data: rolData, error: rolError } = await supabase
           .from('usuario_empresas')
@@ -413,6 +437,10 @@ function OTPageContent() {
   }, [otsFiltradas])
 
   const filtrosActivos = Boolean(filtroCliente || fechaDesde || fechaHasta)
+  const otsConPendiente = useMemo(
+    () => new Set(ots.map((ot) => otHasPendingLocalChanges(empresaActivaId, currentUserId, ot.id) ? ot.id : '').filter(Boolean)),
+    [empresaActivaId, currentUserId, ots]
+  )
 
   const totalAsignadas = useMemo(
     () =>
@@ -538,13 +566,18 @@ function OTPageContent() {
           <h1 className="text-2xl font-bold tracking-tight text-slate-900">
             Órdenes de Trabajo
           </h1>
+          {isOffline ? (
+            <p className="mt-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900">
+              Modo terreno: listado preparado sin conexión. Cierre, firmas y PDF oficial requieren conexión.
+            </p>
+          ) : null}
           <p className="mt-1 text-sm text-slate-500">
             Gestiona las OT, revisa estados y controla el avance de los trabajos.
           </p>
         </div>
 
         <div className="flex w-full flex-col gap-3 sm:flex-row sm:flex-wrap md:w-auto">
-          {canManageTecnicos && !checkingRole ? (
+          {!isOffline && canManageTecnicos && !checkingRole ? (
             <Link
               href="/ot/tecnicos"
               className="inline-flex min-h-11 w-full items-center justify-center rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 sm:w-auto"
@@ -553,6 +586,7 @@ function OTPageContent() {
             </Link>
           ) : null}
 
+          {!isOffline ? (
           <Link
             href="/ot/nueva"
             style={{ backgroundColor: '#163A5F', color: '#ffffff' }}
@@ -560,6 +594,7 @@ function OTPageContent() {
           >
             Nueva OT
           </Link>
+          ) : null}
         </div>
       </div>
 
@@ -706,7 +741,22 @@ function OTPageContent() {
         <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-600 shadow-sm">
           No se encontraron OT con los filtros seleccionados.
         </div>
-      ) : (
+      ) : isOffline ? (
+          <div className="space-y-3">
+            {otsFiltradas.map((ot) => (
+              <Link key={ot.id} href={`/ot/${ot.id}`} className="block rounded-2xl border border-slate-200 bg-white p-4 text-slate-900 no-underline shadow-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-500">{ot.folio || 'OT preparada'}</p>
+                    <h3 className="mt-1 text-lg font-semibold">{ot.titulo}</h3>
+                    <p className="mt-1 text-sm text-slate-600">{ot.cliente_nombre || 'Sin cliente'} · {ot.estado_nombre || 'Estado no disponible'}</p>
+                  </div>
+                  {otsConPendiente.has(ot.id) ? <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800">Pendiente local</span> : null}
+                </div>
+              </Link>
+            ))}
+          </div>
+        ) : (
         <OTDataTable
           data={otsFiltradas}
           selectable
@@ -717,7 +767,8 @@ function OTPageContent() {
             todasFiltradasSeleccionadas ? limpiarSeleccion : seleccionarTodasFiltradas
           }
         />
-      )}
+        )
+      }
     </div>
   )
 }

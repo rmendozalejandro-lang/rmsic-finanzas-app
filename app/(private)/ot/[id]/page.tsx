@@ -1,5 +1,7 @@
 'use client'
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 import Link from 'next/link'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -11,6 +13,8 @@ import { OTEquipoChecklistPanel } from '../../../../components/ot/ot-equipo-chec
 import { OTEquipoTrabajoDyFPanel } from '../../../../components/ot/ot-equipo-trabajo-dyf-panel'
 import { supabase } from '../../../../lib/supabase/client'
 import type { OTResumen } from '../../../../lib/ot/types'
+import { addOTOfflineDraft, findCachedOTDetail, otHasPendingLocalChanges } from '../../../../lib/offline/ot'
+import { readCurrentTerrainRegistry } from '../../../../lib/offline/terrain-registry'
 
 type OTDetalle = {
   id: string
@@ -911,6 +915,8 @@ function OTDetalleContent() {
   const [perfiles, setPerfiles] = useState<PerfilOption[]>([])
   const [currentUserId, setCurrentUserId] = useState('')
   const [currentRole, setCurrentRole] = useState('')
+  const [isOffline, setIsOffline] = useState(() => typeof navigator !== 'undefined' && !navigator.onLine)
+  const [offlineDraft, setOfflineDraft] = useState({ observacion_terreno: '', estado_local_avance: '', notas_internas_ejecucion: '', checklist_local: {} as Record<string, boolean | string> })
 
   const [form, setForm] = useState<FormState>({
     tipo_servicio_id: '',
@@ -1241,6 +1247,27 @@ function OTDetalleContent() {
 
         if (!otId) {
           throw new Error('No se recibió el identificador de la OT.')
+        }
+
+        if (typeof navigator !== 'undefined' && !navigator.onLine) {
+          const registry = readCurrentTerrainRegistry()
+          const cached = registry ? findCachedOTDetail(registry.empresaId, registry.userId, otId) : null
+          if (!registry || !cached) throw new Error('Esta OT no está preparada para trabajar sin conexión.')
+          setIsOffline(true)
+          setCurrentUserId(registry.userId)
+          setDetalle(cached as unknown as OTDetalle)
+          setResumen({
+            id: cached.id,
+            empresa_id: cached.empresa_id,
+            folio: String(cached.folio ?? ''),
+            titulo: String(cached.titulo ?? 'OT preparada'),
+            cliente_nombre: String(cached.cliente_nombre ?? 'Sin cliente'),
+            estado_nombre: String(cached.estado_nombre ?? 'Preparada'),
+            requiere_checklist: Boolean(cached.requiere_checklist),
+          } as OTResumenConEquipo)
+          const draftRaw = window.localStorage.getItem(`tralixia_ot_draft_${registry.empresaId}_${registry.userId}_${otId}`)
+          if (draftRaw) setOfflineDraft(JSON.parse(draftRaw))
+          return
         }
 
         const {
@@ -1761,6 +1788,17 @@ function OTDetalleContent() {
     },
     [otId]
   )
+
+  useEffect(() => {
+    const syncNetwork = () => setIsOffline(!navigator.onLine)
+    window.addEventListener('online', syncNetwork)
+    window.addEventListener('offline', syncNetwork)
+    syncNetwork()
+    return () => {
+      window.removeEventListener('online', syncNetwork)
+      window.removeEventListener('offline', syncNetwork)
+    }
+  }, [])
 
   useEffect(() => {
     void loadData(true)
@@ -2709,10 +2747,66 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
         .join(' · ')
     : ''
 
+
+  const saveOfflineDraft = () => {
+    if (!detalle || !currentUserId) return
+    const payload = {
+      empresa_id: detalle.empresa_id,
+      user_id: currentUserId,
+      ot_id: detalle.id,
+      base_updated_at: detalle.updated_at ?? null,
+      ...offlineDraft,
+    }
+    window.localStorage.setItem(`tralixia_ot_draft_${detalle.empresa_id}_${currentUserId}_${detalle.id}`, JSON.stringify(offlineDraft))
+    addOTOfflineDraft(payload)
+    setSuccess('Avance local guardado. Se sincronizará cuando vuelva la conexión.')
+  }
+
   if (loading) {
     return (
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         Cargando detalle de la OT...
+      </div>
+    )
+  }
+
+
+  if (isOffline && detalle && resumen) {
+    const hasPending = otHasPendingLocalChanges(detalle.empresa_id, currentUserId, detalle.id)
+    return (
+      <div className="space-y-6">
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-amber-900 shadow-sm">
+          <p className="text-sm font-semibold uppercase tracking-wide">Modo terreno OT</p>
+          <h1 className="mt-2 text-2xl font-bold text-amber-950">{resumen.folio || detalle.folio || 'OT preparada'}</h1>
+          <p className="mt-1 text-sm">Trabajo local en borrador. Cierre definitivo, firmas, PDF oficial e informes requieren conexión.</p>
+          {hasPending ? <p className="mt-3 rounded-xl bg-white px-3 py-2 text-sm font-semibold">Esta OT tiene cambios pendientes locales.</p> : null}
+        </div>
+
+        <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <h2 className="text-xl font-semibold text-slate-900">Detalle básico</h2>
+          <dl className="mt-4 grid gap-4 text-sm md:grid-cols-2">
+            <div><dt className="text-slate-500">Título</dt><dd className="font-semibold">{detalle.titulo || resumen.titulo}</dd></div>
+            <div><dt className="text-slate-500">Cliente</dt><dd className="font-semibold">{resumen.cliente_nombre || 'Sin cliente'}</dd></div>
+            <div><dt className="text-slate-500">Estado online cacheado</dt><dd className="font-semibold">{resumen.estado_nombre || 'No disponible'}</dd></div>
+            <div><dt className="text-slate-500">Checklist</dt><dd className="font-semibold">{detalle.requiere_checklist ? 'Disponible para borrador local' : 'No requerido'}</dd></div>
+          </dl>
+        </section>
+
+        <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <h2 className="text-xl font-semibold text-slate-900">Avance local de terreno</h2>
+          {success ? <p className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{success}</p> : null}
+          <div className="mt-4 grid gap-4">
+            <label className="text-sm font-medium text-slate-700">Observación de terreno<textarea rows={3} value={offlineDraft.observacion_terreno} onChange={(e) => setOfflineDraft((prev) => ({ ...prev, observacion_terreno: e.target.value }))} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2" /></label>
+            <label className="text-sm font-medium text-slate-700">Estado local de avance<select value={offlineDraft.estado_local_avance} onChange={(e) => setOfflineDraft((prev) => ({ ...prev, estado_local_avance: e.target.value }))} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2"><option value="">Seleccionar</option><option value="iniciado">Iniciado</option><option value="en_proceso">En proceso</option><option value="pausado">Pausado</option><option value="listo_para_revision_online">Listo para revisión online</option></select></label>
+            {detalle.requiere_checklist ? <label className="flex items-center gap-2 text-sm font-medium text-slate-700"><input type="checkbox" checked={Boolean(offlineDraft.checklist_local.revision_general)} onChange={(e) => setOfflineDraft((prev) => ({ ...prev, checklist_local: { ...prev.checklist_local, revision_general: e.target.checked } }))} /> Checklist local revisado en terreno</label> : null}
+            <label className="text-sm font-medium text-slate-700">Notas internas de ejecución<textarea rows={3} value={offlineDraft.notas_internas_ejecucion} onChange={(e) => setOfflineDraft((prev) => ({ ...prev, notas_internas_ejecucion: e.target.value }))} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2" /></label>
+          </div>
+          <div className="mt-5 flex flex-wrap gap-3">
+            <button type="button" onClick={saveOfflineDraft} className="rounded-xl bg-[#163A5F] px-4 py-2 text-sm font-semibold text-white">Guardar avance local</button>
+            <button type="button" onClick={() => alert('Esta acción requiere conexión.')} className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700">Cerrar / firmar / PDF oficial</button>
+            <Link href="/ot" className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 no-underline">Volver a OT</Link>
+          </div>
+        </section>
       </div>
     )
   }

@@ -19,10 +19,14 @@ import { useOfflineQueue } from '../../hooks/useOfflineQueue'
 import {
   HARAS_PARTOS_MODULE,
   HARAS_PARTOS_ROUTE,
+  OT_MODULE,
+  OT_ROUTE,
   prepareHarasPartosRegistry,
+  upsertTerrainModule,
   readTerrainRegistry,
   type TerrainRegistry,
 } from '../../lib/offline/terrain-registry'
+import { isOTPendingPayload, mergeOTOfflineCache, OT_PENDING_ACTION, type OTOfflinePendingPayload } from '../../lib/offline/ot'
 
 type PrivateLayoutProps = {
   children: ReactNode
@@ -448,6 +452,123 @@ if (empresaGuardadaValida) {
     return () => window.clearTimeout(timer)
   }, [preparePartosForTerrain])
 
+
+  const prepareOTForTerrain = useCallback(async () => {
+    if (!isOnline || !empresaActivaId || !usuarioId || !rolResuelto ||
+      !canAccessModuleByRoleAndCompany(usuarioRol, 'ot', modulosHabilitados)) return
+
+    try {
+      const { data: rolData } = await supabase
+        .from('usuario_empresas')
+        .select('rol')
+        .eq('usuario_id', usuarioId)
+        .eq('empresa_id', empresaActivaId)
+        .eq('activo', true)
+        .maybeSingle()
+
+      let query = supabase
+        .from('ot_vw_resumen')
+        .select('*')
+        .eq('empresa_id', empresaActivaId)
+        .order('created_at', { ascending: false })
+        .limit(50)
+
+      if (rolData?.rol === 'tecnico_ot') {
+        const ownOtResp = await supabase
+          .from('ot_ordenes_trabajo')
+          .select('id')
+          .eq('empresa_id', empresaActivaId)
+          .or(`tecnico_responsable_id.eq.${usuarioId},created_by.eq.${usuarioId}`)
+
+        if (ownOtResp.error) return
+        const ownOtIds = (ownOtResp.data ?? []).map((item) => item.id).filter(Boolean)
+        if (ownOtIds.length === 0) return
+        query = query.in('id', ownOtIds)
+      }
+
+      const listadoResp = await query
+      if (listadoResp.error) return
+
+      const ots = ((listadoResp.data ?? []) as Array<Record<string, unknown>>).filter((ot) => {
+        const estado = String(ot.estado_nombre ?? '').toLowerCase()
+        return !estado.includes('cerrad') && !estado.includes('anulad')
+      })
+
+      if (ots.length === 0) return
+
+      const ids = ots.map((ot) => ot.id).filter(Boolean)
+      const detallesResp = await supabase
+        .from('ot_ordenes_trabajo')
+        .select('id, empresa_id, folio, cliente_id, titulo, descripcion_solicitud, problema_reportado, diagnostico, trabajo_realizado, recomendaciones, requiere_checklist, plantilla_checklist_id, fecha_ot, fecha_programada, fecha_cierre, tecnico_responsable_id, created_by, updated_at')
+        .eq('empresa_id', empresaActivaId)
+        .in('id', ids)
+        .is('deleted_at', null)
+
+      if (detallesResp.error) return
+
+      const routeResponse = await fetch(OT_ROUTE, { credentials: 'same-origin' })
+      if (!routeResponse.ok) return
+
+      router.prefetch(OT_ROUTE)
+      const routeCache = await window.caches.open('tralixia-terrain-v1')
+      await routeCache.put(OT_ROUTE, routeResponse.clone())
+
+      mergeOTOfflineCache({
+        empresa_id: empresaActivaId,
+        user_id: usuarioId,
+        ots: ots as Parameters<typeof mergeOTOfflineCache>[0]['ots'],
+        detalles: (detallesResp.data ?? []) as Parameters<typeof mergeOTOfflineCache>[0]['detalles'],
+      })
+
+      setTerrainRegistry(upsertTerrainModule(empresaActivaId, usuarioId, OT_MODULE, OT_ROUTE))
+    } catch {
+      // La OT offline se anuncia solo si permisos, ruta y datos quedaron preparados.
+    }
+  }, [empresaActivaId, isOnline, modulosHabilitados, rolResuelto, router, usuarioId, usuarioRol])
+
+  const syncOTPendingForTerrain = useCallback(async () => {
+    if (!isOnline || !empresaActivaId || !usuarioId) return
+
+    const pendingItems = offlineQueueItems.filter((item) =>
+      item.module === OT_MODULE && item.action === OT_PENDING_ACTION && isOTPendingPayload(item.payload) &&
+      item.payload.empresa_id === empresaActivaId && item.payload.user_id === usuarioId
+    )
+
+    for (const item of pendingItems) {
+      const payload = item.payload as OTOfflinePendingPayload
+      try {
+        const nota = [
+          payload.observacion_terreno && `Observación terreno: ${payload.observacion_terreno}`,
+          payload.estado_local_avance && `Estado local: ${payload.estado_local_avance}`,
+          payload.notas_internas_ejecucion && `Notas internas: ${payload.notas_internas_ejecucion}`,
+        ].filter(Boolean).join('\n')
+
+        const updateResp = await supabase
+          .from('ot_ordenes_trabajo')
+          .update({ trabajo_realizado: nota || null, updated_at: new Date().toISOString() })
+          .eq('id', payload.ot_id)
+          .eq('empresa_id', payload.empresa_id)
+
+        if (updateResp.error) throw updateResp.error
+        window.localStorage.removeItem(`tralixia_ot_draft_${payload.empresa_id}_${payload.user_id}_${payload.ot_id}`)
+        const { removeOfflineQueueItem } = await import('../../lib/offline/offline-queue')
+        removeOfflineQueueItem(item.id)
+      } catch (error) {
+        const { updateOfflineQueueItem } = await import('../../lib/offline/offline-queue')
+        updateOfflineQueueItem(item.id, { status: 'error', error: error instanceof Error ? error.message : 'No se pudo sincronizar OT.' })
+      }
+    }
+  }, [empresaActivaId, isOnline, offlineQueueItems, usuarioId])
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => void prepareOTForTerrain(), 1800)
+    return () => window.clearTimeout(timer)
+  }, [prepareOTForTerrain])
+
+  useEffect(() => {
+    void syncOTPendingForTerrain()
+  }, [syncOTPendingForTerrain])
+
   const handleLogout = async () => {
     await supabase.auth.signOut()
     router.push('/login')
@@ -503,16 +624,14 @@ if (empresaGuardadaValida) {
 
   const visibleMenuGroups = useMemo<MenuGroup[]>(() => {
     if (isOffline) {
-      const prepared = terrainRegistry?.modules.some(
-        (module) => module.module === HARAS_PARTOS_MODULE
-      )
-      return prepared
-        ? [{
-            key: 'haras',
-            label: 'Modo terreno',
-            items: [{ href: HARAS_PARTOS_ROUTE, label: 'Partos', moduleKey: 'haras' }],
-          }]
-        : []
+      const items: MenuItem[] = []
+      if (terrainRegistry?.modules.some((module) => module.module === HARAS_PARTOS_MODULE)) {
+        items.push({ href: HARAS_PARTOS_ROUTE, label: 'Partos', moduleKey: 'haras' })
+      }
+      if (terrainRegistry?.modules.some((module) => module.module === OT_MODULE)) {
+        items.push({ href: OT_ROUTE, label: 'OT', moduleKey: 'ot' })
+      }
+      return items.length > 0 ? [{ key: 'haras', label: 'Modo terreno', items }] : []
     }
     const grouped = new Map<MenuGroupKey, MenuItem[]>()
 
@@ -609,16 +728,13 @@ if (empresaGuardadaValida) {
     ? 'Acceso operativo al modulo OT para ejecutar trabajos, registrar evidencias y revisar informes autorizados.'
     : 'Gestion multiempresa con modulos habilitados por empresa, roles y recursos transversales.'
 
-  const partosPrepared = Boolean(
-    terrainRegistry?.modules.some((module) => module.module === HARAS_PARTOS_MODULE)
-  )
   const pendingLocalCount = offlineQueueItems.filter((item) =>
-    item.module === HARAS_PARTOS_MODULE &&
+    (item.module === HARAS_PARTOS_MODULE || item.module === OT_MODULE) &&
     item.payload && typeof item.payload === 'object' &&
     (item.payload as { empresa_id?: string }).empresa_id === empresaActivaId
   ).length
   const isOfflineSafeRoute = pathname === HARAS_PARTOS_ROUTE ||
-    pathname.startsWith(`${HARAS_PARTOS_ROUTE}/`)
+    pathname.startsWith(`${HARAS_PARTOS_ROUTE}/`) || pathname === OT_ROUTE || pathname.startsWith(`${OT_ROUTE}/`)
   const showOfflineRouteBlocked = isOffline && !isOfflineSafeRoute
 
   if (checkingSession) {
@@ -982,9 +1098,9 @@ if (empresaGuardadaValida) {
                   Solo puedes abrir módulos preparados para esta empresa y
                   usuario.
                 </p>
-                {partosPrepared ? (
+                {terrainRegistry?.lastSafeRoute ? (
                   <Link
-                    href={terrainRegistry?.lastSafeRoute || HARAS_PARTOS_ROUTE}
+                    href={terrainRegistry.lastSafeRoute}
                     className="mt-5 inline-flex rounded-2xl bg-[#163A5F] px-4 py-3 text-sm font-semibold text-white no-underline"
                   >
                     {terrainRegistry?.lastModule
