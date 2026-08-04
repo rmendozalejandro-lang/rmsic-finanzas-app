@@ -1,9 +1,9 @@
-'use client'
+"use client";
 
-import Link from 'next/link'
-import { usePathname, useRouter } from 'next/navigation'
-import { ReactNode, useEffect, useMemo, useState } from 'react'
-import { supabase } from '../../lib/supabase/client'
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
+import { ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import { supabase } from "../../lib/supabase/client";
 import {
   MODULO_PRINCIPAL_LABELS,
   canAccessModuleByRoleAndCompany,
@@ -14,6 +14,15 @@ import {
 } from '../../lib/auth/permissions'
 import AceptarInvitacionesPendientes from '../../components/AceptarInvitacionesPendientes'
 import OfflineStatusBanner from '../../components/offline/OfflineStatusBanner'
+import { useNetworkStatus } from '../../hooks/useNetworkStatus'
+import { useOfflineQueue } from '../../hooks/useOfflineQueue'
+import {
+  HARAS_PARTOS_MODULE,
+  HARAS_PARTOS_ROUTE,
+  prepareHarasPartosRegistry,
+  readTerrainRegistry,
+  type TerrainRegistry,
+} from '../../lib/offline/terrain-registry'
 
 type PrivateLayoutProps = {
   children: ReactNode
@@ -141,6 +150,8 @@ function empresaTieneInformesTecnicos(empresaId?: string | null) {
 export default function PrivateLayout({ children }: PrivateLayoutProps) {
   const pathname = usePathname()
   const router = useRouter()
+  const { isOnline, isOffline } = useNetworkStatus()
+  const { items: offlineQueueItems } = useOfflineQueue()
 
   const [checkingSession, setCheckingSession] = useState(true)
   const [empresas, setEmpresas] = useState<Empresa[]>([])
@@ -148,6 +159,8 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
   const [empresaActivaNombreLocal, setEmpresaActivaNombreLocal] = useState('')
   const [modulosHabilitados, setModulosHabilitados] = useState<ModuloPrincipal[]>([])
 
+  const [usuarioId, setUsuarioId] = useState('')
+  const [terrainRegistry, setTerrainRegistry] = useState<TerrainRegistry | null>(null)
   const [usuarioNombre, setUsuarioNombre] = useState('')
   const [usuarioEmail, setUsuarioEmail] = useState('')
   const [usuarioRol, setUsuarioRol] = useState('')
@@ -200,6 +213,7 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
       } else {
         setUsuarioNombre(email)
         setUsuarioEmail(email)
+        setUsuarioId(userId)
       }
 
       const rolResp = await supabase
@@ -281,6 +295,7 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
         const userId = data.session.user.id || ''
 
         setUsuarioEmail(email)
+        setUsuarioId(userId)
 
 // Primero intenta aceptar invitaciones pendientes del usuario autenticado.
 // Esto es clave despuÃ©s de confirmar el correo de Supabase.
@@ -380,6 +395,59 @@ if (empresaGuardadaValida) {
     void checkSessionAndLoadEmpresas()
   }, [router])
 
+  const preparePartosForTerrain = useCallback(async () => {
+    if (!isOnline || !empresaActivaId || !usuarioId || !rolResuelto ||
+      !canAccessModuleByRoleAndCompany(usuarioRol, 'haras', modulosHabilitados)) return
+
+    const [animals, partos, routeResponse] = await Promise.all([
+      supabase.from('vet_animales').select('id, nombre, categoria, sexo')
+        .eq('empresa_id', empresaActivaId).order('nombre'),
+      supabase.from('vet_partos').select('id, madre_id, padre_id, cria_id, fecha_ultima_monta, fecha_probable_parto, fecha_parto_real, dias_gestacion_real, estado_reproductivo, sexo_cria, nombre_cria, peso_cria, peso_placenta, observaciones, hora_inicio_parto, hora_expulsion_cria, hora_parada_yegua, hora_corte_cordon, hora_parada_potrillo, hora_expulsion_placenta, hora_primera_mamada')
+        .eq('empresa_id', empresaActivaId).order('fecha_probable_parto', { ascending: true }),
+      fetch(HARAS_PARTOS_ROUTE, { credentials: 'same-origin' }),
+    ])
+    if (animals.error || partos.error || !routeResponse.ok) return
+
+    router.prefetch(HARAS_PARTOS_ROUTE)
+    const validatedAt = new Date()
+    try {
+      const routeCache = await window.caches.open('tralixia-terrain-v1')
+      await routeCache.put(HARAS_PARTOS_ROUTE, routeResponse.clone())
+      window.localStorage.setItem(`tralixia_haras_partos_cache_${empresaActivaId}`, JSON.stringify({
+        empresa_id: empresaActivaId,
+        updated_at: validatedAt.toISOString(),
+        animales: animals.data ?? [],
+        gestaciones: (partos.data ?? []).filter((parto) =>
+          !parto.fecha_parto_real && parto.estado_reproductivo !== 'anulado'),
+      }))
+      window.localStorage.setItem(
+        `tralixia_terrain_access_v1_${empresaActivaId}_haras_partos`,
+        JSON.stringify({
+          empresaId: empresaActivaId,
+          module: HARAS_PARTOS_MODULE,
+          userId: usuarioId,
+          allowed: true,
+          validatedAt: validatedAt.toISOString(),
+          expiresAt: new Date(validatedAt.getTime() + 86_400_000).toISOString(),
+        })
+      )
+      setTerrainRegistry(prepareHarasPartosRegistry(empresaActivaId, usuarioId))
+    } catch {
+      // Solo se anuncia el módulo cuando ruta, permiso y datos quedaron guardados.
+    }
+  }, [empresaActivaId, isOnline, modulosHabilitados, rolResuelto, router, usuarioId, usuarioRol])
+
+  useEffect(() => {
+    setTerrainRegistry(
+      empresaActivaId && usuarioId ? readTerrainRegistry(empresaActivaId, usuarioId) : null
+    )
+  }, [empresaActivaId, isOnline, usuarioId])
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => void preparePartosForTerrain(), 1200)
+    return () => window.clearTimeout(timer)
+  }, [preparePartosForTerrain])
+
   const handleLogout = async () => {
     await supabase.auth.signOut()
     router.push('/login')
@@ -434,6 +502,18 @@ if (empresaGuardadaValida) {
   }, [usuarioRol, rolResuelto, modulosHabilitados, empresaActivaId])
 
   const visibleMenuGroups = useMemo<MenuGroup[]>(() => {
+    if (isOffline) {
+      const prepared = terrainRegistry?.modules.some(
+        (module) => module.module === HARAS_PARTOS_MODULE
+      )
+      return prepared
+        ? [{
+            key: 'haras',
+            label: 'Modo terreno',
+            items: [{ href: HARAS_PARTOS_ROUTE, label: 'Partos', moduleKey: 'haras' }],
+          }]
+        : []
+    }
     const grouped = new Map<MenuGroupKey, MenuItem[]>()
 
     for (const item of visibleMenuItems) {
@@ -449,7 +529,7 @@ if (empresaGuardadaValida) {
       label: MENU_GROUP_LABELS[groupKey],
       items: grouped.get(groupKey) ?? [],
     })).filter((group) => group.items.length > 0)
-  }, [visibleMenuItems])
+  }, [isOffline, terrainRegistry, visibleMenuItems])
 
   const isActiveRoute = (href: string) => {
     if (href === '/') return pathname === '/'
@@ -529,6 +609,18 @@ if (empresaGuardadaValida) {
     ? 'Acceso operativo al modulo OT para ejecutar trabajos, registrar evidencias y revisar informes autorizados.'
     : 'Gestion multiempresa con modulos habilitados por empresa, roles y recursos transversales.'
 
+  const partosPrepared = Boolean(
+    terrainRegistry?.modules.some((module) => module.module === HARAS_PARTOS_MODULE)
+  )
+  const pendingLocalCount = offlineQueueItems.filter((item) =>
+    item.module === HARAS_PARTOS_MODULE &&
+    item.payload && typeof item.payload === 'object' &&
+    (item.payload as { empresa_id?: string }).empresa_id === empresaActivaId
+  ).length
+  const isOfflineSafeRoute = pathname === HARAS_PARTOS_ROUTE ||
+    pathname.startsWith(`${HARAS_PARTOS_ROUTE}/`)
+  const showOfflineRouteBlocked = isOffline && !isOfflineSafeRoute
+
   if (checkingSession) {
     return (
       <main className="min-h-screen bg-[#F6F8FB] p-6">
@@ -544,7 +636,7 @@ if (empresaGuardadaValida) {
           </div>
         </div>
       </main>
-    )
+    );
   }
 
   return (
@@ -576,6 +668,14 @@ if (empresaGuardadaValida) {
           </div>
 
           <nav className="flex-1 space-y-5 overflow-y-auto px-3 pb-4">
+            {isOffline && (
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-900">
+                <p className="font-semibold">Modo terreno activo</p>
+                <p className="mt-1 text-xs">
+                  {pendingLocalCount} pendientes locales
+                </p>
+              </div>
+            )}
             {visibleMenuGroups.map((group) => (
               <div key={group.key}>
                 <div className="mb-2 px-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
@@ -584,28 +684,43 @@ if (empresaGuardadaValida) {
 
                 <div className="space-y-1">
                   {group.items.map((item) => {
-                    const active = isActiveRoute(item.href)
+                    const active = isActiveRoute(item.href);
 
                     return (
                       <Link
                         key={item.href}
                         href={item.href}
-                        style={active ? { color: '#ffffff' } : undefined}
+                        style={active ? { color: "#ffffff" } : undefined}
                         className={`flex items-center rounded-2xl px-3 py-3 text-sm font-medium no-underline transition ${
                           active
-                            ? 'bg-[#163A5F] !text-white shadow-sm'
-                            : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                            ? "bg-[#163A5F] !text-white shadow-sm"
+                            : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
                         }`}
                       >
                         {item.label}
                       </Link>
-                    )
+                    );
                   })}
                 </div>
               </div>
             ))}
 
-            {isSuperAdmin && !isTecnicoOT && (
+            {isOffline && (
+              <div className="space-y-1 border-t border-slate-200 pt-3">
+                <div className="rounded-xl px-3 py-2 text-sm text-slate-600">
+                  Pendientes locales: <strong>{pendingLocalCount}</strong>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => window.location.reload()}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-3 text-left text-sm font-medium text-slate-700 hover:bg-slate-50"
+                >
+                  Reintentar conexión
+                </button>
+              </div>
+            )}
+
+            {isOnline && isSuperAdmin && !isTecnicoOT && (
               <div>
                 <div className="mb-2 px-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
                   Administracion
@@ -613,11 +728,15 @@ if (empresaGuardadaValida) {
 
                 <Link
                   href="/admin/empresas"
-                  style={isActiveRoute('/admin/empresas') ? { color: '#ffffff' } : undefined}
+                  style={
+                    isActiveRoute("/admin/empresas")
+                      ? { color: "#ffffff" }
+                      : undefined
+                  }
                   className={`flex items-center rounded-2xl px-3 py-3 text-sm font-medium no-underline transition ${
-                    isActiveRoute('/admin/empresas')
-                      ? 'bg-[#163A5F] !text-white shadow-sm'
-                      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                    isActiveRoute("/admin/empresas")
+                      ? "bg-[#163A5F] !text-white shadow-sm"
+                      : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
                   }`}
                 >
                   Admin Empresas
@@ -641,7 +760,7 @@ if (empresaGuardadaValida) {
                     Tralixia
                   </p>
                   <p className="truncate text-xs text-slate-500">
-                    Empresa activa:{' '}
+                    Empresa activa:{" "}
                     <span className="font-medium text-slate-700">
                       {empresaActivaNombreVisual}
                     </span>
@@ -653,11 +772,15 @@ if (empresaGuardadaValida) {
                   aria-expanded={isMobileMenuOpen}
                   aria-controls="mobile-modules-menu"
                   onClick={() => setIsMobileMenuOpen((isOpen) => !isOpen)}
-                  aria-label={isMobileMenuOpen ? 'Cerrar menú de navegación' : 'Abrir menú de navegación'}
+                  aria-label={
+                    isMobileMenuOpen
+                      ? "Cerrar menú de navegación"
+                      : "Abrir menú de navegación"
+                  }
                   className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
                 >
                   <span aria-hidden="true" className="text-lg leading-none">
-                    {isMobileMenuOpen ? '×' : '☰'}
+                    {isMobileMenuOpen ? "×" : "☰"}
                   </span>
                   Menú
                 </button>
@@ -672,7 +795,7 @@ if (empresaGuardadaValida) {
                     value={empresaActivaId}
                     onChange={(e) => void handleEmpresaChange(e.target.value)}
                     className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm outline-none transition focus:border-[#245C90]"
-                    disabled={empresasParaSelector.length === 0}
+                    disabled={isOffline || empresasParaSelector.length === 0}
                   >
                     {empresasParaSelector.length === 0 ? (
                       <option value="">Sin empresas disponibles</option>
@@ -696,7 +819,7 @@ if (empresaGuardadaValida) {
 
               <div className="mt-2 min-w-0 text-xs text-slate-500">
                 <span className="font-medium text-slate-800">
-                  {usuarioNombre || usuarioEmail || 'Usuario'}
+                  {usuarioNombre || usuarioEmail || "Usuario"}
                 </span>
                 {usuarioRol && <span> · {usuarioRol}</span>}
               </div>
@@ -716,8 +839,12 @@ if (empresaGuardadaValida) {
                   >
                     <div className="mb-4 flex items-center justify-between border-b border-slate-100 pb-3">
                       <div>
-                        <p className="font-semibold text-slate-900">Navegación</p>
-                        <p className="text-xs text-slate-500">Selecciona un módulo</p>
+                        <p className="font-semibold text-slate-900">
+                          Navegación
+                        </p>
+                        <p className="text-xs text-slate-500">
+                          Selecciona un módulo
+                        </p>
                       </div>
                       <button
                         type="button"
@@ -799,7 +926,7 @@ if (empresaGuardadaValida) {
                       value={empresaActivaId}
                       onChange={(e) => void handleEmpresaChange(e.target.value)}
                       className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm shadow-sm outline-none transition focus:border-[#245C90]"
-                      disabled={empresasParaSelector.length === 0}
+                      disabled={isOffline || empresasParaSelector.length === 0}
                     >
                       {empresasParaSelector.length === 0 ? (
                         <option value="">Sin empresas disponibles</option>
@@ -815,10 +942,10 @@ if (empresaGuardadaValida) {
 
                   <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left shadow-sm md:min-w-[220px] md:text-right">
                     <p className="text-sm font-medium text-slate-900">
-                      {usuarioNombre || usuarioEmail || 'Usuario'}
+                      {usuarioNombre || usuarioEmail || "Usuario"}
                     </p>
                     <p className="text-xs text-slate-500">
-                      {usuarioRol || 'Sin rol asignado'}
+                      {usuarioRol || "Sin rol asignado"}
                     </p>
                   </div>
 
@@ -832,29 +959,62 @@ if (empresaGuardadaValida) {
               </div>
 
               <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-                Empresa activa:{' '}
+                Empresa activa:{" "}
                 <span className="font-semibold text-slate-900">
                   {empresaActivaNombreVisual}
                 </span>
               </div>
-
             </div>
           </header>
 
           <OfflineStatusBanner />
 
           <main className="min-w-0 max-w-full flex-1 overflow-x-hidden px-4 py-6 sm:px-6 lg:px-8 print:max-w-none print:overflow-visible print:px-0 print:py-0">
-            {isRouteAccessDenied ? (
+            {showOfflineRouteBlocked ? (
               <section className="mx-auto max-w-3xl rounded-[28px] border border-amber-200 bg-amber-50 p-6 shadow-sm">
-                <p className="text-sm font-medium text-amber-700">Acceso restringido</p>
+                <p className="text-sm font-semibold uppercase tracking-wide text-amber-700">
+                  Modo terreno activo
+                </p>
+                <h2 className="mt-2 text-2xl font-semibold text-amber-950">
+                  Este módulo requiere conexión.
+                </h2>
+                <p className="mt-3 text-sm text-amber-800">
+                  Solo puedes abrir módulos preparados para esta empresa y
+                  usuario.
+                </p>
+                {partosPrepared ? (
+                  <Link
+                    href={terrainRegistry?.lastSafeRoute || HARAS_PARTOS_ROUTE}
+                    className="mt-5 inline-flex rounded-2xl bg-[#163A5F] px-4 py-3 text-sm font-semibold text-white no-underline"
+                  >
+                    {terrainRegistry?.lastModule
+                      ? "Volver al último trabajo offline"
+                      : "Volver a Partos"}
+                  </Link>
+                ) : (
+                  <p className="mt-4 font-medium text-amber-950">
+                    No hay módulos preparados para trabajo sin conexión. Conecta
+                    a internet para preparar datos.
+                  </p>
+                )}
+              </section>
+            ) : isRouteAccessDenied ? (
+              <section className="mx-auto max-w-3xl rounded-[28px] border border-amber-200 bg-amber-50 p-6 shadow-sm">
+                <p className="text-sm font-medium text-amber-700">
+                  Acceso restringido
+                </p>
                 <h2 className="mt-2 text-2xl font-semibold tracking-tight text-amber-950">
                   No tienes acceso a este modulo
                 </h2>
                 <p className="mt-3 text-sm leading-6 text-amber-800">
-                  El modulo solicitado no esta habilitado para la empresa activa o tu rol no tiene permiso para acceder.
+                  El modulo solicitado no esta habilitado para la empresa activa
+                  o tu rol no tiene permiso para acceder.
                 </p>
                 <p className="mt-2 text-sm leading-6 text-amber-800">
-                  Empresa activa: <span className="font-semibold">{empresaActivaNombreVisual}</span>
+                  Empresa activa:{" "}
+                  <span className="font-semibold">
+                    {empresaActivaNombreVisual}
+                  </span>
                 </p>
                 <div className="mt-5 flex flex-wrap gap-3">
                   <Link
@@ -864,7 +1024,7 @@ if (empresaGuardadaValida) {
                     Volver al dashboard
                   </Link>
 
-                  {isSuperAdmin && !isTecnicoOT && (
+                  {isOnline && isSuperAdmin && !isTecnicoOT && (
                     <Link
                       href="/admin/empresas"
                       className="rounded-2xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 no-underline transition hover:bg-slate-50"
@@ -881,5 +1041,5 @@ if (empresaGuardadaValida) {
         </div>
       </div>
     </div>
-  )
+  );
 }
