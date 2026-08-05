@@ -595,7 +595,7 @@ if (empresaGuardadaValida) {
         plantillaChecklistIds.length > 0
           ? supabase
               .from('ot_plantillas_checklist')
-              .select('id, nombre, tipo_activo')
+              .select('id, nombre, tipo_activo, descripcion')
               .in('id', plantillaChecklistIds)
           : Promise.resolve({ data: [], error: null }),
       ])
@@ -636,7 +636,7 @@ if (empresaGuardadaValida) {
         ids.length > 0
           ? supabase
               .from('ot_respuestas_checklist')
-              .select('ot_id, plantilla_item_id, respuesta_texto, respuesta_boolean, observacion')
+              .select('id, ot_id, plantilla_item_id, respuesta_texto, respuesta_boolean, observacion')
               .in('ot_id', ids)
           : Promise.resolve({ data: [], error: null }),
         ids.length > 0
@@ -718,6 +718,7 @@ if (empresaGuardadaValida) {
           equipos_asociados: equiposPorOt.get(detalleId) ?? [],
           plantilla_ot_config: plantillaOt,
           plantilla_checklist_info: plantillaChecklist,
+          checklist_plantilla: plantillaChecklist,
           checklist_items: plantillaChecklist ? checklistItemsPorPlantilla.get(String(plantillaChecklist.id ?? '')) ?? [] : [],
           checklist_respuestas: checklistRespuestasPorOt.get(detalleId) ?? [],
           equipo_checklist_respuestas: equipoChecklistRespuestasPorOt.get(detalleId) ?? [],

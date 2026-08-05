@@ -9,6 +9,8 @@ import type { OTResumen } from '../../../lib/ot/types'
 import { addOTOfflineDraft, findCachedOTDetail, readOTOfflineCache, otHasPendingLocalChanges, type OTOfflineDetail, type OTOfflineDraft } from '../../../lib/offline/ot'
 
 const STORAGE_ID_KEY = 'empresa_activa_id'
+const CHECKLIST_HORAS_OPTIONS = [175, 520, 1040, 2080, 3120, 4160]
+type ChecklistOfflineModo = 'horas' | 'completa' | 'lubricacion'
 
 type OTRecord = OTResumen & Record<string, unknown>
 
@@ -182,7 +184,7 @@ function buildOfflineDraftFromDetail(detail: OTOfflineDetail | null): OTOfflineD
   return {
     observacion_terreno: '',
     estado_local_avance: '',
-    checklist_local: {},
+    checklist_local: buildChecklistLocalFromDetail(detail),
     equipos_locales: {},
     notas_internas_ejecucion: '',
     descripcion_solicitud: offlineValue(detail?.descripcion_solicitud),
@@ -262,6 +264,7 @@ function checklistResponseForItem(detail: OTOfflineDetail, item: Record<string, 
   return respuestas.find((respuesta) => offlineValue(respuesta.plantilla_item_id) === itemId) ?? null
 }
 
+
 function checklistResponseLabel(response: Record<string, unknown> | null) {
   if (!response) return 'Sin respuesta online previa'
   const estado = offlineValue(response.respuesta_texto) || (response.respuesta_boolean === true ? 'ok' : response.respuesta_boolean === false ? 'no_ok' : '')
@@ -269,6 +272,64 @@ function checklistResponseLabel(response: Record<string, unknown> | null) {
   if (estado === 'no_ok') return 'Online: No OK'
   if (estado === 'na') return 'Online: N/A'
   return 'Online: sin estado'
+}
+
+function checklistEstadoFromResponse(response: Record<string, unknown> | null): ChecklistLocalItemDraft['estado'] {
+  if (!response) return ''
+  const estado = offlineValue(response.respuesta_texto)
+  if (estado === 'ok' || estado === 'no_ok' || estado === 'na') return estado
+  if (response.respuesta_boolean === true) return 'ok'
+  if (response.respuesta_boolean === false) return 'no_ok'
+  return ''
+}
+
+function buildChecklistLocalFromDetail(detail: OTOfflineDetail | null) {
+  const checklistLocal: OTOfflineDraft['checklist_local'] = {}
+  if (!detail) return checklistLocal
+
+  const items = getOfflineArray(detail.checklist_items)
+  const equipos = getOfflineArray(detail.equipos_asociados)
+
+  items.forEach((item) => {
+    const response = checklistResponseForItem(detail, item)
+    const estado = checklistEstadoFromResponse(response)
+    const observacion = offlineValue(response?.observacion)
+    if (estado || observacion) {
+      checklistLocal[checklistLocalKey(item, '', offlineValue(item.frecuencia_horas) || 'horas')] = { estado, observacion }
+      checklistLocal[checklistLocalKey(item, '', 'preventiva')] = { estado, observacion }
+    }
+  })
+
+  equipos.forEach((equipo) => {
+    items.forEach((item) => {
+      const response = checklistResponseForItem(detail, item, equipo)
+      const estado = checklistEstadoFromResponse(response)
+      const observacion = offlineValue(response?.observacion_antes || response?.observacion_despues)
+      if (estado || observacion) {
+        checklistLocal[checklistLocalKey(item, offlineValue(equipo.id) || offlineValue(equipo.equipo_id), 'equipo')] = { estado, observacion }
+      }
+    })
+  })
+
+  return checklistLocal
+}
+
+function filterChecklistItemsForModo(items: Array<Record<string, unknown>>, modo: ChecklistOfflineModo, horas: number) {
+  if (modo === 'completa') return items
+  if (modo === 'lubricacion') return items.filter((item) => offlineValue(item.tipo_item) === 'lubricacion')
+  return items.filter((item) => {
+    const frecuencia = Number(offlineValue(item.frecuencia_horas))
+    return !Number.isFinite(frecuencia) || frecuencia <= horas
+  })
+}
+
+function groupChecklistItemsByZona(items: Array<Record<string, unknown>>) {
+  const groups = new Map<string, Array<Record<string, unknown>>>()
+  items.forEach((item) => {
+    const zona = offlineValue(item.zona) || 'Sin zona'
+    groups.set(zona, [...(groups.get(zona) ?? []), item])
+  })
+  return Array.from(groups.entries())
 }
 
 
@@ -379,6 +440,8 @@ function OTPageContent() {
   const [currentUserId, setCurrentUserId] = useState('')
   const [selectedOfflineOtId, setSelectedOfflineOtId] = useState('')
   const [offlineDraft, setOfflineDraft] = useState<OTOfflineDraft>(() => buildOfflineDraftFromDetail(null))
+  const [offlineChecklistModo, setOfflineChecklistModo] = useState<ChecklistOfflineModo>('horas')
+  const [offlineChecklistHoras, setOfflineChecklistHoras] = useState(175)
   const [offlineDraftSuccess, setOfflineDraftSuccess] = useState('')
   const [offlinePendingRefresh, setOfflinePendingRefresh] = useState(0)
 
@@ -1201,12 +1264,35 @@ function OTPageContent() {
                     <p className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900">Las respuestas quedan como borrador local y se sincronizan como resumen conservador. Escritura oficial de checklist avanzado queda para OFF-OT-02.</p>
                   </div>
                 ) : getOfflineStructure(selectedOfflineDetail).kind === 'checklist_por_horas' ? (
-                  <div className="mt-5 space-y-3">
+                  <div className="mt-5 space-y-4">
+                    <div className="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 md:grid-cols-2">
+                      <label className="text-sm font-medium text-slate-700">
+                        Modo
+                        <select value={offlineChecklistModo} onChange={(event) => setOfflineChecklistModo(event.target.value as ChecklistOfflineModo)} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2">
+                          <option value="horas">Horas</option>
+                          <option value="completa">Completa</option>
+                          <option value="lubricacion">Lubricación</option>
+                        </select>
+                      </label>
+                      <label className="text-sm font-medium text-slate-700">
+                        Horas
+                        <select value={offlineChecklistHoras} onChange={(event) => setOfflineChecklistHoras(Number(event.target.value))} disabled={offlineChecklistModo !== 'horas'} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 disabled:bg-slate-100">
+                          {CHECKLIST_HORAS_OPTIONS.map((horas) => <option key={horas} value={horas}>{horas} h</option>)}
+                        </select>
+                      </label>
+                    </div>
                     {selectedOfflineDetail.checklist_offline_preparado === false ? (
                       <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">Checklist no preparado para uso offline. Abre esta OT con conexión antes de trabajarla en terreno.</p>
                     ) : null}
                     {getOfflineArray(selectedOfflineDetail.checklist_items).length > 0
-                      ? getOfflineArray(selectedOfflineDetail.checklist_items).map((item) => renderChecklistItemCard(item, checklistLocalKey(item, '', offlineValue(item.frecuencia_horas) || 'horas')))
+                      ? groupChecklistItemsByZona(filterChecklistItemsForModo(getOfflineArray(selectedOfflineDetail.checklist_items), offlineChecklistModo, offlineChecklistHoras)).map(([zona, items]) => (
+                          <div key={zona} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                            <h4 className="font-semibold text-slate-900">{zona}</h4>
+                            <div className="mt-3 space-y-3">
+                              {items.map((item) => renderChecklistItemCard(item, checklistLocalKey(item, '', offlineValue(item.frecuencia_horas) || 'horas')))}
+                            </div>
+                          </div>
+                        ))
                       : <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">Checklist no preparado para uso offline. Abre esta OT con conexión antes de trabajarla en terreno.</p>}
                     <p className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900">Detalle real del checklist preparado en cache. Las marcas locales se anexan como resumen offline; sincronización oficial avanzada queda para OFF-OT-02.</p>
                   </div>
