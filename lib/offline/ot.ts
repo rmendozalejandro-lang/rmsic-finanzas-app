@@ -11,6 +11,18 @@ export type OTOfflineDraft = {
   estado_local_avance: string
   checklist_local: Record<string, boolean | string>
   notas_internas_ejecucion: string
+  problema_reportado?: string
+  diagnostico?: string
+  causa_probable?: string
+  trabajo_realizado?: string
+  recomendaciones?: string
+  resultado_servicio?: string
+  hallazgos?: string
+  conclusiones_tecnicas?: string
+  area_trabajo?: string
+  seguridad_observacion?: string
+  herramientas_materiales_utilizados?: string
+  recomendaciones_seguridad?: string
 }
 
 export type OTOfflinePendingPayload = OTOfflineDraft & {

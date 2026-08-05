@@ -713,6 +713,18 @@ if (empresaGuardadaValida) {
         }
 
         const lineasAvance = [
+          payload.problema_reportado?.trim() && `Problema reportado: ${payload.problema_reportado.trim()}`,
+          payload.diagnostico?.trim() && `Diagnóstico: ${payload.diagnostico.trim()}`,
+          payload.causa_probable?.trim() && `Causa probable: ${payload.causa_probable.trim()}`,
+          payload.trabajo_realizado?.trim() && `Labores realizadas: ${payload.trabajo_realizado.trim()}`,
+          payload.recomendaciones?.trim() && `Recomendaciones: ${payload.recomendaciones.trim()}`,
+          payload.resultado_servicio?.trim() && `Resultado servicio: ${payload.resultado_servicio.trim()}`,
+          payload.hallazgos?.trim() && `Hallazgos: ${payload.hallazgos.trim()}`,
+          payload.conclusiones_tecnicas?.trim() && `Conclusiones técnicas: ${payload.conclusiones_tecnicas.trim()}`,
+          payload.area_trabajo?.trim() && `Área de trabajo: ${payload.area_trabajo.trim()}`,
+          payload.seguridad_observacion?.trim() && `Observación seguridad: ${payload.seguridad_observacion.trim()}`,
+          payload.herramientas_materiales_utilizados?.trim() && `Herramientas/materiales: ${payload.herramientas_materiales_utilizados.trim()}`,
+          payload.recomendaciones_seguridad?.trim() && `Recomendaciones seguridad: ${payload.recomendaciones_seguridad.trim()}`,
           payload.observacion_terreno.trim() && `Observación terreno: ${payload.observacion_terreno.trim()}`,
           payload.estado_local_avance.trim() && `Estado local: ${payload.estado_local_avance.trim()}`,
           payload.notas_internas_ejecucion.trim() && `Notas internas: ${payload.notas_internas_ejecucion.trim()}`,
