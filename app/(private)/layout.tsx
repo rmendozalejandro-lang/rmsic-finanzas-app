@@ -516,7 +516,7 @@ if (empresaGuardadaValida) {
           .order('fecha', { ascending: true }),
         supabase
           .from('ot_orden_equipos')
-          .select('ot_id, equipo_id, descripcion_trabajo, observacion, orden')
+          .select('id, ot_id, equipo_id, descripcion_trabajo, observacion, orden')
           .in('ot_id', ids)
           .eq('activo', true)
           .is('deleted_at', null)
@@ -624,6 +624,58 @@ if (empresaGuardadaValida) {
         })
       }
 
+      const [checklistItemsResp, checklistRespuestasResp, equipoChecklistRespuestasResp] = await Promise.all([
+        plantillaChecklistIds.length > 0
+          ? supabase
+              .from('ot_plantillas_checklist_items')
+              .select('id, plantilla_id, zona, categoria, actividad, frecuencia_horas, indicaciones, tipo_item, tipo_respuesta, requiere_observacion_si_no_ok, requiere_evidencia, orden')
+              .in('plantilla_id', plantillaChecklistIds)
+              .eq('activa', true)
+              .order('orden', { ascending: true })
+          : Promise.resolve({ data: [], error: null }),
+        ids.length > 0
+          ? supabase
+              .from('ot_respuestas_checklist')
+              .select('ot_id, plantilla_item_id, respuesta_texto, respuesta_boolean, observacion')
+              .in('ot_id', ids)
+          : Promise.resolve({ data: [], error: null }),
+        ids.length > 0
+          ? supabase
+              .from('ot_equipo_checklist_resultados')
+              .select('ot_id, ot_orden_equipo_id, plantilla_item_id, respuesta_texto, respuesta_boolean, observacion_antes, observacion_despues, accion_realizada, recomendacion_tecnica, condicion_equipo, accion_checklist, datos')
+              .in('ot_id', ids)
+          : Promise.resolve({ data: [], error: null }),
+      ])
+
+      const checklistItemsPorPlantilla = new Map<string, Array<Record<string, unknown>>>()
+      if (!checklistItemsResp.error) {
+        ;((checklistItemsResp.data ?? []) as Array<Record<string, unknown>>).forEach((item) => {
+          const plantillaId = String(item.plantilla_id ?? '')
+          if (!plantillaId) return
+          checklistItemsPorPlantilla.set(plantillaId, [...(checklistItemsPorPlantilla.get(plantillaId) ?? []), item])
+        })
+      }
+
+      const checklistRespuestasPorOt = new Map<string, Array<Record<string, unknown>>>()
+      if (!checklistRespuestasResp.error) {
+        ;((checklistRespuestasResp.data ?? []) as Array<Record<string, unknown>>).forEach((respuesta) => {
+          const otId = String(respuesta.ot_id ?? '')
+          if (!otId) return
+          checklistRespuestasPorOt.set(otId, [...(checklistRespuestasPorOt.get(otId) ?? []), respuesta])
+        })
+      }
+
+      const equipoChecklistRespuestasPorOt = new Map<string, Array<Record<string, unknown>>>()
+      if (!equipoChecklistRespuestasResp.error) {
+        ;((equipoChecklistRespuestasResp.data ?? []) as Array<Record<string, unknown>>).forEach((respuesta) => {
+          const otId = String(respuesta.ot_id ?? '')
+          if (!otId) return
+          equipoChecklistRespuestasPorOt.set(otId, [...(equipoChecklistRespuestasPorOt.get(otId) ?? []), respuesta])
+        })
+      }
+
+      const checklistConsultasOk = !checklistItemsResp.error && !checklistRespuestasResp.error && !equipoChecklistRespuestasResp.error
+
       const routeResponse = await fetch(OT_ROUTE, { credentials: 'same-origin' })
       if (!routeResponse.ok) return
 
@@ -666,6 +718,10 @@ if (empresaGuardadaValida) {
           equipos_asociados: equiposPorOt.get(detalleId) ?? [],
           plantilla_ot_config: plantillaOt,
           plantilla_checklist_info: plantillaChecklist,
+          checklist_items: plantillaChecklist ? checklistItemsPorPlantilla.get(String(plantillaChecklist.id ?? '')) ?? [] : [],
+          checklist_respuestas: checklistRespuestasPorOt.get(detalleId) ?? [],
+          equipo_checklist_respuestas: equipoChecklistRespuestasPorOt.get(detalleId) ?? [],
+          checklist_offline_preparado: Boolean(!detalle.requiere_checklist || (checklistConsultasOk && plantillaChecklist && (checklistItemsPorPlantilla.get(String(plantillaChecklist.id ?? '')) ?? []).length > 0)),
         }
       })
 
@@ -729,7 +785,13 @@ if (empresaGuardadaValida) {
           payload.hallazgos?.trim() && `Hallazgos: ${payload.hallazgos.trim()}`,
           payload.conclusiones_tecnicas?.trim() && `Conclusiones técnicas: ${payload.conclusiones_tecnicas.trim()}`,
           payload.equipos_locales && Object.entries(payload.equipos_locales).length > 0 && `Avance local por equipos: ${JSON.stringify(payload.equipos_locales)}`,
-          payload.checklist_local && Object.entries(payload.checklist_local).length > 0 && `Checklist local: ${JSON.stringify(payload.checklist_local)}`,
+          payload.checklist_local && Object.entries(payload.checklist_local).length > 0 && `Checklist local: ${Object.entries(payload.checklist_local).map(([key, value]) => {
+            if (value && typeof value === 'object') {
+              const record = value as Record<string, unknown>
+              return `${key}: ${String(record.estado ?? 'sin_estado')}${record.observacion ? ` - ${String(record.observacion)}` : ''}`
+            }
+            return `${key}: ${String(value)}`
+          }).join('; ')}`,
           payload.area_trabajo?.trim() && `Área de trabajo: ${payload.area_trabajo.trim()}`,
           payload.seguridad_observacion?.trim() && `Observación seguridad: ${payload.seguridad_observacion.trim()}`,
           payload.herramientas_materiales_utilizados?.trim() && `Herramientas/materiales: ${payload.herramientas_materiales_utilizados.trim()}`,

@@ -214,6 +214,64 @@ function OfflineDraftTextarea({ label, value, onChange, rows = 4 }: { label: str
     </label>
   )
 }
+type ChecklistLocalItemDraft = {
+  estado?: 'ok' | 'no_ok' | 'na' | 'observado' | ''
+  observacion?: string
+}
+
+function checklistItemLabel(item: Record<string, unknown>) {
+  return [offlineValue(item.zona), offlineValue(item.categoria), offlineValue(item.actividad)]
+    .filter(Boolean)
+    .join(' / ') || `Ítem ${offlineValue(item.orden) || ''}`.trim()
+}
+
+function checklistItemMeta(item: Record<string, unknown>) {
+  return [
+    offlineValue(item.frecuencia_horas) ? `${offlineValue(item.frecuencia_horas)} h` : '',
+    offlineValue(item.tipo_item),
+    offlineValue(item.tipo_respuesta),
+  ].filter(Boolean).join(' · ')
+}
+
+function checklistLocalKey(item: Record<string, unknown>, equipoId = '', bloque = '') {
+  return [equipoId, offlineValue(item.id), bloque].filter(Boolean).join('|')
+}
+
+function normalizeChecklistLocalValue(value: unknown): ChecklistLocalItemDraft {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const record = value as Record<string, unknown>
+    const estado = offlineValue(record.estado)
+    return {
+      estado: estado === 'ok' || estado === 'no_ok' || estado === 'na' || estado === 'observado' ? estado : '',
+      observacion: offlineValue(record.observacion),
+    }
+  }
+
+  if (value === true) return { estado: 'ok', observacion: '' }
+  if (typeof value === 'string') return { estado: value === 'ok' || value === 'no_ok' || value === 'na' || value === 'observado' ? value : '', observacion: value }
+  return { estado: '', observacion: '' }
+}
+
+function checklistResponseForItem(detail: OTOfflineDetail, item: Record<string, unknown>, equipo?: Record<string, unknown>) {
+  const itemId = offlineValue(item.id)
+  const equipoRowId = equipo ? offlineValue(equipo.id) : ''
+  const respuestas = equipo
+    ? getOfflineArray(detail.equipo_checklist_respuestas).filter((respuesta) => offlineValue(respuesta.ot_orden_equipo_id) === equipoRowId)
+    : getOfflineArray(detail.checklist_respuestas)
+
+  return respuestas.find((respuesta) => offlineValue(respuesta.plantilla_item_id) === itemId) ?? null
+}
+
+function checklistResponseLabel(response: Record<string, unknown> | null) {
+  if (!response) return 'Sin respuesta online previa'
+  const estado = offlineValue(response.respuesta_texto) || (response.respuesta_boolean === true ? 'ok' : response.respuesta_boolean === false ? 'no_ok' : '')
+  if (estado === 'ok') return 'Online: OK'
+  if (estado === 'no_ok') return 'Online: No OK'
+  if (estado === 'na') return 'Online: N/A'
+  return 'Online: sin estado'
+}
+
+
 
 function normalizarFechaFiltro(fecha: string) {
   if (!fecha) return ''
@@ -684,6 +742,76 @@ function OTPageContent() {
     setOfflineDraftSuccess('Avance local guardado. Se sincronizará cuando vuelva la conexión.')
   }
 
+  const checklistLocalItem = (key: string) => normalizeChecklistLocalValue(offlineDraft.checklist_local[key])
+
+  const updateChecklistLocalItem = (key: string, patch: ChecklistLocalItemDraft) => {
+    setOfflineDraft((prev) => ({
+      ...prev,
+      checklist_local: {
+        ...prev.checklist_local,
+        [key]: {
+          ...normalizeChecklistLocalValue(prev.checklist_local[key]),
+          ...patch,
+        },
+      },
+    }))
+  }
+
+  const renderChecklistLocalControls = (key: string) => {
+    const local = checklistLocalItem(key)
+
+    return (
+      <div className="mt-3 grid gap-3 md:grid-cols-[220px_1fr]">
+        <label className="text-sm font-medium text-slate-700">
+          Estado local
+          <select
+            value={local.estado ?? ''}
+            onChange={(event) => updateChecklistLocalItem(key, { estado: event.target.value as ChecklistLocalItemDraft['estado'] })}
+            className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2"
+          >
+            <option value="">Sin revisar</option>
+            <option value="ok">OK</option>
+            <option value="no_ok">No OK</option>
+            <option value="na">N/A</option>
+            <option value="observado">Observado</option>
+          </select>
+        </label>
+        <label className="text-sm font-medium text-slate-700">
+          Observación local
+          <textarea
+            rows={2}
+            value={local.observacion ?? ''}
+            onChange={(event) => updateChecklistLocalItem(key, { observacion: event.target.value })}
+            className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2"
+          />
+        </label>
+      </div>
+    )
+  }
+
+  const renderChecklistItemCard = (item: Record<string, unknown>, key: string, equipo?: Record<string, unknown>) => {
+    const response = checklistResponseForItem(selectedOfflineDetail as OTOfflineDetail, item, equipo)
+
+    return (
+      <div key={key} className="rounded-2xl border border-slate-200 bg-white p-4">
+        <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+          <div>
+            <p className="font-semibold text-slate-900">{checklistItemLabel(item)}</p>
+            {offlineValue(item.indicaciones) ? <p className="mt-1 whitespace-pre-wrap text-sm text-slate-600">{offlineValue(item.indicaciones)}</p> : null}
+            {checklistItemMeta(item) ? <p className="mt-1 text-xs font-medium text-slate-500">{checklistItemMeta(item)}</p> : null}
+          </div>
+          <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">{checklistResponseLabel(response)}</span>
+        </div>
+        {response && offlineValue(response.observacion || response.observacion_antes || response.observacion_despues) ? (
+          <p className="mt-2 whitespace-pre-wrap rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-600">
+            {offlineValue(response.observacion || response.observacion_antes || response.observacion_despues)}
+          </p>
+        ) : null}
+        {renderChecklistLocalControls(key)}
+      </div>
+    )
+  }
+
   const totalAsignadas = useMemo(
     () =>
       otsFiltradas.filter((ot) => ot.estado_nombre?.toLowerCase() === 'asignada')
@@ -1029,33 +1157,58 @@ function OTPageContent() {
                 </h3>
                 <p className="mt-1 text-sm text-slate-500">Edita solo el borrador local permitido. No cambia folio, cliente, estado oficial, cierre, firmas ni PDF.</p>
                 {getOfflineStructure(selectedOfflineDetail).kind === 'preventiva' ? (
-                  <div className="mt-5 grid gap-4 md:grid-cols-2">
-                    <OfflineDraftTextarea label="Solicitud / alcance preventivo" value={offlineDraft.problema_reportado ?? ''} onChange={(value) => setOfflineDraft((prev) => ({ ...prev, problema_reportado: value }))} />
-                    <OfflineDraftTextarea label="Actividades preventivas / labores realizadas" value={offlineDraft.trabajo_realizado ?? ''} onChange={(value) => setOfflineDraft((prev) => ({ ...prev, trabajo_realizado: value }))} />
-                    <OfflineDraftTextarea label="Observaciones técnicas" value={offlineDraft.diagnostico ?? ''} onChange={(value) => setOfflineDraft((prev) => ({ ...prev, diagnostico: value }))} />
-                    <OfflineDraftTextarea label="Hallazgos" value={offlineDraft.hallazgos ?? ''} onChange={(value) => setOfflineDraft((prev) => ({ ...prev, hallazgos: value }))} />
-                    <OfflineDraftTextarea label="Recomendaciones" value={offlineDraft.recomendaciones ?? ''} onChange={(value) => setOfflineDraft((prev) => ({ ...prev, recomendaciones: value }))} />
-                    <OfflineDraftTextarea label="Estado local del equipo / avance" value={offlineDraft.estado_local_avance} onChange={(value) => setOfflineDraft((prev) => ({ ...prev, estado_local_avance: value }))} />
+                  <div className="mt-5 space-y-5">
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <OfflineDraftTextarea label="Solicitud / alcance preventivo" value={offlineDraft.problema_reportado ?? ''} onChange={(value) => setOfflineDraft((prev) => ({ ...prev, problema_reportado: value }))} />
+                      <OfflineDraftTextarea label="Actividades preventivas / labores realizadas" value={offlineDraft.trabajo_realizado ?? ''} onChange={(value) => setOfflineDraft((prev) => ({ ...prev, trabajo_realizado: value }))} />
+                      <OfflineDraftTextarea label="Observaciones técnicas" value={offlineDraft.diagnostico ?? ''} onChange={(value) => setOfflineDraft((prev) => ({ ...prev, diagnostico: value }))} />
+                      <OfflineDraftTextarea label="Hallazgos" value={offlineDraft.hallazgos ?? ''} onChange={(value) => setOfflineDraft((prev) => ({ ...prev, hallazgos: value }))} />
+                      <OfflineDraftTextarea label="Recomendaciones" value={offlineDraft.recomendaciones ?? ''} onChange={(value) => setOfflineDraft((prev) => ({ ...prev, recomendaciones: value }))} />
+                      <OfflineDraftTextarea label="Estado local del equipo / avance" value={offlineDraft.estado_local_avance} onChange={(value) => setOfflineDraft((prev) => ({ ...prev, estado_local_avance: value }))} />
+                    </div>
+                    {selectedOfflineDetail.requiere_checklist ? (
+                      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                        <h4 className="font-semibold text-slate-900">Checklist preventivo preparado</h4>
+                        {selectedOfflineDetail.checklist_offline_preparado === false ? (
+                          <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">Checklist no preparado para uso offline. Abre esta OT con conexión antes de trabajarla en terreno.</p>
+                        ) : null}
+                        <div className="mt-3 space-y-3">
+                          {getOfflineArray(selectedOfflineDetail.checklist_items).length > 0
+                            ? getOfflineArray(selectedOfflineDetail.checklist_items).map((item) => renderChecklistItemCard(item, checklistLocalKey(item, '', offlineValue(item.frecuencia_horas) || 'preventiva')))
+                            : <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">Checklist no preparado para uso offline. Abre esta OT con conexión antes de trabajarla en terreno.</p>}
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
                 ) : getOfflineStructure(selectedOfflineDetail).kind === 'checklist_por_equipo' ? (
-                  <div className="mt-5 space-y-4">
+                  <div className="mt-5 space-y-5">
+                    {selectedOfflineDetail.checklist_offline_preparado === false ? (
+                      <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">Checklist no preparado para uso offline. Abre esta OT con conexión antes de trabajarla en terreno.</p>
+                    ) : null}
                     {getOfflineArray(selectedOfflineDetail.equipos_asociados).map((equipo, index) => (
-                      <div key={`${offlineValue(equipo.equipo_id)}-check-${index}`} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                      <div key={`${offlineValue(equipo.id) || offlineValue(equipo.equipo_id)}-check-${index}`} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                         <p className="font-semibold text-slate-900">{buildAssociatedEquipoTitle(equipo)}</p>
                         <p className="mt-1 text-sm text-slate-600">{buildAssociatedEquipoUbicacion(equipo) || 'Ubicación no disponible'}</p>
                         <OfflineTextSection title="Descripción trabajo" value={equipo.descripcion_trabajo} />
                         <OfflineTextSection title="Observación" value={equipo.observacion} />
-                        <label className="mt-3 flex items-center gap-2 text-sm font-medium text-slate-700"><input type="checkbox" checked={Boolean(offlineDraft.checklist_local[`equipo_${offlineValue(equipo.equipo_id) || index}`])} onChange={(event) => setOfflineDraft((prev) => ({ ...prev, checklist_local: { ...prev.checklist_local, [`equipo_${offlineValue(equipo.equipo_id) || index}`]: event.target.checked } }))} /> Estado local de revisión simple</label>
-                        <OfflineDraftTextarea label="Observación local por equipo" value={offlineDraft.equipos_locales?.[offlineValue(equipo.equipo_id) || String(index)] ?? ''} onChange={(value) => setOfflineDraft((prev) => ({ ...prev, equipos_locales: { ...(prev.equipos_locales ?? {}), [offlineValue(equipo.equipo_id) || String(index)]: value } }))} rows={3} />
+                        <div className="mt-4 space-y-3">
+                          {getOfflineArray(selectedOfflineDetail.checklist_items).length > 0
+                            ? getOfflineArray(selectedOfflineDetail.checklist_items).map((item) => renderChecklistItemCard(item, checklistLocalKey(item, offlineValue(equipo.id) || offlineValue(equipo.equipo_id), 'equipo'), equipo))
+                            : <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">Checklist no preparado para uso offline. Abre esta OT con conexión antes de trabajarla en terreno.</p>}
+                        </div>
                       </div>
                     ))}
-                    <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">Checklist completo offline se implementará en OFF-OT-02.</p>
+                    <p className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900">Las respuestas quedan como borrador local y se sincronizan como resumen conservador. Escritura oficial de checklist avanzado queda para OFF-OT-02.</p>
                   </div>
                 ) : getOfflineStructure(selectedOfflineDetail).kind === 'checklist_por_horas' ? (
-                  <div className="mt-5 grid gap-4">
-                    <label className="flex items-center gap-2 text-sm font-medium text-slate-700"><input type="checkbox" checked={Boolean(offlineDraft.checklist_local.revision_horas)} onChange={(event) => setOfflineDraft((prev) => ({ ...prev, checklist_local: { ...prev.checklist_local, revision_horas: event.target.checked } }))} /> Revisión local simple por horas</label>
-                    <OfflineDraftTextarea label="Observaciones por bloque / intervalo" value={offlineDraft.notas_internas_ejecucion} onChange={(value) => setOfflineDraft((prev) => ({ ...prev, notas_internas_ejecucion: value }))} />
-                    <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">Checklist completo offline se implementará en OFF-OT-02.</p>
+                  <div className="mt-5 space-y-3">
+                    {selectedOfflineDetail.checklist_offline_preparado === false ? (
+                      <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">Checklist no preparado para uso offline. Abre esta OT con conexión antes de trabajarla en terreno.</p>
+                    ) : null}
+                    {getOfflineArray(selectedOfflineDetail.checklist_items).length > 0
+                      ? getOfflineArray(selectedOfflineDetail.checklist_items).map((item) => renderChecklistItemCard(item, checklistLocalKey(item, '', offlineValue(item.frecuencia_horas) || 'horas')))
+                      : <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">Checklist no preparado para uso offline. Abre esta OT con conexión antes de trabajarla en terreno.</p>}
+                    <p className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900">Detalle real del checklist preparado en cache. Las marcas locales se anexan como resumen offline; sincronización oficial avanzada queda para OFF-OT-02.</p>
                   </div>
                 ) : getOfflineStructure(selectedOfflineDetail).kind === 'equipos_multiples' ? (
                   <div className="mt-5 space-y-4">

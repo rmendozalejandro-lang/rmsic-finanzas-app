@@ -10,7 +10,7 @@ export const OT_CACHE_PREFIX = 'tralixia_ot_offline_cache_v2'
 export type OTOfflineDraft = {
   observacion_terreno: string
   estado_local_avance: string
-  checklist_local: Record<string, boolean | string>
+  checklist_local: Record<string, boolean | string | { estado?: 'ok' | 'no_ok' | 'na' | 'observado' | ''; observacion?: string }>
   equipos_locales?: Record<string, string>
   notas_internas_ejecucion: string
   descripcion_solicitud?: string
