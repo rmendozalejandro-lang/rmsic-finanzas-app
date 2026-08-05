@@ -185,6 +185,7 @@ function buildOfflineDraftFromDetail(detail: OTOfflineDetail | null): OTOfflineD
     checklist_local: {},
     equipos_locales: {},
     notas_internas_ejecucion: '',
+    descripcion_solicitud: offlineValue(detail?.descripcion_solicitud),
     problema_reportado: offlineValue(detail?.problema_reportado),
     diagnostico: offlineValue(detail?.diagnostico),
     causa_probable: offlineValue(detail?.causa_probable),
@@ -1068,9 +1069,10 @@ function OTPageContent() {
                     ))}
                     <OfflineDraftTextarea label="Avance local general por equipos" value={offlineDraft.trabajo_realizado ?? ''} onChange={(value) => setOfflineDraft((prev) => ({ ...prev, trabajo_realizado: value }))} rows={5} />
                   </div>
-                ) : (
+                ) : getOfflineStructure(selectedOfflineDetail).kind === 'asistencia_urgencia' ? (
                   <div className="mt-5 grid gap-4 md:grid-cols-2">
-                    <OfflineDraftTextarea label="Solicitud del cliente" value={offlineDraft.problema_reportado ?? ''} onChange={(value) => setOfflineDraft((prev) => ({ ...prev, problema_reportado: value }))} />
+                    <OfflineDraftTextarea label="Solicitud del cliente" value={offlineDraft.descripcion_solicitud ?? ''} onChange={(value) => setOfflineDraft((prev) => ({ ...prev, descripcion_solicitud: value }))} />
+                    <OfflineDraftTextarea label="Problema reportado" value={offlineDraft.problema_reportado ?? ''} onChange={(value) => setOfflineDraft((prev) => ({ ...prev, problema_reportado: value }))} />
                     <OfflineDraftTextarea label="Diagnóstico" value={offlineDraft.diagnostico ?? ''} onChange={(value) => setOfflineDraft((prev) => ({ ...prev, diagnostico: value }))} />
                     <OfflineDraftTextarea label="Causa probable" value={offlineDraft.causa_probable ?? ''} onChange={(value) => setOfflineDraft((prev) => ({ ...prev, causa_probable: value }))} />
                     <OfflineDraftTextarea label="Labores realizadas" value={offlineDraft.trabajo_realizado ?? ''} onChange={(value) => setOfflineDraft((prev) => ({ ...prev, trabajo_realizado: value }))} />
@@ -1078,6 +1080,13 @@ function OTPageContent() {
                     <OfflineDraftTextarea label="Resultado del servicio" value={offlineDraft.resultado_servicio ?? ''} onChange={(value) => setOfflineDraft((prev) => ({ ...prev, resultado_servicio: value }))} />
                     <OfflineDraftTextarea label="Hallazgos" value={offlineDraft.hallazgos ?? ''} onChange={(value) => setOfflineDraft((prev) => ({ ...prev, hallazgos: value }))} />
                     <OfflineDraftTextarea label="Conclusiones técnicas" value={offlineDraft.conclusiones_tecnicas ?? ''} onChange={(value) => setOfflineDraft((prev) => ({ ...prev, conclusiones_tecnicas: value }))} />
+                  </div>
+                ) : (
+                  <div className="mt-5 grid gap-4 md:grid-cols-2">
+                    <OfflineDraftTextarea label="Solicitud / problema" value={offlineDraft.problema_reportado ?? ''} onChange={(value) => setOfflineDraft((prev) => ({ ...prev, problema_reportado: value }))} />
+                    <OfflineDraftTextarea label="Diagnóstico" value={offlineDraft.diagnostico ?? ''} onChange={(value) => setOfflineDraft((prev) => ({ ...prev, diagnostico: value }))} />
+                    <OfflineDraftTextarea label="Trabajo realizado" value={offlineDraft.trabajo_realizado ?? ''} onChange={(value) => setOfflineDraft((prev) => ({ ...prev, trabajo_realizado: value }))} />
+                    <OfflineDraftTextarea label="Recomendaciones" value={offlineDraft.recomendaciones ?? ''} onChange={(value) => setOfflineDraft((prev) => ({ ...prev, recomendaciones: value }))} />
                   </div>
                 )}
               </section>

@@ -719,6 +719,7 @@ if (empresaGuardadaValida) {
         }
 
         const lineasAvance = [
+          payload.descripcion_solicitud?.trim() && `Solicitud del cliente: ${payload.descripcion_solicitud.trim()}`,
           payload.problema_reportado?.trim() && `Problema reportado: ${payload.problema_reportado.trim()}`,
           payload.diagnostico?.trim() && `Diagnóstico: ${payload.diagnostico.trim()}`,
           payload.causa_probable?.trim() && `Causa probable: ${payload.causa_probable.trim()}`,

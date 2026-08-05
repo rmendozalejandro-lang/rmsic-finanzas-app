@@ -13,6 +13,7 @@ export type OTOfflineDraft = {
   checklist_local: Record<string, boolean | string>
   equipos_locales?: Record<string, string>
   notas_internas_ejecucion: string
+  descripcion_solicitud?: string
   problema_reportado?: string
   diagnostico?: string
   causa_probable?: string
