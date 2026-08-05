@@ -26,7 +26,7 @@ import {
   readTerrainRegistry,
   type TerrainRegistry,
 } from '../../lib/offline/terrain-registry'
-import { isOTPendingPayload, mergeOTOfflineCache, OT_PENDING_ACTION, readOTOfflineCache, type OTOfflinePendingPayload } from '../../lib/offline/ot'
+import { isOTOfflineOperative, isOTPendingPayload, mergeOTOfflineCache, OT_PENDING_ACTION, readOTOfflineCache, type OTOfflinePendingPayload } from '../../lib/offline/ot'
 
 type PrivateLayoutProps = {
   children: ReactNode
@@ -669,11 +669,17 @@ if (empresaGuardadaValida) {
         }
       })
 
+      const detallesOperativos = detallesEnriquecidos.filter((detalle) => isOTOfflineOperative(detalle))
+      const detallesOperativosIds = new Set(detallesOperativos.map((detalle) => String(detalle.id)))
+      const otsOperativas = ots.filter((ot) => detallesOperativosIds.has(String(ot.id)) && isOTOfflineOperative(ot))
+
+      if (otsOperativas.length === 0 || detallesOperativos.length === 0) return
+
       mergeOTOfflineCache({
         empresa_id: empresaActivaId,
         user_id: usuarioId,
-        ots: ots as Parameters<typeof mergeOTOfflineCache>[0]['ots'],
-        detalles: detallesEnriquecidos as Parameters<typeof mergeOTOfflineCache>[0]['detalles'],
+        ots: otsOperativas as Parameters<typeof mergeOTOfflineCache>[0]['ots'],
+        detalles: detallesOperativos as Parameters<typeof mergeOTOfflineCache>[0]['detalles'],
       })
 
       setTerrainRegistry(upsertTerrainModule(empresaActivaId, usuarioId, OT_MODULE, OT_ROUTE))

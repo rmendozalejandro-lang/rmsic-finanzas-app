@@ -4,7 +4,8 @@ import { addOfflineQueueItem, listOfflineQueue, updateOfflineQueueItem } from '.
 export const OT_MODULE = 'ot'
 export const OT_ROUTE = '/ot'
 export const OT_PENDING_ACTION = 'guardar_avance_ot'
-export const OT_CACHE_PREFIX = 'tralixia_ot_offline_cache_v1'
+export const OT_CACHE_SCHEMA_VERSION = 2
+export const OT_CACHE_PREFIX = 'tralixia_ot_offline_cache_v2'
 
 export type OTOfflineDraft = {
   observacion_terreno: string
@@ -48,6 +49,7 @@ export type OTOfflineDetail = Record<string, unknown> & {
 }
 
 export type OTOfflineCache = {
+  schema_version: typeof OT_CACHE_SCHEMA_VERSION
   empresa_id: string
   user_id: string
   updated_at: string
@@ -64,14 +66,53 @@ export function otCacheKey(empresaId: string, userId: string) {
   return `${OT_CACHE_PREFIX}_${empresaId}_${userId}`
 }
 
+export function isOTOfflineOperative(value: unknown) {
+  if (!value || typeof value !== 'object') return false
+  const record = value as Record<string, unknown>
+  const estado = String(record.estado_nombre ?? '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  const fechaCierre = typeof record.fecha_cierre === 'string' ? record.fecha_cierre.trim() : ''
+  const deletedAt = typeof record.deleted_at === 'string' ? record.deleted_at.trim() : ''
+  const activo = record.activo
+
+  if (deletedAt) return false
+  if (activo === false) return false
+  if (fechaCierre) return false
+  if (estado.includes('cerrad') || estado.includes('anulad') || estado.includes('archivad')) return false
+  return true
+}
+
+function normalizeOTOfflineCache(cache: Partial<OTOfflineCache>, empresaId: string, userId: string): OTOfflineCache | null {
+  if (cache.schema_version !== OT_CACHE_SCHEMA_VERSION) return null
+  if (cache.empresa_id !== empresaId || cache.user_id !== userId) return null
+  if (!Array.isArray(cache.ots) || !Array.isArray(cache.detalles)) return null
+
+  const detalles = cache.detalles.filter((detalle): detalle is OTOfflineDetail =>
+    Boolean(detalle?.id) && detalle.empresa_id === empresaId && isOTOfflineOperative(detalle)
+  )
+  const detalleIds = new Set(detalles.map((detalle) => detalle.id))
+  const ots = cache.ots.filter((ot) => detalleIds.has(ot.id) && isOTOfflineOperative(ot))
+  const otIds = new Set(ots.map((ot) => ot.id))
+  const detallesFiltrados = detalles.filter((detalle) => otIds.has(detalle.id))
+
+  if (ots.length === 0 || detallesFiltrados.length === 0) return null
+
+  return {
+    schema_version: OT_CACHE_SCHEMA_VERSION,
+    empresa_id: empresaId,
+    user_id: userId,
+    updated_at: cache.updated_at ?? '',
+    routes: [OT_ROUTE, ...ots.map((ot) => `${OT_ROUTE}/${ot.id}`)],
+    ots,
+    detalles: detallesFiltrados,
+  }
+}
+
 export function readOTOfflineCache(empresaId: string, userId: string): OTOfflineCache | null {
   if (!hasStorage()) return null
   try {
     const raw = window.localStorage.getItem(otCacheKey(empresaId, userId))
     if (!raw) return null
-    const cache = JSON.parse(raw) as Partial<OTOfflineCache>
-    if (cache.empresa_id !== empresaId || cache.user_id !== userId || !Array.isArray(cache.ots)) return null
-    return { ...cache, detalles: Array.isArray(cache.detalles) ? cache.detalles : [] } as OTOfflineCache
+    return normalizeOTOfflineCache(JSON.parse(raw) as Partial<OTOfflineCache>, empresaId, userId)
   } catch {
     return null
   }
@@ -79,12 +120,14 @@ export function readOTOfflineCache(empresaId: string, userId: string): OTOffline
 
 export function writeOTOfflineCache(cache: OTOfflineCache) {
   if (!hasStorage()) return
-  window.localStorage.setItem(otCacheKey(cache.empresa_id, cache.user_id), JSON.stringify(cache))
+  const normalized = normalizeOTOfflineCache(cache, cache.empresa_id, cache.user_id)
+  if (!normalized) return
+  window.localStorage.setItem(otCacheKey(normalized.empresa_id, normalized.user_id), JSON.stringify(normalized))
   window.dispatchEvent(new Event('tralixia-ot-offline-cache-changed'))
 }
 
-export function mergeOTOfflineCache(input: Omit<OTOfflineCache, 'updated_at' | 'routes'>) {
-  writeOTOfflineCache({ ...input, routes: [OT_ROUTE, ...input.ots.map((ot) => `${OT_ROUTE}/${ot.id}`)], updated_at: new Date().toISOString() })
+export function mergeOTOfflineCache(input: Omit<OTOfflineCache, 'schema_version' | 'updated_at' | 'routes'>) {
+  writeOTOfflineCache({ ...input, schema_version: OT_CACHE_SCHEMA_VERSION, routes: [OT_ROUTE, ...input.ots.map((ot) => `${OT_ROUTE}/${ot.id}`)], updated_at: new Date().toISOString() })
 }
 
 export function findCachedOTDetail(empresaId: string, userId: string, otId: string) {
