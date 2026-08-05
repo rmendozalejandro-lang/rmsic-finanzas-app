@@ -721,6 +721,8 @@ if (empresaGuardadaValida) {
           payload.resultado_servicio?.trim() && `Resultado servicio: ${payload.resultado_servicio.trim()}`,
           payload.hallazgos?.trim() && `Hallazgos: ${payload.hallazgos.trim()}`,
           payload.conclusiones_tecnicas?.trim() && `Conclusiones técnicas: ${payload.conclusiones_tecnicas.trim()}`,
+          payload.equipos_locales && Object.entries(payload.equipos_locales).length > 0 && `Avance local por equipos: ${JSON.stringify(payload.equipos_locales)}`,
+          payload.checklist_local && Object.entries(payload.checklist_local).length > 0 && `Checklist local: ${JSON.stringify(payload.checklist_local)}`,
           payload.area_trabajo?.trim() && `Área de trabajo: ${payload.area_trabajo.trim()}`,
           payload.seguridad_observacion?.trim() && `Observación seguridad: ${payload.seguridad_observacion.trim()}`,
           payload.herramientas_materiales_utilizados?.trim() && `Herramientas/materiales: ${payload.herramientas_materiales_utilizados.trim()}`,

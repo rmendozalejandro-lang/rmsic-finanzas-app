@@ -183,6 +183,7 @@ function buildOfflineDraftFromDetail(detail: OTOfflineDetail | null): OTOfflineD
     observacion_terreno: '',
     estado_local_avance: '',
     checklist_local: {},
+    equipos_locales: {},
     notas_internas_ejecucion: '',
     problema_reportado: offlineValue(detail?.problema_reportado),
     diagnostico: offlineValue(detail?.diagnostico),
@@ -1043,6 +1044,7 @@ function OTPageContent() {
                         <OfflineTextSection title="Descripción trabajo" value={equipo.descripcion_trabajo} />
                         <OfflineTextSection title="Observación" value={equipo.observacion} />
                         <label className="mt-3 flex items-center gap-2 text-sm font-medium text-slate-700"><input type="checkbox" checked={Boolean(offlineDraft.checklist_local[`equipo_${offlineValue(equipo.equipo_id) || index}`])} onChange={(event) => setOfflineDraft((prev) => ({ ...prev, checklist_local: { ...prev.checklist_local, [`equipo_${offlineValue(equipo.equipo_id) || index}`]: event.target.checked } }))} /> Estado local de revisión simple</label>
+                        <OfflineDraftTextarea label="Observación local por equipo" value={offlineDraft.equipos_locales?.[offlineValue(equipo.equipo_id) || String(index)] ?? ''} onChange={(value) => setOfflineDraft((prev) => ({ ...prev, equipos_locales: { ...(prev.equipos_locales ?? {}), [offlineValue(equipo.equipo_id) || String(index)]: value } }))} rows={3} />
                       </div>
                     ))}
                     <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">Checklist completo offline se implementará en OFF-OT-02.</p>
@@ -1061,6 +1063,7 @@ function OTPageContent() {
                         <p className="mt-1 text-sm text-slate-600">{buildAssociatedEquipoUbicacion(equipo) || 'Ubicación no disponible'}</p>
                         <OfflineTextSection title="Trabajo por equipo" value={equipo.descripcion_trabajo} />
                         <OfflineTextSection title="Observación por equipo" value={equipo.observacion} />
+                        <OfflineDraftTextarea label="Avance local por equipo" value={offlineDraft.equipos_locales?.[offlineValue(equipo.equipo_id) || String(index)] ?? ''} onChange={(value) => setOfflineDraft((prev) => ({ ...prev, equipos_locales: { ...(prev.equipos_locales ?? {}), [offlineValue(equipo.equipo_id) || String(index)]: value } }))} rows={3} />
                       </div>
                     ))}
                     <OfflineDraftTextarea label="Avance local general por equipos" value={offlineDraft.trabajo_realizado ?? ''} onChange={(value) => setOfflineDraft((prev) => ({ ...prev, trabajo_realizado: value }))} rows={5} />
@@ -1079,6 +1082,9 @@ function OTPageContent() {
                 )}
               </section>
 
+              <details className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <summary className="cursor-pointer text-sm font-semibold text-slate-700">Ver contexto cacheado adicional de la OT</summary>
+                <div className="mt-4 space-y-5">
               <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
                 <h3 className="text-xl font-semibold text-slate-900">Datos generales</h3>
                 <dl className="mt-4 grid gap-4 text-sm md:grid-cols-2">
@@ -1194,6 +1200,9 @@ function OTPageContent() {
                   Checklist completo requiere conexión. Checklist offline avanzado se implementará en OFF-OT-02.
                 </p>
               </section>
+
+                </div>
+              </details>
 
               <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
                 <h3 className="text-xl font-semibold text-slate-900">Avance local de terreno</h3>

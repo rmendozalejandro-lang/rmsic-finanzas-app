@@ -10,6 +10,7 @@ export type OTOfflineDraft = {
   observacion_terreno: string
   estado_local_avance: string
   checklist_local: Record<string, boolean | string>
+  equipos_locales?: Record<string, string>
   notas_internas_ejecucion: string
   problema_reportado?: string
   diagnostico?: string
