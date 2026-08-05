@@ -779,6 +779,16 @@ if (empresaGuardadaValida) {
   }, [prepareOTForTerrain])
 
   useEffect(() => {
+    const refreshOTTerrainCache = () => void prepareOTForTerrain()
+    window.addEventListener('tralixia-ot-cache-refresh-requested', refreshOTTerrainCache)
+    window.addEventListener('focus', refreshOTTerrainCache)
+    return () => {
+      window.removeEventListener('tralixia-ot-cache-refresh-requested', refreshOTTerrainCache)
+      window.removeEventListener('focus', refreshOTTerrainCache)
+    }
+  }, [prepareOTForTerrain])
+
+  useEffect(() => {
     void syncOTPendingForTerrain()
   }, [syncOTPendingForTerrain])
 

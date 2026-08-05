@@ -2115,6 +2115,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
       setSuccess('')
 
       await saveOtDraft()
+      window.dispatchEvent(new Event('tralixia-ot-cache-refresh-requested'))
 
       await loadData(false)
       setSuccess('OT actualizada correctamente.')

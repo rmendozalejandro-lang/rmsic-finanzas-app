@@ -485,6 +485,7 @@ function OTPageContent() {
 
         if (active) {
           setOts(otsEnriquecidas)
+          window.dispatchEvent(new Event('tralixia-ot-cache-refresh-requested'))
         }
       } catch (err) {
         if (active) {
