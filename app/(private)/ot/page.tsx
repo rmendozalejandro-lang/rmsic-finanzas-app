@@ -133,6 +133,50 @@ function buildAssociatedEquipoTecnico(equipoAsociado: Record<string, unknown>) {
     .join(' / ')
 }
 
+
+function normalizeOfflineText(value: unknown) {
+  return offlineValue(value)
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+}
+
+function getOfflineOtConfig(detail: OTOfflineDetail) {
+  return getOfflineRecord(detail.plantilla_ot_config)
+}
+
+function getOfflineChecklistInfo(detail: OTOfflineDetail) {
+  return getOfflineRecord(detail.plantilla_checklist_info)
+}
+
+function getOfflineStructure(detail: OTOfflineDetail) {
+  const config = getOfflineOtConfig(detail)
+  const checklistInfo = getOfflineChecklistInfo(detail)
+  const text = [
+    detail.estructura_ot_codigo,
+    detail.tipo_servicio_codigo,
+    detail.tipo_servicio_nombre,
+    config.codigo,
+    config.nombre,
+    config.flujo_ot,
+    config.formato_ot,
+    checklistInfo.tipo_activo,
+  ].map(normalizeOfflineText).join(' ')
+  const usaEquiposMultiples = Boolean(config.usa_equipos_multiples) || getOfflineArray(detail.equipos_asociados).length > 1
+  const usaChecklistPorEquipo = Boolean(config.usa_checklist_por_equipo) || text.includes('checklist equipo') || text.includes('softys')
+  const usaChecklistPorHoras = Boolean(config.usa_checklist_por_horas) || text.includes('horas') || text.includes('mespack')
+  const isPreventiva = text.includes('preventiva') || text.includes('mantencion') || text.includes('mantenimiento') || usaChecklistPorHoras
+  const isUrgencia = text.includes('urgencia')
+  const isAsistencia = text.includes('asistencia')
+
+  if (usaChecklistPorEquipo) return { kind: 'checklist_por_equipo', title: 'Estructura checklist por equipo', usaEquiposMultiples, usaChecklistPorEquipo, usaChecklistPorHoras }
+  if (usaChecklistPorHoras) return { kind: 'checklist_por_horas', title: 'Estructura checklist por horas', usaEquiposMultiples, usaChecklistPorEquipo, usaChecklistPorHoras }
+  if (usaEquiposMultiples) return { kind: 'equipos_multiples', title: 'Estructura con múltiples equipos', usaEquiposMultiples, usaChecklistPorEquipo, usaChecklistPorHoras }
+  if (isPreventiva) return { kind: 'preventiva', title: 'Estructura mantenimiento preventivo', usaEquiposMultiples, usaChecklistPorEquipo, usaChecklistPorHoras }
+  if (isUrgencia || isAsistencia) return { kind: 'asistencia_urgencia', title: isUrgencia ? 'Estructura urgencia técnica' : 'Estructura asistencia técnica', usaEquiposMultiples, usaChecklistPorEquipo, usaChecklistPorHoras }
+  return { kind: 'general', title: 'Estructura general de OT', usaEquiposMultiples, usaChecklistPorEquipo, usaChecklistPorHoras }
+}
+
 function normalizarFechaFiltro(fecha: string) {
   if (!fecha) return ''
 
@@ -937,6 +981,14 @@ function OTPageContent() {
                 ) : null}
               </section>
 
+              <section className="rounded-2xl border border-sky-200 bg-sky-50 p-5 text-sky-950 shadow-sm">
+                <p className="text-sm font-semibold uppercase tracking-wide text-sky-700">Estructura operativa detectada</p>
+                <h3 className="mt-1 text-xl font-semibold">{getOfflineStructure(selectedOfflineDetail).title}</h3>
+                <p className="mt-2 text-sm text-sky-800">
+                  Esta vista usa la plantilla/tipo preparado en cache para mostrar la OT en modo terreno, sin cierre, firmas, PDF ni informe oficial.
+                </p>
+              </section>
+
               <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
                 <h3 className="text-xl font-semibold text-slate-900">Datos generales</h3>
                 <dl className="mt-4 grid gap-4 text-sm md:grid-cols-2">
@@ -1043,7 +1095,10 @@ function OTPageContent() {
                 <h3 className="text-xl font-semibold text-slate-900">Checklist / plantilla</h3>
                 <dl className="mt-4 grid gap-4 text-sm md:grid-cols-2">
                   <OfflineInfoItem label="Checklist requerido" value={selectedOfflineDetail.requiere_checklist ? 'Sí' : 'No'} />
-                  <OfflineInfoItem label="Plantilla checklist" value={selectedOfflineDetail.plantilla_checklist_id} />
+                  <OfflineInfoItem label="Plantilla checklist" value={offlineValue(getOfflineChecklistInfo(selectedOfflineDetail).nombre) || selectedOfflineDetail.plantilla_checklist_id} />
+                  <OfflineInfoItem label="Tipo checklist" value={getOfflineChecklistInfo(selectedOfflineDetail).tipo_activo} />
+                  <OfflineInfoItem label="Checklist por equipo" value={getOfflineStructure(selectedOfflineDetail).usaChecklistPorEquipo ? 'Sí' : 'No'} />
+                  <OfflineInfoItem label="Checklist por horas" value={getOfflineStructure(selectedOfflineDetail).usaChecklistPorHoras ? 'Sí' : 'No'} />
                 </dl>
                 <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
                   Checklist completo requiere conexión. Checklist offline avanzado se implementará en OFF-OT-02.

@@ -499,7 +499,7 @@ if (empresaGuardadaValida) {
       const ids = ots.map((ot) => ot.id).filter(Boolean)
       const detallesResp = await supabase
         .from('ot_ordenes_trabajo')
-        .select('id, empresa_id, folio, cliente_id, titulo, descripcion_solicitud, problema_reportado, numero_om_cliente, hora_inicio, hora_termino, duracion_minutos, cantidad_tecnicos, horas_hombre_utilizadas, supervisor_contratista_nombre, supervisor_contratista_rut, supervisor_contratista_cargo, herramientas_materiales_utilizados, recomendaciones_seguridad, seguridad_permiso_trabajo, seguridad_uso_epp, seguridad_bloqueo_tarjeta, seguridad_observacion, alcance_trabajo_ejecutado, alcance_trabajo_observacion, ejecutado_segun_programa, ejecutado_segun_programa_observacion, diagnostico, causa_probable, trabajo_realizado, resultado_servicio, hallazgos, conclusiones_tecnicas, recomendaciones, observaciones_cierre, area_trabajo, prioridad, requiere_checklist, plantilla_checklist_id, fecha_ot, fecha_programada, fecha_cierre, tecnico_responsable_id, created_by, updated_at')
+        .select('id, empresa_id, folio, cliente_id, tipo_servicio_id, estructura_ot_codigo, plantilla_id, titulo, descripcion_solicitud, problema_reportado, numero_om_cliente, hora_inicio, hora_termino, duracion_minutos, cantidad_tecnicos, horas_hombre_utilizadas, supervisor_contratista_nombre, supervisor_contratista_rut, supervisor_contratista_cargo, herramientas_materiales_utilizados, recomendaciones_seguridad, seguridad_permiso_trabajo, seguridad_uso_epp, seguridad_bloqueo_tarjeta, seguridad_observacion, alcance_trabajo_ejecutado, alcance_trabajo_observacion, ejecutado_segun_programa, ejecutado_segun_programa_observacion, diagnostico, causa_probable, trabajo_realizado, resultado_servicio, hallazgos, conclusiones_tecnicas, recomendaciones, observaciones_cierre, area_trabajo, prioridad, requiere_checklist, plantilla_checklist_id, fecha_ot, fecha_programada, fecha_cierre, tecnico_responsable_id, created_by, updated_at')
         .eq('empresa_id', empresaActivaId)
         .in('id', ids)
         .is('deleted_at', null)
@@ -563,6 +563,67 @@ if (empresaGuardadaValida) {
         equiposPorOt.set(otId, [...(equiposPorOt.get(otId) ?? []), { ...equipo, equipo: visual }])
       })
 
+      const tipoServicioIds = Array.from(new Set(
+        ((detallesResp.data ?? []) as Array<Record<string, unknown>>)
+          .map((detalle) => String(detalle.tipo_servicio_id ?? ''))
+          .filter(Boolean)
+      ))
+      const plantillaIds = Array.from(new Set(
+        ((detallesResp.data ?? []) as Array<Record<string, unknown>>)
+          .map((detalle) => String(detalle.plantilla_id ?? ''))
+          .filter(Boolean)
+      ))
+      const plantillaChecklistIds = Array.from(new Set(
+        ((detallesResp.data ?? []) as Array<Record<string, unknown>>)
+          .map((detalle) => String(detalle.plantilla_checklist_id ?? ''))
+          .filter(Boolean)
+      ))
+
+      const [tiposServicioResp, plantillasOtResp, plantillasChecklistResp] = await Promise.all([
+        tipoServicioIds.length > 0
+          ? supabase
+              .from('ot_tipos_servicio')
+              .select('id, codigo, nombre')
+              .in('id', tipoServicioIds)
+          : Promise.resolve({ data: [], error: null }),
+        plantillaIds.length > 0
+          ? supabase
+              .from('ot_plantillas')
+              .select('id, codigo, nombre, flujo_ot, formato_ot, requiere_equipo_encabezado, usa_equipos_multiples, usa_checklist_por_equipo, usa_checklist_por_horas, usa_tecnicos_participantes, tipo_equipo_permitido')
+              .in('id', plantillaIds)
+          : Promise.resolve({ data: [], error: null }),
+        plantillaChecklistIds.length > 0
+          ? supabase
+              .from('ot_plantillas_checklist')
+              .select('id, nombre, tipo_activo')
+              .in('id', plantillaChecklistIds)
+          : Promise.resolve({ data: [], error: null }),
+      ])
+
+      const tiposServicioPorId = new Map<string, Record<string, unknown>>()
+      if (!tiposServicioResp.error) {
+        ;((tiposServicioResp.data ?? []) as Array<Record<string, unknown>>).forEach((tipo) => {
+          const id = String(tipo.id ?? '')
+          if (id) tiposServicioPorId.set(id, tipo)
+        })
+      }
+
+      const plantillasOtPorId = new Map<string, Record<string, unknown>>()
+      if (!plantillasOtResp.error) {
+        ;((plantillasOtResp.data ?? []) as Array<Record<string, unknown>>).forEach((plantilla) => {
+          const id = String(plantilla.id ?? '')
+          if (id) plantillasOtPorId.set(id, plantilla)
+        })
+      }
+
+      const plantillasChecklistPorId = new Map<string, Record<string, unknown>>()
+      if (!plantillasChecklistResp.error) {
+        ;((plantillasChecklistResp.data ?? []) as Array<Record<string, unknown>>).forEach((plantilla) => {
+          const id = String(plantilla.id ?? '')
+          if (id) plantillasChecklistPorId.set(id, plantilla)
+        })
+      }
+
       const routeResponse = await fetch(OT_ROUTE, { credentials: 'same-origin' })
       if (!routeResponse.ok) return
 
@@ -575,6 +636,9 @@ if (empresaGuardadaValida) {
         const resumen = resumenPorId.get(String(detalle.id))
 
         const detalleId = String(detalle.id)
+        const tipoServicio = tiposServicioPorId.get(String(detalle.tipo_servicio_id ?? '')) ?? null
+        const plantillaOt = plantillasOtPorId.get(String(detalle.plantilla_id ?? '')) ?? null
+        const plantillaChecklist = plantillasChecklistPorId.get(String(detalle.plantilla_checklist_id ?? '')) ?? null
 
         return {
           ...detalle,
@@ -582,7 +646,8 @@ if (empresaGuardadaValida) {
           estado_nombre: resumen?.estado_nombre ?? null,
           folio: detalle.folio ?? resumen?.folio ?? null,
           titulo: detalle.titulo ?? resumen?.titulo ?? null,
-          tipo_servicio_nombre: resumen?.tipo_servicio_nombre ?? null,
+          tipo_servicio_nombre: resumen?.tipo_servicio_nombre ?? tipoServicio?.nombre ?? null,
+          tipo_servicio_codigo: tipoServicio?.codigo ?? null,
           tecnico_nombre: resumen?.tecnico_nombre ?? null,
           equipo_id: resumen?.equipo_id ?? null,
           equipo_tag: resumen?.equipo_tag ?? null,
@@ -599,6 +664,8 @@ if (empresaGuardadaValida) {
           equipo_potencia: resumen?.equipo_potencia ?? null,
           tiempos_trabajo: tiemposPorOt.get(detalleId) ?? [],
           equipos_asociados: equiposPorOt.get(detalleId) ?? [],
+          plantilla_ot_config: plantillaOt,
+          plantilla_checklist_info: plantillaChecklist,
         }
       })
 
