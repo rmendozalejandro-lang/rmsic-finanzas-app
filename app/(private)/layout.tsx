@@ -674,7 +674,9 @@ if (empresaGuardadaValida) {
         })
       }
 
-      const checklistConsultasOk = !checklistItemsResp.error && !checklistRespuestasResp.error && !equipoChecklistRespuestasResp.error
+      const checklistItemsConsultaOk = !checklistItemsResp.error
+      const checklistRespuestasConsultaOk = !checklistRespuestasResp.error
+      const equipoChecklistRespuestasConsultaOk = !equipoChecklistRespuestasResp.error
 
       const routeResponse = await fetch(OT_ROUTE, { credentials: 'same-origin' })
       if (!routeResponse.ok) return
@@ -691,6 +693,21 @@ if (empresaGuardadaValida) {
         const tipoServicio = tiposServicioPorId.get(String(detalle.tipo_servicio_id ?? '')) ?? null
         const plantillaOt = plantillasOtPorId.get(String(detalle.plantilla_id ?? '')) ?? null
         const plantillaChecklist = plantillasChecklistPorId.get(String(detalle.plantilla_checklist_id ?? '')) ?? null
+        const checklistItems = plantillaChecklist
+          ? checklistItemsPorPlantilla.get(String(plantillaChecklist.id ?? '')) ?? []
+          : []
+        const usaChecklistPorHoras = Boolean(plantillaOt?.usa_checklist_por_horas)
+        const usaChecklistPorEquipo = Boolean(plantillaOt?.usa_checklist_por_equipo)
+        const checklistBasePreparado = Boolean(
+          checklistItemsConsultaOk && plantillaChecklist && checklistItems.length > 0
+        )
+        const checklistOfflinePreparado = !detalle.requiere_checklist || (
+          checklistBasePreparado && (
+            usaChecklistPorEquipo
+              ? equipoChecklistRespuestasConsultaOk
+              : usaChecklistPorHoras || checklistRespuestasConsultaOk
+          )
+        )
 
         return {
           ...detalle,
@@ -719,10 +736,10 @@ if (empresaGuardadaValida) {
           plantilla_ot_config: plantillaOt,
           plantilla_checklist_info: plantillaChecklist,
           checklist_plantilla: plantillaChecklist,
-          checklist_items: plantillaChecklist ? checklistItemsPorPlantilla.get(String(plantillaChecklist.id ?? '')) ?? [] : [],
+          checklist_items: checklistItems,
           checklist_respuestas: checklistRespuestasPorOt.get(detalleId) ?? [],
           equipo_checklist_respuestas: equipoChecklistRespuestasPorOt.get(detalleId) ?? [],
-          checklist_offline_preparado: Boolean(!detalle.requiere_checklist || (checklistConsultasOk && plantillaChecklist && (checklistItemsPorPlantilla.get(String(plantillaChecklist.id ?? '')) ?? []).length > 0)),
+          checklist_offline_preparado: checklistOfflinePreparado,
         }
       })
 
