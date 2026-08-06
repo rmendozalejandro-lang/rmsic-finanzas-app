@@ -2,10 +2,12 @@ export const TERRAIN_CONTEXT_KEY = "tralixia_terrain_context_v1";
 export const TERRAIN_REGISTRY_PREFIX = "tralixia_terrain_registry_v1";
 export const HARAS_PARTOS_ROUTE = "/haras/partos";
 export const HARAS_PARTOS_MODULE = "haras_partos";
+export const OT_ROUTE = "/ot";
+export const OT_MODULE = "ot";
 
 export type PreparedTerrainModule = {
-  module: typeof HARAS_PARTOS_MODULE;
-  route: typeof HARAS_PARTOS_ROUTE;
+  module: typeof HARAS_PARTOS_MODULE | typeof OT_MODULE;
+  route: typeof HARAS_PARTOS_ROUTE | typeof OT_ROUTE;
   preparedAt: string;
 };
 
@@ -14,7 +16,7 @@ export type TerrainRegistry = {
   userId: string;
   modules: PreparedTerrainModule[];
   lastSafeRoute: string | null;
-  lastModule: typeof HARAS_PARTOS_MODULE | null;
+  lastModule: typeof HARAS_PARTOS_MODULE | typeof OT_MODULE | null;
   preparedAt: string;
 };
 
@@ -74,6 +76,39 @@ export function prepareHarasPartosRegistry(empresaId: string, userId: string) {
     lastModule: HARAS_PARTOS_MODULE,
     preparedAt,
   };
+  window.localStorage.setItem(
+    terrainRegistryKey(empresaId, userId),
+    JSON.stringify(registry),
+  );
+  window.localStorage.setItem(
+    TERRAIN_CONTEXT_KEY,
+    JSON.stringify({ empresaId, userId } satisfies TerrainContext),
+  );
+  window.dispatchEvent(new Event("tralixia-terrain-registry-changed"));
+  return registry;
+}
+
+export function upsertTerrainModule(
+  empresaId: string,
+  userId: string,
+  module: PreparedTerrainModule["module"],
+  route: PreparedTerrainModule["route"],
+) {
+  const preparedAt = new Date().toISOString();
+  const current = readTerrainRegistry(empresaId, userId);
+  const modules = [
+    ...(current?.modules.filter((item) => item.module !== module) ?? []),
+    { module, route, preparedAt },
+  ];
+  const registry: TerrainRegistry = {
+    empresaId,
+    userId,
+    modules,
+    lastSafeRoute: route,
+    lastModule: module,
+    preparedAt,
+  };
+
   window.localStorage.setItem(
     terrainRegistryKey(empresaId, userId),
     JSON.stringify(registry),

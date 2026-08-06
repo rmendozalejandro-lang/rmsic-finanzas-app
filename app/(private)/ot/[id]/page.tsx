@@ -1,5 +1,7 @@
 'use client'
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 import Link from 'next/link'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -911,6 +913,7 @@ function OTDetalleContent() {
   const [perfiles, setPerfiles] = useState<PerfilOption[]>([])
   const [currentUserId, setCurrentUserId] = useState('')
   const [currentRole, setCurrentRole] = useState('')
+  const [isOffline, setIsOffline] = useState(() => typeof navigator !== 'undefined' && !navigator.onLine)
 
   const [form, setForm] = useState<FormState>({
     tipo_servicio_id: '',
@@ -1241,6 +1244,12 @@ function OTDetalleContent() {
 
         if (!otId) {
           throw new Error('No se recibió el identificador de la OT.')
+        }
+
+        if (typeof navigator !== 'undefined' && !navigator.onLine) {
+          setIsOffline(true)
+          setError('Esta acción requiere conexión.')
+          return
         }
 
         const {
@@ -1763,6 +1772,17 @@ function OTDetalleContent() {
   )
 
   useEffect(() => {
+    const syncNetwork = () => setIsOffline(!navigator.onLine)
+    window.addEventListener('online', syncNetwork)
+    window.addEventListener('offline', syncNetwork)
+    syncNetwork()
+    return () => {
+      window.removeEventListener('online', syncNetwork)
+      window.removeEventListener('offline', syncNetwork)
+    }
+  }, [])
+
+  useEffect(() => {
     void loadData(true)
   }, [loadData])
 
@@ -2095,6 +2115,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
       setSuccess('')
 
       await saveOtDraft()
+      window.dispatchEvent(new Event('tralixia-ot-cache-refresh-requested'))
 
       await loadData(false)
       setSuccess('OT actualizada correctamente.')
@@ -2709,10 +2730,29 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
         .join(' · ')
     : ''
 
+
   if (loading) {
     return (
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         Cargando detalle de la OT...
+      </div>
+    )
+  }
+
+
+  if (isOffline) {
+    return (
+      <div className="space-y-4 rounded-2xl border border-amber-200 bg-amber-50 p-6 text-amber-900 shadow-sm">
+        <div>
+          <p className="text-sm font-semibold uppercase tracking-wide">Modo terreno OT</p>
+          <h1 className="mt-2 text-2xl font-bold text-amber-950">Esta acción requiere conexión.</h1>
+          <p className="mt-2 text-sm">
+            Para trabajar una OT sin conexión usa el listado preparado en /ot, donde se muestra la vista operativa dinámica en la misma pantalla.
+          </p>
+        </div>
+        <Link href="/ot" className="inline-flex rounded-xl bg-[#163A5F] px-4 py-2 text-sm font-semibold text-white no-underline">
+          Volver a OT
+        </Link>
       </div>
     )
   }
@@ -5420,7 +5460,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
 
 export default function OTDetallePage() {
   return (
-    <ProtectedModuleRoute moduleKey="ot">
+    <ProtectedModuleRoute moduleKey="ot" allowOfflineTerrainAccess>
       <OTDetalleContent />
     </ProtectedModuleRoute>
   )

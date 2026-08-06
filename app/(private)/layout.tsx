@@ -19,10 +19,14 @@ import { useOfflineQueue } from '../../hooks/useOfflineQueue'
 import {
   HARAS_PARTOS_MODULE,
   HARAS_PARTOS_ROUTE,
+  OT_MODULE,
+  OT_ROUTE,
   prepareHarasPartosRegistry,
+  upsertTerrainModule,
   readTerrainRegistry,
   type TerrainRegistry,
 } from '../../lib/offline/terrain-registry'
+import { isOTOfflineOperative, isOTPendingPayload, mergeOTOfflineCache, OT_PENDING_ACTION, readOTOfflineCache, type OTOfflinePendingPayload } from '../../lib/offline/ot'
 
 type PrivateLayoutProps = {
   children: ReactNode
@@ -448,6 +452,427 @@ if (empresaGuardadaValida) {
     return () => window.clearTimeout(timer)
   }, [preparePartosForTerrain])
 
+
+  const prepareOTForTerrain = useCallback(async () => {
+    if (!isOnline || !empresaActivaId || !usuarioId || !rolResuelto ||
+      !canAccessModuleByRoleAndCompany(usuarioRol, 'ot', modulosHabilitados)) return
+
+    try {
+      const { data: rolData } = await supabase
+        .from('usuario_empresas')
+        .select('rol')
+        .eq('usuario_id', usuarioId)
+        .eq('empresa_id', empresaActivaId)
+        .eq('activo', true)
+        .maybeSingle()
+
+      let query = supabase
+        .from('ot_vw_resumen')
+        .select('*')
+        .eq('empresa_id', empresaActivaId)
+        .order('created_at', { ascending: false })
+        .limit(50)
+
+      if (rolData?.rol === 'tecnico_ot') {
+        const ownOtResp = await supabase
+          .from('ot_ordenes_trabajo')
+          .select('id')
+          .eq('empresa_id', empresaActivaId)
+          .or(`tecnico_responsable_id.eq.${usuarioId},created_by.eq.${usuarioId}`)
+
+        if (ownOtResp.error) return
+        const ownOtIds = (ownOtResp.data ?? []).map((item) => item.id).filter(Boolean)
+        if (ownOtIds.length === 0) return
+        query = query.in('id', ownOtIds)
+      }
+
+      const listadoResp = await query
+      if (listadoResp.error) return
+
+      const ots = ((listadoResp.data ?? []) as Array<Record<string, unknown>>).filter((ot) => {
+        const estado = String(ot.estado_nombre ?? '').toLowerCase()
+        return !estado.includes('cerrad') && !estado.includes('anulad')
+      })
+
+      if (ots.length === 0) return
+
+      const ids = ots.map((ot) => ot.id).filter(Boolean)
+      const detallesResp = await supabase
+        .from('ot_ordenes_trabajo')
+        .select('id, empresa_id, folio, cliente_id, tipo_servicio_id, estructura_ot_codigo, plantilla_id, titulo, descripcion_solicitud, problema_reportado, numero_om_cliente, hora_inicio, hora_termino, duracion_minutos, cantidad_tecnicos, horas_hombre_utilizadas, supervisor_contratista_nombre, supervisor_contratista_rut, supervisor_contratista_cargo, herramientas_materiales_utilizados, recomendaciones_seguridad, seguridad_permiso_trabajo, seguridad_uso_epp, seguridad_bloqueo_tarjeta, seguridad_observacion, alcance_trabajo_ejecutado, alcance_trabajo_observacion, ejecutado_segun_programa, ejecutado_segun_programa_observacion, diagnostico, causa_probable, trabajo_realizado, resultado_servicio, hallazgos, conclusiones_tecnicas, recomendaciones, observaciones_cierre, area_trabajo, prioridad, requiere_checklist, plantilla_checklist_id, fecha_ot, fecha_programada, fecha_cierre, tecnico_responsable_id, created_by, updated_at')
+        .eq('empresa_id', empresaActivaId)
+        .in('id', ids)
+        .is('deleted_at', null)
+
+      if (detallesResp.error) return
+
+      const [tiemposResp, equiposAsociadosResp] = await Promise.all([
+        supabase
+          .from('ot_tiempos_trabajo')
+          .select('ot_id, fecha, hora_inicio, hora_termino, duracion_minutos, tipo_tiempo, observacion')
+          .in('ot_id', ids)
+          .eq('activo', true)
+          .is('deleted_at', null)
+          .order('fecha', { ascending: true }),
+        supabase
+          .from('ot_orden_equipos')
+          .select('id, ot_id, equipo_id, descripcion_trabajo, observacion, orden')
+          .in('ot_id', ids)
+          .eq('activo', true)
+          .is('deleted_at', null)
+          .order('orden', { ascending: true }),
+      ])
+
+      const tiemposPorOt = new Map<string, Array<Record<string, unknown>>>()
+      if (!tiemposResp.error) {
+        ;((tiemposResp.data ?? []) as Array<Record<string, unknown>>).forEach((tiempo) => {
+          const otId = String(tiempo.ot_id ?? '')
+          if (!otId) return
+          tiemposPorOt.set(otId, [...(tiemposPorOt.get(otId) ?? []), tiempo])
+        })
+      }
+
+      const equiposAsociadosRaw = equiposAsociadosResp.error
+        ? []
+        : (equiposAsociadosResp.data ?? []) as Array<Record<string, unknown>>
+      const equipoIds = Array.from(new Set(
+        equiposAsociadosRaw
+          .map((equipo) => String(equipo.equipo_id ?? ''))
+          .filter(Boolean)
+      ))
+      const equiposVisualResp = equipoIds.length > 0
+        ? await supabase
+            .from('ot_vw_equipos')
+            .select('id, tag, nombre, descripcion, tipo_equipo, planta, area, linea, ubicacion, marca, modelo, serie, potencia')
+            .in('id', equipoIds)
+        : { data: [], error: null }
+      const equiposVisualPorId = new Map<string, Record<string, unknown>>()
+
+      if (!equiposVisualResp.error) {
+        ;((equiposVisualResp.data ?? []) as Array<Record<string, unknown>>).forEach((equipo) => {
+          const equipoId = String(equipo.id ?? '')
+          if (equipoId) equiposVisualPorId.set(equipoId, equipo)
+        })
+      }
+
+      const equiposPorOt = new Map<string, Array<Record<string, unknown>>>()
+      equiposAsociadosRaw.forEach((equipo) => {
+        const otId = String(equipo.ot_id ?? '')
+        if (!otId) return
+        const visual = equiposVisualPorId.get(String(equipo.equipo_id ?? '')) ?? {}
+        equiposPorOt.set(otId, [...(equiposPorOt.get(otId) ?? []), { ...equipo, equipo: visual }])
+      })
+
+      const tipoServicioIds = Array.from(new Set(
+        ((detallesResp.data ?? []) as Array<Record<string, unknown>>)
+          .map((detalle) => String(detalle.tipo_servicio_id ?? ''))
+          .filter(Boolean)
+      ))
+      const plantillaIds = Array.from(new Set(
+        ((detallesResp.data ?? []) as Array<Record<string, unknown>>)
+          .map((detalle) => String(detalle.plantilla_id ?? ''))
+          .filter(Boolean)
+      ))
+      const plantillaChecklistIds = Array.from(new Set(
+        ((detallesResp.data ?? []) as Array<Record<string, unknown>>)
+          .map((detalle) => String(detalle.plantilla_checklist_id ?? ''))
+          .filter(Boolean)
+      ))
+
+      const [tiposServicioResp, plantillasOtResp, plantillasChecklistResp] = await Promise.all([
+        tipoServicioIds.length > 0
+          ? supabase
+              .from('ot_tipos_servicio')
+              .select('id, codigo, nombre')
+              .in('id', tipoServicioIds)
+          : Promise.resolve({ data: [], error: null }),
+        plantillaIds.length > 0
+          ? supabase
+              .from('ot_plantillas')
+              .select('id, codigo, nombre, flujo_ot, formato_ot, requiere_equipo_encabezado, usa_equipos_multiples, usa_checklist_por_equipo, usa_checklist_por_horas, usa_tecnicos_participantes, tipo_equipo_permitido')
+              .in('id', plantillaIds)
+          : Promise.resolve({ data: [], error: null }),
+        plantillaChecklistIds.length > 0
+          ? supabase
+              .from('ot_plantillas_checklist')
+              .select('id, nombre, tipo_activo, descripcion')
+              .in('id', plantillaChecklistIds)
+          : Promise.resolve({ data: [], error: null }),
+      ])
+
+      const tiposServicioPorId = new Map<string, Record<string, unknown>>()
+      if (!tiposServicioResp.error) {
+        ;((tiposServicioResp.data ?? []) as Array<Record<string, unknown>>).forEach((tipo) => {
+          const id = String(tipo.id ?? '')
+          if (id) tiposServicioPorId.set(id, tipo)
+        })
+      }
+
+      const plantillasOtPorId = new Map<string, Record<string, unknown>>()
+      if (!plantillasOtResp.error) {
+        ;((plantillasOtResp.data ?? []) as Array<Record<string, unknown>>).forEach((plantilla) => {
+          const id = String(plantilla.id ?? '')
+          if (id) plantillasOtPorId.set(id, plantilla)
+        })
+      }
+
+      const plantillasChecklistPorId = new Map<string, Record<string, unknown>>()
+      if (!plantillasChecklistResp.error) {
+        ;((plantillasChecklistResp.data ?? []) as Array<Record<string, unknown>>).forEach((plantilla) => {
+          const id = String(plantilla.id ?? '')
+          if (id) plantillasChecklistPorId.set(id, plantilla)
+        })
+      }
+
+      const [checklistItemsResp, checklistRespuestasResp, equipoChecklistRespuestasResp] = await Promise.all([
+        plantillaChecklistIds.length > 0
+          ? supabase
+              .from('ot_plantillas_checklist_items')
+              .select('id, plantilla_id, zona, categoria, actividad, frecuencia_horas, indicaciones, tipo_item, tipo_respuesta, requiere_observacion_si_no_ok, requiere_evidencia, orden')
+              .in('plantilla_id', plantillaChecklistIds)
+              .eq('activa', true)
+              .order('orden', { ascending: true })
+          : Promise.resolve({ data: [], error: null }),
+        ids.length > 0
+          ? supabase
+              .from('ot_respuestas_checklist')
+              .select('id, ot_id, plantilla_item_id, respuesta_texto, respuesta_boolean, observacion')
+              .in('ot_id', ids)
+          : Promise.resolve({ data: [], error: null }),
+        ids.length > 0
+          ? supabase
+              .from('ot_equipo_checklist_resultados')
+              .select('ot_id, ot_orden_equipo_id, plantilla_item_id, respuesta_texto, respuesta_boolean, observacion_antes, observacion_despues, accion_realizada, recomendacion_tecnica, condicion_equipo, accion_checklist, datos')
+              .in('ot_id', ids)
+          : Promise.resolve({ data: [], error: null }),
+      ])
+
+      const checklistItemsPorPlantilla = new Map<string, Array<Record<string, unknown>>>()
+      if (!checklistItemsResp.error) {
+        ;((checklistItemsResp.data ?? []) as Array<Record<string, unknown>>).forEach((item) => {
+          const plantillaId = String(item.plantilla_id ?? '')
+          if (!plantillaId) return
+          checklistItemsPorPlantilla.set(plantillaId, [...(checklistItemsPorPlantilla.get(plantillaId) ?? []), item])
+        })
+      }
+
+      const checklistRespuestasPorOt = new Map<string, Array<Record<string, unknown>>>()
+      if (!checklistRespuestasResp.error) {
+        ;((checklistRespuestasResp.data ?? []) as Array<Record<string, unknown>>).forEach((respuesta) => {
+          const otId = String(respuesta.ot_id ?? '')
+          if (!otId) return
+          checklistRespuestasPorOt.set(otId, [...(checklistRespuestasPorOt.get(otId) ?? []), respuesta])
+        })
+      }
+
+      const equipoChecklistRespuestasPorOt = new Map<string, Array<Record<string, unknown>>>()
+      if (!equipoChecklistRespuestasResp.error) {
+        ;((equipoChecklistRespuestasResp.data ?? []) as Array<Record<string, unknown>>).forEach((respuesta) => {
+          const otId = String(respuesta.ot_id ?? '')
+          if (!otId) return
+          equipoChecklistRespuestasPorOt.set(otId, [...(equipoChecklistRespuestasPorOt.get(otId) ?? []), respuesta])
+        })
+      }
+
+      const checklistItemsConsultaOk = !checklistItemsResp.error
+      const checklistRespuestasConsultaOk = !checklistRespuestasResp.error
+      const equipoChecklistRespuestasConsultaOk = !equipoChecklistRespuestasResp.error
+
+      const routeResponse = await fetch(OT_ROUTE, { credentials: 'same-origin' })
+      if (!routeResponse.ok) return
+
+      router.prefetch(OT_ROUTE)
+      const routeCache = await window.caches.open('tralixia-terrain-v1')
+      await routeCache.put(OT_ROUTE, routeResponse.clone())
+
+      const resumenPorId = new Map(ots.map((ot) => [String(ot.id), ot]))
+      const detallesEnriquecidos = (detallesResp.data ?? []).map((detalle) => {
+        const resumen = resumenPorId.get(String(detalle.id))
+
+        const detalleId = String(detalle.id)
+        const tipoServicio = tiposServicioPorId.get(String(detalle.tipo_servicio_id ?? '')) ?? null
+        const plantillaOt = plantillasOtPorId.get(String(detalle.plantilla_id ?? '')) ?? null
+        const plantillaChecklist = plantillasChecklistPorId.get(String(detalle.plantilla_checklist_id ?? '')) ?? null
+        const checklistItems = plantillaChecklist
+          ? checklistItemsPorPlantilla.get(String(plantillaChecklist.id ?? '')) ?? []
+          : []
+        const usaChecklistPorHoras = Boolean(plantillaOt?.usa_checklist_por_horas)
+        const usaChecklistPorEquipo = Boolean(plantillaOt?.usa_checklist_por_equipo)
+        const checklistBasePreparado = Boolean(
+          checklistItemsConsultaOk && plantillaChecklist && checklistItems.length > 0
+        )
+        const checklistOfflinePreparado = !detalle.requiere_checklist || (
+          checklistBasePreparado && (
+            usaChecklistPorEquipo
+              ? equipoChecklistRespuestasConsultaOk
+              : usaChecklistPorHoras || checklistRespuestasConsultaOk
+          )
+        )
+
+        return {
+          ...detalle,
+          cliente_nombre: resumen?.cliente_nombre ?? null,
+          estado_nombre: resumen?.estado_nombre ?? null,
+          folio: detalle.folio ?? resumen?.folio ?? null,
+          titulo: detalle.titulo ?? resumen?.titulo ?? null,
+          tipo_servicio_nombre: resumen?.tipo_servicio_nombre ?? tipoServicio?.nombre ?? null,
+          tipo_servicio_codigo: tipoServicio?.codigo ?? null,
+          tecnico_nombre: resumen?.tecnico_nombre ?? null,
+          equipo_id: resumen?.equipo_id ?? null,
+          equipo_tag: resumen?.equipo_tag ?? null,
+          equipo_nombre: resumen?.equipo_nombre ?? null,
+          equipo_descripcion: resumen?.equipo_descripcion ?? null,
+          equipo_tipo: resumen?.equipo_tipo ?? null,
+          equipo_planta: resumen?.equipo_planta ?? null,
+          equipo_area: resumen?.equipo_area ?? null,
+          equipo_linea: resumen?.equipo_linea ?? null,
+          equipo_ubicacion: resumen?.equipo_ubicacion ?? null,
+          equipo_marca: resumen?.equipo_marca ?? null,
+          equipo_modelo: resumen?.equipo_modelo ?? null,
+          equipo_serie: resumen?.equipo_serie ?? null,
+          equipo_potencia: resumen?.equipo_potencia ?? null,
+          tiempos_trabajo: tiemposPorOt.get(detalleId) ?? [],
+          equipos_asociados: equiposPorOt.get(detalleId) ?? [],
+          plantilla_ot_config: plantillaOt,
+          plantilla_checklist_info: plantillaChecklist,
+          checklist_plantilla: plantillaChecklist,
+          checklist_items: checklistItems,
+          checklist_respuestas: checklistRespuestasPorOt.get(detalleId) ?? [],
+          equipo_checklist_respuestas: equipoChecklistRespuestasPorOt.get(detalleId) ?? [],
+          checklist_offline_preparado: checklistOfflinePreparado,
+        }
+      })
+
+      const detallesOperativos = detallesEnriquecidos.filter((detalle) => isOTOfflineOperative(detalle))
+      const detallesOperativosIds = new Set(detallesOperativos.map((detalle) => String(detalle.id)))
+      const otsOperativas = ots.filter((ot) => detallesOperativosIds.has(String(ot.id)) && isOTOfflineOperative(ot))
+
+      if (otsOperativas.length === 0 || detallesOperativos.length === 0) return
+
+      mergeOTOfflineCache({
+        empresa_id: empresaActivaId,
+        user_id: usuarioId,
+        ots: otsOperativas as Parameters<typeof mergeOTOfflineCache>[0]['ots'],
+        detalles: detallesOperativos as Parameters<typeof mergeOTOfflineCache>[0]['detalles'],
+      })
+
+      setTerrainRegistry(upsertTerrainModule(empresaActivaId, usuarioId, OT_MODULE, OT_ROUTE))
+    } catch {
+      // La OT offline se anuncia solo si permisos, ruta y datos quedaron preparados.
+    }
+  }, [empresaActivaId, isOnline, modulosHabilitados, rolResuelto, router, usuarioId, usuarioRol])
+
+  const syncOTPendingForTerrain = useCallback(async () => {
+    if (!isOnline || !empresaActivaId || !usuarioId) return
+
+    const pendingItems = offlineQueueItems.filter((item) =>
+      item.module === OT_MODULE && item.action === OT_PENDING_ACTION && item.status === 'pendiente' &&
+      isOTPendingPayload(item.payload) && item.payload.empresa_id === empresaActivaId &&
+      item.payload.user_id === usuarioId
+    )
+
+    for (const item of pendingItems) {
+      const payload = item.payload as OTOfflinePendingPayload
+      try {
+        const { updateOfflineQueueItem } = await import('../../lib/offline/offline-queue')
+        updateOfflineQueueItem(item.id, { status: 'sincronizando', error: undefined })
+
+        const { data: otActual, error: otReadError } = await supabase
+          .from('ot_ordenes_trabajo')
+          .select('id, empresa_id, trabajo_realizado, updated_at')
+          .eq('id', payload.ot_id)
+          .eq('empresa_id', payload.empresa_id)
+          .maybeSingle()
+
+        if (otReadError) throw otReadError
+        if (!otActual) throw new Error('No se encontró la OT para sincronizar el avance offline.')
+
+        const updatedAtActual = typeof otActual.updated_at === 'string' ? otActual.updated_at : null
+        if (updatedAtActual !== payload.base_updated_at) {
+          throw new Error('La OT cambió en línea después de prepararse offline. Revisa y sincroniza manualmente.')
+        }
+
+        const lineasAvance = [
+          payload.descripcion_solicitud?.trim() && `Solicitud del cliente: ${payload.descripcion_solicitud.trim()}`,
+          payload.problema_reportado?.trim() && `Problema reportado: ${payload.problema_reportado.trim()}`,
+          payload.diagnostico?.trim() && `Diagnóstico: ${payload.diagnostico.trim()}`,
+          payload.causa_probable?.trim() && `Causa probable: ${payload.causa_probable.trim()}`,
+          payload.trabajo_realizado?.trim() && `Labores realizadas: ${payload.trabajo_realizado.trim()}`,
+          payload.recomendaciones?.trim() && `Recomendaciones: ${payload.recomendaciones.trim()}`,
+          payload.resultado_servicio?.trim() && `Resultado servicio: ${payload.resultado_servicio.trim()}`,
+          payload.hallazgos?.trim() && `Hallazgos: ${payload.hallazgos.trim()}`,
+          payload.conclusiones_tecnicas?.trim() && `Conclusiones técnicas: ${payload.conclusiones_tecnicas.trim()}`,
+          payload.observaciones_cierre?.trim() && `Observaciones de cierre (borrador): ${payload.observaciones_cierre.trim()}`,
+          payload.equipos_locales && Object.entries(payload.equipos_locales).length > 0 && `Avance local por equipos: ${JSON.stringify(payload.equipos_locales)}`,
+          payload.checklist_local && Object.entries(payload.checklist_local).length > 0 && `Checklist local: ${Object.entries(payload.checklist_local).map(([key, value]) => {
+            if (value && typeof value === 'object') {
+              const record = value as Record<string, unknown>
+              return `${key}: ${String(record.estado ?? 'sin_estado')}${record.observacion ? ` - ${String(record.observacion)}` : ''}`
+            }
+            return `${key}: ${String(value)}`
+          }).join('; ')}`,
+          payload.area_trabajo?.trim() && `Área de trabajo: ${payload.area_trabajo.trim()}`,
+          payload.seguridad_observacion?.trim() && `Observación seguridad: ${payload.seguridad_observacion.trim()}`,
+          payload.herramientas_materiales_utilizados?.trim() && `Herramientas/materiales: ${payload.herramientas_materiales_utilizados.trim()}`,
+          payload.recomendaciones_seguridad?.trim() && `Recomendaciones seguridad: ${payload.recomendaciones_seguridad.trim()}`,
+          payload.observacion_terreno.trim() && `Observación terreno: ${payload.observacion_terreno.trim()}`,
+          payload.estado_local_avance.trim() && `Estado local: ${payload.estado_local_avance.trim()}`,
+          payload.notas_internas_ejecucion.trim() && `Notas internas: ${payload.notas_internas_ejecucion.trim()}`,
+        ].filter(Boolean)
+
+        const { removeOfflineQueueItem } = await import('../../lib/offline/offline-queue')
+
+        if (lineasAvance.length > 0) {
+          const fechaSincronizacion = new Date().toISOString()
+          const avanceOffline = [
+            '--- Avance registrado offline ---',
+            `Fecha sincronización: ${fechaSincronizacion}`,
+            ...lineasAvance,
+          ].join('\n')
+          const trabajoRealizadoActual = typeof otActual.trabajo_realizado === 'string'
+            ? otActual.trabajo_realizado.trim()
+            : ''
+          const trabajoRealizado = trabajoRealizadoActual
+            ? `${trabajoRealizadoActual}\n\n${avanceOffline}`
+            : avanceOffline
+
+          const updateResp = await supabase
+            .from('ot_ordenes_trabajo')
+            .update({ trabajo_realizado: trabajoRealizado })
+            .eq('id', payload.ot_id)
+            .eq('empresa_id', payload.empresa_id)
+
+          if (updateResp.error) throw updateResp.error
+        }
+
+        window.localStorage.removeItem(`tralixia_ot_draft_${payload.empresa_id}_${payload.user_id}_${payload.ot_id}`)
+        removeOfflineQueueItem(item.id)
+      } catch (error) {
+        const { updateOfflineQueueItem } = await import('../../lib/offline/offline-queue')
+        updateOfflineQueueItem(item.id, { status: 'error', error: error instanceof Error ? error.message : 'No se pudo sincronizar OT.' })
+      }
+    }
+  }, [empresaActivaId, isOnline, offlineQueueItems, usuarioId])
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => void prepareOTForTerrain(), 1800)
+    return () => window.clearTimeout(timer)
+  }, [prepareOTForTerrain])
+
+  useEffect(() => {
+    const refreshOTTerrainCache = () => void prepareOTForTerrain()
+    window.addEventListener('tralixia-ot-cache-refresh-requested', refreshOTTerrainCache)
+    window.addEventListener('focus', refreshOTTerrainCache)
+    return () => {
+      window.removeEventListener('tralixia-ot-cache-refresh-requested', refreshOTTerrainCache)
+      window.removeEventListener('focus', refreshOTTerrainCache)
+    }
+  }, [prepareOTForTerrain])
+
+  useEffect(() => {
+    void syncOTPendingForTerrain()
+  }, [syncOTPendingForTerrain])
+
   const handleLogout = async () => {
     await supabase.auth.signOut()
     router.push('/login')
@@ -503,16 +928,14 @@ if (empresaGuardadaValida) {
 
   const visibleMenuGroups = useMemo<MenuGroup[]>(() => {
     if (isOffline) {
-      const prepared = terrainRegistry?.modules.some(
-        (module) => module.module === HARAS_PARTOS_MODULE
-      )
-      return prepared
-        ? [{
-            key: 'haras',
-            label: 'Modo terreno',
-            items: [{ href: HARAS_PARTOS_ROUTE, label: 'Partos', moduleKey: 'haras' }],
-          }]
-        : []
+      const items: MenuItem[] = []
+      if (terrainRegistry?.modules.some((module) => module.module === HARAS_PARTOS_MODULE)) {
+        items.push({ href: HARAS_PARTOS_ROUTE, label: 'Partos', moduleKey: 'haras' })
+      }
+      if (terrainRegistry?.modules.some((module) => module.module === OT_MODULE)) {
+        items.push({ href: OT_ROUTE, label: 'OT', moduleKey: 'ot' })
+      }
+      return items.length > 0 ? [{ key: 'haras', label: 'Modo terreno', items }] : []
     }
     const grouped = new Map<MenuGroupKey, MenuItem[]>()
 
@@ -609,17 +1032,25 @@ if (empresaGuardadaValida) {
     ? 'Acceso operativo al modulo OT para ejecutar trabajos, registrar evidencias y revisar informes autorizados.'
     : 'Gestion multiempresa con modulos habilitados por empresa, roles y recursos transversales.'
 
-  const partosPrepared = Boolean(
-    terrainRegistry?.modules.some((module) => module.module === HARAS_PARTOS_MODULE)
-  )
   const pendingLocalCount = offlineQueueItems.filter((item) =>
-    item.module === HARAS_PARTOS_MODULE &&
+    (item.module === HARAS_PARTOS_MODULE || item.module === OT_MODULE) &&
     item.payload && typeof item.payload === 'object' &&
     (item.payload as { empresa_id?: string }).empresa_id === empresaActivaId
   ).length
+  const isCachedOtDetailRoute = useMemo(() => {
+    if (!empresaActivaId || !usuarioId) return false
+    const match = pathname.match(/^\/ot\/([^/]+)$/)
+    if (!match?.[1]) return false
+    const cache = readOTOfflineCache(empresaActivaId, usuarioId)
+    return Boolean(cache?.detalles.some((detalle) => detalle.id === match[1]))
+  }, [empresaActivaId, pathname, usuarioId])
+
   const isOfflineSafeRoute = pathname === HARAS_PARTOS_ROUTE ||
-    pathname.startsWith(`${HARAS_PARTOS_ROUTE}/`)
+    pathname.startsWith(`${HARAS_PARTOS_ROUTE}/`) ||
+    pathname === OT_ROUTE ||
+    isCachedOtDetailRoute
   const showOfflineRouteBlocked = isOffline && !isOfflineSafeRoute
+  const showOtOfflineRouteBlocked = showOfflineRouteBlocked && pathname.startsWith(`${OT_ROUTE}/`)
 
   if (checkingSession) {
     return (
@@ -976,20 +1407,22 @@ if (empresaGuardadaValida) {
                   Modo terreno activo
                 </p>
                 <h2 className="mt-2 text-2xl font-semibold text-amber-950">
-                  Este módulo requiere conexión.
+                  {showOtOfflineRouteBlocked ? 'Esta acción requiere conexión.' : 'Este módulo requiere conexión.'}
                 </h2>
                 <p className="mt-3 text-sm text-amber-800">
                   Solo puedes abrir módulos preparados para esta empresa y
                   usuario.
                 </p>
-                {partosPrepared ? (
+                {terrainRegistry?.lastSafeRoute ? (
                   <Link
-                    href={terrainRegistry?.lastSafeRoute || HARAS_PARTOS_ROUTE}
+                    href={showOtOfflineRouteBlocked ? OT_ROUTE : terrainRegistry.lastSafeRoute}
                     className="mt-5 inline-flex rounded-2xl bg-[#163A5F] px-4 py-3 text-sm font-semibold text-white no-underline"
                   >
-                    {terrainRegistry?.lastModule
-                      ? "Volver al último trabajo offline"
-                      : "Volver a Partos"}
+                    {showOtOfflineRouteBlocked
+                      ? "Volver a OT"
+                      : terrainRegistry?.lastModule
+                        ? "Volver al último trabajo offline"
+                        : "Volver a Partos"}
                   </Link>
                 ) : (
                   <p className="mt-4 font-medium text-amber-950">

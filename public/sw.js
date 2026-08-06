@@ -1,4 +1,5 @@
-const CACHE_VERSION = "tralixia-offline-v2";
+const CACHE_VERSION = "tralixia-offline-v3";
+const TERRAIN_CACHE = "tralixia-terrain-v1";
 const OFFLINE_URL = "/offline.html";
 const APP_SHELL = [
   OFFLINE_URL,
@@ -47,9 +48,24 @@ self.addEventListener("fetch", (event) => {
   if (request.mode === "navigate") {
     event.respondWith(
       fetch(request).catch(async () => {
-        if (url.pathname === "/haras/partos") {
-          const preparedRoute = await caches.match("/haras/partos");
+        const isPreparedTerrainRoute =
+          url.pathname === "/haras/partos" ||
+          url.pathname === "/ot" ||
+          /^\/ot\/[^/]+$/.test(url.pathname);
+
+        if (isPreparedTerrainRoute) {
+          const terrainCache = await caches.open(TERRAIN_CACHE);
+          const preparedRoute = await terrainCache.match(request, {
+            ignoreSearch: true,
+          });
           if (preparedRoute) return preparedRoute;
+
+          // /ot funciona como contenedor del detalle preparado cuando la ruta
+          // dinámica no está disponible en la caché de navegación.
+          if (url.pathname === "/ot") {
+            const preparedOtRoute = await terrainCache.match("/ot");
+            if (preparedOtRoute) return preparedOtRoute;
+          }
         }
         return caches.match(OFFLINE_URL);
       }),

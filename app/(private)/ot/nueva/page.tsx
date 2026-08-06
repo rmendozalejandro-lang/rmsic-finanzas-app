@@ -1249,6 +1249,7 @@ function NuevaOTContent() {
       setSuccess(
         `OT creada correctamente${data?.folio ? ` (${data.folio})` : ""}.`,
       );
+      window.dispatchEvent(new Event('tralixia-ot-cache-refresh-requested'));
 
       if (data?.id) {
         // Después de crear la OM, volver siempre al detalle normal de la OT.
