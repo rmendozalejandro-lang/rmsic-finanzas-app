@@ -22,6 +22,7 @@ export type OTOfflineDraft = {
   resultado_servicio?: string
   hallazgos?: string
   conclusiones_tecnicas?: string
+  observaciones_cierre?: string
   area_trabajo?: string
   seguridad_observacion?: string
   herramientas_materiales_utilizados?: string

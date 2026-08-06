@@ -802,6 +802,7 @@ if (empresaGuardadaValida) {
           payload.resultado_servicio?.trim() && `Resultado servicio: ${payload.resultado_servicio.trim()}`,
           payload.hallazgos?.trim() && `Hallazgos: ${payload.hallazgos.trim()}`,
           payload.conclusiones_tecnicas?.trim() && `Conclusiones técnicas: ${payload.conclusiones_tecnicas.trim()}`,
+          payload.observaciones_cierre?.trim() && `Observaciones de cierre (borrador): ${payload.observaciones_cierre.trim()}`,
           payload.equipos_locales && Object.entries(payload.equipos_locales).length > 0 && `Avance local por equipos: ${JSON.stringify(payload.equipos_locales)}`,
           payload.checklist_local && Object.entries(payload.checklist_local).length > 0 && `Checklist local: ${Object.entries(payload.checklist_local).map(([key, value]) => {
             if (value && typeof value === 'object') {

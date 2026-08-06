@@ -196,6 +196,7 @@ function buildOfflineDraftFromDetail(detail: OTOfflineDetail | null): OTOfflineD
     resultado_servicio: offlineValue(detail?.resultado_servicio),
     hallazgos: offlineValue(detail?.hallazgos),
     conclusiones_tecnicas: offlineValue(detail?.conclusiones_tecnicas),
+    observaciones_cierre: offlineValue(detail?.observaciones_cierre),
     area_trabajo: offlineValue(detail?.area_trabajo),
     seguridad_observacion: offlineValue(detail?.seguridad_observacion),
     herramientas_materiales_utilizados: offlineValue(detail?.herramientas_materiales_utilizados),
@@ -875,6 +876,21 @@ function OTPageContent() {
     )
   }
 
+  const renderPreventiveMaintenanceFields = () => (
+    <div className="space-y-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+      <h4 className="font-semibold text-slate-900">Desarrollo técnico de mantenimiento preventivo</h4>
+      <div className="grid grid-cols-1 gap-4">
+        <OfflineDraftTextarea label="Objetivo del mantenimiento" value={offlineDraft.descripcion_solicitud ?? ''} onChange={(value) => setOfflineDraft((prev) => ({ ...prev, descripcion_solicitud: value }))} />
+        <OfflineDraftTextarea label="Actividades ejecutadas" value={offlineDraft.trabajo_realizado ?? ''} onChange={(value) => setOfflineDraft((prev) => ({ ...prev, trabajo_realizado: value }))} />
+        <OfflineDraftTextarea label="Hallazgos detectados" value={offlineDraft.hallazgos ?? ''} onChange={(value) => setOfflineDraft((prev) => ({ ...prev, hallazgos: value }))} />
+        <OfflineDraftTextarea label="Resultado del servicio" value={offlineDraft.resultado_servicio ?? ''} onChange={(value) => setOfflineDraft((prev) => ({ ...prev, resultado_servicio: value }))} />
+        <OfflineDraftTextarea label="Recomendaciones preventivas" value={offlineDraft.recomendaciones ?? ''} onChange={(value) => setOfflineDraft((prev) => ({ ...prev, recomendaciones: value }))} />
+        <OfflineDraftTextarea label="Observaciones de cierre" value={offlineDraft.observaciones_cierre ?? ''} onChange={(value) => setOfflineDraft((prev) => ({ ...prev, observaciones_cierre: value }))} />
+      </div>
+      <p className="text-xs text-slate-500">Las observaciones de cierre se guardan solo como borrador de terreno. El cierre oficial requiere conexión.</p>
+    </div>
+  )
+
   const totalAsignadas = useMemo(
     () =>
       otsFiltradas.filter((ot) => ot.estado_nombre?.toLowerCase() === 'asignada')
@@ -1221,14 +1237,7 @@ function OTPageContent() {
                 <p className="mt-1 text-sm text-slate-500">Edita solo el borrador local permitido. No cambia folio, cliente, estado oficial, cierre, firmas ni PDF.</p>
                 {getOfflineStructure(selectedOfflineDetail).kind === 'preventiva' ? (
                   <div className="mt-5 space-y-5">
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <OfflineDraftTextarea label="Solicitud / alcance preventivo" value={offlineDraft.problema_reportado ?? ''} onChange={(value) => setOfflineDraft((prev) => ({ ...prev, problema_reportado: value }))} />
-                      <OfflineDraftTextarea label="Actividades preventivas / labores realizadas" value={offlineDraft.trabajo_realizado ?? ''} onChange={(value) => setOfflineDraft((prev) => ({ ...prev, trabajo_realizado: value }))} />
-                      <OfflineDraftTextarea label="Observaciones técnicas" value={offlineDraft.diagnostico ?? ''} onChange={(value) => setOfflineDraft((prev) => ({ ...prev, diagnostico: value }))} />
-                      <OfflineDraftTextarea label="Hallazgos" value={offlineDraft.hallazgos ?? ''} onChange={(value) => setOfflineDraft((prev) => ({ ...prev, hallazgos: value }))} />
-                      <OfflineDraftTextarea label="Recomendaciones" value={offlineDraft.recomendaciones ?? ''} onChange={(value) => setOfflineDraft((prev) => ({ ...prev, recomendaciones: value }))} />
-                      <OfflineDraftTextarea label="Estado local del equipo / avance" value={offlineDraft.estado_local_avance} onChange={(value) => setOfflineDraft((prev) => ({ ...prev, estado_local_avance: value }))} />
-                    </div>
+                    {renderPreventiveMaintenanceFields()}
                     {selectedOfflineDetail.requiere_checklist ? (
                       <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                         <h4 className="font-semibold text-slate-900">Checklist preventivo preparado</h4>
@@ -1265,6 +1274,7 @@ function OTPageContent() {
                   </div>
                 ) : getOfflineStructure(selectedOfflineDetail).kind === 'checklist_por_horas' ? (
                   <div className="mt-5 space-y-4">
+                    {renderPreventiveMaintenanceFields()}
                     <div className="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 md:grid-cols-2">
                       <label className="text-sm font-medium text-slate-700">
                         Modo
