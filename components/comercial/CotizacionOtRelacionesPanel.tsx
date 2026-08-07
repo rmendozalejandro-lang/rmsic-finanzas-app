@@ -94,6 +94,10 @@ export default function CotizacionOtRelacionesPanel(props: Props) {
   const [relacionesCotizacion, setRelacionesCotizacion] = useState<RelacionCotizacion[]>([])
   const [relacionesOt, setRelacionesOt] = useState<RelacionOt[]>([])
 
+  const modo = props.modo
+  const empresaId = props.empresaId
+  const entidadId = props.modo === 'cotizacion' ? props.cotizacionId : props.otId
+
   useEffect(() => {
     let active = true
 
@@ -102,7 +106,7 @@ export default function CotizacionOtRelacionesPanel(props: Props) {
       setError('')
 
       try {
-        if (props.modo === 'cotizacion') {
+        if (modo === 'cotizacion') {
           const { data, error: queryError } = await supabase
             .from('cotizacion_ot_relaciones')
             .select(`
@@ -120,8 +124,8 @@ export default function CotizacionOtRelacionesPanel(props: Props) {
                 cliente_id
               )
             `)
-            .eq('empresa_id', props.empresaId)
-            .eq('cotizacion_id', props.cotizacionId)
+            .eq('empresa_id', empresaId)
+            .eq('cotizacion_id', entidadId)
             .eq('activo', true)
             .order('created_at', { ascending: true })
 
@@ -148,8 +152,8 @@ export default function CotizacionOtRelacionesPanel(props: Props) {
                 cliente_id
               )
             `)
-            .eq('empresa_id', props.empresaId)
-            .eq('ot_id', props.otId)
+            .eq('empresa_id', empresaId)
+            .eq('ot_id', entidadId)
             .eq('activo', true)
             .order('created_at', { ascending: true })
 
@@ -170,17 +174,16 @@ export default function CotizacionOtRelacionesPanel(props: Props) {
     return () => {
       active = false
     }
-  }, [props])
+  }, [modo, empresaId, entidadId])
 
-  const cantidad =
-    props.modo === 'cotizacion' ? relacionesCotizacion.length : relacionesOt.length
+  const cantidad = modo === 'cotizacion' ? relacionesCotizacion.length : relacionesOt.length
 
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-base font-semibold text-slate-900">
-            {props.modo === 'cotizacion' ? 'OT relacionadas' : 'Cotizaciones relacionadas'}
+            {modo === 'cotizacion' ? 'OT relacionadas' : 'Cotizaciones relacionadas'}
           </h2>
           <p className="mt-1 text-sm text-slate-500">
             Relaciones comerciales registradas entre cotizaciones y órdenes de trabajo.
@@ -209,7 +212,7 @@ export default function CotizacionOtRelacionesPanel(props: Props) {
         </div>
       ) : null}
 
-      {!loading && !error && props.modo === 'cotizacion' && relacionesCotizacion.length > 0 ? (
+      {!loading && !error && modo === 'cotizacion' && relacionesCotizacion.length > 0 ? (
         <div className="mt-4 space-y-3">
           {relacionesCotizacion.map((relacion) => {
             const ot = firstRelation(relacion.ot)
@@ -245,7 +248,7 @@ export default function CotizacionOtRelacionesPanel(props: Props) {
         </div>
       ) : null}
 
-      {!loading && !error && props.modo === 'ot' && relacionesOt.length > 0 ? (
+      {!loading && !error && modo === 'ot' && relacionesOt.length > 0 ? (
         <div className="mt-4 space-y-3">
           {relacionesOt.map((relacion) => {
             const cotizacion = firstRelation(relacion.cotizacion)
