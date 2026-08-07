@@ -6,6 +6,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 import { getEmpresaLogoSrc } from '@/lib/empresa-branding'
 import ProtectedCotizacionesRoute from '@/components/ProtectedCotizacionesRoute'
+import CotizacionOtRelacionesPanel from '@/components/comercial/CotizacionOtRelacionesPanel'
 
 const STORAGE_ID_KEY = 'empresa_activa_id'
 const STORAGE_NAME_KEY = 'empresa_activa_nombre'
@@ -1117,6 +1118,12 @@ export default function CotizacionDetallePage() {
             </div>
           </div>
         </section>
+
+        <CotizacionOtRelacionesPanel
+          modo="cotizacion"
+          cotizacionId={cotizacion.id}
+          empresaId={empresaActivaId}
+        />
       </div>
     </ProtectedCotizacionesRoute>
   )
