@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase/client'
 
 type Props = {
@@ -20,7 +20,7 @@ type OtRelacionada = {
   fecha_ot: string | null
   fecha_programada?: string | null
   fecha_cierre: string | null
-  estado?: string | null
+  estado_nombre?: string | null
   cliente_id: string | null
 }
 
@@ -95,6 +95,7 @@ export default function CotizacionOtRelacionesPanel(props: Props) {
   const [observacion, setObservacion] = useState('')
   const [saving, setSaving] = useState(false)
   const [unlinkingId, setUnlinkingId] = useState<string | null>(null)
+  const searchRequestId = useRef(0)
 
   const { modo, empresaId, clienteId, puedeAdministrar = false } = props
   const registroId = modo === 'cotizacion' ? props.cotizacionId : props.otId
@@ -135,33 +136,61 @@ export default function CotizacionOtRelacionesPanel(props: Props) {
     return () => window.clearTimeout(timeout)
   }, [loadRelaciones])
 
-  const abrirModal = async () => {
+  const abrirModal = () => {
     if (!clienteId) return
     setModalOpen(true)
     setModalLoading(true)
     setModalError(null)
+    setOpcionesOt([])
+    setOpcionesCotizacion([])
     setSeleccionados([])
     setBusqueda('')
     setTipoRelacion('vinculo_manual')
     setMontoAsociado('')
     setObservacion('')
+  }
 
+  const buscarOpciones = useCallback(async (searchTerm: string) => {
+    if (!clienteId) return
+    const requestId = ++searchRequestId.current
+    setModalLoading(true)
+    setModalError(null)
     const relationFilter = modo === 'cotizacion' ? 'cotizacion_id' : 'ot_id'
     const relatedColumn = modo === 'cotizacion' ? 'ot_id' : 'cotizacion_id'
+    const term = searchTerm.trim().replace(/[,%()]/g, ' ')
+
+    let opcionesQuery
+    if (modo === 'cotizacion') {
+      opcionesQuery = supabase.from('ot_vw_resumen')
+        .select('id, folio, titulo, fecha_ot, fecha_programada, fecha_cierre, estado_nombre, cliente_id')
+        .eq('empresa_id', empresaId)
+        .eq('cliente_id', clienteId)
+        .order('fecha_ot', { ascending: false })
+        .limit(50)
+      if (term) opcionesQuery = opcionesQuery.or(`folio.ilike.%${term}%,titulo.ilike.%${term}%`)
+    } else {
+      opcionesQuery = supabase.from('cotizaciones')
+        .select('id, codigo, folio, titulo, estado, fecha_emision, total, cliente_id')
+        .eq('empresa_id', empresaId)
+        .eq('cliente_id', clienteId)
+        .eq('activo', true)
+        .is('deleted_at', null)
+        .order('fecha_emision', { ascending: false })
+        .limit(50)
+      if (term) {
+        const filters = [`codigo.ilike.%${term}%`, `titulo.ilike.%${term}%`]
+        if (/^\d+$/.test(term)) filters.push(`folio.eq.${term}`)
+        opcionesQuery = opcionesQuery.or(filters.join(','))
+      }
+    }
+
     const [opcionesResp, relacionesResp] = await Promise.all([
-      modo === 'cotizacion'
-        ? supabase.from('ot_ordenes_trabajo')
-            .select('id, folio, titulo, fecha_ot, fecha_programada, fecha_cierre, estado, cliente_id')
-            .eq('empresa_id', empresaId).eq('cliente_id', clienteId).eq('activo', true)
-            .is('deleted_at', null).order('fecha_ot', { ascending: false }).limit(100)
-        : supabase.from('cotizaciones')
-            .select('id, codigo, folio, titulo, estado, fecha_emision, total, cliente_id')
-            .eq('empresa_id', empresaId).eq('cliente_id', clienteId).eq('activo', true)
-            .is('deleted_at', null).order('fecha_emision', { ascending: false }).limit(100),
+      opcionesQuery,
       supabase.from('cotizacion_ot_relaciones').select(relatedColumn)
         .eq('empresa_id', empresaId).eq(relationFilter, registroId).eq('activo', true),
     ])
 
+    if (requestId !== searchRequestId.current) return
     if (opcionesResp.error || relacionesResp.error) {
       console.error('Error al cargar documentos vinculables:', opcionesResp.error || relacionesResp.error)
       setModalError('No fue posible cargar los documentos disponibles.')
@@ -178,17 +207,15 @@ export default function CotizacionOtRelacionesPanel(props: Props) {
       }
     }
     setModalLoading(false)
-  }
+  }, [clienteId, empresaId, modo, registroId])
 
-  const opcionesFiltradas = useMemo(() => {
-    const term = busqueda.trim().toLocaleLowerCase('es')
-    const opciones = modo === 'cotizacion' ? opcionesOt : opcionesCotizacion
-    if (!term) return opciones
-    return opciones.filter((item) => {
-      const identifier = 'codigo' in item ? `${item.codigo ?? ''} ${item.folio ?? ''}` : item.folio ?? ''
-      return `${identifier} ${item.titulo ?? ''}`.toLocaleLowerCase('es').includes(term)
-    })
-  }, [busqueda, modo, opcionesCotizacion, opcionesOt])
+  useEffect(() => {
+    if (!modalOpen) return
+    const timeout = window.setTimeout(() => void buscarOpciones(busqueda), 300)
+    return () => window.clearTimeout(timeout)
+  }, [buscarOpciones, busqueda, modalOpen])
+
+  const opcionesFiltradas = modo === 'cotizacion' ? opcionesOt : opcionesCotizacion
 
   const guardar = async () => {
     if (seleccionados.length === 0 || !clienteId) {
@@ -250,7 +277,7 @@ export default function CotizacionOtRelacionesPanel(props: Props) {
           </p>
         </div>
         {puedeAdministrar && clienteId ? (
-          <button type="button" onClick={() => void abrirModal()}
+          <button type="button" onClick={abrirModal}
             className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">
             {modo === 'cotizacion' ? 'Vincular OT' : 'Vincular cotización'}
           </button>
@@ -332,7 +359,7 @@ export default function CotizacionOtRelacionesPanel(props: Props) {
                     <input type={modo === 'cotizacion' ? 'checkbox' : 'radio'} name="documento-relacion" checked={checked}
                       onChange={() => setSeleccionados((current) => modo === 'cotizacion' ? (checked ? current.filter((id) => id !== item.id) : [...current, item.id]) : [item.id])}
                       className="mt-1 h-4 w-4 accent-blue-600" />
-                    <span className="min-w-0 text-sm"><span className="font-semibold text-slate-900">{isOt ? `OT ${item.folio || 'sin folio'}` : item.codigo || `Folio ${item.folio ?? '—'}`}</span><span className="ml-2 text-slate-700">{item.titulo || 'Sin título'}</span><span className="mt-1 block text-xs text-slate-500">{isOt ? `Fecha OT: ${formatDate(item.fecha_ot)} · Programada: ${formatDate(item.fecha_programada ?? null)}${item.estado ? ` · Estado: ${item.estado}` : ''}` : `Emisión: ${formatDate(item.fecha_emision)} · Estado: ${item.estado || '—'} · Total: ${formatCurrency(item.total) || '—'}`}</span></span>
+                    <span className="min-w-0 text-sm"><span className="font-semibold text-slate-900">{isOt ? `OT ${item.folio || 'sin folio'}` : item.codigo || `Folio ${item.folio ?? '—'}`}</span><span className="ml-2 text-slate-700">{item.titulo || 'Sin título'}</span><span className="mt-1 block text-xs text-slate-500">{isOt ? `Fecha OT: ${formatDate(item.fecha_ot)} · Programada: ${formatDate(item.fecha_programada ?? null)}${item.estado_nombre ? ` · Estado: ${item.estado_nombre}` : ''}` : `Emisión: ${formatDate(item.fecha_emision)} · Estado: ${item.estado || '—'} · Total: ${formatCurrency(item.total) || '—'}`}</span></span>
                   </label>
                 })}
               </div>
