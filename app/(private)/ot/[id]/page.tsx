@@ -3724,6 +3724,8 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
         modo="ot"
         otId={detalle.id}
         empresaId={detalle.empresa_id}
+        clienteId={detalle.cliente_id}
+        puedeAdministrar={adminRoles.has(currentRole)}
       />
 
 
@@ -5472,4 +5474,3 @@ export default function OTDetallePage() {
     </ProtectedModuleRoute>
   )
 }
-
