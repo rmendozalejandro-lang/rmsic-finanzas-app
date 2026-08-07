@@ -11,6 +11,7 @@ import { OTFirmasPanel } from '../../../../components/ot/ot-firmas-panel'
 import { OTChecklistPanel } from '../../../../components/ot/ot-checklist-panel'
 import { OTEquipoChecklistPanel } from '../../../../components/ot/ot-equipo-checklist-panel'
 import { OTEquipoTrabajoDyFPanel } from '../../../../components/ot/ot-equipo-trabajo-dyf-panel'
+import CotizacionOtRelacionesPanel from '../../../../components/comercial/CotizacionOtRelacionesPanel'
 import { supabase } from '../../../../lib/supabase/client'
 import type { OTResumen } from '../../../../lib/ot/types'
 
@@ -3718,6 +3719,12 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
           <DetailField label="Creado por" value={createdByLabel} />
         </div>
       </div>
+
+      <CotizacionOtRelacionesPanel
+        modo="ot"
+        otId={detalle.id}
+        empresaId={detalle.empresa_id}
+      />
 
 
       {usaEquiposMultiples ? (
