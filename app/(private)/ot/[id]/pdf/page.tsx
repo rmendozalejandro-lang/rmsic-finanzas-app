@@ -145,7 +145,14 @@ function OTPdfRealPageContent() {
 
   const handleOpenPdf = () => {
     if (!blobUrl) return
-    window.location.href = blobUrl
+
+    const newWindow = window.open(blobUrl, '_blank')
+
+    if (!newWindow) {
+      setError(
+        'El navegador bloqueó la nueva pestaña. Usa Descargar PDF para guardar el documento.'
+      )
+    }
   }
 
   const handleSharePdf = async () => {
