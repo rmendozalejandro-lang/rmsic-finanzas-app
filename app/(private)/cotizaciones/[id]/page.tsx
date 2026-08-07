@@ -1123,6 +1123,8 @@ export default function CotizacionDetallePage() {
           modo="cotizacion"
           cotizacionId={cotizacion.id}
           empresaId={empresaActivaId}
+          clienteId={cotizacion.cliente_id}
+          puedeAdministrar={isAdmin}
         />
       </div>
     </ProtectedCotizacionesRoute>
