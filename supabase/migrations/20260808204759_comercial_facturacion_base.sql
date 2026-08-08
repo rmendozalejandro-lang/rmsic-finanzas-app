@@ -217,6 +217,62 @@ create trigger comercial_facturacion_lote_items_validar_trg
 before insert or update on public.comercial_facturacion_lote_items
 for each row execute function public.validar_comercial_facturacion_lote_item();
 
+create function public.proteger_cotizacion_facturacion_lote()
+returns trigger
+language plpgsql
+security invoker
+set search_path = public
+as $$
+begin
+  if (new.empresa_id is distinct from old.empresa_id
+      or new.cliente_id is distinct from old.cliente_id)
+     and exists (
+       select 1
+         from public.comercial_facturacion_lote_items
+        where cotizacion_id = old.id
+          and activo = true
+     ) then
+    raise exception 'No se puede cambiar la empresa o el cliente de una cotizacion asociada a un lote de facturacion activo. Quite o desactive primero la relacion de facturacion.'
+      using errcode = '23514';
+  end if;
+
+  return new;
+end;
+$$;
+
+create trigger cotizaciones_proteger_facturacion_lote_trg
+before update of empresa_id, cliente_id
+on public.cotizaciones
+for each row execute function public.proteger_cotizacion_facturacion_lote();
+
+create function public.proteger_ot_facturacion_lote()
+returns trigger
+language plpgsql
+security invoker
+set search_path = public
+as $$
+begin
+  if (new.empresa_id is distinct from old.empresa_id
+      or new.cliente_id is distinct from old.cliente_id)
+     and exists (
+       select 1
+         from public.comercial_facturacion_lote_items
+        where ot_id = old.id
+          and activo = true
+     ) then
+    raise exception 'No se puede cambiar la empresa o el cliente de una OT asociada a un lote de facturacion activo. Quite o desactive primero la relacion de facturacion.'
+      using errcode = '23514';
+  end if;
+
+  return new;
+end;
+$$;
+
+create trigger ot_ordenes_trabajo_proteger_facturacion_lote_trg
+before update of empresa_id, cliente_id
+on public.ot_ordenes_trabajo
+for each row execute function public.proteger_ot_facturacion_lote();
+
 create trigger comercial_facturacion_lotes_updated_at_trg
 before update on public.comercial_facturacion_lotes
 for each row execute function public.set_updated_at();
