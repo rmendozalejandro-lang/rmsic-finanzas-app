@@ -91,6 +91,57 @@ create unique index comercial_facturacion_lote_items_lote_cotizacion_activo_ux
   on public.comercial_facturacion_lote_items (lote_id, cotizacion_id)
   where activo = true and cotizacion_id is not null;
 
+create function public.validar_comercial_facturacion_lote()
+returns trigger
+language plpgsql
+security invoker
+set search_path = public
+as $$
+begin
+  if tg_op = 'UPDATE' then
+    if (new.empresa_id is distinct from old.empresa_id
+        or new.cliente_id is distinct from old.cliente_id)
+       and exists (
+         select 1
+           from public.comercial_facturacion_lote_items
+          where lote_id = old.id
+            and activo = true
+       ) then
+      raise exception 'No se puede cambiar la empresa o el cliente de un lote que contiene items activos. Quite o desactive primero los items asociados.'
+        using errcode = '23514';
+    end if;
+  end if;
+
+  if not exists (
+    select 1
+      from public.empresas
+     where id = new.empresa_id
+  ) then
+    raise exception 'La empresa % no existe', new.empresa_id
+      using errcode = '23503';
+  end if;
+
+  if not exists (
+    select 1
+      from public.clientes
+     where id = new.cliente_id
+       and empresa_id = new.empresa_id
+       and activo = true
+       and deleted_at is null
+  ) then
+    raise exception 'El cliente % no existe, esta inactivo, esta eliminado o no pertenece a la empresa %', new.cliente_id, new.empresa_id
+      using errcode = '23514';
+  end if;
+
+  return new;
+end;
+$$;
+
+create trigger comercial_facturacion_lotes_validar_trg
+before insert or update of empresa_id, cliente_id
+on public.comercial_facturacion_lotes
+for each row execute function public.validar_comercial_facturacion_lote();
+
 create function public.validar_comercial_facturacion_lote_item()
 returns trigger
 language plpgsql
