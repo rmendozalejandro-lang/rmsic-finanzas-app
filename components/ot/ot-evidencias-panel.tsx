@@ -21,6 +21,7 @@ type Props = {
   otId: string
   empresaId: string
   currentUserId?: string
+  compact?: boolean
 }
 
 type UploadFormState = {
@@ -77,12 +78,14 @@ export function OTEvidenciasPanel({
   otId,
   empresaId,
   currentUserId,
+  compact = false,
 }: Props) {
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [evidencias, setEvidencias] = useState<OTEvidencia[]>([])
+  const [showUploadForm, setShowUploadForm] = useState(!compact)
   const [form, setForm] = useState<UploadFormState>({
     tipo: 'antes',
     descripcion: '',
@@ -211,6 +214,7 @@ export function OTEvidenciasPanel({
 
       await loadEvidencias()
       setSuccess('Evidencia subida correctamente.')
+      if (compact) setShowUploadForm(false)
     } catch (err) {
       setError(
         err instanceof Error ? err.message : 'No se pudo subir la evidencia.'
@@ -223,7 +227,9 @@ export function OTEvidenciasPanel({
   const renderSection = (title: string, items: OTEvidencia[]) => {
     return (
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <h3 className="text-base font-semibold text-slate-900">{title}</h3>
+        <h3 className="text-base font-semibold text-slate-900">
+          {title}{compact ? ` (${items.length})` : ''}
+        </h3>
 
         {items.length === 0 ? (
           <div className="mt-4 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
@@ -289,13 +295,16 @@ export function OTEvidenciasPanel({
     <div className="space-y-6">
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <div>
-          <h2 className="text-lg font-semibold text-slate-900">Evidencias y fotos</h2>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="text-lg font-semibold text-slate-900">{compact ? 'Evidencias' : 'Evidencias y fotos'}</h2>
+            {compact ? <button type="button" onClick={() => setShowUploadForm((value) => !value)} className="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800">{showUploadForm ? 'Cancelar' : '+ Agregar evidencia'}</button> : null}
+          </div>
           <p className="mt-1 text-sm text-slate-500">
             Sube imágenes o documentos asociados a esta OT.
           </p>
         </div>
 
-        <form onSubmit={handleUpload} className="mt-5 space-y-5">
+        {showUploadForm ? <form onSubmit={handleUpload} className="mt-5 space-y-5">
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             <div>
               <label className="mb-2 block text-sm font-medium text-slate-700">
@@ -377,20 +386,22 @@ export function OTEvidenciasPanel({
               {uploading ? 'Subiendo evidencia...' : 'Subir evidencia'}
             </button>
           </div>
-        </form>
+        </form> : null}
       </div>
 
       {loading ? (
         <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
           Cargando evidencias...
         </div>
+      ) : compact && evidencias.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 text-sm text-slate-600">Aún no hay evidencias cargadas.</div>
       ) : (
         <div className="space-y-4">
-          {renderSection(TIPOS_LABEL.antes, grouped.antes)}
-          {renderSection(TIPOS_LABEL.durante, grouped.durante)}
-          {renderSection(TIPOS_LABEL.despues, grouped.despues)}
-          {renderSection(TIPOS_LABEL.documento, grouped.documento)}
-          {renderSection(TIPOS_LABEL.otro, grouped.otro)}
+          {(!compact || grouped.antes.length > 0) && renderSection(TIPOS_LABEL.antes, grouped.antes)}
+          {(!compact || grouped.durante.length > 0) && renderSection(TIPOS_LABEL.durante, grouped.durante)}
+          {(!compact || grouped.despues.length > 0) && renderSection(TIPOS_LABEL.despues, grouped.despues)}
+          {(!compact || grouped.documento.length > 0) && renderSection(TIPOS_LABEL.documento, grouped.documento)}
+          {(!compact || grouped.otro.length > 0) && renderSection(TIPOS_LABEL.otro, grouped.otro)}
         </div>
       )}
     </div>

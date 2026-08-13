@@ -2403,7 +2403,13 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
       }
 
       await loadData(false)
-      setCierreSuccess('Trabajo finalizado por el técnico. La OM queda bloqueada para edición técnica y pendiente de revisión/cierre por supervisor.')
+      setCierreSuccess(
+        esFlujoDyfSoftys
+          ? 'Trabajo finalizado por el técnico. La OM queda bloqueada para edición técnica y pendiente de revisión/cierre por supervisor.'
+          : detalle?.supervisor_id
+            ? 'Trabajo finalizado. La OT queda bloqueada para edición técnica y pendiente de revisión por supervisor.'
+            : 'Trabajo finalizado. La OT queda bloqueada para edición técnica y pendiente de cierre administrativo.'
+      )
       router.refresh()
     } catch (err) {
       setCierreError(err instanceof Error ? err.message : 'No se pudo finalizar el trabajo.')
@@ -2927,7 +2933,9 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
               <p className="mt-2 max-w-2xl text-sm text-slate-700">
                 {isClosed
                   ? 'La OT ya fue cerrada. La vista del técnico queda bloqueada para evitar cambios posteriores al informe oficial.'
-                  : 'El trabajo fue finalizado por el técnico. La OT queda bloqueada para edición técnica y pendiente de revisión/cierre por supervisor.'}
+                  : detalle.supervisor_id
+                    ? 'El trabajo fue finalizado por el técnico. La OT queda bloqueada para edición técnica y pendiente de revisión por supervisor.'
+                    : 'El trabajo fue finalizado por el técnico. La OT queda bloqueada para edición técnica y pendiente de cierre administrativo.'}
               </p>
             </div>
 
@@ -2975,7 +2983,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
 
           <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             <DetailField label="Cliente" value={resumen.cliente_nombre} />
-            <DetailField label="N° OM / Orden cliente" value={form.numero_om_cliente} />
+            {esFlujoDyfSoftys ? <DetailField label="N° OM / Orden cliente" value={form.numero_om_cliente} /> : null}
             <DetailField label="Servicio" value={resumen.tipo_servicio_nombre} />
             <DetailField label="Fecha OT" value={formatDate(detalle.fecha_ot)} />
             <DetailField label="Inicio" value={formatTimeOnly(detalle.hora_inicio)} />
@@ -2987,6 +2995,474 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
         </div>
       </div>
     )
+  }
+
+  if (mostrarVistaTecnica && !esFlujoDyfSoftys) {
+    const tieneInformacionApoyo = Boolean(
+      form.herramientas_materiales_utilizados.trim() ||
+      form.recomendaciones_seguridad.trim() ||
+      form.seguridad_observacion.trim() ||
+      form.alcance_trabajo_observacion.trim(),
+    );
+
+    return (
+      <div className="space-y-6">
+        <header className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <p className="text-sm font-semibold text-slate-500">
+                Folio OT · {resumen.folio || "Sin folio"}
+              </p>
+              <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900">
+                Ejecución técnica
+              </h1>
+            </div>
+            <Link
+              href="/ot"
+              className="inline-flex rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-100"
+            >
+              Volver a OT
+            </Link>
+          </div>
+          <dl className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {[
+              ["Cliente", resumen.cliente_nombre],
+              ["Tipo de servicio", resumen.tipo_servicio_nombre],
+              [
+                "Fecha programada",
+                detalle.fecha_programada
+                  ? formatDate(detalle.fecha_programada)
+                  : "",
+              ],
+              ["Técnico responsable", tecnicoResponsableLabel],
+              [
+                "Supervisor",
+                detalle.supervisor_id ? humanizePerson(supervisorLabel) : "",
+              ],
+              ["Estado", resumen.estado_nombre],
+            ]
+              .filter(([, value]) => Boolean(value))
+              .map(([label, value]) => (
+                <div key={label} className="rounded-xl bg-slate-50 px-4 py-3">
+                  <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                    {label}
+                  </dt>
+                  <dd className="mt-1 text-sm font-semibold text-slate-900">
+                    {value}
+                  </dd>
+                </div>
+              ))}
+          </dl>
+        </header>
+
+        {error ? (
+          <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {error}
+          </div>
+        ) : null}
+        {success ? (
+          <div className="rounded-2xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+            {success}
+          </div>
+        ) : null}
+        {edicionTecnicaAutorizada ? (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            <strong>Edición autorizada.</strong> Corrige lo necesario y finaliza
+            nuevamente para devolver la OT a revisión administrativa.
+          </div>
+        ) : null}
+
+        {form.titulo.trim() ||
+        form.descripcion_solicitud.trim() ||
+        form.problema_reportado.trim() ? (
+          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <SectionTitle
+              title="Trabajo solicitado"
+              subtitle="Contexto administrativo de solo lectura para la ejecución en terreno."
+            />
+            <div className="mt-4 space-y-3 text-sm text-slate-700">
+              {form.titulo.trim() ? (
+                <div>
+                  <p className="font-semibold text-slate-900">Título</p>
+                  <p className="mt-1 whitespace-pre-wrap">{form.titulo}</p>
+                </div>
+              ) : null}
+              {form.descripcion_solicitud.trim() ? (
+                <div>
+                  <p className="font-semibold text-slate-900">
+                    Alcance inicial
+                  </p>
+                  <p className="mt-1 whitespace-pre-wrap">
+                    {form.descripcion_solicitud}
+                  </p>
+                </div>
+              ) : null}
+              {form.problema_reportado.trim() ? (
+                <div>
+                  <p className="font-semibold text-slate-900">
+                    Observación administrativa para terreno
+                  </p>
+                  <p className="mt-1 whitespace-pre-wrap">
+                    {form.problema_reportado}
+                  </p>
+                </div>
+              ) : null}
+            </div>
+          </section>
+        ) : null}
+
+        <form
+          onSubmit={handleSave}
+          className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
+        >
+          <SectionTitle
+            title="Datos en terreno"
+            subtitle="Completa únicamente la información confirmada al llegar al lugar de trabajo."
+          />
+          <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-700">
+                Contacto cliente
+              </label>
+              <select
+                value={form.contacto_cliente_id}
+                onChange={(e) =>
+                  handleChange("contacto_cliente_id", e.target.value)
+                }
+                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm"
+              >
+                <option value="">
+                  {contactosCliente.length
+                    ? "Selecciona contacto"
+                    : "Sin contactos registrados"}
+                </option>
+                {contactosCliente.map((contacto) => (
+                  <option key={contacto.id} value={contacto.id}>
+                    {contacto.nombre}
+                    {contacto.cargo ? ` · ${contacto.cargo}` : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-700">
+                Nombre contacto
+              </label>
+              <input
+                value={form.contacto_cliente_nombre}
+                onChange={(e) =>
+                  handleChange("contacto_cliente_nombre", e.target.value)
+                }
+                className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
+              />
+            </div>
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-700">
+                Cargo contacto
+              </label>
+              <input
+                value={form.contacto_cliente_cargo}
+                onChange={(e) =>
+                  handleChange("contacto_cliente_cargo", e.target.value)
+                }
+                className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
+              />
+            </div>
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-700">
+                Área / sector
+              </label>
+              <input
+                value={form.area_trabajo}
+                onChange={(e) => handleChange("area_trabajo", e.target.value)}
+                className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
+              />
+            </div>
+          </div>
+          <button
+            type="submit"
+            disabled={saving || isClosed}
+            className="mt-5 rounded-xl border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+          >
+            {saving ? "Guardando..." : "Guardar datos en terreno"}
+          </button>
+        </form>
+
+        {tieneInformacionApoyo ? (
+          <section className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+            <SectionTitle
+              title="Información de apoyo"
+              subtitle="Referencia disponible para ejecutar el trabajo con seguridad."
+            />
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              {form.herramientas_materiales_utilizados.trim() ? (
+                <DetailField
+                  label="Herramientas y materiales"
+                  value={form.herramientas_materiales_utilizados}
+                />
+              ) : null}
+              {form.recomendaciones_seguridad.trim() ? (
+                <DetailField
+                  label="Recomendaciones de seguridad"
+                  value={form.recomendaciones_seguridad}
+                />
+              ) : null}
+              {form.seguridad_observacion.trim() ? (
+                <DetailField
+                  label="Observación de seguridad"
+                  value={form.seguridad_observacion}
+                />
+              ) : null}
+              {form.alcance_trabajo_observacion.trim() ? (
+                <DetailField
+                  label="Información adicional"
+                  value={form.alcance_trabajo_observacion}
+                />
+              ) : null}
+            </div>
+          </section>
+        ) : null}
+
+        <form
+          onSubmit={handleSave}
+          className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
+        >
+          <SectionTitle
+            title="Tiempo de ejecución"
+            subtitle="Registra el inicio y el término del trabajo en un solo lugar."
+          />
+          <div className="mt-5 grid gap-4 md:grid-cols-3">
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-700">
+                Inicio *
+              </label>
+              <input
+                type="time"
+                value={form.hora_inicio}
+                onChange={(e) => handleChange("hora_inicio", e.target.value)}
+                className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
+              />
+            </div>
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-700">
+                Término
+              </label>
+              <input
+                type="time"
+                value={form.hora_termino}
+                onChange={(e) => handleChange("hora_termino", e.target.value)}
+                className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
+              />
+            </div>
+            <div className="rounded-xl bg-slate-50 px-4 py-3">
+              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                Duración
+              </p>
+              <p className="mt-1 font-semibold text-slate-900">
+                {duracionOmMinutos == null
+                  ? form.hora_inicio
+                    ? "Trabajo en ejecución"
+                    : "Pendiente de inicio"
+                  : formatDuration(duracionOmMinutos)}
+              </p>
+            </div>
+          </div>
+          <button
+            type="submit"
+            disabled={saving || isClosed}
+            className="mt-5 rounded-xl border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+          >
+            {saving ? "Guardando..." : "Guardar tiempo"}
+          </button>
+        </form>
+
+        <form
+          onSubmit={handleSave}
+          className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
+        >
+          <SectionTitle
+            title="Desarrollo técnico"
+            subtitle="Registra una sola vez la información técnica relevante del servicio."
+          />
+          <div className="mt-5 grid gap-4 md:grid-cols-2">
+            {!isAsesoria ? (
+              <>
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-700">
+                    Hallazgos / condición encontrada
+                  </label>
+                  <textarea
+                    value={form.hallazgos}
+                    onChange={(e) => handleChange("hallazgos", e.target.value)}
+                    rows={4}
+                    className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-700">
+                    Diagnóstico
+                  </label>
+                  <textarea
+                    value={form.diagnostico}
+                    onChange={(e) =>
+                      handleChange("diagnostico", e.target.value)
+                    }
+                    rows={4}
+                    className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-700">
+                    Causa probable
+                  </label>
+                  <textarea
+                    value={form.causa_probable}
+                    onChange={(e) =>
+                      handleChange("causa_probable", e.target.value)
+                    }
+                    rows={4}
+                    className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-700">
+                    Trabajo realizado
+                  </label>
+                  <textarea
+                    value={form.trabajo_realizado}
+                    onChange={(e) =>
+                      handleChange("trabajo_realizado", e.target.value)
+                    }
+                    rows={4}
+                    className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-700">
+                    Resultado del servicio
+                  </label>
+                  <textarea
+                    value={form.resultado_servicio}
+                    onChange={(e) =>
+                      handleChange("resultado_servicio", e.target.value)
+                    }
+                    rows={4}
+                    className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-700">
+                    Recomendaciones
+                  </label>
+                  <textarea
+                    value={form.recomendaciones}
+                    onChange={(e) =>
+                      handleChange("recomendaciones", e.target.value)
+                    }
+                    rows={4}
+                    className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm"
+                  />
+                </div>
+              </>
+            ) : (
+              <>
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-700">
+                    Análisis / diagnóstico
+                  </label>
+                  <textarea
+                    value={form.diagnostico}
+                    onChange={(e) =>
+                      handleChange("diagnostico", e.target.value)
+                    }
+                    rows={5}
+                    className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-700">
+                    Conclusiones técnicas
+                  </label>
+                  <textarea
+                    value={form.conclusiones_tecnicas}
+                    onChange={(e) =>
+                      handleChange("conclusiones_tecnicas", e.target.value)
+                    }
+                    rows={5}
+                    className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm"
+                  />
+                </div>
+              </>
+            )}
+          </div>
+          <button
+            type="submit"
+            disabled={saving || isClosed}
+            className="mt-5 rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
+          >
+            {saving ? "Guardando..." : "Guardar desarrollo técnico"}
+          </button>
+        </form>
+
+        {usaChecklistRmsicMespack ? (
+          <OTChecklistPanel
+            otId={otId}
+            empresaId={detalle.empresa_id}
+            currentUserId={currentUserId}
+            initialPlantillaId={plantillaChecklistIdEfectiva}
+            requiereChecklist={form.requiere_checklist || isPreventivaMespack}
+            onChanged={() => void loadData(false)}
+          />
+        ) : null}
+
+        <OTEvidenciasPanel
+          otId={otId}
+          empresaId={detalle.empresa_id}
+          currentUserId={currentUserId}
+          compact
+        />
+
+        {detalle.mostrar_firma_cliente ? (
+          <OTFirmasPanel
+            otId={otId}
+            empresaId={detalle.empresa_id}
+            currentUserId={currentUserId}
+            showTechnicianSignature={false}
+            defaultClientName={form.contacto_cliente_nombre}
+            defaultClientRole={form.contacto_cliente_cargo}
+          />
+        ) : null}
+
+        <section className="rounded-2xl border-2 border-slate-300 bg-white p-5 shadow-sm">
+          <SectionTitle
+            title="Finalizar trabajo"
+            subtitle="Utiliza esta acción cuando el trabajo completo haya terminado."
+          />
+          {cierreError ? (
+            <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {cierreError}
+            </div>
+          ) : null}
+          {cierreSuccess ? (
+            <div className="mt-4 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+              {cierreSuccess}
+            </div>
+          ) : null}
+          <button
+            type="button"
+            onClick={() => void handleFinalizarTrabajoTecnico()}
+            disabled={saving || closingOt || isClosed}
+            className="mt-5 rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
+          >
+            {closingOt ? "Finalizando..." : "Finalizar trabajo"}
+          </button>
+          <p className="mt-3 text-xs text-slate-500">
+            La OT quedará bloqueada para edición técnica y pasará a revisión o
+            cierre administrativo.
+          </p>
+        </section>
+      </div>
+    );
   }
 
   if (mostrarVistaTecnica) {
