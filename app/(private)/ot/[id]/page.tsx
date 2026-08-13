@@ -4416,6 +4416,17 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
             >
               Volver
             </Link>
+
+            {currentRole === 'admin' ? (
+              <button
+                type="button"
+                onClick={handleOpenDeleteModal}
+                disabled={deletingOt}
+                className="inline-flex w-full items-center justify-center rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-70 sm:w-auto sm:py-2"
+              >
+                {deletingOt ? 'Eliminando OT...' : 'Eliminar OT'}
+              </button>
+            ) : null}
           </div>
         </div>
       </div>
@@ -6318,17 +6329,6 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
               {sendingInforme ? 'Enviando informe...' : 'Enviar / reenviar informe'}
             </button>
           )}
-
-          {currentRole === 'admin' ? (
-            <button
-              type="button"
-              onClick={handleOpenDeleteModal}
-              disabled={deletingOt}
-              className="inline-flex items-center justify-center rounded-xl border border-red-300 bg-red-50 px-5 py-3 text-sm font-semibold text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-70"
-            >
-              {deletingOt ? 'Eliminando OT...' : 'Eliminar OT'}
-            </button>
-          ) : null}
         </div>
       </div>
       ) : null}
