@@ -3589,7 +3589,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
               </>
             ) : (
               <>
-                {trabajoFueFinalizadoPorTecnico || isClosed ? (
+                {trabajoFinalizadoPorTecnico || isClosed ? (
                   <Link
                     href={`/ot/${otId}/firma`}
                     className="inline-flex w-full items-center justify-center rounded-xl border border-blue-300 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-700 hover:bg-blue-100 sm:w-auto sm:py-2"
@@ -3758,7 +3758,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
                       <label className="mb-2 block text-sm font-medium text-slate-700">Supervisor (opcional)</label>
                       <select value={form.supervisor_id} onChange={(event) => handleChange('supervisor_id', event.target.value)} className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500">
                         <option value="">Sin supervisor</option>
-                        {perfiles.map((perfil) => <option key={perfil.id} value={perfil.id}>{perfil.label}</option>)}
+                        {perfilesSupervisores.map((perfil) => <option key={perfil.id} value={perfil.id}>{perfil.label}</option>)}
                       </select>
                     </div>
                   </div>
@@ -5173,7 +5173,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
         </>
       )}
 
-      {(esFlujoDyfSoftys || trabajoFueFinalizadoPorTecnico || isClosed) ? (
+      {(esFlujoDyfSoftys || trabajoFinalizadoPorTecnico || isClosed) ? (
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <SectionTitle
           title={`Cierre / entrega de ${documentoTrabajoLabel}`}
