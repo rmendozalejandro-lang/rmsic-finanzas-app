@@ -1108,8 +1108,12 @@ function NuevaOTContent() {
       return "Debes seleccionar una plantilla OT / tipo de trabajo.";
     }
 
-    if (!form.estado_id) {
+    if (esFlujoDyfSoftys && !form.estado_id) {
       return "Debes seleccionar un estado.";
+    }
+
+    if (!esFlujoDyfSoftys && !estadoAsignadaId) {
+      return 'No se pudo resolver el estado "Asignada". No es posible crear la OT.';
     }
 
     if (!form.titulo.trim()) {
@@ -1148,9 +1152,15 @@ function NuevaOTContent() {
         throw new Error("No hay usuario autenticado.");
       }
 
-      const requiereChecklist = selectedTipo
-        ? tipoServicioRequiereChecklist(selectedTipo, selectedPlantilla)
-        : plantillaRequiereChecklist || form.requiere_checklist;
+      const requiereChecklist = esFlujoDyfSoftys
+        ? selectedTipo
+          ? tipoServicioRequiereChecklist(selectedTipo, selectedPlantilla)
+          : plantillaRequiereChecklist || form.requiere_checklist
+        : plantillaRequiereChecklist;
+      const fechaCreacionOt = todayLocalDate();
+      const fechaOt = esFlujoDyfSoftys
+        ? form.fecha_ot || fechaCreacionOt
+        : fechaCreacionOt;
 
       const payload = {
         empresa_id: form.empresa_id,
@@ -1160,18 +1170,19 @@ function NuevaOTContent() {
         tipo_servicio_id: form.tipo_servicio_id,
         tipo_servicio: selectedTipo?.nombre || null,
         estructura_ot_codigo:
-          selectedTipo?.estructura_ot_codigo || selectedPlantilla?.formato_ot || null,
-        estado_id: form.estado_id || estadoAsignadaId,
-        fecha_ot: form.fecha_ot || todayLocalDate(),
+          selectedTipo?.estructura_ot_codigo ||
+          selectedPlantilla?.formato_ot ||
+          null,
+        estado_id: esFlujoDyfSoftys
+          ? form.estado_id || estadoAsignadaId
+          : estadoAsignadaId,
+        fecha_ot: fechaOt,
         fecha_programada: form.fecha_programada || null,
         titulo: form.titulo.trim(),
         descripcion_solicitud: form.descripcion_solicitud.trim() || null,
         problema_reportado: form.problema_reportado.trim() || null,
         numero_om_cliente: form.numero_om_cliente.trim() || null,
-        hora_inicio: dateAndTimeToISOString(
-          form.fecha_ot || todayLocalDate(),
-          form.hora_inicio,
-        ),
+        hora_inicio: dateAndTimeToISOString(fechaOt, form.hora_inicio),
         hora_termino: null,
         duracion_minutos: null,
         cantidad_tecnicos: parsePositiveNumber(form.cantidad_tecnicos),
@@ -1389,63 +1400,70 @@ function NuevaOTContent() {
                 </div>
               ) : null}
 
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700">
-                  Formato / estructura asociada
-                </label>
-                <input
-                  value={
-                    selectedPlantilla
-                      ? selectedPlantilla.nombre
-                      : "Sin plantilla asociada al tipo de servicio"
-                  }
-                  disabled
-                  className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-2.5 text-sm text-slate-600"
-                />
-                {selectedTipo ? (
-                  <p className="mt-1 text-xs text-slate-500">
-                    Estructura: {selectedTipo.estructura_ot_codigo || "general"}
-                    {plantillaRequiereChecklist ? " · usa checklist técnico" : ""}
-                    {selectedTipo.tipo_equipo_permitido
-                      ? ` · tipo equipo: ${selectedTipo.tipo_equipo_permitido}`
-                      : ""}
-                  </p>
-                ) : null}
-              </div>
+              {esFlujoDyfSoftys ? (
+                <>
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-slate-700">
+                      Formato / estructura asociada
+                    </label>
+                    <input
+                      value={
+                        selectedPlantilla
+                          ? selectedPlantilla.nombre
+                          : "Sin plantilla asociada al tipo de servicio"
+                      }
+                      disabled
+                      className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-2.5 text-sm text-slate-600"
+                    />
+                    {selectedTipo ? (
+                      <p className="mt-1 text-xs text-slate-500">
+                        Estructura:{" "}
+                        {selectedTipo.estructura_ot_codigo || "general"}
+                        {plantillaRequiereChecklist
+                          ? " · usa checklist técnico"
+                          : ""}
+                        {selectedTipo.tipo_equipo_permitido
+                          ? ` · tipo equipo: ${selectedTipo.tipo_equipo_permitido}`
+                          : ""}
+                      </p>
+                    ) : null}
+                  </div>
 
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700">
-                  Estado inicial *
-                </label>
-                <select
-                  value={form.estado_id}
-                  onChange={(e) => handleChange("estado_id", e.target.value)}
-                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
-                >
-                  <option value="">
-                    {estados.length === 0
-                      ? "No hay estados disponibles"
-                      : "Selecciona un estado"}
-                  </option>
-                  {estados.map((estado) => (
-                    <option key={estado.id} value={estado.id}>
-                      {estado.nombre}
-                    </option>
-                  ))}
-                </select>
-              </div>
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-slate-700">
+                      Estado inicial *
+                    </label>
+                    <select
+                      value={form.estado_id}
+                      onChange={(e) => handleChange("estado_id", e.target.value)}
+                      className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
+                    >
+                      <option value="">
+                        {estados.length === 0
+                          ? "No hay estados disponibles"
+                          : "Selecciona un estado"}
+                      </option>
+                      {estados.map((estado) => (
+                        <option key={estado.id} value={estado.id}>
+                          {estado.nombre}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700">
-                  Fecha OT
-                </label>
-                <input
-                  type="date"
-                  value={form.fecha_ot}
-                  onChange={(e) => handleChange("fecha_ot", e.target.value)}
-                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
-                />
-              </div>
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-slate-700">
+                      Fecha OT
+                    </label>
+                    <input
+                      type="date"
+                      value={form.fecha_ot}
+                      onChange={(e) => handleChange("fecha_ot", e.target.value)}
+                      className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
+                    />
+                  </div>
+                </>
+              ) : null}
 
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-700">
@@ -1482,33 +1500,48 @@ function NuevaOTContent() {
                 </select>
               </div>
 
-              <div className="flex items-end">
-                <label className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-                  <input
-                    type="checkbox"
-                    checked={form.requiere_checklist}
-                    onChange={(e) =>
-                      handleChange("requiere_checklist", e.target.checked)
-                    }
-                    disabled={Boolean(selectedTipo) || isPreventivaMespack || plantillaRequiereChecklist}
-                  />
-                  Requiere checklist
-                </label>
-              </div>
+              {esFlujoDyfSoftys ? (
+                <div className="flex items-end">
+                  <label className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={form.requiere_checklist}
+                      onChange={(e) =>
+                        handleChange("requiere_checklist", e.target.checked)
+                      }
+                      disabled={
+                        Boolean(selectedTipo) ||
+                        isPreventivaMespack ||
+                        plantillaRequiereChecklist
+                      }
+                    />
+                    Requiere checklist
+                  </label>
+                </div>
+              ) : null}
             </div>
 
-            {plantillaRequiereChecklist ? (
+            {!esFlujoDyfSoftys && plantillaRequiereChecklist ? (
               <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
-                Esta plantilla generará checklist técnico según la configuración
-                del flujo seleccionado.
+                ✓ Checklist técnico incluido en esta plantilla.
               </div>
             ) : null}
 
-            {isPreventivaMespack ? (
-              <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
-                Para OT de mantención preventiva Mespack, el checklist queda
-                marcado automáticamente.
-              </div>
+            {esFlujoDyfSoftys ? (
+              <>
+                {plantillaRequiereChecklist ? (
+                  <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+                    Esta plantilla generará checklist técnico según la
+                    configuración del flujo seleccionado.
+                  </div>
+                ) : null}
+                {isPreventivaMespack ? (
+                  <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+                    Para OT de mantención preventiva Mespack, el checklist queda
+                    marcado automáticamente.
+                  </div>
+                ) : null}
+              </>
             ) : null}
 
             {tiposServicio.length === 0 || estados.length === 0 ? (
@@ -1803,7 +1836,9 @@ function NuevaOTContent() {
               Instrucciones para terreno
             </h2>
             <p className="mt-1 text-sm text-slate-500">
-              Esta sección solo define el alcance inicial. El checklist, fotos, condición encontrada y acciones se completan en la vista técnica después de crear la OT/OM.
+              {esFlujoDyfSoftys
+                ? "Esta sección solo define el alcance inicial. El checklist, fotos, condición encontrada y acciones se completan en la vista técnica después de crear la OT/OM."
+                : "Esta sección solo define el alcance inicial. La información de terreno se completa en la vista técnica después de crear la OT."}
             </p>
 
             <div className="mt-5 grid gap-4">
@@ -1878,7 +1913,7 @@ function NuevaOTContent() {
 
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-700">
-                  Supervisor
+                  {esFlujoDyfSoftys ? "Supervisor" : "Supervisor (opcional)"}
                 </label>
                 <select
                   value={form.supervisor_id}
