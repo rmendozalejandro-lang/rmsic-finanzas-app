@@ -864,6 +864,8 @@ function OTDetalleContent() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [savingTiempo, setSavingTiempo] = useState(false)
+  const [showContinuidad, setShowContinuidad] = useState(false)
+  const [observacionContinuidad, setObservacionContinuidad] = useState('')
   const [closingOt, setClosingOt] = useState(false)
   const [autorizandoEdicionTecnica, setAutorizandoEdicionTecnica] = useState(false)
   const [sendingInforme, setSendingInforme] = useState(false)
@@ -1095,6 +1097,56 @@ function OTDetalleContent() {
   const totalTiempoRegistrado = useMemo(() => {
     return tiempos.reduce((acc, item) => acc + (item.duracion_minutos ?? 0), 0)
   }, [tiempos])
+
+  const sesionesTrabajo = useMemo(
+    () =>
+      tiempos
+        .filter((item) => item.tipo_tiempo === 'trabajo' && item.hora_inicio)
+        .sort(
+          (a, b) =>
+            new Date(a.hora_inicio || a.created_at).getTime() -
+            new Date(b.hora_inicio || b.created_at).getTime()
+        ),
+    [tiempos]
+  )
+  const sesionActiva = useMemo(
+    () => sesionesTrabajo.find((item) => !item.hora_termino) ?? null,
+    [sesionesTrabajo]
+  )
+  const sesionesFinalizadas = useMemo(
+    () => sesionesTrabajo.filter((item) => Boolean(item.hora_termino)),
+    [sesionesTrabajo]
+  )
+  const totalMinutosTrabajados = useMemo(
+    () =>
+      sesionesFinalizadas.reduce(
+        (total, item) => total + (item.duracion_minutos ?? 0),
+        0
+      ),
+    [sesionesFinalizadas]
+  )
+  const primerInicioTrabajo = sesionesTrabajo[0]?.hora_inicio ?? null
+  const ultimoTerminoTrabajo = sesionesFinalizadas.reduce<string | null>(
+    (ultimo, item) =>
+      !ultimo || (item.hora_termino && item.hora_termino > ultimo)
+        ? item.hora_termino
+        : ultimo,
+    null
+  )
+  const esSesionTrabajoAntigua = (sesion: TiempoTrabajo | null | undefined) => {
+    if (!sesion?.hora_inicio) return false
+
+    const inicioMs = new Date(sesion.hora_inicio).getTime()
+    if (!Number.isFinite(inicioMs)) return true
+
+    return Date.now() - inicioMs > 24 * 60 * 60 * 1000
+  }
+  const sesionActivaAntigua = esSesionTrabajoAntigua(sesionActiva)
+  const esOtLegacySinJornadas = Boolean(
+    !esFlujoDyfSoftys &&
+      sesionesTrabajo.length === 0 &&
+      (detalle?.hora_inicio || detalle?.hora_termino)
+  )
 
   const requiresChecklistForClose = useMemo(() => {
     return Boolean(
@@ -1898,7 +1950,8 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
     return ''
   }
 
-  const buildOtDraftPayload = () => ({
+  const buildOtDraftPayload = () => {
+    const payload: Record<string, unknown> = {
     tipo_servicio_id: form.tipo_servicio_id,
     estado_id: form.estado_id,
     fecha_ot: form.fecha_ot,
@@ -1959,7 +2012,16 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
     valor_hora_uf: form.mostrar_nota_valor_hora
       ? Number(form.valor_hora_uf)
       : detalle?.valor_hora_uf ?? Number(form.valor_hora_uf || '2.10'),
-  })
+    }
+
+    if (!esFlujoDyfSoftys && sesionesTrabajo.length > 0) {
+      delete payload.hora_inicio
+      delete payload.hora_termino
+      delete payload.duracion_minutos
+    }
+
+    return payload
+  }
 
   const saveOtDraft = async () => {
     const payload = buildOtDraftPayload()
@@ -2125,6 +2187,156 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
       setError(err instanceof Error ? err.message : 'No se pudo guardar la OT.')
     } finally {
       setSaving(false)
+    }
+  }
+
+  const getEstadoEnProcesoId = async () => {
+    const { data, error: estadoError } = await supabase
+      .from('ot_estados')
+      .select('id')
+      .eq('codigo', 'en_proceso')
+      .eq('activo', true)
+      .maybeSingle()
+
+    if (estadoError || !data?.id) {
+      throw new Error('No se encontró el estado "en_proceso" activo.')
+    }
+
+    return data.id as string
+  }
+
+  const getSesionesTrabajoActuales = async () => {
+    const { data, error: sesionesError } = await supabase
+      .from('ot_tiempos_trabajo')
+      .select('id, ot_id, usuario_id, fecha, hora_inicio, hora_termino, duracion_minutos, tipo_tiempo, observacion, created_at, updated_at')
+      .eq('ot_id', otId)
+      .eq('tipo_tiempo', 'trabajo')
+      .eq('activo', true)
+      .is('deleted_at', null)
+      .order('hora_inicio', { ascending: true })
+
+    if (sesionesError) {
+      throw new Error(`No se pudieron validar las jornadas: ${sesionesError.message}`)
+    }
+
+    return (data ?? []) as TiempoTrabajo[]
+  }
+
+  const handleIniciarJornada = async () => {
+    try {
+      setSavingTiempo(true)
+      setTiempoError('')
+      setTiempoSuccess('')
+
+      if (!currentUserId) throw new Error('No se pudo identificar al técnico actual.')
+
+      const sesionesActuales = await getSesionesTrabajoActuales()
+      const abierta = sesionesActuales.find((item) => item.hora_inicio && !item.hora_termino)
+      if (abierta) {
+        await loadData(false)
+        throw new Error(
+          esSesionTrabajoAntigua(abierta)
+            ? 'Existe una jornada abierta hace más de 24 horas. Debes corregir o cerrar ese registro antes de iniciar una nueva jornada.'
+            : 'Ya existe una jornada en ejecución para esta OT.'
+        )
+      }
+
+      const nowIso = new Date().toISOString()
+      const estadoEnProcesoId = await getEstadoEnProcesoId()
+      const { error: insertError } = await supabase.from('ot_tiempos_trabajo').insert({
+        ot_id: otId,
+        usuario_id: currentUserId,
+        fecha: todayLocalDate(),
+        hora_inicio: nowIso,
+        hora_termino: null,
+        tipo_tiempo: 'trabajo',
+        observacion: null,
+      })
+      if (insertError) throw new Error(`No se pudo iniciar la jornada: ${insertError.message}`)
+
+      const updatePayload: Record<string, unknown> = {
+        estado_id: estadoEnProcesoId,
+        updated_by: currentUserId,
+        updated_at: nowIso,
+      }
+      if (!detalle?.hora_inicio) updatePayload.hora_inicio = nowIso
+
+      const { error: updateError } = await supabase
+        .from('ot_ordenes_trabajo')
+        .update(updatePayload)
+        .eq('id', otId)
+      if (updateError) throw new Error(`La jornada se creó, pero no se pudo actualizar la OT: ${updateError.message}`)
+
+      await loadData(false)
+      setTiempoSuccess(sesionesActuales.length ? 'Nueva jornada iniciada.' : 'Trabajo iniciado correctamente.')
+      router.refresh()
+    } catch (err) {
+      setTiempoError(err instanceof Error ? err.message : 'No se pudo iniciar la jornada.')
+    } finally {
+      setSavingTiempo(false)
+    }
+  }
+
+  const handleContinuarOtraJornada = async () => {
+    try {
+      setSavingTiempo(true)
+      setTiempoError('')
+      setTiempoSuccess('')
+
+      const sesionesActuales = await getSesionesTrabajoActuales()
+      const abiertas = sesionesActuales.filter((item) => item.hora_inicio && !item.hora_termino)
+      if (abiertas.length !== 1) {
+        await loadData(false)
+        throw new Error(
+          abiertas.length > 1
+            ? 'Existen varias jornadas abiertas. Debes corregir la bitácora antes de continuar.'
+            : 'No existe una jornada activa para guardar.'
+        )
+      }
+      if (esSesionTrabajoAntigua(abiertas[0])) {
+        throw new Error('Existe una jornada abierta hace más de 24 horas. Debes corregir o cerrar ese registro desde la bitácora.')
+      }
+
+      await saveOtDraft()
+      const nowIso = new Date().toISOString()
+      const estadoEnProcesoId = await getEstadoEnProcesoId()
+      const { error: closeError } = await supabase
+        .from('ot_tiempos_trabajo')
+        .update({
+          hora_termino: nowIso,
+          observacion: observacionContinuidad.trim() || 'Continuación en otra jornada.',
+          updated_by: currentUserId || null,
+          updated_at: nowIso,
+        })
+        .eq('id', abiertas[0].id)
+        .is('hora_termino', null)
+      if (closeError) throw new Error(`No se pudo guardar la jornada: ${closeError.message}`)
+
+      const sesionesCerradas = await getSesionesTrabajoActuales()
+      const totalMinutos = sesionesCerradas
+        .filter((item) => item.hora_inicio && item.hora_termino)
+        .reduce((total, item) => total + (item.duracion_minutos ?? 0), 0)
+
+      const { error: otError } = await supabase
+        .from('ot_ordenes_trabajo')
+        .update({
+          estado_id: estadoEnProcesoId,
+          duracion_minutos: totalMinutos,
+          updated_by: currentUserId || null,
+          updated_at: nowIso,
+        })
+        .eq('id', otId)
+      if (otError) throw new Error(`La jornada se guardó, pero no se pudo mantener la OT en proceso: ${otError.message}`)
+
+      setShowContinuidad(false)
+      setObservacionContinuidad('')
+      await loadData(false)
+      setTiempoSuccess('Jornada guardada. La OT continúa En proceso y podrá retomarse en otra jornada.')
+      router.refresh()
+    } catch (err) {
+      setTiempoError(err instanceof Error ? err.message : 'No se pudo guardar la jornada.')
+    } finally {
+      setSavingTiempo(false)
     }
   }
 
@@ -2361,6 +2573,77 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
       setError('')
       setSuccess('')
 
+      if (!esFlujoDyfSoftys && sesionesTrabajo.length > 0) {
+        await saveOtDraft()
+        let sesionesActuales = await getSesionesTrabajoActuales()
+        const abiertas = sesionesActuales.filter((item) => item.hora_inicio && !item.hora_termino)
+
+        if (abiertas.length > 1) {
+          throw new Error('Existen varias jornadas abiertas. Debes corregir la bitácora antes de finalizar.')
+        }
+        if (esSesionTrabajoAntigua(abiertas[0])) {
+          throw new Error('Existe una jornada abierta hace más de 24 horas. Debes corregirla antes de finalizar el trabajo.')
+        }
+
+        const nowIso = new Date().toISOString()
+        if (abiertas[0]) {
+          const { error: closeSessionError } = await supabase
+            .from('ot_tiempos_trabajo')
+            .update({ hora_termino: nowIso, updated_by: currentUserId || null, updated_at: nowIso })
+            .eq('id', abiertas[0].id)
+            .is('hora_termino', null)
+          if (closeSessionError) throw new Error(`No se pudo cerrar la jornada actual: ${closeSessionError.message}`)
+        }
+
+        sesionesActuales = await getSesionesTrabajoActuales()
+        const finalizadas = sesionesActuales.filter((item) => item.hora_inicio && item.hora_termino)
+        const primerInicio = finalizadas[0]?.hora_inicio
+        const ultimoTermino = finalizadas.reduce<string | null>(
+          (ultimo, item) =>
+            !ultimo || (item.hora_termino && item.hora_termino > ultimo)
+              ? item.hora_termino
+              : ultimo,
+          null
+        )
+        const totalMinutos = finalizadas.reduce((total, item) => total + (item.duracion_minutos ?? 0), 0)
+        if (!primerInicio || !ultimoTermino) throw new Error('No hay jornadas finalizadas para consolidar la OT.')
+
+        const estadoEnProcesoId = await getEstadoEnProcesoId()
+        const { error: consolidateError } = await supabase
+          .from('ot_ordenes_trabajo')
+          .update({
+            estado_id: estadoEnProcesoId,
+            hora_inicio: primerInicio,
+            hora_termino: ultimoTermino,
+            updated_by: currentUserId || null,
+            updated_at: nowIso,
+          })
+          .eq('id', otId)
+        if (consolidateError) throw new Error(`No se pudo consolidar el trabajo: ${consolidateError.message}`)
+
+        const { error: durationError } = await supabase
+          .from('ot_ordenes_trabajo')
+          .update({
+            duracion_minutos: totalMinutos,
+            finalizado_tecnico_at: nowIso,
+            finalizado_tecnico_by: currentUserId || null,
+            permitir_edicion_tecnico: false,
+            updated_by: currentUserId || null,
+            updated_at: nowIso,
+          })
+          .eq('id', otId)
+        if (durationError) throw new Error(`No se pudo guardar la duración acumulada: ${durationError.message}`)
+
+        await loadData(false)
+        setCierreSuccess(
+          detalle?.supervisor_id
+            ? 'Trabajo finalizado. La OT queda bloqueada para edición técnica y pendiente de revisión por supervisor.'
+            : 'Trabajo finalizado. La OT queda bloqueada para edición técnica y pendiente de cierre administrativo.'
+        )
+        router.refresh()
+        return
+      }
+
       if (!form.hora_inicio) {
         throw new Error('Debes ingresar la hora oficial de inicio antes de finalizar el trabajo.')
       }
@@ -2547,19 +2830,29 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
         throw new Error('El contacto seleccionado no tiene email registrado.')
       }
 
-      if (!form.hora_inicio) {
+      if (!esFlujoDyfSoftys && sesionesTrabajo.length > 0) {
+        if (sesionActiva) {
+          throw new Error(
+            'Existe una jornada en ejecución. Debes finalizar el trabajo técnico o guardar la continuidad antes del cierre administrativo.'
+          )
+        }
+        if (!primerInicioTrabajo || !ultimoTerminoTrabajo) {
+          throw new Error('Las jornadas deben estar finalizadas antes del cierre administrativo.')
+        }
+      } else if (!form.hora_inicio) {
         throw new Error('Debes ingresar la hora inicio OM antes de cerrar.')
-      }
-
-      if (!form.hora_termino) {
+      } else if (!form.hora_termino) {
         throw new Error('Debes ingresar la hora término OM para cerrar o entregar el trabajo.')
       }
 
-      const duracionCierreMinutos = calculateDurationMinutes(
-        form.hora_inicio,
-        form.hora_termino,
-        form.fecha_ot || todayLocalDate()
-      )
+      const duracionCierreMinutos =
+        !esFlujoDyfSoftys && sesionesTrabajo.length > 0
+          ? totalMinutosTrabajados
+          : calculateDurationMinutes(
+              form.hora_inicio,
+              form.hora_termino,
+              form.fecha_ot || todayLocalDate()
+            )
 
       if (duracionCierreMinutos == null) {
         throw new Error('La hora término OM debe ser mayor que la hora inicio OM.')
@@ -2610,15 +2903,18 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
 
       const nowIso = new Date().toISOString()
 
-      const payload = {
+      const payload: Record<string, unknown> = {
         ...payloadBorrador,
         estado_id: estadoCerrada.id,
         fecha_cierre: nowIso,
-        hora_inicio: payloadBorrador.hora_inicio,
-        hora_termino: payloadBorrador.hora_termino,
         duracion_minutos: duracionCierreMinutos,
         horas_hombre_utilizadas:
           parsePositiveNumber(form.horas_hombre_utilizadas) ?? horasHombreSugeridas,
+      }
+
+      if (esFlujoDyfSoftys || sesionesTrabajo.length === 0) {
+        payload.hora_inicio = payloadBorrador.hora_inicio
+        payload.hora_termino = payloadBorrador.hora_termino
       }
 
       const { error: updateError } = await supabase
@@ -3223,58 +3519,81 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
           </section>
         ) : null}
 
-        <form
-          onSubmit={handleSave}
-          className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
-        >
+        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <SectionTitle
             title="Tiempo de ejecución"
-            subtitle="Registra el inicio y el término del trabajo en un solo lugar."
+            subtitle="Las jornadas registran automáticamente el tiempo real trabajado."
           />
-          <div className="mt-5 grid gap-4 md:grid-cols-3">
-            <div>
-              <label className="mb-2 block text-sm font-medium text-slate-700">
-                Inicio *
-              </label>
-              <input
-                type="time"
-                value={form.hora_inicio}
-                onChange={(e) => handleChange("hora_inicio", e.target.value)}
-                className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
-              />
+
+          {tiempoError ? <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{tiempoError}</div> : null}
+          {tiempoSuccess ? <div className="mt-4 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">{tiempoSuccess}</div> : null}
+
+          {esOtLegacySinJornadas ? (
+            <form onSubmit={handleSave} className="mt-5">
+              <div className="grid gap-4 md:grid-cols-3">
+                <div><label className="mb-2 block text-sm font-medium text-slate-700">Inicio</label><input type="time" value={form.hora_inicio} onChange={(e) => handleChange('hora_inicio', e.target.value)} className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm" /></div>
+                <div><label className="mb-2 block text-sm font-medium text-slate-700">Término</label><input type="time" value={form.hora_termino} onChange={(e) => handleChange('hora_termino', e.target.value)} className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm" /></div>
+                <div className="rounded-xl bg-slate-50 px-4 py-3"><p className="text-xs font-medium uppercase tracking-wide text-slate-500">Duración</p><p className="mt-1 font-semibold text-slate-900">{duracionOmMinutos == null ? 'Trabajo en ejecución' : formatDuration(duracionOmMinutos)}</p></div>
+              </div>
+              <p className="mt-3 text-xs text-slate-500">Registro anterior al uso de jornadas. Se conservan las horas existentes sin crear registros nuevos.</p>
+              <button type="submit" disabled={saving || isClosed} className="mt-4 rounded-xl border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 disabled:opacity-60">{saving ? 'Guardando...' : 'Guardar tiempo'}</button>
+            </form>
+          ) : sesionesTrabajo.length === 0 ? (
+            <div className="mt-5">
+              <p className="text-sm text-slate-600">Aún no se ha iniciado el trabajo.</p>
+              <button type="button" onClick={() => void handleIniciarJornada()} disabled={savingTiempo || isClosed} className="mt-4 rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white disabled:opacity-60">
+                {savingTiempo ? 'Iniciando...' : 'Iniciar trabajo'}
+              </button>
             </div>
-            <div>
-              <label className="mb-2 block text-sm font-medium text-slate-700">
-                Término
-              </label>
-              <input
-                type="time"
-                value={form.hora_termino}
-                onChange={(e) => handleChange("hora_termino", e.target.value)}
-                className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"
-              />
+          ) : (
+            <div className="mt-5 space-y-5">
+              <div>
+                <h3 className="text-sm font-semibold text-slate-900">Jornadas registradas</h3>
+                <div className="mt-3 space-y-3">
+                  {sesionesTrabajo.map((sesion, index) => (
+                    <div key={sesion.id} className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div><p className="font-semibold text-slate-900">Jornada {index + 1}</p><p className="text-sm text-slate-600">{formatDate(sesion.fecha)}</p></div>
+                        <p className="text-sm font-medium text-slate-800">{formatTimeOnly(sesion.hora_inicio)} – {sesion.hora_termino ? formatTimeOnly(sesion.hora_termino) : 'En ejecución'}</p>
+                      </div>
+                      {sesion.hora_termino ? <p className="mt-1 text-sm font-medium text-slate-700">{formatDuration(sesion.duracion_minutos)}</p> : <p className="mt-1 text-sm font-semibold text-blue-700">Estado: En ejecución</p>}
+                      {sesion.observacion?.trim() ? <p className="mt-2 whitespace-pre-wrap text-sm text-slate-600">{sesion.observacion}</p> : null}
+                    </div>
+                  ))}
+                </div>
+                <p className="mt-3 text-sm font-semibold text-slate-900">Tiempo acumulado: {formatDuration(totalMinutosTrabajados)}</p>
+              </div>
+
+              {sesionActivaAntigua ? (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">Existe una jornada abierta hace más de 24 horas. Debes corregir o cerrar ese registro antes de iniciar una nueva jornada.</div>
+              ) : sesionActiva ? (
+                <div className="border-t border-slate-200 pt-5">
+                  <p className="text-sm font-semibold text-slate-900">Jornada actual</p>
+                  <p className="mt-1 text-sm text-slate-600">Inicio: {formatDateTime(sesionActiva.hora_inicio)} · Estado: En ejecución</p>
+                  {!showContinuidad ? (
+                    <button type="button" onClick={() => setShowContinuidad(true)} className="mt-4 rounded-xl border border-amber-300 bg-amber-50 px-5 py-3 text-sm font-semibold text-amber-900 hover:bg-amber-100">Continuar en otra jornada</button>
+                  ) : (
+                    <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4">
+                      <p className="text-sm font-semibold text-amber-900">El trabajo continuará en otra jornada.</p>
+                      <p className="mt-1 text-sm text-amber-800">Se guardará todo el avance de hoy y la OT permanecerá En proceso. Esto NO finalizará ni cerrará la OT.</p>
+                      <label className="mt-4 block text-sm font-medium text-slate-700">Motivo / observación de continuidad (opcional)</label>
+                      <textarea value={observacionContinuidad} onChange={(e) => setObservacionContinuidad(e.target.value)} rows={3} placeholder="Ej.: Falta repuesto, espera de cliente o continuación programada." className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm" />
+                      <div className="mt-3 flex flex-wrap gap-3">
+                        <button type="button" onClick={() => void handleContinuarOtraJornada()} disabled={savingTiempo} className="rounded-xl bg-amber-700 px-5 py-3 text-sm font-semibold text-white disabled:opacity-60">{savingTiempo ? 'Guardando...' : 'Confirmar continuidad'}</button>
+                        <button type="button" onClick={() => setShowContinuidad(false)} disabled={savingTiempo} className="rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700">Cancelar</button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="border-t border-slate-200 pt-5">
+                  <p className="text-sm font-medium text-slate-700">En proceso · Continuará</p>
+                  <button type="button" onClick={() => void handleIniciarJornada()} disabled={savingTiempo || isClosed} className="mt-3 rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white disabled:opacity-60">{savingTiempo ? 'Iniciando...' : 'Continuar trabajo'}</button>
+                </div>
+              )}
             </div>
-            <div className="rounded-xl bg-slate-50 px-4 py-3">
-              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                Duración
-              </p>
-              <p className="mt-1 font-semibold text-slate-900">
-                {duracionOmMinutos == null
-                  ? form.hora_inicio
-                    ? "Trabajo en ejecución"
-                    : "Pendiente de inicio"
-                  : formatDuration(duracionOmMinutos)}
-              </p>
-            </div>
-          </div>
-          <button
-            type="submit"
-            disabled={saving || isClosed}
-            className="mt-5 rounded-xl border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
-          >
-            {saving ? "Guardando..." : "Guardar tiempo"}
-          </button>
-        </form>
+          )}
+        </section>
 
         <form
           onSubmit={handleSave}
@@ -3422,7 +3741,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
           compact
         />
 
-        {detalle.mostrar_firma_cliente ? (
+        {detalle.mostrar_firma_cliente && (sesionActiva || esOtLegacySinJornadas) ? (
           <OTFirmasPanel
             otId={otId}
             empresaId={detalle.empresa_id}
@@ -3451,7 +3770,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
           <button
             type="button"
             onClick={() => void handleFinalizarTrabajoTecnico()}
-            disabled={saving || closingOt || isClosed}
+            disabled={saving || closingOt || isClosed || (sesionesTrabajo.length === 0 && !esOtLegacySinJornadas) || sesionActivaAntigua}
             className="mt-5 rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
           >
             {closingOt ? "Finalizando..." : "Finalizar trabajo"}
