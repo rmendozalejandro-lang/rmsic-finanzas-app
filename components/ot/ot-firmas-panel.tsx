@@ -20,6 +20,10 @@ type Props = {
   otId: string
   empresaId: string
   currentUserId?: string
+  showTechnicianSignature?: boolean
+  showClientSignature?: boolean
+  defaultClientName?: string
+  defaultClientRole?: string
 }
 
 type SignaturePadProps = {
@@ -29,6 +33,8 @@ type SignaturePadProps = {
   empresaId: string
   currentUserId?: string
   existingFirma?: OTFirma | null
+  defaultName?: string
+  defaultRole?: string
   onSaved: () => Promise<void> | void
 }
 
@@ -76,6 +82,8 @@ function SignaturePad({
   empresaId,
   currentUserId,
   existingFirma,
+  defaultName,
+  defaultRole,
   onSaved,
 }: SignaturePadProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -83,16 +91,16 @@ function SignaturePad({
   const drawingRef = useRef(false)
   const hasDrawnRef = useRef(false)
 
-  const [nombreFirmante, setNombreFirmante] = useState(existingFirma?.nombre_firmante || '')
-  const [cargoFirmante, setCargoFirmante] = useState(existingFirma?.cargo_firmante || '')
+  const [nombreFirmante, setNombreFirmante] = useState(existingFirma?.nombre_firmante || defaultName || '')
+  const [cargoFirmante, setCargoFirmante] = useState(existingFirma?.cargo_firmante || defaultRole || '')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
 
   useEffect(() => {
-    setNombreFirmante(existingFirma?.nombre_firmante || '')
-    setCargoFirmante(existingFirma?.cargo_firmante || '')
-  }, [existingFirma])
+    setNombreFirmante(existingFirma?.nombre_firmante || defaultName || '')
+    setCargoFirmante(existingFirma?.cargo_firmante || defaultRole || '')
+  }, [defaultName, defaultRole, existingFirma])
 
   const resizeCanvas = useCallback(() => {
     const canvas = canvasRef.current
@@ -411,6 +419,10 @@ export function OTFirmasPanel({
   otId,
   empresaId,
   currentUserId,
+  showTechnicianSignature = true,
+  showClientSignature = true,
+  defaultClientName,
+  defaultClientRole,
 }: Props) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -470,9 +482,9 @@ export function OTFirmasPanel({
     <div className="space-y-6">
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <div>
-          <h2 className="text-lg font-semibold text-slate-900">Firmas</h2>
+          <h2 className="text-lg font-semibold text-slate-900">{!showTechnicianSignature && showClientSignature ? 'Recepción del cliente' : 'Firmas'}</h2>
           <p className="mt-1 text-sm text-slate-500">
-            Guarda firma de técnico y cliente para respaldo de la OT.
+            {!showTechnicianSignature && showClientSignature ? 'Registra la recepción del trabajo por parte del cliente.' : 'Guarda firma de técnico y cliente para respaldo de la OT.'}
           </p>
         </div>
 
@@ -490,7 +502,7 @@ export function OTFirmasPanel({
       </div>
 
       <div className="grid gap-4 xl:grid-cols-2">
-        <SignaturePad
+        {showTechnicianSignature ? <SignaturePad
           title="Firma técnico"
           tipoFirma="tecnico"
           otId={otId}
@@ -498,17 +510,19 @@ export function OTFirmasPanel({
           currentUserId={currentUserId}
           existingFirma={firmaTecnico}
           onSaved={loadFirmas}
-        />
+        /> : null}
 
-        <SignaturePad
-          title="Firma cliente"
+        {showClientSignature ? <SignaturePad
+          title={showTechnicianSignature ? 'Firma cliente' : 'Recepción del cliente'}
           tipoFirma="cliente"
           otId={otId}
           empresaId={empresaId}
           currentUserId={currentUserId}
           existingFirma={firmaCliente}
+          defaultName={defaultClientName}
+          defaultRole={defaultClientRole}
           onSaved={loadFirmas}
-        />
+        /> : null}
       </div>
     </div>
   )
