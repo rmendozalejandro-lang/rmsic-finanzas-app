@@ -2836,6 +2836,27 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
   const trabajoFinalizadoPorTecnico = Boolean(
     trabajoFueFinalizadoPorTecnico && !detalle.permitir_edicion_tecnico
   )
+  const tieneContenidoTecnico = Boolean(
+    form.diagnostico.trim() ||
+    form.causa_probable.trim() ||
+    form.trabajo_realizado.trim() ||
+    form.resultado_servicio.trim() ||
+    form.recomendaciones.trim() ||
+    form.hallazgos.trim() ||
+    form.conclusiones_tecnicas.trim()
+  )
+  const prioridadLabel = form.prioridad
+    ? form.prioridad.charAt(0).toUpperCase() + form.prioridad.slice(1)
+    : ''
+  const tecnicoResponsableLabel = detalle.tecnico_responsable_id
+    ? humanizePerson(getUserLabel(detalle.tecnico_responsable_id))
+    : ''
+  const tieneInformacionContacto = Boolean(
+    form.contacto_cliente_nombre.trim() ||
+    form.contacto_cliente_cargo.trim() ||
+    form.contacto_cliente_email.trim() ||
+    form.area_trabajo.trim()
+  )
   const tecnicoBloqueado = isClosed || trabajoFinalizadoPorTecnico
   const canManageEquipoTrabajo = Boolean(!tecnicoBloqueado && !isClosed && (canManageOt || isAssignedTechnician))
   const mostrarEquipoTrabajoDyF = Boolean(esFlujoDyfSoftys || usaTecnicosParticipantes || detalle.empresa_id === DYF_EMPRESA_ID)
@@ -3568,12 +3589,14 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
               </>
             ) : (
               <>
-                <Link
-                  href={`/ot/${otId}/firma`}
-                  className="inline-flex w-full items-center justify-center rounded-xl border border-blue-300 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-700 hover:bg-blue-100 sm:w-auto sm:py-2"
-                >
-                  Abrir vista cliente / firma
-                </Link>
+                {trabajoFinalizadoPorTecnico || isClosed ? (
+                  <Link
+                    href={`/ot/${otId}/firma`}
+                    className="inline-flex w-full items-center justify-center rounded-xl border border-blue-300 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-700 hover:bg-blue-100 sm:w-auto sm:py-2"
+                  >
+                    Abrir vista cliente / firma
+                  </Link>
+                ) : null}
                 <Link
                   href={`/ot/${otId}/pdf`}
                   style={{ backgroundColor: '#163A5F', color: '#ffffff' }}
@@ -3611,8 +3634,8 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
               </p>
               <p className={`mt-1 text-sm ${edicionTecnicaAutorizada ? 'text-amber-700' : 'text-emerald-700'}`}>
                 {edicionTecnicaAutorizada
-                  ? 'El técnico puede modificar la ejecución y debe finalizar nuevamente para devolver la OM a revisión.'
-                  : 'La OM está lista para revisión administrativa, cierre, firma e informe. La edición técnica está bloqueada para evitar cambios posteriores.'}
+                  ? `El técnico puede modificar la ejecución y debe finalizar nuevamente para devolver la ${documentoTrabajoLabel} a revisión.`
+                  : `La ${documentoTrabajoLabel} está lista para revisión administrativa, cierre, firma e informe. La edición técnica está bloqueada para evitar cambios posteriores.`}
               </p>
             </div>
 
@@ -3641,6 +3664,175 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
         </div>
       ) : null}
 
+      {!esFlujoDyfSoftys && !mostrarVistaTecnica ? (
+        <>
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+            <SectionTitle title="Resumen de OT" />
+            <p className="mt-3 text-base font-semibold text-slate-900">
+              {resumen.tipo_servicio_nombre}
+            </p>
+            <dl className="mt-5 grid gap-x-8 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
+              {[
+                ['Cliente', resumen.cliente_nombre],
+                ['Tipo de servicio', resumen.tipo_servicio_nombre],
+                ['Estado', resumen.estado_nombre],
+                ['Fecha programada', detalle.fecha_programada ? formatDate(detalle.fecha_programada) : ''],
+                ['Prioridad', prioridadLabel],
+                ['Técnico responsable', tecnicoResponsableLabel],
+                ['Supervisor', detalle.supervisor_id ? humanizePerson(supervisorLabel) : ''],
+              ].filter((item) => Boolean(item[1])).map(([label, value]) => (
+                <div key={label}>
+                  <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</dt>
+                  <dd className="mt-1 text-sm font-medium text-slate-900">{value}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+
+          {(form.titulo.trim() || form.descripcion_solicitud.trim() || form.problema_reportado.trim()) ? (
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+              <SectionTitle title="Trabajo solicitado" />
+              <div className="mt-4 space-y-4 text-sm text-slate-700">
+                {form.titulo.trim() ? (
+                  <div>
+                    <p className="font-semibold text-slate-900">{form.titulo}</p>
+                  </div>
+                ) : null}
+                {form.descripcion_solicitud.trim() ? (
+                  <div>
+                    <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Alcance inicial</p>
+                    <p className="mt-1 whitespace-pre-wrap">{form.descripcion_solicitud}</p>
+                  </div>
+                ) : null}
+                {form.problema_reportado.trim() ? (
+                  <div>
+                    <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Observación para terreno</p>
+                    <p className="mt-1 whitespace-pre-wrap">{form.problema_reportado}</p>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+            <SectionTitle title="Programación y asignación" />
+            <dl className="mt-5 grid gap-x-8 gap-y-4 sm:grid-cols-2 lg:grid-cols-4">
+              {[
+                ['Fecha programada', detalle.fecha_programada ? formatDate(detalle.fecha_programada) : ''],
+                ['Prioridad', prioridadLabel],
+                ['Técnico responsable', tecnicoResponsableLabel],
+                ['Supervisor', detalle.supervisor_id ? humanizePerson(supervisorLabel) : ''],
+              ].filter((item) => Boolean(item[1])).map(([label, value]) => (
+                <div key={label}>
+                  <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</dt>
+                  <dd className="mt-1 text-sm font-medium text-slate-900">{value}</dd>
+                </div>
+              ))}
+            </dl>
+
+            {canManageOt && !isClosed ? (
+              <details className="mt-5 border-t border-slate-200 pt-4">
+                <summary className="cursor-pointer text-sm font-semibold text-[#163A5F]">
+                  Editar programación y asignación
+                </summary>
+                <form onSubmit={handleSave} className="mt-5 space-y-5">
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div>
+                      <label className="mb-2 block text-sm font-medium text-slate-700">Fecha programada</label>
+                      <input type="date" value={form.fecha_programada} onChange={(event) => handleChange('fecha_programada', event.target.value)} className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500" />
+                    </div>
+                    <div>
+                      <label className="mb-2 block text-sm font-medium text-slate-700">Prioridad</label>
+                      <select value={form.prioridad} onChange={(event) => handleChange('prioridad', event.target.value as FormState['prioridad'])} className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500">
+                        <option value="baja">Baja</option><option value="media">Media</option><option value="alta">Alta</option><option value="critica">Crítica</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="mb-2 block text-sm font-medium text-slate-700">Técnico responsable</label>
+                      <select value={form.tecnico_responsable_id} onChange={(event) => handleChange('tecnico_responsable_id', event.target.value)} className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500">
+                        <option value="">Sin técnico asignado</option>
+                        {perfiles.map((perfil) => <option key={perfil.id} value={perfil.id}>{perfil.label}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="mb-2 block text-sm font-medium text-slate-700">Supervisor (opcional)</label>
+                      <select value={form.supervisor_id} onChange={(event) => handleChange('supervisor_id', event.target.value)} className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500">
+                        <option value="">Sin supervisor</option>
+                        {perfilesSupervisores.map((perfil) => <option key={perfil.id} value={perfil.id}>{perfil.label}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  {error ? <p className="text-sm text-red-700">{error}</p> : null}
+                  {success ? <p className="text-sm text-green-700">{success}</p> : null}
+                  <button type="submit" disabled={saving} className="inline-flex rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60">
+                    {saving ? 'Guardando...' : 'Guardar programación y asignación'}
+                  </button>
+                </form>
+              </details>
+            ) : null}
+          </div>
+
+          {form.requiere_checklist ? (
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">
+              ✓ Esta OT incluye checklist técnico.
+            </div>
+          ) : null}
+
+          {tieneInformacionContacto ? (
+            <details className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <summary className="cursor-pointer text-sm font-semibold text-slate-900">Información adicional del cliente</summary>
+              <dl className="mt-4 grid gap-x-8 gap-y-4 sm:grid-cols-2">
+                {[
+                  ['Contacto', form.contacto_cliente_nombre], ['Cargo', form.contacto_cliente_cargo],
+                  ['Correo', form.contacto_cliente_email], ['Área / sector', form.area_trabajo],
+                ].filter((item) => Boolean(item[1]?.trim())).map(([label, value]) => (
+                  <div key={label}><dt className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</dt><dd className="mt-1 text-sm text-slate-900">{value}</dd></div>
+                ))}
+              </dl>
+            </details>
+          ) : null}
+
+          {tieneContenidoTecnico ? (
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+              <SectionTitle title="Resumen técnico" subtitle="Información registrada durante la ejecución técnica." />
+              <dl className="mt-5 grid gap-4 md:grid-cols-2">
+                {[
+                  ['Diagnóstico', form.diagnostico], ['Causa probable', form.causa_probable],
+                  ['Trabajo realizado', form.trabajo_realizado], ['Resultado', form.resultado_servicio],
+                  ['Hallazgos', form.hallazgos], ['Conclusiones', form.conclusiones_tecnicas],
+                  ['Recomendaciones', form.recomendaciones],
+                ].filter((item) => Boolean(item[1]?.trim())).map(([label, value]) => (
+                  <div key={label} className="rounded-xl bg-slate-50 px-4 py-3"><dt className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</dt><dd className="mt-1 whitespace-pre-wrap text-sm text-slate-900">{value}</dd></div>
+                ))}
+              </dl>
+            </div>
+          ) : null}
+
+          {tiempos.length > 0 ? (
+            <details className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <summary className="cursor-pointer text-sm font-semibold text-slate-900">Bitácora de tiempos</summary>
+              <div className="mt-4 space-y-3">
+                {tiempos.map((item) => (
+                  <div key={item.id} className="rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                    <p className="font-medium text-slate-900">{formatDate(item.fecha)} · {getUserLabel(item.usuario_id)}</p>
+                    <p className="mt-1">{item.tipo_tiempo} · {formatDateTime(item.hora_inicio)}–{formatDateTime(item.hora_termino)} · {formatDuration(item.duracion_minutos)}</p>
+                    {item.observacion ? <p className="mt-1 whitespace-pre-wrap text-slate-600">{item.observacion}</p> : null}
+                  </div>
+                ))}
+              </div>
+            </details>
+          ) : null}
+
+          {!trabajoFueFinalizadoPorTecnico && !isClosed ? (
+            <div className="rounded-2xl border border-blue-200 bg-blue-50 px-5 py-4 text-sm text-blue-800">
+              La OT está pendiente de ejecución técnica. La revisión y el cierre administrativo estarán disponibles cuando el técnico finalice el trabajo.
+            </div>
+          ) : null}
+
+          <CotizacionOtRelacionesPanel modo="ot" otId={detalle.id} empresaId={detalle.empresa_id} clienteId={detalle.cliente_id} puedeAdministrar={adminRoles.has(currentRole)} />
+        </>
+      ) : (
+        <>
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <p className="text-sm text-slate-500">Estado actual</p>
@@ -4978,6 +5170,10 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
         </div>
       ) : null}
 
+        </>
+      )}
+
+      {(esFlujoDyfSoftys || trabajoFinalizadoPorTecnico || isClosed) ? (
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <SectionTitle
           title={`Cierre / entrega de ${documentoTrabajoLabel}`}
@@ -5190,12 +5386,12 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
           />
 
           <CierreStatusItem
-            label="Cierre oficial de OM"
+            label={`Cierre oficial de ${documentoTrabajoLabel}`}
             ok={!!form.hora_termino || isClosed}
             detail={
               form.hora_termino || isClosed
                 ? `Cierre registrado: ${form.hora_termino || formatTimeOnly(detalle.hora_termino)}.`
-                : 'Debes ingresar la hora oficial de cierre antes de cerrar o entregar la OM.'
+                : `Debes ingresar la hora oficial de cierre antes de cerrar o entregar la ${documentoTrabajoLabel}.`
             }
           />
 
@@ -5340,16 +5536,18 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
           ) : null}
         </div>
       </div>
+      ) : null}
 
+      {(esFlujoDyfSoftys || enviosEmail.length > 0) ? (
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <SectionTitle
-          title="Historial de envíos de informe OM"
+          title={`Historial de envíos de informe ${documentoTrabajoLabel}`}
           subtitle="Registro de fecha, hora, contacto, correo y estado de cada envío o reenvío."
         />
 
         {enviosEmail.length === 0 ? (
           <div className="mt-5 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-600">
-            Aún no hay envíos registrados para esta OM.
+            Aún no hay envíos registrados para esta {documentoTrabajoLabel}.
           </div>
         ) : (
           <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200">
@@ -5403,6 +5601,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
           </div>
         )}
       </div>
+      ) : null}
 
       {showDeleteModal ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 px-4 py-6">
