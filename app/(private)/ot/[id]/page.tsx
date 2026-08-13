@@ -881,8 +881,6 @@ function OTDetalleContent() {
   const [cierreError, setCierreError] = useState('')
   const [cierreSuccess, setCierreSuccess] = useState('')
   const [deleteError, setDeleteError] = useState('')
-  const [showDeleteModal, setShowDeleteModal] = useState(false)
-  const [deleteMotivo, setDeleteMotivo] = useState('')
 
   const [resumen, setResumen] = useState<OTResumenConEquipo | null>(null)
   const [detalle, setDetalle] = useState<OTDetalle | null>(null)
@@ -2952,48 +2950,50 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
     }
   }
 
-  const handleOpenDeleteModal = () => {
+  const handleDeleteOt = async () => {
     setDeleteError('')
     setCierreError('')
     setCierreSuccess('')
 
-    if (currentRole !== 'admin') {
-      setDeleteError('Solo un administrador puede eliminar la OT.')
+    if (!canDeleteOt) {
+      setDeleteError('Solo un usuario con rol administrativo puede eliminar la OT.')
       return
     }
 
-    setDeleteMotivo('')
-    setShowDeleteModal(true)
-  }
+    if (!detalle) {
+      setDeleteError('No se pudo cargar el detalle de la OT.')
+      return
+    }
 
-  const handleConfirmDeleteOt = async () => {
+    const folio = detalle.folio || resumen?.folio || 'OT'
+    const confirmed = window.confirm(
+      `¿Eliminar ${folio}?\n\n` +
+        'La OT dejará de aparecer en los listados.\n' +
+        'La información se conservará como registro archivado.\n\n' +
+        'Esta acción debe utilizarse solo para OT creadas por error o de prueba.'
+    )
+
+    if (!confirmed) return
+
     try {
       setDeletingOt(true)
-      setDeleteError('')
-      setCierreError('')
-      setCierreSuccess('')
+      const nowIso = new Date().toISOString()
+      const { error: deleteOtError } = await supabase
+        .from('ot_ordenes_trabajo')
+        .update({
+          activo: false,
+          deleted_at: nowIso,
+          deleted_by: currentUserId || null,
+          updated_by: currentUserId || null,
+          updated_at: nowIso,
+        })
+        .eq('id', otId)
+        .eq('empresa_id', detalle.empresa_id)
 
-      if (currentRole !== 'admin') {
-        throw new Error('Solo un administrador puede eliminar la OT.')
+      if (deleteOtError) {
+        throw new Error(`No se pudo eliminar la OT: ${deleteOtError.message}`)
       }
 
-      const motivo = deleteMotivo.trim()
-
-      if (!motivo) {
-        throw new Error('Debes indicar un motivo para eliminar la OT.')
-      }
-
-      const { error } = await supabase.rpc('eliminar_ot_admin', {
-        p_ot_id: otId,
-        p_motivo: motivo,
-      })
-
-      if (error) {
-        throw new Error(`No se pudo eliminar la OT: ${error.message}`)
-      }
-
-      setShowDeleteModal(false)
-      setDeleteMotivo('')
       router.push('/ot')
       router.refresh()
     } catch (err) {
@@ -3117,7 +3117,8 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
   ])
   const isAssignedTechnician = Boolean(currentUserId && form.tecnico_responsable_id === currentUserId)
   const isAssignedSupervisor = Boolean(currentUserId && form.supervisor_id === currentUserId)
-  const canManageOt = adminRoles.has(currentRole) || supervisorRoles.has(currentRole) || isAssignedSupervisor
+  const canDeleteOt = adminRoles.has(currentRole)
+  const canManageOt = canDeleteOt || supervisorRoles.has(currentRole) || isAssignedSupervisor
   const isTechnicianOnly = !canManageOt && (isAssignedTechnician || technicianRoles.has(currentRole))
   const hasTechnicalExecutionFlow = Boolean(
     usaChecklistPorEquipo || isServicioTecnicoSimple || usaChecklistRmsicMespack
@@ -6319,10 +6320,10 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
             </button>
           )}
 
-          {currentRole === 'admin' ? (
+          {canDeleteOt ? (
             <button
               type="button"
-              onClick={handleOpenDeleteModal}
+              onClick={() => void handleDeleteOt()}
               disabled={deletingOt}
               className="inline-flex items-center justify-center rounded-xl border border-red-300 bg-red-50 px-5 py-3 text-sm font-semibold text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-70"
             >
@@ -6398,65 +6399,6 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
       </div>
       ) : null}
 
-      {showDeleteModal ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 px-4 py-6">
-          <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-6 shadow-xl">
-            <div className="space-y-2">
-              <p className="text-sm font-semibold uppercase tracking-wide text-red-600">
-                Eliminacion de OT
-              </p>
-              <h2 className="text-xl font-bold text-slate-900">
-                Eliminar {resumen.folio || 'OT'}
-              </h2>
-              <p className="text-sm text-slate-600">
-                Esta accion ocultara la orden del listado normal, pero conservara
-                su historial, checklist, evidencias, tiempos e informes para auditoria.
-              </p>
-            </div>
-
-            <label className="mt-5 block text-sm font-medium text-slate-700">
-              Motivo de eliminacion *
-              <textarea
-                value={deleteMotivo}
-                onChange={(event) => setDeleteMotivo(event.target.value)}
-                rows={4}
-                className="mt-2 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-red-500 focus:ring-2 focus:ring-red-100"
-                placeholder="Ejemplo: OT creada como prueba, duplicada o ingresada por error."
-              />
-            </label>
-
-            {deleteError ? (
-              <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                {deleteError}
-              </div>
-            ) : null}
-
-            <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-              <button
-                type="button"
-                onClick={() => {
-                  if (deletingOt) return
-                  setShowDeleteModal(false)
-                  setDeleteMotivo('')
-                }}
-                disabled={deletingOt}
-                className="inline-flex items-center justify-center rounded-xl border border-slate-300 px-5 py-3 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-70"
-              >
-                Cancelar
-              </button>
-
-              <button
-                type="button"
-                onClick={() => void handleConfirmDeleteOt()}
-                disabled={deletingOt || !deleteMotivo.trim()}
-                className="inline-flex items-center justify-center rounded-xl bg-red-600 px-5 py-3 text-sm font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-70"
-              >
-                {deletingOt ? 'Eliminando OT...' : 'Confirmar eliminacion'}
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
     </div>
   )
 }
