@@ -7,22 +7,28 @@ drop function if exists public.generar_ingreso_financiero_cotizacion(
 
 create or replace function public.generar_ingreso_financiero_cotizacion(
   p_cotizacion_id uuid,
-  p_numero_oc text,
-  p_fecha_oc date,
-  p_aprobacion_sin_oc boolean,
-  p_tipo_respaldo_aprobacion text,
-  p_referencia_aprobacion text,
+  p_numero_oc text default null,
+  p_fecha_oc date default null,
+  p_aprobacion_sin_oc boolean default false,
+  p_tipo_respaldo_aprobacion text default null,
+  p_referencia_aprobacion text default null,
   p_factura_emitida boolean default false,
   p_numero_factura text default null,
   p_fecha_factura date default null
 )
-returns uuid
+returns table (
+  cotizacion_id uuid,
+  movimiento_id uuid,
+  cuenta_por_cobrar_id uuid,
+  mensaje text
+)
 language plpgsql
 security definer
 set search_path = public, pg_temp
 as $$
 declare
   v_cotizacion public.cotizaciones%rowtype;
+  v_cliente public.clientes%rowtype;
   v_movimiento_id uuid;
   v_cxc_id uuid;
   v_auth_uid uuid := auth.uid();
@@ -51,7 +57,9 @@ begin
     raise exception 'No se encontró la cotización activa indicada.';
   end if;
 
-  -- SECURITY DEFINER no debe saltarse el aislamiento multiempresa del usuario.
+  -- SECURITY DEFINER replica el acceso al módulo "ingresos": ser miembro de la
+  -- empresa no basta; los roles exclusivamente comerciales/técnicos no pueden
+  -- usar este RPC para escribir en finanzas.
   if v_auth_uid is not null
      and not public.es_super_admin()
      and not exists (
@@ -60,12 +68,40 @@ begin
         where ue.usuario_id = v_auth_uid
           and ue.empresa_id = v_cotizacion.empresa_id
           and ue.activo = true
+          and ue.rol in (
+            'admin',
+            'administracion_financiera',
+            'finanzas',
+            'gerencia',
+            'cobranzas',
+            'cobranza'
+          )
      ) then
     raise exception 'No tiene permisos para generar ingresos en esta empresa.';
   end if;
 
   if v_cotizacion.estado <> 'aprobada' then
     raise exception 'La cotización debe estar aprobada para generar el ingreso financiero.';
+  end if;
+
+  if v_cotizacion.cliente_id is null then
+    raise exception 'La cotización debe tener un cliente para generar el ingreso financiero.';
+  end if;
+
+  select cl.*
+    into v_cliente
+    from public.clientes cl
+   where cl.id = v_cotizacion.cliente_id
+     and cl.empresa_id = v_cotizacion.empresa_id
+     and cl.activo = true
+     and cl.deleted_at is null;
+
+  if not found then
+    raise exception 'No se encontró el cliente activo de la cotización.';
+  end if;
+
+  if coalesce(v_cotizacion.total, 0) <= 0 then
+    raise exception 'El total de la cotización debe ser mayor a cero.';
   end if;
 
   -- La relación genérica es la fuente de verdad. El bloqueo de la cotización
@@ -75,14 +111,8 @@ begin
     from public.movimientos m
    where m.empresa_id = v_cotizacion.empresa_id
      and m.tipo_movimiento = 'ingreso'
-     and (
-       (m.origen_tipo = 'cotizacion' and m.origen_id = p_cotizacion_id)
-       or (
-         m.id = v_cotizacion.ingreso_generado_id
-         and m.origen_tipo is null
-         and m.origen_id is null
-       )
-     )
+     and m.origen_tipo = 'cotizacion'
+     and m.origen_id = p_cotizacion_id
      and m.activo = true
      and m.deleted_at is null
      and m.estado <> 'anulado'
@@ -90,15 +120,6 @@ begin
    limit 1;
 
   if v_movimiento_id is not null then
-    -- Los ingresos históricos enlazados solo por ingreso_generado_id se
-    -- normalizan a la relación genérica antes de retornarlos.
-    update public.movimientos
-       set origen_tipo = 'cotizacion',
-           origen_id = v_cotizacion.id
-     where id = v_movimiento_id
-       and origen_tipo is null
-       and origen_id is null;
-
     select cxc.id
       into v_cxc_id
       from public.cuentas_por_cobrar cxc
@@ -109,12 +130,18 @@ begin
       update public.cotizaciones
          set ingreso_generado_id = v_movimiento_id,
              ingreso_generado_at = coalesce(ingreso_generado_at, now()),
-             ingreso_generado_por = coalesce(ingreso_generado_por, v_auth_uid)
+             ingreso_generado_por = coalesce(ingreso_generado_por, v_auth_uid),
+             updated_at = now(),
+             updated_by = v_auth_uid
        where id = v_cotizacion.id;
     end if;
 
-    raise notice 'La cotización ya tenía un ingreso financiero activo.';
-    return v_movimiento_id;
+    return query select
+      v_cotizacion.id,
+      v_movimiento_id,
+      v_cxc_id,
+      'La cotización ya tenía un ingreso financiero activo.'::text;
+    return;
   end if;
 
   if v_numero_oc is null
@@ -155,19 +182,15 @@ begin
     );
   end if;
 
-  select case coalesce(cl.condicion_pago, 'contado')
+  v_dias_credito := case coalesce(v_cliente.condicion_pago, 'contado')
            when '7_dias' then 7
            when '15_dias' then 15
            when '30_dias' then 30
            when '45_dias' then 45
            when '60_dias' then 60
-           when 'personalizado' then greatest(0, coalesce(cl.dias_credito, 0))
+           when 'personalizado' then greatest(0, coalesce(v_cliente.dias_credito, 0))
            else 0
-         end
-    into v_dias_credito
-    from public.clientes cl
-   where cl.id = v_cotizacion.cliente_id
-     and cl.empresa_id = v_cotizacion.empresa_id;
+         end;
 
   v_fecha_vencimiento := v_fecha_base + coalesce(v_dias_credito, 0);
   v_observaciones := concat_ws(E'\n',
@@ -206,13 +229,36 @@ begin
   )
   returning id into v_movimiento_id;
 
-  -- El trigger existente crea la CxC con ON CONFLICT (movimiento_id). Esta
-  -- lectura confirma/reutiliza esa única cuenta sin insertar una segunda.
-  select cxc.id
-    into v_cxc_id
-    from public.cuentas_por_cobrar cxc
-   where cxc.movimiento_id = v_movimiento_id
-   limit 1;
+  -- El trigger puede haber creado primero la CxC. El upsert conserva una sola
+  -- fila por movimiento y completa todos los datos financieros/auditoría.
+  insert into public.cuentas_por_cobrar as cxc (
+    empresa_id, movimiento_id, cliente_id, fecha_emision, fecha_vencimiento,
+    monto_total, monto_pagado, saldo_pendiente, estado, activo,
+    created_by, updated_at, updated_by
+  ) values (
+    v_cotizacion.empresa_id, v_movimiento_id, v_cotizacion.cliente_id,
+    v_fecha_base, v_fecha_vencimiento, v_cotizacion.total, 0,
+    v_cotizacion.total,
+    case when v_fecha_vencimiento < current_date then 'vencido' else 'pendiente' end,
+    true, v_auth_uid, now(), v_auth_uid
+  )
+  on conflict (movimiento_id) do update
+     set empresa_id = excluded.empresa_id,
+         cliente_id = excluded.cliente_id,
+         fecha_emision = excluded.fecha_emision,
+         fecha_vencimiento = excluded.fecha_vencimiento,
+         monto_total = excluded.monto_total,
+         saldo_pendiente = greatest(excluded.monto_total - coalesce(cxc.monto_pagado, 0), 0),
+         estado = case
+           when coalesce(cxc.monto_pagado, 0) >= excluded.monto_total then 'pagado'
+           when coalesce(cxc.monto_pagado, 0) > 0 then 'parcial'
+           when excluded.fecha_vencimiento < current_date then 'vencido'
+           else 'pendiente'
+         end,
+         activo = true,
+         updated_at = now(),
+         updated_by = v_auth_uid
+  returning cxc.id into v_cxc_id;
 
   update public.cotizaciones
      set numero_oc = v_numero_oc,
@@ -220,12 +266,20 @@ begin
          aprobacion_sin_oc = coalesce(p_aprobacion_sin_oc, false),
          tipo_respaldo_aprobacion = v_tipo_respaldo,
          referencia_aprobacion = v_referencia,
+         fecha_aceptacion = coalesce(fecha_aceptacion, now()),
          ingreso_generado_id = v_movimiento_id,
          ingreso_generado_at = now(),
-         ingreso_generado_por = v_auth_uid
+         ingreso_generado_por = v_auth_uid,
+         updated_at = now(),
+         updated_by = v_auth_uid
    where id = v_cotizacion.id;
 
-  return v_movimiento_id;
+  return query select
+    v_cotizacion.id,
+    v_movimiento_id,
+    v_cxc_id,
+    'Ingreso financiero generado correctamente.'::text;
+  return;
 end;
 $$;
 

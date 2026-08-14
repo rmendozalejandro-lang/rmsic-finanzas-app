@@ -91,6 +91,13 @@ type AprobacionFinancieraForm = {
   fecha_factura: string;
 };
 
+type IngresoFinancieroCotizacionResult = {
+  cotizacion_id: string;
+  movimiento_id: string;
+  cuenta_por_cobrar_id: string | null;
+  mensaje: string;
+};
+
 function createEmptyItem(): CotizacionFormItem {
   return {
     uid:
@@ -947,8 +954,12 @@ export default function CotizacionForm({
           return;
         }
 
-        if (typeof ingresoData === "string") {
-          setIngresoGeneradoId(ingresoData);
+        const ingresoGenerado = (
+          ingresoData as IngresoFinancieroCotizacionResult[] | null
+        )?.[0];
+
+        if (ingresoGenerado?.movimiento_id) {
+          setIngresoGeneradoId(ingresoGenerado.movimiento_id);
         }
       }
 
