@@ -104,22 +104,45 @@ begin
     raise exception 'El total de la cotización debe ser mayor a cero.';
   end if;
 
-  -- La relación genérica es la fuente de verdad. El bloqueo de la cotización
-  -- serializa llamadas simultáneas y hace idempotente la búsqueda + inserción.
+  -- La relación genérica es la fuente de verdad. Como fallback se admite el
+  -- vínculo histórico ingreso_generado_id únicamente si el movimiento todavía
+  -- no tiene origen; nunca se reasigna un movimiento asociado a otro origen.
+  -- El bloqueo de la cotización serializa llamadas simultáneas.
   select m.id
     into v_movimiento_id
     from public.movimientos m
    where m.empresa_id = v_cotizacion.empresa_id
      and m.tipo_movimiento = 'ingreso'
-     and m.origen_tipo = 'cotizacion'
-     and m.origen_id = p_cotizacion_id
+     and (
+       (m.origen_tipo = 'cotizacion' and m.origen_id = p_cotizacion_id)
+       or (
+         m.id = v_cotizacion.ingreso_generado_id
+         and m.origen_tipo is null
+         and m.origen_id is null
+       )
+     )
      and m.activo = true
      and m.deleted_at is null
      and m.estado <> 'anulado'
-   order by m.created_at
+   order by
+     case
+       when m.origen_tipo = 'cotizacion' and m.origen_id = p_cotizacion_id then 0
+       else 1
+     end,
+     m.created_at
    limit 1;
 
   if v_movimiento_id is not null then
+    -- Normaliza solamente el fallback histórico sin modificar sus montos,
+    -- estado ni demás información financiera.
+    update public.movimientos
+       set origen_tipo = 'cotizacion',
+           origen_id = v_cotizacion.id
+     where id = v_movimiento_id
+       and empresa_id = v_cotizacion.empresa_id
+       and origen_tipo is null
+       and origen_id is null;
+
     select cxc.id
       into v_cxc_id
       from public.cuentas_por_cobrar cxc
