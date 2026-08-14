@@ -79,11 +79,6 @@ type Props = {
 
 type RespaldoAprobacionTipo = "" | "orden_compra" | "correo" | "whatsapp" | "contrato" | "verbal" | "otro";
 
-type MovimientoCotizacionGenerado = {
-  id: string;
-  estado: string | null;
-};
-
 type AprobacionFinancieraForm = {
   numero_oc: string;
   fecha_oc: string;
@@ -91,6 +86,9 @@ type AprobacionFinancieraForm = {
   tipo_respaldo_aprobacion: RespaldoAprobacionTipo;
   referencia_aprobacion: string;
   generar_ingreso_financiero: boolean;
+  factura_emitida: boolean;
+  numero_factura: string;
+  fecha_factura: string;
 };
 
 function createEmptyItem(): CotizacionFormItem {
@@ -117,10 +115,6 @@ function sanitizeDecimalInput(value: string) {
 
   if (parts.length <= 1) return cleaned;
   return `${parts[0]}.${parts.slice(1).join("")}`;
-}
-
-function isMovimientoActivo(estado?: string | null) {
-  return (estado || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim() !== 'anulado';
 }
 
 function toNumber(value: string) {
@@ -359,6 +353,9 @@ export default function CotizacionForm({
       referencia_aprobacion: initialValues.referencia_aprobacion ?? "",
       generar_ingreso_financiero:
         initialValues.estado === "aprobada" && !initialValues.ingreso_generado_id,
+      factura_emitida: false,
+      numero_factura: "",
+      fecha_factura: "",
     });
 
   const summary = useMemo(() => {
@@ -446,6 +443,9 @@ export default function CotizacionForm({
         referencia_aprobacion:
           data.referencia_aprobacion ?? prev.referencia_aprobacion,
         generar_ingreso_financiero: !data.ingreso_generado_id,
+        factura_emitida: false,
+        numero_factura: "",
+        fecha_factura: "",
       }));
     }
 
@@ -597,6 +597,24 @@ export default function CotizacionForm({
           setError(
             "Para generar el ingreso financiero debes ingresar una OC o marcar aprobación sin OC con tipo y referencia de respaldo."
           );
+          setSaving(false);
+          return;
+        }
+
+        if (
+          aprobacionFinanciera.factura_emitida &&
+          !aprobacionFinanciera.numero_factura.trim()
+        ) {
+          setError("Debe ingresar el número de factura.");
+          setSaving(false);
+          return;
+        }
+
+        if (
+          aprobacionFinanciera.factura_emitida &&
+          !aprobacionFinanciera.fecha_factura
+        ) {
+          setError("Debe ingresar la fecha de la factura.");
           setSaving(false);
           return;
         }
@@ -899,60 +917,6 @@ export default function CotizacionForm({
         aprobacionFinanciera.generar_ingreso_financiero &&
         !ingresoGeneradoId
       ) {
-        const { data: cotizacionFinanciera, error: cotizacionFinancieraError } = await supabase
-          .from("cotizaciones")
-          .select("ingreso_generado_id")
-          .eq("id", savedId)
-          .eq("empresa_id", empresaId)
-          .maybeSingle();
-
-        if (cotizacionFinancieraError) {
-          setError(
-            cotizacionFinancieraError.message ||
-              "La cotización fue guardada, pero no se pudo validar si ya tenía un ingreso financiero generado."
-          );
-          setSaving(false);
-          return;
-        }
-
-        if (cotizacionFinanciera?.ingreso_generado_id) {
-          setIngresoGeneradoId(cotizacionFinanciera.ingreso_generado_id);
-          setError(
-            "La cotización ya tiene un ingreso financiero generado. No se creó un movimiento duplicado."
-          );
-          setSaving(false);
-          return;
-        }
-
-        const { data: movimientosCotizacion, error: movimientosCotizacionError } = await supabase
-          .from("movimientos")
-          .select("id,estado")
-          .eq("empresa_id", empresaId)
-          .eq("tipo_movimiento", "ingreso")
-          .eq("cotizacion_id", savedId);
-
-        if (movimientosCotizacionError) {
-          setError(
-            movimientosCotizacionError.message ||
-              "La cotización fue guardada, pero no se pudo verificar si ya existían ingresos para esta cotización."
-          );
-          setSaving(false);
-          return;
-        }
-
-        const ingresoActivoExistente = ((movimientosCotizacion ?? []) as MovimientoCotizacionGenerado[]).find((movimiento) =>
-          isMovimientoActivo(movimiento.estado)
-        );
-
-        if (ingresoActivoExistente) {
-          setIngresoGeneradoId(ingresoActivoExistente.id);
-          setError(
-            "La cotización ya tiene un ingreso financiero activo. No se creó un movimiento duplicado."
-          );
-          setSaving(false);
-          return;
-        }
-
         const { data: ingresoData, error: ingresoError } = await supabase.rpc(
           "generar_ingreso_financiero_cotizacion",
           {
@@ -964,6 +928,13 @@ export default function CotizacionForm({
               aprobacionFinanciera.tipo_respaldo_aprobacion || null,
             p_referencia_aprobacion:
               aprobacionFinanciera.referencia_aprobacion.trim() || null,
+            p_factura_emitida: aprobacionFinanciera.factura_emitida,
+            p_numero_factura: aprobacionFinanciera.factura_emitida
+              ? aprobacionFinanciera.numero_factura.trim() || null
+              : null,
+            p_fecha_factura: aprobacionFinanciera.factura_emitida
+              ? aprobacionFinanciera.fecha_factura || null
+              : null,
           }
         );
 
@@ -1259,7 +1230,7 @@ export default function CotizacionForm({
                     ) : null}
 
                     {puedeGenerarIngresoFinanciero ? (
-                      <div className="md:col-span-2">
+                      <div className="md:col-span-2 space-y-3">
                         <label className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
                           <input
                             type="checkbox"
@@ -1284,6 +1255,73 @@ export default function CotizacionForm({
                             </span>
                           </span>
                         </label>
+
+                        {aprobacionFinanciera.generar_ingreso_financiero ? (
+                          <>
+                            <label className="flex items-start gap-2 rounded-xl border border-sky-200 bg-white p-3 text-sm text-slate-700">
+                              <input
+                                type="checkbox"
+                                checked={aprobacionFinanciera.factura_emitida}
+                                onChange={(e) =>
+                                  updateAprobacionFinanciera(
+                                    "factura_emitida",
+                                    e.target.checked
+                                  )
+                                }
+                                className="mt-1"
+                              />
+                              <span>
+                                <span className="font-semibold">
+                                  Factura ya emitida
+                                </span>
+                                <span className="block text-xs text-slate-500">
+                                  Márcalo solo si la factura ya fue emitida. Tralixia
+                                  registrará sus datos en el ingreso financiero, pero no
+                                  emitirá la factura.
+                                </span>
+                              </span>
+                            </label>
+
+                            {aprobacionFinanciera.factura_emitida ? (
+                              <div className="grid gap-4 md:grid-cols-2">
+                                <div>
+                                  <label className="mb-2 block text-sm font-medium text-slate-700">
+                                    N° factura <span aria-hidden="true">*</span>
+                                  </label>
+                                  <input
+                                    value={aprobacionFinanciera.numero_factura}
+                                    onChange={(e) =>
+                                      updateAprobacionFinanciera(
+                                        "numero_factura",
+                                        e.target.value
+                                      )
+                                    }
+                                    required
+                                    placeholder="Ejemplo: 12345"
+                                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="mb-2 block text-sm font-medium text-slate-700">
+                                    Fecha factura <span aria-hidden="true">*</span>
+                                  </label>
+                                  <input
+                                    type="date"
+                                    value={aprobacionFinanciera.fecha_factura}
+                                    onChange={(e) =>
+                                      updateAprobacionFinanciera(
+                                        "fecha_factura",
+                                        e.target.value
+                                      )
+                                    }
+                                    required
+                                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                                  />
+                                </div>
+                              </div>
+                            ) : null}
+                          </>
+                        ) : null}
                       </div>
                     ) : null}
                   </div>
