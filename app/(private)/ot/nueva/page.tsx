@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import ProtectedModuleRoute from "../../../../components/ProtectedModuleRoute";
 import ClienteQuickCreateModal, {
   type ClienteQuickCreated,
@@ -12,6 +12,19 @@ import { supabase } from "../../../../lib/supabase/client";
 type ClienteOption = {
   id: string;
   nombre: string;
+};
+
+type CotizacionOrigen = {
+  id: string;
+  empresa_id: string;
+  cliente_id: string | null;
+  contacto_id: string | null;
+  codigo: string | null;
+  titulo: string | null;
+  descripcion: string | null;
+  estado: string;
+  activo: boolean;
+  deleted_at: string | null;
 };
 
 type ClienteContactoOption = {
@@ -364,12 +377,17 @@ function buildSupervisorLabel(item: PerfilRow) {
 
 function NuevaOTContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const cotizacionOrigenId = searchParams.get("cotizacion_id")?.trim() || "";
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [warning, setWarning] = useState("");
+  const [cotizacionOrigen, setCotizacionOrigen] = useState<CotizacionOrigen | null>(null);
+  const [origenError, setOrigenError] = useState("");
+  const [otCreadaSinRelacionId, setOtCreadaSinRelacionId] = useState("");
 
   const [empresaActivaId, setEmpresaActivaId] = useState("");
   const [empresaActivaNombre, setEmpresaActivaNombre] = useState("");
@@ -534,6 +552,36 @@ function NuevaOTContent() {
 
         if (!user) {
           throw new Error("No hay usuario autenticado.");
+        }
+
+        let origen: CotizacionOrigen | null = null;
+        if (cotizacionOrigenId) {
+          const { data: origenData, error: origenQueryError } = await supabase
+            .from("cotizaciones")
+            .select("id, empresa_id, cliente_id, contacto_id, codigo, titulo, descripcion, estado, activo, deleted_at")
+            .eq("id", cotizacionOrigenId)
+            .maybeSingle();
+
+          if (origenQueryError) {
+            throw new Error(`No se pudo validar la cotización de origen: ${origenQueryError.message}`);
+          }
+          if (!origenData) {
+            throw new Error("La cotización de origen no existe o no está disponible para la empresa activa.");
+          }
+
+          origen = origenData as CotizacionOrigen;
+          if (origen.empresa_id !== storedEmpresaId) {
+            throw new Error("La cotización de origen pertenece a otra empresa y no puede usarse para crear esta OT.");
+          }
+          if (!origen.activo || origen.deleted_at !== null) {
+            throw new Error("La cotización de origen no está activa.");
+          }
+          if (origen.estado !== "aprobada") {
+            throw new Error("Solo se puede crear una OT desde una cotización aprobada.");
+          }
+          if (!origen.cliente_id) {
+            throw new Error("La cotización de origen no tiene un cliente asociado.");
+          }
         }
 
         const [
@@ -862,6 +910,12 @@ function NuevaOTContent() {
 
         const tecnicoActual = tecnicosData.find((item) => item.id === user.id);
 
+        const contactoOrigen = origen?.contacto_id
+          ? contactosData.find(
+              (item) => item.id === origen?.contacto_id && item.cliente_id === origen?.cliente_id,
+            ) ?? null
+          : null;
+
         if (!active) return;
 
         setClientes(clientesData);
@@ -873,6 +927,8 @@ function NuevaOTContent() {
         setTecnicos(tecnicosData);
         setSupervisores(supervisoresData);
         setWarning(nextWarning);
+        setCotizacionOrigen(origen);
+        setOrigenError("");
 
         const tipoPredeterminado = tiposData[0] ?? null;
         const plantillaDesdeTipo = findPlantillaForTipo(
@@ -914,14 +970,19 @@ function NuevaOTContent() {
             tipoPredeterminado,
             plantillaPredeterminadaData,
           ),
+          cliente_id: origen?.cliente_id || prev.cliente_id,
+          contacto_cliente_id: contactoOrigen?.id || "",
+          contacto_cliente_email: contactoOrigen?.email || "",
+          contacto_cliente_nombre: contactoOrigen?.nombre || "",
+          contacto_cliente_cargo: contactoOrigen?.cargo || "",
+          titulo: origen?.titulo ?? prev.titulo,
+          descripcion_solicitud: origen?.descripcion ?? prev.descripcion_solicitud,
         }));
       } catch (err) {
         if (!active) return;
-        setError(
-          err instanceof Error
-            ? err.message
-            : "No se pudo cargar la información inicial.",
-        );
+        const message = err instanceof Error ? err.message : "No se pudo cargar la información inicial.";
+        if (cotizacionOrigenId) setOrigenError(message);
+        else setError(message);
       } finally {
         if (active) {
           setLoading(false);
@@ -934,7 +995,7 @@ function NuevaOTContent() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [cotizacionOrigenId]);
 
   useEffect(() => {
     if (plantillaRequiereChecklist) {
@@ -1093,6 +1154,12 @@ function NuevaOTContent() {
   };
 
   const validateForm = () => {
+    if (otCreadaSinRelacionId) {
+      return "La OT ya fue creada. No vuelvas a enviar el formulario; revisa la OT y repara su relación secundaria.";
+    }
+    if (cotizacionOrigenId && (!cotizacionOrigen || origenError)) {
+      return origenError || "No se pudo validar la cotización de origen.";
+    }
     if (!form.empresa_id) {
       return "No se detectó empresa activa.";
     }
@@ -1150,6 +1217,25 @@ function NuevaOTContent() {
 
       if (!user) {
         throw new Error("No hay usuario autenticado.");
+      }
+
+      if (cotizacionOrigen) {
+        const { data: origenVigente, error: origenVigenteError } = await supabase
+          .from("cotizaciones")
+          .select("id")
+          .eq("id", cotizacionOrigen.id)
+          .eq("empresa_id", form.empresa_id)
+          .eq("estado", "aprobada")
+          .eq("activo", true)
+          .is("deleted_at", null)
+          .not("cliente_id", "is", null)
+          .maybeSingle();
+
+        if (origenVigenteError || !origenVigente) {
+          throw new Error(
+            "La cotización de origen dejó de estar disponible, activa o aprobada. No se creó la OT.",
+          );
+        }
       }
 
       const requiereChecklist = esFlujoDyfSoftys
@@ -1243,6 +1329,7 @@ function NuevaOTContent() {
           form.empresa_id,
         )?.id ?? null,
         created_by: user.id,
+        cotizacion_id: cotizacionOrigen?.id ?? null,
       };
 
       const { data, error: insertError } = await supabase
@@ -1253,6 +1340,27 @@ function NuevaOTContent() {
 
       if (insertError) {
         throw new Error(`No se pudo crear la OT: ${insertError.message}`);
+      }
+
+      if (cotizacionOrigen) {
+        const { error: relacionError } = await supabase
+          .from("cotizacion_ot_relaciones")
+          .insert({
+            empresa_id: cotizacionOrigen.empresa_id,
+            cotizacion_id: cotizacionOrigen.id,
+            ot_id: data.id,
+            tipo_relacion: "origen_ot",
+            monto_asociado: null,
+            observacion: null,
+            activo: true,
+          });
+
+        if (relacionError) {
+          setOtCreadaSinRelacionId(data.id);
+          throw new Error(
+            `La OT fue creada correctamente, pero falló registrar la relación secundaria con la cotización: ${relacionError.message}. La OT conserva su cotizacion_id y requiere reparar la relación.`,
+          );
+        }
       }
 
       // Los checklists por equipo se preparan después, cuando el supervisor agrega los motores/equipos a la OM.
@@ -1299,6 +1407,25 @@ function NuevaOTContent() {
           </Link>
         </div>
       </div>
+
+      {cotizacionOrigen ? (
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 text-emerald-950 shadow-sm">
+          <h2 className="font-semibold">
+            Creando OT desde cotización {cotizacionOrigen.codigo || cotizacionOrigen.id}
+          </h2>
+          <p className="mt-1 text-sm">
+            Cliente: {clientes.find((item) => item.id === cotizacionOrigen.cliente_id)?.nombre || "Cliente asociado"}
+          </p>
+          <p className="mt-1 text-sm">La OT quedará vinculada automáticamente a esta cotización.</p>
+          <Link href={`/cotizaciones/${cotizacionOrigen.id}`} className="mt-3 inline-flex text-sm font-semibold text-emerald-800 underline">
+            Ver cotización
+          </Link>
+        </div>
+      ) : origenError ? (
+        <div className="rounded-2xl border border-red-200 bg-red-50 p-5 text-sm font-medium text-red-700 shadow-sm">
+          {origenError} No se creará una OT relacionada.
+        </div>
+      ) : null}
 
       {loading ? (
         <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -1945,6 +2072,12 @@ function NuevaOTContent() {
             </div>
           ) : null}
 
+          {otCreadaSinRelacionId ? (
+            <Link href={`/ot/${otCreadaSinRelacionId}`} className="inline-flex text-sm font-semibold text-blue-700 underline">
+              Ver la OT creada
+            </Link>
+          ) : null}
+
           {success ? (
             <div className="rounded-2xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
               {success}
@@ -1954,7 +2087,7 @@ function NuevaOTContent() {
           <div className="flex flex-col gap-3 sm:flex-row">
             <button
               type="submit"
-              disabled={saving}
+              disabled={saving || Boolean(otCreadaSinRelacionId) || Boolean(origenError)}
               className="inline-flex items-center justify-center rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70"
             >
               {saving ? "Creando OT..." : "Crear OT"}
@@ -1986,7 +2119,9 @@ function NuevaOTContent() {
 export default function NuevaOTPage() {
   return (
     <ProtectedModuleRoute moduleKey="ot">
-      <NuevaOTContent />
+      <Suspense fallback={<div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">Cargando formulario...</div>}>
+        <NuevaOTContent />
+      </Suspense>
     </ProtectedModuleRoute>
   );
 }

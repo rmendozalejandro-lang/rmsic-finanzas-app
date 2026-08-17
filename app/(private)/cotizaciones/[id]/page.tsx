@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase/client'
 import { getEmpresaLogoSrc } from '@/lib/empresa-branding'
 import ProtectedCotizacionesRoute from '@/components/ProtectedCotizacionesRoute'
 import CotizacionOtRelacionesPanel from '@/components/comercial/CotizacionOtRelacionesPanel'
+import { canAccessModule } from '@/lib/auth/permissions'
 
 const STORAGE_ID_KEY = 'empresa_activa_id'
 const STORAGE_NAME_KEY = 'empresa_activa_nombre'
@@ -60,6 +61,8 @@ type Cotizacion = {
   ejecutivo_telefono: string | null
   created_at: string | null
   updated_at: string | null
+  activo: boolean
+  deleted_at: string | null
 }
 
 type CotizacionItem = {
@@ -270,6 +273,7 @@ export default function CotizacionDetallePage() {
   const [error, setError] = useState('')
 
   const [isAdmin, setIsAdmin] = useState(false)
+  const [puedeCrearOt, setPuedeCrearOt] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleteMotivo, setDeleteMotivo] = useState('')
   const [deleteError, setDeleteError] = useState('')
@@ -337,6 +341,7 @@ export default function CotizacionDetallePage() {
         }
 
         setIsAdmin(rolData?.rol === 'admin')
+        setPuedeCrearOt(canAccessModule(rolData?.rol, 'ot'))
 
         const cotizacionResp = await fetch(
           `${baseUrl}/rest/v1/cotizaciones?id=eq.${cotizacionId}&empresa_id=eq.${empresaActivaId}&activo=eq.true&deleted_at=is.null&select=*`,
@@ -1125,6 +1130,15 @@ export default function CotizacionDetallePage() {
           empresaId={empresaActivaId}
           clienteId={cotizacion.cliente_id}
           puedeAdministrar={isAdmin}
+          crearOtHref={
+            cotizacion.activo &&
+            cotizacion.deleted_at == null &&
+            cotizacion.estado === 'aprobada' &&
+            cotizacion.cliente_id &&
+            puedeCrearOt
+              ? `/ot/nueva?cotizacion_id=${encodeURIComponent(cotizacion.id)}`
+              : undefined
+          }
         />
       </div>
     </ProtectedCotizacionesRoute>

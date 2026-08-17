@@ -8,6 +8,7 @@ type Props = {
   empresaId: string
   clienteId: string | null
   puedeAdministrar?: boolean
+  crearOtHref?: string
 } & (
   | { modo: 'cotizacion'; cotizacionId: string }
   | { modo: 'ot'; otId: string }
@@ -97,7 +98,7 @@ export default function CotizacionOtRelacionesPanel(props: Props) {
   const [unlinkingId, setUnlinkingId] = useState<string | null>(null)
   const searchRequestId = useRef(0)
 
-  const { modo, empresaId, clienteId, puedeAdministrar = false } = props
+  const { modo, empresaId, clienteId, puedeAdministrar = false, crearOtHref } = props
   const registroId = modo === 'cotizacion' ? props.cotizacionId : props.otId
 
   const loadRelaciones = useCallback(async () => {
@@ -276,12 +277,20 @@ export default function CotizacionOtRelacionesPanel(props: Props) {
             La relación Cotización ↔ OT es opcional y se muestra solo como referencia.
           </p>
         </div>
-        {puedeAdministrar && clienteId ? (
-          <button type="button" onClick={abrirModal}
-            className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">
-            {modo === 'cotizacion' ? 'Vincular OT' : 'Vincular cotización'}
-          </button>
-        ) : null}
+        <div className="flex flex-wrap gap-2">
+          {modo === 'cotizacion' && crearOtHref ? (
+            <Link href={crearOtHref}
+              className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700">
+              Crear OT desde cotización
+            </Link>
+          ) : null}
+          {puedeAdministrar && clienteId ? (
+            <button type="button" onClick={abrirModal}
+              className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">
+              {modo === 'cotizacion' ? 'Vincular OT' : 'Vincular cotización'}
+            </button>
+          ) : null}
+        </div>
       </div>
 
       {!clienteId ? (
