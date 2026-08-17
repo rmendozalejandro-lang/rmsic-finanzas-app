@@ -60,6 +60,8 @@ type Cotizacion = {
   ejecutivo_telefono: string | null
   created_at: string | null
   updated_at: string | null
+  activo: boolean
+  deleted_at: string | null
 }
 
 type CotizacionItem = {
@@ -270,6 +272,7 @@ export default function CotizacionDetallePage() {
   const [error, setError] = useState('')
 
   const [isAdmin, setIsAdmin] = useState(false)
+  const [puedeCrearOt, setPuedeCrearOt] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleteMotivo, setDeleteMotivo] = useState('')
   const [deleteError, setDeleteError] = useState('')
@@ -337,6 +340,19 @@ export default function CotizacionDetallePage() {
         }
 
         setIsAdmin(rolData?.rol === 'admin')
+
+        const { data: puedeAdministrarEmpresa, error: permisoOtError } =
+          await supabase.rpc('puede_administrar_empresa', {
+            p_empresa_id: empresaActivaId,
+          })
+
+        if (permisoOtError) {
+          console.error(
+            'No se pudo validar el permiso para crear OT desde cotización:',
+            permisoOtError
+          )
+        }
+        setPuedeCrearOt(!permisoOtError && Boolean(puedeAdministrarEmpresa))
 
         const cotizacionResp = await fetch(
           `${baseUrl}/rest/v1/cotizaciones?id=eq.${cotizacionId}&empresa_id=eq.${empresaActivaId}&activo=eq.true&deleted_at=is.null&select=*`,
@@ -1125,6 +1141,15 @@ export default function CotizacionDetallePage() {
           empresaId={empresaActivaId}
           clienteId={cotizacion.cliente_id}
           puedeAdministrar={isAdmin}
+          crearOtHref={
+            cotizacion.activo &&
+            cotizacion.deleted_at == null &&
+            cotizacion.estado === 'aprobada' &&
+            cotizacion.cliente_id &&
+            puedeCrearOt
+              ? `/ot/nueva?cotizacion_id=${encodeURIComponent(cotizacion.id)}`
+              : undefined
+          }
         />
       </div>
     </ProtectedCotizacionesRoute>
