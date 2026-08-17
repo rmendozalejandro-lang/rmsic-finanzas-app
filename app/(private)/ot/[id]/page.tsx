@@ -4635,7 +4635,18 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
             </div>
           ) : null}
 
-          <CotizacionOtRelacionesPanel modo="ot" otId={detalle.id} empresaId={detalle.empresa_id} clienteId={detalle.cliente_id} puedeAdministrar={adminRoles.has(currentRole)} />
+          <CotizacionOtRelacionesPanel
+            modo="ot"
+            otId={detalle.id}
+            empresaId={detalle.empresa_id}
+            clienteId={detalle.cliente_id}
+            puedeAdministrar={adminRoles.has(currentRole)}
+            crearCotizacionHref={
+              currentRole === 'admin' && detalle.cliente_id
+                ? `/cotizaciones/nueva?ot_id=${encodeURIComponent(detalle.id)}`
+                : undefined
+            }
+          />
         </>
       ) : (
         <>
@@ -4724,6 +4735,11 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
         empresaId={detalle.empresa_id}
         clienteId={detalle.cliente_id}
         puedeAdministrar={adminRoles.has(currentRole)}
+        crearCotizacionHref={
+          currentRole === 'admin' && detalle.cliente_id
+            ? `/cotizaciones/nueva?ot_id=${encodeURIComponent(detalle.id)}`
+            : undefined
+        }
       />
 
 
