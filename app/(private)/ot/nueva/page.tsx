@@ -556,6 +556,17 @@ function NuevaOTContent() {
 
         let origen: CotizacionOrigen | null = null;
         if (cotizacionOrigenId) {
+          const { data: puedeAdministrarEmpresa, error: permisoOrigenError } =
+            await supabase.rpc("puede_administrar_empresa", {
+              p_empresa_id: storedEmpresaId,
+            });
+
+          if (permisoOrigenError || !puedeAdministrarEmpresa) {
+            throw new Error(
+              "No tienes permiso para crear una OT desde una cotización en la empresa activa.",
+            );
+          }
+
           const { data: origenData, error: origenQueryError } = await supabase
             .from("cotizaciones")
             .select("id, empresa_id, cliente_id, contacto_id, codigo, titulo, descripcion, estado, activo, deleted_at")
@@ -1084,6 +1095,8 @@ function NuevaOTContent() {
     }
 
     if (field === "cliente_id") {
+      if (cotizacionOrigen) return;
+
       const clienteId = String(value || "");
 
       setForm((prev) => ({
@@ -1167,6 +1180,19 @@ function NuevaOTContent() {
     if (!form.cliente_id) {
       return "Debes seleccionar un cliente.";
     }
+    if (cotizacionOrigen && form.cliente_id !== cotizacionOrigen.cliente_id) {
+      return "El cliente de la OT debe coincidir con el cliente de la cotización de origen. Recarga el formulario.";
+    }
+    if (
+      form.contacto_cliente_id &&
+      !contactosCliente.some(
+        (contacto) =>
+          contacto.id === form.contacto_cliente_id &&
+          contacto.cliente_id === form.cliente_id,
+      )
+    ) {
+      return "El contacto seleccionado no corresponde al cliente de la OT.";
+    }
 
     if (!form.plantilla_id) {
       return "No se detectó una plantilla OT para la empresa activa.";
@@ -1220,20 +1246,48 @@ function NuevaOTContent() {
       }
 
       if (cotizacionOrigen) {
+        const { data: puedeAdministrarEmpresa, error: permisoOrigenError } =
+          await supabase.rpc("puede_administrar_empresa", {
+            p_empresa_id: form.empresa_id,
+          });
+
+        if (permisoOrigenError || !puedeAdministrarEmpresa) {
+          throw new Error(
+            "Ya no tienes permiso para crear una OT desde esta cotización. No se creó la OT.",
+          );
+        }
+
         const { data: origenVigente, error: origenVigenteError } = await supabase
           .from("cotizaciones")
-          .select("id")
+          .select("id, empresa_id, cliente_id, estado, activo, deleted_at")
           .eq("id", cotizacionOrigen.id)
-          .eq("empresa_id", form.empresa_id)
-          .eq("estado", "aprobada")
-          .eq("activo", true)
-          .is("deleted_at", null)
-          .not("cliente_id", "is", null)
           .maybeSingle();
 
         if (origenVigenteError || !origenVigente) {
           throw new Error(
-            "La cotización de origen dejó de estar disponible, activa o aprobada. No se creó la OT.",
+            "La cotización de origen dejó de estar disponible. No se creó la OT.",
+          );
+        }
+        if (origenVigente.empresa_id !== form.empresa_id) {
+          throw new Error(
+            "La cotización de origen no pertenece a la empresa activa. No se creó la OT.",
+          );
+        }
+        if (
+          !origenVigente.activo ||
+          origenVigente.deleted_at !== null ||
+          origenVigente.estado !== "aprobada"
+        ) {
+          throw new Error(
+            "La cotización de origen dejó de estar activa o aprobada. No se creó la OT.",
+          );
+        }
+        if (
+          !origenVigente.cliente_id ||
+          origenVigente.cliente_id !== form.cliente_id
+        ) {
+          throw new Error(
+            "El cliente de la cotización cambió mientras el formulario estaba abierto. Recarga el formulario antes de crear la OT.",
           );
         }
       }
@@ -1483,18 +1537,21 @@ function NuevaOTContent() {
                   <label className="block text-sm font-medium text-slate-700">
                     Cliente / Mandante *
                   </label>
-                  <button
-                    type="button"
-                    onClick={openClienteModal}
-                    className="inline-flex items-center rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
-                  >
-                    + Nuevo cliente
-                  </button>
+                  {!cotizacionOrigen ? (
+                    <button
+                      type="button"
+                      onClick={openClienteModal}
+                      className="inline-flex items-center rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                    >
+                      + Nuevo cliente
+                    </button>
+                  ) : null}
                 </div>
                 <select
                   value={form.cliente_id}
                   onChange={(e) => handleChange("cliente_id", e.target.value)}
-                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
+                  disabled={Boolean(cotizacionOrigen)}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500 disabled:cursor-not-allowed disabled:bg-slate-100"
                 >
                   <option value="">Selecciona un cliente</option>
                   {clientes.map((cliente) => (
@@ -1504,8 +1561,9 @@ function NuevaOTContent() {
                   ))}
                 </select>
                 <p className="mt-1 text-xs text-slate-500">
-                  Puedes crear un cliente o mandante sin salir del flujo de la
-                  OT.
+                  {cotizacionOrigen
+                    ? "El cliente está definido por la cotización de origen y no puede cambiarse."
+                    : "Puedes crear un cliente o mandante sin salir del flujo de la OT."}
                 </p>
               </div>
 

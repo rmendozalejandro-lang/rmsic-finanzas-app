@@ -7,7 +7,6 @@ import { supabase } from '@/lib/supabase/client'
 import { getEmpresaLogoSrc } from '@/lib/empresa-branding'
 import ProtectedCotizacionesRoute from '@/components/ProtectedCotizacionesRoute'
 import CotizacionOtRelacionesPanel from '@/components/comercial/CotizacionOtRelacionesPanel'
-import { canAccessModule } from '@/lib/auth/permissions'
 
 const STORAGE_ID_KEY = 'empresa_activa_id'
 const STORAGE_NAME_KEY = 'empresa_activa_nombre'
@@ -341,7 +340,19 @@ export default function CotizacionDetallePage() {
         }
 
         setIsAdmin(rolData?.rol === 'admin')
-        setPuedeCrearOt(canAccessModule(rolData?.rol, 'ot'))
+
+        const { data: puedeAdministrarEmpresa, error: permisoOtError } =
+          await supabase.rpc('puede_administrar_empresa', {
+            p_empresa_id: empresaActivaId,
+          })
+
+        if (permisoOtError) {
+          console.error(
+            'No se pudo validar el permiso para crear OT desde cotización:',
+            permisoOtError
+          )
+        }
+        setPuedeCrearOt(!permisoOtError && Boolean(puedeAdministrarEmpresa))
 
         const cotizacionResp = await fetch(
           `${baseUrl}/rest/v1/cotizaciones?id=eq.${cotizacionId}&empresa_id=eq.${empresaActivaId}&activo=eq.true&deleted_at=is.null&select=*`,
