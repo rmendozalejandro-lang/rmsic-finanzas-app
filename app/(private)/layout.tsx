@@ -1073,7 +1073,7 @@ if (empresaGuardadaValida) {
   return (
     <div className="min-h-screen max-w-full overflow-x-hidden bg-[#F6F8FB] text-slate-900 print:bg-white">
       <AceptarInvitacionesPendientes />
-      <div className="grid min-h-screen lg:grid-cols-[300px_minmax(0,1fr)]">
+      <div className="grid min-h-screen lg:grid-cols-[300px_minmax(0,1fr)] print:block">
         <aside className="hidden border-r border-slate-200 bg-white print:hidden lg:flex lg:flex-col">
           <div className="px-5 py-5">
             <div className="flex items-center gap-3">
@@ -1182,7 +1182,7 @@ if (empresaGuardadaValida) {
           </div>
         </aside>
 
-        <div className="flex min-h-screen min-w-0 flex-col">
+        <div className="flex min-h-screen min-w-0 flex-col print:w-full print:max-w-none">
           <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 print:hidden lg:backdrop-blur">
             <div className="px-4 py-3 lg:hidden">
               <div className="flex items-center justify-between gap-3">
