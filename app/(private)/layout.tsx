@@ -27,6 +27,7 @@ import {
   type TerrainRegistry,
 } from '../../lib/offline/terrain-registry'
 import { isOTOfflineOperative, isOTPendingPayload, mergeOTOfflineCache, OT_PENDING_ACTION, readOTOfflineCache, readOTOfflinePreparationStatus, writeOTOfflinePreparationStatus, type OTOfflinePendingPayload } from '../../lib/offline/ot'
+import { buildOTPreparationFailureState, filterOTOperativeQuery, isActiveOTPreparationContext, OTPreparationContextLock, OT_TERRAIN_PREPARATION_LIMIT } from '../../lib/offline/ot-preparation'
 
 type PrivateLayoutProps = {
   children: ReactNode
@@ -171,7 +172,11 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
   const [rolResuelto, setRolResuelto] = useState(false)
   const [isSuperAdmin, setIsSuperAdmin] = useState(false)
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
-  const preparingOTRef = useRef(false)
+  const preparingOTContextsRef = useRef(new OTPreparationContextLock())
+  const activeOTContextRef = useRef('')
+  activeOTContextRef.current = empresaActivaId && usuarioId
+    ? OTPreparationContextLock.key(empresaActivaId, usuarioId)
+    : ''
 
   const fetchEmpresaModulos = async (empresaId: string) => {
     if (!empresaId) {
@@ -457,9 +462,9 @@ if (empresaGuardadaValida) {
   const prepareOTForTerrain = useCallback(async () => {
     if (!isOnline || !empresaActivaId || !usuarioId || !rolResuelto ||
       !canAccessModuleByRoleAndCompany(usuarioRol, 'ot', modulosHabilitados)) return
-    if (preparingOTRef.current) return
+    const preparationContextKey = OTPreparationContextLock.key(empresaActivaId, usuarioId)
+    if (!preparingOTContextsRef.current.acquire(empresaActivaId, usuarioId)) return
 
-    preparingOTRef.current = true
     const previousStatus = readOTOfflinePreparationStatus(empresaActivaId, usuarioId)
     const lastAttemptAt = new Date().toISOString()
     writeOTOfflinePreparationStatus({
@@ -482,12 +487,11 @@ if (empresaGuardadaValida) {
 
       if (rolError) throw new Error('No se pudo validar el alcance de OT para modo terreno.')
 
-      let query = supabase
+      let query = filterOTOperativeQuery(supabase
         .from('ot_vw_resumen')
         .select('*')
         .eq('empresa_id', empresaActivaId)
-        .order('created_at', { ascending: false })
-        .limit(50)
+      ).order('created_at', { ascending: false })
 
       if (rolData?.rol === 'tecnico_ot') {
         const ownOtResp = await supabase
@@ -506,7 +510,9 @@ if (empresaGuardadaValida) {
         query = query.in('id', ownOtIds)
       }
 
-      const listadoResp = await query
+      // El límite se aplica después de seleccionar en PostgREST solo las OT operativas.
+      // Así, OT cerradas recientes no desplazan a una OT operativa más antigua.
+      const listadoResp = await query.limit(OT_TERRAIN_PREPARATION_LIMIT)
       if (listadoResp.error) throw new Error('No se pudo obtener el listado de OT para modo terreno.')
 
       const ots = ((listadoResp.data ?? []) as Array<Record<string, unknown>>).filter((ot) => {
@@ -787,21 +793,23 @@ if (empresaGuardadaValida) {
         prepared_count: otsOperativas.length,
       })
 
-      setTerrainRegistry(upsertTerrainModule(empresaActivaId, usuarioId, OT_MODULE, OT_ROUTE))
+      if (isActiveOTPreparationContext(preparationContextKey, activeOTContextRef.current)) {
+        setTerrainRegistry(upsertTerrainModule(empresaActivaId, usuarioId, OT_MODULE, OT_ROUTE))
+      }
     } catch (error) {
       console.error('No se pudo actualizar el modo terreno OT:', error)
       const validCache = readOTOfflineCache(empresaActivaId, usuarioId)
-      writeOTOfflinePreparationStatus({
-        empresa_id: empresaActivaId,
-        user_id: usuarioId,
-        status: 'error',
-        last_attempt_at: lastAttemptAt,
-        last_success_at: previousStatus?.last_success_at ?? null,
-        prepared_count: validCache?.ots.length ?? previousStatus?.prepared_count ?? 0,
+      writeOTOfflinePreparationStatus(buildOTPreparationFailureState({
+        empresaId: empresaActivaId,
+        userId: usuarioId,
+        lastAttemptAt,
+        lastSuccessAt: previousStatus?.last_success_at ?? null,
+        cachedCount: validCache?.ots.length ?? null,
+        previousCount: previousStatus?.prepared_count ?? 0,
         error: error instanceof Error ? error.message : 'No se pudo actualizar el modo terreno OT.',
-      })
+      }))
     } finally {
-      preparingOTRef.current = false
+      preparingOTContextsRef.current.release(empresaActivaId, usuarioId)
     }
   }, [empresaActivaId, isOnline, modulosHabilitados, rolResuelto, router, usuarioId, usuarioRol])
 
