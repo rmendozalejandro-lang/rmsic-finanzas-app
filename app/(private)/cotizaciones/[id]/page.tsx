@@ -22,6 +22,7 @@ type Cotizacion = {
   id: string
   empresa_id: string
   cliente_id: string | null
+  ot_origen_id: string | null
   contacto_id: string | null
   contacto_nombre_snapshot: string | null
   contacto_email_snapshot: string | null
@@ -62,6 +63,11 @@ type Cotizacion = {
   updated_at: string | null
   activo: boolean
   deleted_at: string | null
+}
+
+type OtOrigen = {
+  id: string
+  folio: string | null
 }
 
 type CotizacionItem = {
@@ -267,6 +273,7 @@ export default function CotizacionDetallePage() {
   const [cotizacion, setCotizacion] = useState<Cotizacion | null>(null)
   const [items, setItems] = useState<CotizacionItem[]>([])
   const [cliente, setCliente] = useState<Cliente | null>(null)
+  const [otOrigen, setOtOrigen] = useState<OtOrigen | null>(null)
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -411,6 +418,7 @@ export default function CotizacionDetallePage() {
         }
 
         let clienteData: Cliente | null = null
+        let otOrigenData: OtOrigen | null = null
 
         if (cotizacionData.cliente_id) {
           const clienteResp = await fetch(
@@ -430,9 +438,27 @@ export default function CotizacionDetallePage() {
           }
         }
 
+        if (cotizacionData.ot_origen_id) {
+          const otOrigenResp = await fetch(
+            `${baseUrl}/rest/v1/ot_ordenes_trabajo?id=eq.${encodeURIComponent(cotizacionData.ot_origen_id)}&empresa_id=eq.${encodeURIComponent(empresaActivaId)}&select=id,folio`,
+            {
+              headers: {
+                apikey: apiKey,
+                Authorization: `Bearer ${accessToken}`,
+              },
+            }
+          )
+          const otOrigenJson = await otOrigenResp.json()
+
+          if (otOrigenResp.ok && Array.isArray(otOrigenJson) && otOrigenJson[0]) {
+            otOrigenData = otOrigenJson[0] as OtOrigen
+          }
+        }
+
         setCotizacion(cotizacionData as Cotizacion)
         setItems((itemsJson ?? []) as CotizacionItem[])
         setCliente(clienteData)
+        setOtOrigen(otOrigenData)
       } catch (err) {
         setError(
           err instanceof Error
@@ -752,6 +778,26 @@ export default function CotizacionDetallePage() {
             </p>
           </div>
         </section>
+
+        {otOrigen ? (
+          <section className="rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+            <p className="text-sm text-slate-500">OT de origen</p>
+            <div className="mt-1 flex flex-wrap items-center gap-3">
+              <Link
+                href={`/ot/${otOrigen.id}`}
+                className="font-semibold text-blue-700 hover:underline"
+              >
+                {otOrigen.folio || 'OT sin folio'}
+              </Link>
+              <Link
+                href={`/ot/${otOrigen.id}`}
+                className="text-sm font-medium text-slate-600 hover:text-slate-900 hover:underline"
+              >
+                Ver OT
+              </Link>
+            </div>
+          </section>
+        ) : null}
 
         <section className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
           <div className="space-y-6">
