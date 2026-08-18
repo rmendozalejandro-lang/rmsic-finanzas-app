@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test:ot-preparation": "rm -rf .tmp/ot-preparation-test && tsc lib/offline/ot-preparation.ts lib/offline/ot-preparation.test.ts --outDir .tmp/ot-preparation-test --module commonjs --moduleResolution node --target es2022 --esModuleInterop --skipLibCheck && node --test .tmp/ot-preparation-test/ot-preparation.test.js; status=$?; rm -rf .tmp/ot-preparation-test; exit $status"
   },
   "dependencies": {
     "@react-pdf/renderer": "^4.5.1",

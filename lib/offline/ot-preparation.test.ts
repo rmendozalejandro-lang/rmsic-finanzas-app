@@ -4,6 +4,7 @@ import {
   buildOTPreparationFailureState,
   filterOTOperativeQuery,
   isActiveOTPreparationContext,
+  OT_OPERATIVE_STATE_FILTER,
   OTPreparationContextLock,
   OT_TERRAIN_PREPARATION_LIMIT,
 } from './ot-preparation'
@@ -25,9 +26,14 @@ class FakeOTQuery {
     return this
   }
 
-  or() {
-    this.calls.push('or:operative-state')
-    this.rows = this.rows.filter((row) => !/(cerrad|anulad|archivad)/i.test(row.estado_nombre))
+  or(filters: string) {
+    this.calls.push(`or:${filters}`)
+    const excludedStateFragments = ['cerrad', 'anulad', 'archivad'].filter((fragment) =>
+      filters.includes(`estado_nombre.not.ilike.%${fragment}%`)
+    )
+    this.rows = this.rows.filter((row) =>
+      !excludedStateFragments.some((fragment) => row.estado_nombre.toLowerCase().includes(fragment))
+    )
     return this
   }
 
@@ -52,7 +58,11 @@ test('filtra OT operativas en servidor antes de limitar las 50 más recientes', 
   filterOTOperativeQuery(query).limit(OT_TERRAIN_PREPARATION_LIMIT)
 
   assert.deepEqual(query.rows.map((row) => row.id), ['operativa-anterior'])
-  assert.deepEqual(query.calls, ['is:fecha_cierre:null', 'or:operative-state', 'limit:50'])
+  assert.deepEqual(query.calls, [
+    'is:fecha_cierre:null',
+    `or:${OT_OPERATIVE_STATE_FILTER}`,
+    'limit:50',
+  ])
 })
 
 test('un fallo conserva la referencia a la última copia válida', () => {
