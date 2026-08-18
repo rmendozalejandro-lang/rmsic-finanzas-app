@@ -24,6 +24,7 @@ type Cotizacion = {
   id: string
   empresa_id: string
   cliente_id: string | null
+  ot_origen_id: string | null
   contacto_id: string | null
   contacto_nombre_snapshot: string | null
   contacto_email_snapshot: string | null
@@ -59,6 +60,11 @@ type Cotizacion = {
   ejecutivo_nombre: string | null
   ejecutivo_email: string | null
   ejecutivo_telefono: string | null
+}
+
+type OtOrigen = {
+  id: string
+  folio: string | null
 }
 
 type CotizacionItem = {
@@ -271,6 +277,7 @@ export default function CotizacionImprimirPage() {
   const [cotizacion, setCotizacion] = useState<Cotizacion | null>(null)
   const [items, setItems] = useState<CotizacionItem[]>([])
   const [cliente, setCliente] = useState<Cliente | null>(null)
+  const [otOrigen, setOtOrigen] = useState<OtOrigen | null>(null)
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -379,6 +386,7 @@ export default function CotizacionImprimirPage() {
         }
 
         let clienteData: Cliente | null = null
+        let otOrigenData: OtOrigen | null = null
 
         if (cotizacionData.cliente_id) {
           const clienteResp = await fetch(
@@ -398,9 +406,27 @@ export default function CotizacionImprimirPage() {
           }
         }
 
+        if (cotizacionData.ot_origen_id) {
+          const otOrigenResp = await fetch(
+            `${baseUrl}/rest/v1/ot_ordenes_trabajo?id=eq.${encodeURIComponent(cotizacionData.ot_origen_id)}&empresa_id=eq.${encodeURIComponent(empresaActivaId)}&select=id,folio`,
+            {
+              headers: {
+                apikey: apiKey,
+                Authorization: `Bearer ${accessToken}`,
+              },
+            }
+          )
+          const otOrigenJson = await otOrigenResp.json()
+
+          if (otOrigenResp.ok && Array.isArray(otOrigenJson) && otOrigenJson[0]?.folio) {
+            otOrigenData = otOrigenJson[0] as OtOrigen
+          }
+        }
+
         setCotizacion(cotizacionData as Cotizacion)
         setItems((itemsJson ?? []) as CotizacionItem[])
         setCliente(clienteData)
+        setOtOrigen(otOrigenData)
       } catch (err) {
         setError(
           err instanceof Error
@@ -679,6 +705,12 @@ export default function CotizacionImprimirPage() {
                   <div className="mt-0.5 text-[11px] text-slate-600">
                     Fecha emisión: {formatDate(cotizacion.fecha_emision)}
                   </div>
+
+                  {otOrigen?.folio ? (
+                    <div className="mt-0.5 text-[11px] text-slate-600">
+                      Referencia trabajo en terreno: {otOrigen.folio}
+                    </div>
+                  ) : null}
 
                   <p className="mt-1 text-[11px] text-slate-600">
                     Propuesta comercial y técnica.

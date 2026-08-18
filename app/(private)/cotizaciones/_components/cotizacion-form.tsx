@@ -808,6 +808,7 @@ export default function CotizacionForm({
           },
           body: JSON.stringify({
             ...cotizacionPayload,
+            ot_origen_id: origenOt?.id ?? null,
             created_by: user.id,
             activo: true,
             deleted_at: null,
