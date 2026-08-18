@@ -6,7 +6,7 @@ import {
   isActiveOTPreparationContext,
   OTPreparationContextLock,
   OT_TERRAIN_PREPARATION_LIMIT,
-} from './ot-preparation.ts'
+} from './ot-preparation'
 
 type FakeOT = { id: string; estado_nombre: string; fecha_cierre: string | null }
 
