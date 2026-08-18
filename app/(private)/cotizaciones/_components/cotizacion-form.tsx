@@ -67,6 +67,21 @@ export type CotizacionFormItem = {
   afecto_iva: boolean;
 };
 
+export type CotizacionOrigenOt = {
+  id: string;
+  empresa_id: string;
+  cliente_id: string;
+  folio: string | null;
+  titulo: string | null;
+  cliente_nombre: string;
+};
+
+type TipoRelacionOrigenOt =
+  | "trabajo_adicional"
+  | "ampliacion_alcance"
+  | "cotizacion_postservicio"
+  | "regularizacion";
+
 type Props = {
   empresaId: string;
   clientes: ClienteOption[];
@@ -75,6 +90,7 @@ type Props = {
   mode?: "create" | "edit";
   cotizacionId?: string;
   backHref?: string;
+  origenOt?: CotizacionOrigenOt;
 };
 
 type RespaldoAprobacionTipo = "" | "orden_compra" | "correo" | "whatsapp" | "contrato" | "verbal" | "otro";
@@ -329,6 +345,7 @@ export default function CotizacionForm({
   mode = "create",
   cotizacionId,
   backHref,
+  origenOt,
 }: Props) {
   const router = useRouter();
   const [form, setForm] = useState<CotizacionFormValues>(() =>
@@ -343,6 +360,13 @@ export default function CotizacionForm({
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [cotizacionPersistidaId, setCotizacionPersistidaId] =
+    useState<string | null>(null);
+  const [falloPosteriorPersistencia, setFalloPosteriorPersistencia] = useState<
+    "relacion" | "financiero" | "otro" | null
+  >(null);
+  const [tipoRelacionOrigenOt, setTipoRelacionOrigenOt] =
+    useState<TipoRelacionOrigenOt>("trabajo_adicional");
   const [contactos, setContactos] = useState<ContactoOption[]>([]);
   const [loadingContactos, setLoadingContactos] = useState(
     Boolean(initialValues.cliente_id)
@@ -517,8 +541,11 @@ export default function CotizacionForm({
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (saving || (origenOt && cotizacionPersistidaId)) return;
+
     setError(null);
     setSaving(true);
+    let persistedIdThisSubmit: string | null = null;
 
     try {
       const { data, error: sessionError } = await supabase.auth.getSession();
@@ -540,6 +567,52 @@ export default function CotizacionForm({
         setError("Faltan variables públicas de Supabase.");
         setSaving(false);
         return;
+      }
+
+      if (origenOt) {
+        const [rolResp, otResp] = await Promise.all([
+          supabase
+            .from("usuario_empresas")
+            .select("rol")
+            .eq("usuario_id", user.id)
+            .eq("empresa_id", empresaId)
+            .eq("activo", true)
+            .maybeSingle(),
+          supabase
+            .from("ot_ordenes_trabajo")
+            .select("id,empresa_id,cliente_id,activo,deleted_at")
+            .eq("id", origenOt.id)
+            .eq("empresa_id", empresaId)
+            .maybeSingle(),
+        ]);
+
+        if (rolResp.error || rolResp.data?.rol !== "admin") {
+          setError("Solo el administrador puede crear cotizaciones desde una OT.");
+          setSaving(false);
+          return;
+        }
+
+        if (
+          otResp.error ||
+          !otResp.data ||
+          otResp.data.empresa_id !== origenOt.empresa_id ||
+          !otResp.data.activo ||
+          otResp.data.deleted_at ||
+          !otResp.data.cliente_id
+        ) {
+          setError("La OT de origen ya no está activa o disponible en la empresa actual. Recarga la página antes de crear la cotización.");
+          setSaving(false);
+          return;
+        }
+
+        if (
+          otResp.data.cliente_id !== origenOt.cliente_id ||
+          otResp.data.cliente_id !== form.cliente_id
+        ) {
+          setError("El cliente de la OT cambió mientras el formulario estaba abierto. Recarga la página antes de crear la cotización.");
+          setSaving(false);
+          return;
+        }
       }
 
       const sanitizedItems = items
@@ -655,8 +728,8 @@ export default function CotizacionForm({
           .eq("id", empresaId)
           .maybeSingle();
 
-        if (empresaError || !empresaActiva) {
-          setError("No se pudo obtener el logo de la empresa activa.");
+        if (empresaError || !empresaActiva || empresaActiva.activa !== true) {
+          setError("La empresa activa no está disponible para crear cotizaciones.");
           setSaving(false);
           return;
         }
@@ -919,6 +992,35 @@ export default function CotizacionForm({
         return;
       }
 
+      // Desde este punto la cotización y sus ítems son documentos reales. Las
+      // operaciones secundarias no deben habilitar un segundo POST si fallan.
+      if (origenOt) {
+        persistedIdThisSubmit = savedId;
+        setCotizacionPersistidaId(savedId);
+      }
+
+      if (origenOt) {
+        const { error: relacionError } = await supabase
+          .from("cotizacion_ot_relaciones")
+          .insert({
+            empresa_id: origenOt.empresa_id,
+            cotizacion_id: savedId,
+            ot_id: origenOt.id,
+            tipo_relacion: tipoRelacionOrigenOt,
+            monto_asociado: null,
+            observacion: null,
+            activo: true,
+          });
+
+        if (relacionError) {
+          console.error("Error al relacionar la cotización creada con la OT:", relacionError);
+          setFalloPosteriorPersistencia("relacion");
+          setError("La cotización fue creada correctamente, pero no se pudo registrar la relación con la OT.");
+          setSaving(false);
+          return;
+        }
+      }
+
       if (
         form.estado === "aprobada" &&
         aprobacionFinanciera.generar_ingreso_financiero &&
@@ -946,10 +1048,15 @@ export default function CotizacionForm({
         );
 
         if (ingresoError) {
-          setError(
-            ingresoError.message ||
-              "La cotización fue guardada, pero no se pudo generar el ingreso financiero."
-          );
+          if (origenOt) {
+            setFalloPosteriorPersistencia("financiero");
+            setError("La cotización fue guardada y vinculada correctamente con la OT, pero no se pudo generar el ingreso financiero.");
+          } else {
+            setError(
+              ingresoError.message ||
+                "La cotización fue guardada, pero no se pudo generar el ingreso financiero."
+            );
+          }
           setSaving(false);
           return;
         }
@@ -963,11 +1070,19 @@ export default function CotizacionForm({
         }
       }
 
-      router.push(isEdit ? `/cotizaciones/${savedId}` : "/cotizaciones");
+      router.push(
+        isEdit || origenOt ? `/cotizaciones/${savedId}` : "/cotizaciones"
+      );
       router.refresh();
     } catch (err) {
+      if (origenOt && persistedIdThisSubmit) {
+        setCotizacionPersistidaId(persistedIdThisSubmit);
+        setFalloPosteriorPersistencia("otro");
+      }
       setError(
-        err instanceof Error
+        origenOt && persistedIdThisSubmit
+          ? "La cotización fue creada correctamente, pero falló una operación posterior."
+          : err instanceof Error
           ? err.message
           : "Ocurrió un error inesperado al guardar."
       );
@@ -977,6 +1092,41 @@ export default function CotizacionForm({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
+      {origenOt ? (
+        <section className="rounded-2xl border border-blue-200 bg-blue-50 p-5 shadow-sm">
+          <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-slate-900">
+                Creando cotización desde OT {origenOt.folio || "sin folio"}
+              </h2>
+              <dl className="mt-3 space-y-1 text-sm text-slate-700">
+                <div><dt className="inline font-medium">Título OT:</dt> <dd className="inline">{origenOt.titulo || "Sin título"}</dd></div>
+                <div><dt className="inline font-medium">Cliente:</dt> <dd className="inline">{origenOt.cliente_nombre}</dd></div>
+              </dl>
+              <p className="mt-3 text-sm text-blue-800">
+                La nueva cotización quedará vinculada automáticamente a esta OT.
+              </p>
+            </div>
+            <Link href={`/ot/${origenOt.id}`} className="text-sm font-semibold text-blue-700 hover:underline">
+              Ver OT
+            </Link>
+          </div>
+          <label className="mt-4 block max-w-md text-sm font-medium text-slate-700">
+            Motivo / tipo de relación
+            <select
+              value={tipoRelacionOrigenOt}
+              onChange={(event) => setTipoRelacionOrigenOt(event.target.value as TipoRelacionOrigenOt)}
+              disabled={Boolean(cotizacionPersistidaId)}
+              className="mt-1 w-full rounded-xl border border-blue-200 bg-white px-3 py-2 text-sm disabled:bg-slate-100"
+            >
+              <option value="trabajo_adicional">Trabajo adicional</option>
+              <option value="ampliacion_alcance">Ampliación de alcance</option>
+              <option value="cotizacion_postservicio">Cotización postservicio</option>
+              <option value="regularizacion">Regularización</option>
+            </select>
+          </label>
+        </section>
+      ) : null}
       <header className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm md:flex-row md:items-center md:justify-between">
         <div>
           <div className="text-sm text-slate-500">Empresa activa</div>
@@ -1003,7 +1153,7 @@ export default function CotizacionForm({
           </Link>
           <button
             type="submit"
-            disabled={saving}
+            disabled={saving || Boolean(origenOt && cotizacionPersistidaId)}
             className="inline-flex items-center justify-center rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {saving
@@ -1020,6 +1170,19 @@ export default function CotizacionForm({
       {error ? (
         <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
           {error}
+          {origenOt && cotizacionPersistidaId ? (
+            <div className="mt-3">
+              <Link href={`/cotizaciones/${cotizacionPersistidaId}`} className="font-semibold underline">
+                Ver cotización creada
+              </Link>
+              {falloPosteriorPersistencia === "relacion" ? (
+                <p className="mt-1">La relación secundaria requiere reparación.</p>
+              ) : falloPosteriorPersistencia === "financiero" ? (
+                <p className="mt-1">La relación con la OT quedó registrada correctamente. Abre la cotización para resolver el problema financiero.</p>
+              ) : null}
+              <p className="mt-1 font-medium">La cotización ya fue creada. No vuelvas a enviar este formulario.</p>
+            </div>
+          ) : null}
         </div>
       ) : null}
 
@@ -1037,13 +1200,14 @@ export default function CotizacionForm({
                 </label>
                 <select
                   value={form.cliente_id}
+                  disabled={Boolean(origenOt)}
                   onChange={(e) => {
                     updateFormField("cliente_id", e.target.value);
                     updateFormField("contacto_id", "");
                     setContactos([]);
                     setLoadingContactos(Boolean(e.target.value));
                   }}
-                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm disabled:cursor-not-allowed disabled:bg-slate-100"
                 >
                   <option value="">Sin cliente asociado</option>
                   {clientes.map((cliente) => (
@@ -1052,6 +1216,11 @@ export default function CotizacionForm({
                     </option>
                   ))}
                 </select>
+                {origenOt ? (
+                  <p className="mt-2 text-xs text-slate-600">
+                    El cliente está definido por la OT de origen y no puede cambiarse.
+                  </p>
+                ) : null}
               </div>
 
               <div>
@@ -1916,7 +2085,7 @@ export default function CotizacionForm({
             <div className="mt-5">
               <button
                 type="submit"
-                disabled={saving}
+                disabled={saving || Boolean(origenOt && cotizacionPersistidaId)}
                 className="inline-flex items-center justify-center rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {saving

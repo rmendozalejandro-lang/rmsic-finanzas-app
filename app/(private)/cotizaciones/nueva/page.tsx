@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import CotizacionForm from '../_components/cotizacion-form'
+import CotizacionForm, {
+  type CotizacionOrigenOt,
+} from '../_components/cotizacion-form'
 import { supabase } from '@/lib/supabase/client'
 import { getEmpresaLogoSrc } from '@/lib/empresa-branding'
 import ProtectedCotizacionesRoute from '@/components/ProtectedCotizacionesRoute'
@@ -20,6 +22,25 @@ type ClienteOption = {
 }
 
 type GenericRow = Record<string, unknown>
+
+type OtOrigenRow = {
+  id: string
+  empresa_id: string
+  cliente_id: string | null
+  folio: string | null
+  titulo: string | null
+  descripcion_solicitud: string | null
+  problema_reportado: string | null
+  trabajo_realizado: string | null
+  hallazgos: string | null
+  recomendaciones: string | null
+  contacto_cliente_id: string | null
+  contacto_cliente_nombre: string | null
+  contacto_cliente_email: string | null
+  contacto_cliente_cargo: string | null
+  activo: boolean
+  deleted_at: string | null
+}
 
 function pickFirstString(row: GenericRow | null | undefined, keys: string[]) {
   if (!row) return ''
@@ -122,6 +143,7 @@ export default function NuevaCotizacionPage() {
   const [showClienteModal, setShowClienteModal] = useState(false)
   const [prospectoSuccess, setProspectoSuccess] = useState('')
   const [formVersion, setFormVersion] = useState(0)
+  const [origenOt, setOrigenOt] = useState<CotizacionOrigenOt | null>(null)
 
   useEffect(() => {
     const syncEmpresaActiva = () => {
@@ -149,6 +171,7 @@ export default function NuevaCotizacionPage() {
 
       setLoading(true)
       setError('')
+      setOrigenOt(null)
 
       try {
         const { data, error: sessionError } = await supabase.auth.getSession()
@@ -171,7 +194,16 @@ export default function NuevaCotizacionPage() {
           return
         }
 
-        const [empresaResp, clientesResp, rolResp] = await Promise.all([
+        const otId = new URLSearchParams(window.location.search).get('ot_id')?.trim() || ''
+        const otSelect = [
+          'id', 'empresa_id', 'cliente_id', 'folio', 'titulo',
+          'descripcion_solicitud', 'problema_reportado', 'trabajo_realizado',
+          'hallazgos', 'recomendaciones', 'contacto_cliente_id',
+          'contacto_cliente_nombre', 'contacto_cliente_email',
+          'contacto_cliente_cargo', 'activo', 'deleted_at',
+        ].join(',')
+
+        const [empresaResp, clientesResp, rolResp, otResp] = await Promise.all([
           fetch(
             `${baseUrl}/rest/v1/empresas?id=eq.${empresaActivaId}&select=*`,
             {
@@ -199,11 +231,23 @@ export default function NuevaCotizacionPage() {
               },
             }
           ),
+          otId
+            ? fetch(
+                `${baseUrl}/rest/v1/ot_ordenes_trabajo?id=eq.${encodeURIComponent(otId)}&empresa_id=eq.${encodeURIComponent(empresaActivaId)}&select=${otSelect}`,
+                {
+                  headers: {
+                    apikey: apiKey,
+                    Authorization: `Bearer ${accessToken}`,
+                  },
+                }
+              )
+            : Promise.resolve(null),
         ])
 
         const empresaJson = await empresaResp.json()
         const clientesJson = await clientesResp.json()
         const rolJson = await rolResp.json()
+        const otJson = otResp ? await otResp.json() : null
 
         if (!empresaResp.ok) {
           setError(
@@ -247,6 +291,46 @@ export default function NuevaCotizacionPage() {
         const empresaRow = Array.isArray(empresaJson)
           ? (empresaJson[0] as GenericRow | undefined)
           : undefined
+
+        if (!empresaRow || empresaRow.activa !== true) {
+          setError('La empresa activa no está disponible para crear cotizaciones.')
+          setLoading(false)
+          return
+        }
+
+        let otOrigen: OtOrigenRow | null = null
+
+        if (otId) {
+          if (rol !== 'admin') {
+            setError('Solo el administrador puede crear cotizaciones desde una OT.')
+            setLoading(false)
+            return
+          }
+
+          if (!otResp?.ok) {
+            setError(
+              otJson?.message ||
+                otJson?.error ||
+                'No se pudo consultar la OT de origen.'
+            )
+            setLoading(false)
+            return
+          }
+
+          otOrigen = Array.isArray(otJson) ? (otJson[0] as OtOrigenRow | undefined) ?? null : null
+
+          if (
+            !otOrigen ||
+            otOrigen.empresa_id !== empresaActivaId ||
+            !otOrigen.activo ||
+            otOrigen.deleted_at ||
+            !otOrigen.cliente_id
+          ) {
+            setError('La OT de origen no existe, no está activa o no pertenece a la empresa activa.')
+            setLoading(false)
+            return
+          }
+        }
 
         const empresaNombreCompleto =
           pickFirstString(empresaRow, [
@@ -313,17 +397,35 @@ export default function NuevaCotizacionPage() {
               }))
           : []
 
+        const clienteOrigenRow = otOrigen
+          ? (clientesJson as GenericRow[]).find((row) => String(row.id) === otOrigen?.cliente_id)
+          : undefined
+
+        if (otOrigen && (!clienteOrigenRow || String(clienteOrigenRow.empresa_id) !== empresaActivaId)) {
+          setError('El cliente de la OT no está disponible en la empresa activa.')
+          setLoading(false)
+          return
+        }
+
+        if (otOrigen && clienteOrigenRow && !clientesOptions.some((item) => item.id === otOrigen?.cliente_id)) {
+          clientesOptions.push({
+            id: otOrigen.cliente_id as string,
+            label: getClienteCotizacionLabel(clienteOrigenRow),
+            estado_comercial: getEstadoComercial(clienteOrigenRow),
+          })
+        }
+
         const today = new Date()
         const fechaEmision = formatDateInput(today)
         const fechaVencimiento = formatDateInput(addDays(today, 10))
 
         setClientes(clientesOptions)
         setInitialValues({
-          cliente_id: '',
+          cliente_id: otOrigen?.cliente_id || '',
           contacto_id: '',
           estado: 'borrador',
-          titulo: '',
-          descripcion: '',
+          titulo: otOrigen?.titulo || '',
+          descripcion: otOrigen?.descripcion_solicitud || '',
           observaciones: '',
           condiciones_comerciales: 'Validez de la cotización: 15 días',
           fecha_emision: fechaEmision,
@@ -341,6 +443,18 @@ export default function NuevaCotizacionPage() {
           ejecutivo_email: user.email || '',
           ejecutivo_telefono: ejecutivoTelefono,
         })
+        setOrigenOt(
+          otOrigen && clienteOrigenRow
+            ? {
+                id: otOrigen.id,
+                empresa_id: otOrigen.empresa_id,
+                cliente_id: otOrigen.cliente_id as string,
+                folio: otOrigen.folio,
+                titulo: otOrigen.titulo,
+                cliente_nombre: getClienteLabel(clienteOrigenRow),
+              }
+            : null
+        )
       } catch (err) {
         setError(
           err instanceof Error
@@ -416,7 +530,7 @@ export default function NuevaCotizacionPage() {
     )
   }
 
-  if (loading || !initialValues) {
+  if (loading) {
     return (
       <ProtectedCotizacionesRoute>
         <div className="space-y-4">
@@ -447,6 +561,16 @@ export default function NuevaCotizacionPage() {
               </Link>
             </div>
           </div>
+        </div>
+      </ProtectedCotizacionesRoute>
+    )
+  }
+
+  if (!initialValues) {
+    return (
+      <ProtectedCotizacionesRoute>
+        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-5 text-sm text-rose-700">
+          No se pudo preparar el formulario de nueva cotización.
         </div>
       </ProtectedCotizacionesRoute>
     )
@@ -488,7 +612,7 @@ export default function NuevaCotizacionPage() {
   return (
     <ProtectedCotizacionesRoute>
       <div className="space-y-4">
-        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 shadow-sm">
+        {!origenOt ? <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 shadow-sm">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
               <h2 className="text-lg font-semibold text-slate-900">
@@ -516,9 +640,9 @@ export default function NuevaCotizacionPage() {
               {prospectoSuccess}
             </div>
           ) : null}
-        </div>
+        </div> : null}
 
-        <ClienteQuickCreateModal
+        {!origenOt ? <ClienteQuickCreateModal
           open={showClienteModal}
           empresaId={empresaActivaId}
           title="Nuevo cliente / prospecto"
@@ -526,13 +650,15 @@ export default function NuevaCotizacionPage() {
           defaultEstadoComercial="prospecto"
           onClose={() => setShowClienteModal(false)}
           onCreated={handleClienteCreated}
-        />
+        /> : null}
 
         <CotizacionForm
           key={`nueva-cotizacion-${formVersion}`}
           empresaId={empresaActivaId}
           clientes={clientes}
           initialValues={initialValues}
+          origenOt={origenOt ?? undefined}
+          backHref={origenOt ? `/ot/${origenOt.id}` : undefined}
         />
       </div>
     </ProtectedCotizacionesRoute>

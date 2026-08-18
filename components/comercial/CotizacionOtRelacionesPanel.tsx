@@ -9,6 +9,7 @@ type Props = {
   clienteId: string | null
   puedeAdministrar?: boolean
   crearOtHref?: string
+  crearCotizacionHref?: string
 } & (
   | { modo: 'cotizacion'; cotizacionId: string }
   | { modo: 'ot'; otId: string }
@@ -98,7 +99,14 @@ export default function CotizacionOtRelacionesPanel(props: Props) {
   const [unlinkingId, setUnlinkingId] = useState<string | null>(null)
   const searchRequestId = useRef(0)
 
-  const { modo, empresaId, clienteId, puedeAdministrar = false, crearOtHref } = props
+  const {
+    modo,
+    empresaId,
+    clienteId,
+    puedeAdministrar = false,
+    crearOtHref,
+    crearCotizacionHref,
+  } = props
   const registroId = modo === 'cotizacion' ? props.cotizacionId : props.otId
 
   const loadRelaciones = useCallback(async () => {
@@ -282,6 +290,12 @@ export default function CotizacionOtRelacionesPanel(props: Props) {
             <Link href={crearOtHref}
               className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700">
               Crear OT desde cotización
+            </Link>
+          ) : null}
+          {modo === 'ot' && crearCotizacionHref ? (
+            <Link href={crearCotizacionHref}
+              className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700">
+              Crear cotización desde OT
             </Link>
           ) : null}
           {puedeAdministrar && clienteId ? (
