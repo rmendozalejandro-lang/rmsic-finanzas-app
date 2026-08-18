@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import type { OTResumen } from '../../lib/ot/types'
+import { isOTOfflineOperative } from '../../lib/offline/ot'
 
 type Props = {
   data: OTResumen[]
@@ -10,6 +11,7 @@ type Props = {
   allRowsSelected?: boolean
   onToggleSelect?: (otId: string) => void
   onToggleSelectAll?: () => void
+  offlinePreparedIds?: ReadonlySet<string>
 }
 
 type OTResumenConPlantilla = OTResumen & {
@@ -250,6 +252,7 @@ export function OTDataTable({
   allRowsSelected = false,
   onToggleSelect,
   onToggleSelectAll,
+  offlinePreparedIds,
 }: Props) {
   if (!data.length) {
     return (
@@ -382,6 +385,11 @@ export function OTDataTable({
                   <td className="px-4 py-3">{formatDuration(ot.duracion_minutos)}</td>
 
                   <td className="px-4 py-3 text-right">
+                    {offlinePreparedIds && isOTOfflineOperative(ot) ? (
+                      <span className={`mb-2 ml-auto block w-fit rounded-full border px-2 py-0.5 text-xs font-medium ${offlinePreparedIds.has(ot.id) ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-50 text-slate-600'}`}>
+                        {offlinePreparedIds.has(ot.id) ? 'Offline listo' : 'Pendiente offline'}
+                      </span>
+                    ) : null}
                     <Link
                       href={otMainHref}
                       className="inline-flex items-center justify-center rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-100"
