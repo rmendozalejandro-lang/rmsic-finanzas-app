@@ -728,8 +728,8 @@ export default function CotizacionForm({
           .eq("id", empresaId)
           .maybeSingle();
 
-        if (empresaError || !empresaActiva) {
-          setError("No se pudo obtener el logo de la empresa activa.");
+        if (empresaError || !empresaActiva || empresaActiva.activa !== true) {
+          setError("La empresa activa no está disponible para crear cotizaciones.");
           setSaving(false);
           return;
         }

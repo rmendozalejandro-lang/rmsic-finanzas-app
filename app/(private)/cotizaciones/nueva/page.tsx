@@ -292,7 +292,7 @@ export default function NuevaCotizacionPage() {
           ? (empresaJson[0] as GenericRow | undefined)
           : undefined
 
-        if (!empresaRow || empresaRow.activo === false || empresaRow.deleted_at) {
+        if (!empresaRow || empresaRow.activa !== true) {
           setError('La empresa activa no está disponible para crear cotizaciones.')
           setLoading(false)
           return
