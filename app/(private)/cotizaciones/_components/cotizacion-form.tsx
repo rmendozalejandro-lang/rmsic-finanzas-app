@@ -360,8 +360,11 @@ export default function CotizacionForm({
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [cotizacionCreadaSinRelacionId, setCotizacionCreadaSinRelacionId] =
+  const [cotizacionPersistidaId, setCotizacionPersistidaId] =
     useState<string | null>(null);
+  const [falloPosteriorPersistencia, setFalloPosteriorPersistencia] = useState<
+    "relacion" | "financiero" | "otro" | null
+  >(null);
   const [tipoRelacionOrigenOt, setTipoRelacionOrigenOt] =
     useState<TipoRelacionOrigenOt>("trabajo_adicional");
   const [contactos, setContactos] = useState<ContactoOption[]>([]);
@@ -538,8 +541,11 @@ export default function CotizacionForm({
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (saving || (origenOt && cotizacionPersistidaId)) return;
+
     setError(null);
     setSaving(true);
+    let persistedIdThisSubmit: string | null = null;
 
     try {
       const { data, error: sessionError } = await supabase.auth.getSession();
@@ -986,6 +992,13 @@ export default function CotizacionForm({
         return;
       }
 
+      // Desde este punto la cotización y sus ítems son documentos reales. Las
+      // operaciones secundarias no deben habilitar un segundo POST si fallan.
+      if (origenOt) {
+        persistedIdThisSubmit = savedId;
+        setCotizacionPersistidaId(savedId);
+      }
+
       if (origenOt) {
         const { error: relacionError } = await supabase
           .from("cotizacion_ot_relaciones")
@@ -1001,7 +1014,7 @@ export default function CotizacionForm({
 
         if (relacionError) {
           console.error("Error al relacionar la cotización creada con la OT:", relacionError);
-          setCotizacionCreadaSinRelacionId(savedId);
+          setFalloPosteriorPersistencia("relacion");
           setError("La cotización fue creada correctamente, pero no se pudo registrar la relación con la OT.");
           setSaving(false);
           return;
@@ -1035,10 +1048,15 @@ export default function CotizacionForm({
         );
 
         if (ingresoError) {
-          setError(
-            ingresoError.message ||
-              "La cotización fue guardada, pero no se pudo generar el ingreso financiero."
-          );
+          if (origenOt) {
+            setFalloPosteriorPersistencia("financiero");
+            setError("La cotización fue guardada y vinculada correctamente con la OT, pero no se pudo generar el ingreso financiero.");
+          } else {
+            setError(
+              ingresoError.message ||
+                "La cotización fue guardada, pero no se pudo generar el ingreso financiero."
+            );
+          }
           setSaving(false);
           return;
         }
@@ -1057,8 +1075,14 @@ export default function CotizacionForm({
       );
       router.refresh();
     } catch (err) {
+      if (origenOt && persistedIdThisSubmit) {
+        setCotizacionPersistidaId(persistedIdThisSubmit);
+        setFalloPosteriorPersistencia("otro");
+      }
       setError(
-        err instanceof Error
+        origenOt && persistedIdThisSubmit
+          ? "La cotización fue creada correctamente, pero falló una operación posterior."
+          : err instanceof Error
           ? err.message
           : "Ocurrió un error inesperado al guardar."
       );
@@ -1092,7 +1116,7 @@ export default function CotizacionForm({
             <select
               value={tipoRelacionOrigenOt}
               onChange={(event) => setTipoRelacionOrigenOt(event.target.value as TipoRelacionOrigenOt)}
-              disabled={Boolean(cotizacionCreadaSinRelacionId)}
+              disabled={Boolean(cotizacionPersistidaId)}
               className="mt-1 w-full rounded-xl border border-blue-200 bg-white px-3 py-2 text-sm disabled:bg-slate-100"
             >
               <option value="trabajo_adicional">Trabajo adicional</option>
@@ -1129,7 +1153,7 @@ export default function CotizacionForm({
           </Link>
           <button
             type="submit"
-            disabled={saving || Boolean(cotizacionCreadaSinRelacionId)}
+            disabled={saving || Boolean(origenOt && cotizacionPersistidaId)}
             className="inline-flex items-center justify-center rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {saving
@@ -1146,12 +1170,17 @@ export default function CotizacionForm({
       {error ? (
         <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
           {error}
-          {cotizacionCreadaSinRelacionId ? (
+          {origenOt && cotizacionPersistidaId ? (
             <div className="mt-3">
-              <Link href={`/cotizaciones/${cotizacionCreadaSinRelacionId}`} className="font-semibold underline">
+              <Link href={`/cotizaciones/${cotizacionPersistidaId}`} className="font-semibold underline">
                 Ver cotización creada
               </Link>
-              <p className="mt-1">La relación secundaria requiere reparación. El envío permanece bloqueado para evitar duplicados.</p>
+              {falloPosteriorPersistencia === "relacion" ? (
+                <p className="mt-1">La relación secundaria requiere reparación.</p>
+              ) : falloPosteriorPersistencia === "financiero" ? (
+                <p className="mt-1">La relación con la OT quedó registrada correctamente. Abre la cotización para resolver el problema financiero.</p>
+              ) : null}
+              <p className="mt-1 font-medium">La cotización ya fue creada. No vuelvas a enviar este formulario.</p>
             </div>
           ) : null}
         </div>
@@ -2056,7 +2085,7 @@ export default function CotizacionForm({
             <div className="mt-5">
               <button
                 type="submit"
-                disabled={saving || Boolean(cotizacionCreadaSinRelacionId)}
+                disabled={saving || Boolean(origenOt && cotizacionPersistidaId)}
                 className="inline-flex items-center justify-center rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {saving
