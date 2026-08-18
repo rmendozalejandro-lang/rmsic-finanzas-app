@@ -151,7 +151,7 @@ function getClienteDisplayName(cliente: Cliente | null) {
 }
 
 function normalizeEmail(value: string) {
-  return value.trim().toLocaleLowerCase().replace(/\s+/g, '')
+  return value.trim().toLowerCase().replace(/\s+/g, '')
 }
 
 function normalizePhone(value: string) {
