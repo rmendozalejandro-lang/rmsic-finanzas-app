@@ -150,6 +150,30 @@ function getClienteDisplayName(cliente: Cliente | null) {
   )
 }
 
+function normalizeEmail(value: string) {
+  return value.trim().toLocaleLowerCase().replace(/\s+/g, '')
+}
+
+function normalizePhone(value: string) {
+  const digits = value.replace(/\D/g, '')
+
+  // Consider Chilean numbers equal whether or not they include the country code.
+  return digits.length === 11 && digits.startsWith('56')
+    ? digits.slice(2)
+    : digits
+}
+
+function isDistinctContactValue(
+  contactValue: string | null | undefined,
+  clienteValue: string | null | undefined,
+  normalize: (value: string) => string
+) {
+  if (!contactValue?.trim()) return false
+  if (!clienteValue?.trim()) return true
+
+  return normalize(contactValue) !== normalize(clienteValue)
+}
+
 
 function normalizeLogoSrc(value: string | null | undefined) {
   if (!value) return null
@@ -410,6 +434,19 @@ export default function CotizacionImprimirPage() {
       empresaActivaNombre,
     })
   }, [cotizacion, empresaActivaNombre])
+
+  const clienteEmail = cliente?.email || cliente?.correo
+  const clienteTelefono = cliente?.telefono || cliente?.celular
+  const mostrarContactoEmail = isDistinctContactValue(
+    cotizacion?.contacto_email_snapshot,
+    clienteEmail,
+    normalizeEmail
+  )
+  const mostrarContactoTelefono = isDistinctContactValue(
+    cotizacion?.contacto_telefono_snapshot,
+    clienteTelefono,
+    normalizePhone
+  )
 
   const resumenEconomico = useMemo(() => {
     const subtotalItemsNeto = items.reduce((acc, item) => {
@@ -676,14 +713,14 @@ export default function CotizacionImprimirPage() {
                       <div>
                         <p className="text-slate-500">Correo</p>
                         <p className="mt-0.5 break-words text-slate-800">
-                          {cliente?.email || cliente?.correo || '-'}
+                          {clienteEmail || '-'}
                         </p>
                       </div>
 
                       <div>
                         <p className="text-slate-500">Teléfono</p>
                         <p className="mt-0.5 text-slate-800">
-                          {cliente?.telefono || cliente?.celular || '-'}
+                          {clienteTelefono || '-'}
                         </p>
                       </div>
 
@@ -701,8 +738,8 @@ export default function CotizacionImprimirPage() {
                           {cotizacion.contacto_nombre_snapshot}
                         </div>
                         {cotizacion.contacto_cargo_snapshot ? <div>{cotizacion.contacto_cargo_snapshot}</div> : null}
-                        {cotizacion.contacto_email_snapshot ? <div>{cotizacion.contacto_email_snapshot}</div> : null}
-                        {cotizacion.contacto_telefono_snapshot ? <div>{cotizacion.contacto_telefono_snapshot}</div> : null}
+                        {mostrarContactoEmail ? <div>{cotizacion.contacto_email_snapshot}</div> : null}
+                        {mostrarContactoTelefono ? <div>{cotizacion.contacto_telefono_snapshot}</div> : null}
                       </div>
                     ) : null}
                   </div>
