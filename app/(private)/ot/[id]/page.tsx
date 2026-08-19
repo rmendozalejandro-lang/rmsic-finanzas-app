@@ -1013,8 +1013,10 @@ function OTDetalleContent() {
     Boolean(plantillaOtConfig?.usa_checklist_por_horas)
   const isPreventivaGeneral =
     tipoCodigoNormalizado === 'preventiva_general' ||
-    tipoCodigoNormalizado.includes('mantención_general') ||
-    tipoCodigoNormalizado.includes('mantenimiento_general')
+    tipoServicioTextoNormalizado.includes('preventiv') && (
+      tipoCodigoNormalizado.includes('mantencion_general') ||
+      tipoCodigoNormalizado.includes('mantenimiento_general')
+    )
   const isPreventiva = isPreventivaMespack || isPreventivaGeneral
   const checklistTipoActivoNormalizado = (plantillaChecklistInfo?.tipo_activo ?? '')
     .toLowerCase()
@@ -1044,8 +1046,12 @@ function OTDetalleContent() {
   const isUrgencia = tipoCodigoNormalizado.includes('urgencia')
   const isAsistencia = tipoCodigoNormalizado.includes('asistencia')
   const isMantenimientoGeneral =
-    tipoCodigoNormalizado.includes('mantención_general') ||
-    tipoCodigoNormalizado.includes('mantenimiento_general')
+    !isPreventiva &&
+    !usaChecklistPorEquipo &&
+    !usaChecklistRmsicMespack &&
+    (tipoCodigoNormalizado.includes('mantencion_general') ||
+      tipoCodigoNormalizado.includes('mantenimiento_general') ||
+      tipoServicioTextoNormalizado.includes('mantenimiento general'))
   const isUrgenciaOAsistencia = isUrgencia || isAsistencia
   const isAsesoria = tipoCodigoNormalizado.includes('asesoria') || tipoCodigoNormalizado.includes('consultoria')
   const isServicioTecnicoSimple =

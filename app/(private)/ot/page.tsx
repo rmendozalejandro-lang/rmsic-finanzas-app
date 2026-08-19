@@ -9,6 +9,8 @@ import type { OTResumen } from '../../../lib/ot/types'
 import { addOTOfflineDraft, findCachedOTDetail, readOTOfflineCache, readOTOfflinePreparationStatus, OT_PREPARATION_CHANGED_EVENT, otHasPendingLocalChanges, type OTOfflineDetail, type OTOfflineDraft, type OTOfflinePreparationStatus } from '../../../lib/offline/ot'
 import { buildAssistanceOfflineUpdate, toOfflineTimeInput } from '../../../lib/offline/ot-assistance'
 import { buildUrgencyOfflineUpdate } from '../../../lib/offline/ot-urgency'
+import { buildGeneralMaintenanceOfflineUpdate } from '../../../lib/offline/ot-general-maintenance'
+import { getOfflineStructure } from '../../../lib/offline/ot-structure'
 
 const STORAGE_ID_KEY = 'empresa_activa_id'
 const CHECKLIST_HORAS_OPTIONS = [175, 520, 1040, 2080, 3120, 4160]
@@ -137,50 +139,9 @@ function buildAssociatedEquipoTecnico(equipoAsociado: Record<string, unknown>) {
     .join(' / ')
 }
 
-
-function normalizeOfflineText(value: unknown) {
-  return offlineValue(value)
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-}
-
-function getOfflineOtConfig(detail: OTOfflineDetail) {
-  return getOfflineRecord(detail.plantilla_ot_config)
-}
-
 function getOfflineChecklistInfo(detail: OTOfflineDetail) {
   return getOfflineRecord(detail.plantilla_checklist_info)
 }
-
-function getOfflineStructure(detail: OTOfflineDetail) {
-  const config = getOfflineOtConfig(detail)
-  const checklistInfo = getOfflineChecklistInfo(detail)
-  const text = [
-    detail.estructura_ot_codigo,
-    detail.tipo_servicio_codigo,
-    detail.tipo_servicio_nombre,
-    config.codigo,
-    config.nombre,
-    config.flujo_ot,
-    config.formato_ot,
-    checklistInfo.tipo_activo,
-  ].map(normalizeOfflineText).join(' ')
-  const usaEquiposMultiples = Boolean(config.usa_equipos_multiples) || getOfflineArray(detail.equipos_asociados).length > 1
-  const usaChecklistPorEquipo = Boolean(config.usa_checklist_por_equipo) || text.includes('checklist equipo') || text.includes('softys')
-  const usaChecklistPorHoras = Boolean(config.usa_checklist_por_horas) || text.includes('horas') || text.includes('mespack')
-  const isPreventiva = text.includes('preventiva') || text.includes('mantencion') || text.includes('mantenimiento') || usaChecklistPorHoras
-  const isUrgencia = text.includes('urgencia')
-  const isAsistencia = text.includes('asistencia')
-
-  if (usaChecklistPorEquipo) return { kind: 'checklist_por_equipo', title: 'Estructura checklist por equipo', usaEquiposMultiples, usaChecklistPorEquipo, usaChecklistPorHoras }
-  if (usaChecklistPorHoras) return { kind: 'checklist_por_horas', title: 'Estructura checklist por horas', usaEquiposMultiples, usaChecklistPorEquipo, usaChecklistPorHoras }
-  if (usaEquiposMultiples) return { kind: 'equipos_multiples', title: 'Estructura con múltiples equipos', usaEquiposMultiples, usaChecklistPorEquipo, usaChecklistPorHoras }
-  if (isPreventiva) return { kind: 'preventiva', title: 'Estructura mantenimiento preventivo', usaEquiposMultiples, usaChecklistPorEquipo, usaChecklistPorHoras }
-  if (isUrgencia || isAsistencia) return { kind: 'asistencia_urgencia', title: isUrgencia ? 'Estructura urgencia técnica' : 'Estructura asistencia técnica', usaEquiposMultiples, usaChecklistPorEquipo, usaChecklistPorHoras, isAsistencia, isUrgencia }
-  return { kind: 'general', title: 'Estructura general de OT', usaEquiposMultiples, usaChecklistPorEquipo, usaChecklistPorHoras }
-}
-
 
 function buildOfflineDraftFromDetail(detail: OTOfflineDetail | null): OTOfflineDraft {
   return {
@@ -830,9 +791,10 @@ function OTPageContent() {
   const guardarAvanceOffline = () => {
     if (!selectedOfflineDetail || !currentUserId) return
     const offlineStructure = getOfflineStructure(selectedOfflineDetail)
-    if (offlineStructure.isAsistencia || offlineStructure.isUrgencia) {
+    if (offlineStructure.isAsistencia || offlineStructure.isUrgencia || offlineStructure.isMantenimientoGeneral) {
       try {
         if (offlineStructure.isUrgencia) buildUrgencyOfflineUpdate(offlineDraft)
+        else if (offlineStructure.isMantenimientoGeneral) buildGeneralMaintenanceOfflineUpdate(offlineDraft)
         else buildAssistanceOfflineUpdate(offlineDraft)
       } catch (error) {
         alert(error instanceof Error ? error.message : 'El horario ingresado no es válido para la fecha en Chile.')
@@ -851,6 +813,7 @@ function OTPageContent() {
       base_updated_at: selectedOfflineDetail.updated_at ?? null,
       es_asistencia_tecnica: getOfflineStructure(selectedOfflineDetail).isAsistencia === true,
       es_urgencia: getOfflineStructure(selectedOfflineDetail).isUrgencia === true,
+      es_mantenimiento_general: getOfflineStructure(selectedOfflineDetail).isMantenimientoGeneral === true,
       ...offlineDraft,
     })
     setOfflinePendingRefresh((value) => value + 1)
@@ -1405,6 +1368,18 @@ function OTPageContent() {
                     ))}
                     <OfflineDraftTextarea label="Avance local general por equipos" value={offlineDraft.trabajo_realizado ?? ''} onChange={(value) => setOfflineDraft((prev) => ({ ...prev, trabajo_realizado: value }))} rows={5} />
                   </div>
+                ) : getOfflineStructure(selectedOfflineDetail).kind === 'mantenimiento_general' ? (
+                  <div className="mt-5 space-y-5">
+                    {offlineValue(selectedOfflineDetail.descripcion_solicitud) ? <div className="rounded-xl border border-slate-200 bg-slate-50 p-4"><OfflineTextSection title="Solicitud / antecedente del cliente" value={selectedOfflineDetail.descripcion_solicitud} /></div> : null}
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <label className="text-sm font-medium text-slate-700">Hora inicio<input type="time" value={offlineDraft.hora_inicio ?? ''} onChange={(event) => setOfflineDraft((prev) => ({ ...prev, hora_inicio: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2" /></label>
+                      <label className="text-sm font-medium text-slate-700">Hora término<input type="time" value={offlineDraft.hora_termino ?? ''} onChange={(event) => setOfflineDraft((prev) => ({ ...prev, hora_termino: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2" /></label>
+                      <OfflineDraftTextarea label="Trabajo realizado" value={offlineDraft.trabajo_realizado ?? ''} onChange={(value) => setOfflineDraft((prev) => ({ ...prev, trabajo_realizado: value }))} />
+                      <OfflineDraftTextarea label="Hallazgos detectados (opcional)" value={offlineDraft.hallazgos ?? ''} onChange={(value) => setOfflineDraft((prev) => ({ ...prev, hallazgos: value }))} />
+                      <OfflineDraftTextarea label="Resultado del servicio (opcional)" value={offlineDraft.resultado_servicio ?? ''} onChange={(value) => setOfflineDraft((prev) => ({ ...prev, resultado_servicio: value }))} />
+                      <OfflineDraftTextarea label="Recomendaciones técnicas (opcional)" value={offlineDraft.recomendaciones ?? ''} onChange={(value) => setOfflineDraft((prev) => ({ ...prev, recomendaciones: value }))} />
+                    </div>
+                  </div>
                 ) : getOfflineStructure(selectedOfflineDetail).kind === 'asistencia_urgencia' ? (
                   getOfflineStructure(selectedOfflineDetail).isAsistencia ? (
                   <div className="mt-5 space-y-5">
@@ -1576,7 +1551,7 @@ function OTPageContent() {
                 {offlineDraftSuccess ? (
                   <p className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{offlineDraftSuccess}</p>
                 ) : null}
-                {getOfflineStructure(selectedOfflineDetail).isAsistencia || getOfflineStructure(selectedOfflineDetail).isUrgencia ? null : (
+                {getOfflineStructure(selectedOfflineDetail).isAsistencia || getOfflineStructure(selectedOfflineDetail).isUrgencia || getOfflineStructure(selectedOfflineDetail).isMantenimientoGeneral ? null : (
                   <div className="mt-4 grid gap-4">
                     <label className="text-sm font-medium text-slate-700">Observación de terreno<textarea rows={3} value={offlineDraft.observacion_terreno} onChange={(event) => setOfflineDraft((prev) => ({ ...prev, observacion_terreno: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2" /></label>
                     <label className="text-sm font-medium text-slate-700">Estado local de avance<select value={offlineDraft.estado_local_avance} onChange={(event) => setOfflineDraft((prev) => ({ ...prev, estado_local_avance: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2"><option value="">Seleccionar</option><option value="iniciado">Iniciado</option><option value="en_proceso">En proceso</option><option value="pausado">Pausado</option><option value="listo_para_revision_online">Listo para revisión online</option></select></label>

@@ -41,6 +41,7 @@ export type OTOfflineDraft = {
   recomendaciones_seguridad?: string
   es_asistencia_tecnica?: boolean
   es_urgencia?: boolean
+  es_mantenimiento_general?: boolean
   fecha_ot?: string
   hora_inicio?: string
   hora_termino?: string
