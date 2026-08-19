@@ -7,6 +7,28 @@ export type OTAssistanceOfflineFields = {
   hora_termino?: string
 }
 
+export type OTAssistanceSyncPayload = OTAssistanceOfflineFields & {
+  ot_id: string
+  empresa_id: string
+  user_id: string
+  base_updated_at: string | null
+}
+
+type AssistanceUpdateFilters = {
+  id: string
+  empresa_id: string
+  updated_at: string | null
+}
+
+type AssistanceSyncDependencies = {
+  updateOT: (values: Record<string, string | number | null>, filters: AssistanceUpdateFilters) => Promise<{
+    data: { id: string } | null
+    error: unknown
+  }>
+  removeDraft: (payload: OTAssistanceSyncPayload) => void
+  removeQueueItem: (queueItemId: string) => void
+}
+
 const CHILE_TIME_ZONE = 'America/Santiago'
 
 type DateTimeParts = { year: number; month: number; day: number; hour: number; minute: number }
@@ -91,6 +113,13 @@ export function buildAssistanceOfflineUpdate(fields: OTAssistanceOfflineFields) 
     : date
   const end = endDate && fields.hora_termino ? chileDateTime(endDate, fields.hora_termino) : null
 
+  if (fields.hora_inicio && !start) {
+    throw new Error('La hora de inicio seleccionada no existe o no es válida para la fecha en Chile.')
+  }
+  if (fields.hora_termino && !end) {
+    throw new Error('La hora de término seleccionada no existe o no es válida para la fecha en Chile.')
+  }
+
   update.hora_inicio = start?.toISOString() ?? null
   update.hora_termino = end?.toISOString() ?? null
   update.duracion_minutos = start && end
@@ -113,4 +142,22 @@ export function requireAssistanceSyncMatch(value: { id: string } | null) {
     throw new Error('Conflicto de versión: la OT cambió en línea. El avance offline se conservó para revisión manual.')
   }
   return value
+}
+
+export async function syncAssistanceOffline(
+  payload: OTAssistanceSyncPayload,
+  queueItemId: string,
+  dependencies: AssistanceSyncDependencies,
+) {
+  const update = buildAssistanceOfflineUpdate(payload)
+  const response = await dependencies.updateOT(update, {
+    id: payload.ot_id,
+    empresa_id: payload.empresa_id,
+    updated_at: payload.base_updated_at,
+  })
+
+  if (response.error) throw response.error
+  requireAssistanceSyncMatch(response.data)
+  dependencies.removeDraft(payload)
+  dependencies.removeQueueItem(queueItemId)
 }

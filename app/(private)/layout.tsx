@@ -874,25 +874,24 @@ if (empresaGuardadaValida) {
         const { removeOfflineQueueItem } = await import('../../lib/offline/offline-queue')
 
         if (payload.es_asistencia_tecnica) {
-          const { buildAssistanceOfflineUpdate, requireAssistanceSyncMatch } = await import('../../lib/offline/ot-assistance')
-          let updateQuery = supabase
-            .from('ot_ordenes_trabajo')
-            .update(buildAssistanceOfflineUpdate(payload))
-            .eq('id', payload.ot_id)
-            .eq('empresa_id', payload.empresa_id)
-
-          updateQuery = payload.base_updated_at === null
-            ? updateQuery.is('updated_at', null)
-            : updateQuery.eq('updated_at', payload.base_updated_at)
-
-          const updateResp = await updateQuery
-            .select('id')
-            .maybeSingle()
-
-          if (updateResp.error) throw updateResp.error
-          requireAssistanceSyncMatch(updateResp.data)
-          window.localStorage.removeItem(`tralixia_ot_draft_${payload.empresa_id}_${payload.user_id}_${payload.ot_id}`)
-          removeOfflineQueueItem(item.id)
+          const { syncAssistanceOffline } = await import('../../lib/offline/ot-assistance')
+          await syncAssistanceOffline(payload, item.id, {
+            updateOT: async (values, filters) => {
+              let query = supabase
+                .from('ot_ordenes_trabajo')
+                .update(values)
+                .eq('id', filters.id)
+                .eq('empresa_id', filters.empresa_id)
+              query = filters.updated_at === null
+                ? query.is('updated_at', null)
+                : query.eq('updated_at', filters.updated_at)
+              return query.select('id').maybeSingle()
+            },
+            removeDraft: (syncedPayload) => window.localStorage.removeItem(
+              `tralixia_ot_draft_${syncedPayload.empresa_id}_${syncedPayload.user_id}_${syncedPayload.ot_id}`,
+            ),
+            removeQueueItem: removeOfflineQueueItem,
+          })
           continue
         }
 

@@ -7,7 +7,7 @@ import { OTDataTable } from '../../../components/ot/ot-data-table'
 import { supabase } from '../../../lib/supabase/client'
 import type { OTResumen } from '../../../lib/ot/types'
 import { addOTOfflineDraft, findCachedOTDetail, readOTOfflineCache, readOTOfflinePreparationStatus, OT_PREPARATION_CHANGED_EVENT, otHasPendingLocalChanges, type OTOfflineDetail, type OTOfflineDraft, type OTOfflinePreparationStatus } from '../../../lib/offline/ot'
-import { toOfflineTimeInput } from '../../../lib/offline/ot-assistance'
+import { buildAssistanceOfflineUpdate, toOfflineTimeInput } from '../../../lib/offline/ot-assistance'
 
 const STORAGE_ID_KEY = 'empresa_activa_id'
 const CHECKLIST_HORAS_OPTIONS = [175, 520, 1040, 2080, 3120, 4160]
@@ -828,13 +828,13 @@ function OTPageContent() {
 
   const guardarAvanceOffline = () => {
     if (!selectedOfflineDetail || !currentUserId) return
-    if (
-      getOfflineStructure(selectedOfflineDetail).isAsistencia &&
-      offlineDraft.hora_inicio &&
-      offlineDraft.hora_inicio === offlineDraft.hora_termino
-    ) {
-      alert('La hora de término debe ser distinta de la hora de inicio.')
-      return
+    if (getOfflineStructure(selectedOfflineDetail).isAsistencia) {
+      try {
+        buildAssistanceOfflineUpdate(offlineDraft)
+      } catch (error) {
+        alert(error instanceof Error ? error.message : 'El horario ingresado no es válido para la fecha en Chile.')
+        return
+      }
     }
 
     window.localStorage.setItem(
