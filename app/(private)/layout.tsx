@@ -873,6 +873,20 @@ if (empresaGuardadaValida) {
 
         const { removeOfflineQueueItem } = await import('../../lib/offline/offline-queue')
 
+        if (payload.es_asistencia_tecnica) {
+          const { buildAssistanceOfflineUpdate } = await import('../../lib/offline/ot-assistance')
+          const updateResp = await supabase
+            .from('ot_ordenes_trabajo')
+            .update(buildAssistanceOfflineUpdate(payload))
+            .eq('id', payload.ot_id)
+            .eq('empresa_id', payload.empresa_id)
+
+          if (updateResp.error) throw updateResp.error
+          window.localStorage.removeItem(`tralixia_ot_draft_${payload.empresa_id}_${payload.user_id}_${payload.ot_id}`)
+          removeOfflineQueueItem(item.id)
+          continue
+        }
+
         if (lineasAvance.length > 0) {
           const fechaSincronizacion = new Date().toISOString()
           const avanceOffline = [

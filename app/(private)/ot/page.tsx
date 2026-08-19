@@ -7,6 +7,7 @@ import { OTDataTable } from '../../../components/ot/ot-data-table'
 import { supabase } from '../../../lib/supabase/client'
 import type { OTResumen } from '../../../lib/ot/types'
 import { addOTOfflineDraft, findCachedOTDetail, readOTOfflineCache, readOTOfflinePreparationStatus, OT_PREPARATION_CHANGED_EVENT, otHasPendingLocalChanges, type OTOfflineDetail, type OTOfflineDraft, type OTOfflinePreparationStatus } from '../../../lib/offline/ot'
+import { toOfflineTimeInput } from '../../../lib/offline/ot-assistance'
 
 const STORAGE_ID_KEY = 'empresa_activa_id'
 const CHECKLIST_HORAS_OPTIONS = [175, 520, 1040, 2080, 3120, 4160]
@@ -175,7 +176,7 @@ function getOfflineStructure(detail: OTOfflineDetail) {
   if (usaChecklistPorHoras) return { kind: 'checklist_por_horas', title: 'Estructura checklist por horas', usaEquiposMultiples, usaChecklistPorEquipo, usaChecklistPorHoras }
   if (usaEquiposMultiples) return { kind: 'equipos_multiples', title: 'Estructura con múltiples equipos', usaEquiposMultiples, usaChecklistPorEquipo, usaChecklistPorHoras }
   if (isPreventiva) return { kind: 'preventiva', title: 'Estructura mantenimiento preventivo', usaEquiposMultiples, usaChecklistPorEquipo, usaChecklistPorHoras }
-  if (isUrgencia || isAsistencia) return { kind: 'asistencia_urgencia', title: isUrgencia ? 'Estructura urgencia técnica' : 'Estructura asistencia técnica', usaEquiposMultiples, usaChecklistPorEquipo, usaChecklistPorHoras }
+  if (isUrgencia || isAsistencia) return { kind: 'asistencia_urgencia', title: isUrgencia ? 'Estructura urgencia técnica' : 'Estructura asistencia técnica', usaEquiposMultiples, usaChecklistPorEquipo, usaChecklistPorHoras, isAsistencia }
   return { kind: 'general', title: 'Estructura general de OT', usaEquiposMultiples, usaChecklistPorEquipo, usaChecklistPorHoras }
 }
 
@@ -201,6 +202,9 @@ function buildOfflineDraftFromDetail(detail: OTOfflineDetail | null): OTOfflineD
     seguridad_observacion: offlineValue(detail?.seguridad_observacion),
     herramientas_materiales_utilizados: offlineValue(detail?.herramientas_materiales_utilizados),
     recomendaciones_seguridad: offlineValue(detail?.recomendaciones_seguridad),
+    fecha_ot: offlineValue(detail?.fecha_ot).slice(0, 10),
+    hora_inicio: toOfflineTimeInput(detail?.hora_inicio),
+    hora_termino: toOfflineTimeInput(detail?.hora_termino),
   }
 }
 
@@ -834,6 +838,7 @@ function OTPageContent() {
       user_id: currentUserId,
       ot_id: selectedOfflineDetail.id,
       base_updated_at: selectedOfflineDetail.updated_at ?? null,
+      es_asistencia_tecnica: getOfflineStructure(selectedOfflineDetail).isAsistencia === true,
       ...offlineDraft,
     })
     setOfflinePendingRefresh((value) => value + 1)
@@ -1389,6 +1394,24 @@ function OTPageContent() {
                     <OfflineDraftTextarea label="Avance local general por equipos" value={offlineDraft.trabajo_realizado ?? ''} onChange={(value) => setOfflineDraft((prev) => ({ ...prev, trabajo_realizado: value }))} rows={5} />
                   </div>
                 ) : getOfflineStructure(selectedOfflineDetail).kind === 'asistencia_urgencia' ? (
+                  getOfflineStructure(selectedOfflineDetail).isAsistencia ? (
+                  <div className="mt-5 space-y-5">
+                    {offlineValue(selectedOfflineDetail.descripcion_solicitud) ? (
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                        <OfflineTextSection title="Solicitud del cliente" value={selectedOfflineDetail.descripcion_solicitud} />
+                      </div>
+                    ) : null}
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <label className="text-sm font-medium text-slate-700">Hora inicio<input type="time" value={offlineDraft.hora_inicio ?? ''} onChange={(event) => setOfflineDraft((prev) => ({ ...prev, hora_inicio: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2" /></label>
+                      <label className="text-sm font-medium text-slate-700">Hora término<input type="time" value={offlineDraft.hora_termino ?? ''} onChange={(event) => setOfflineDraft((prev) => ({ ...prev, hora_termino: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2" /></label>
+                    </div>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <OfflineDraftTextarea label="Problema" value={offlineDraft.problema_reportado ?? ''} onChange={(value) => setOfflineDraft((prev) => ({ ...prev, problema_reportado: value }))} />
+                      <OfflineDraftTextarea label="Causa" value={offlineDraft.causa_probable ?? ''} onChange={(value) => setOfflineDraft((prev) => ({ ...prev, causa_probable: value }))} />
+                      <OfflineDraftTextarea label="Solución" value={offlineDraft.trabajo_realizado ?? ''} onChange={(value) => setOfflineDraft((prev) => ({ ...prev, trabajo_realizado: value }))} />
+                    </div>
+                  </div>
+                  ) : (
                   <div className="mt-5 grid gap-4 md:grid-cols-2">
                     <OfflineDraftTextarea label="Solicitud del cliente" value={offlineDraft.descripcion_solicitud ?? ''} onChange={(value) => setOfflineDraft((prev) => ({ ...prev, descripcion_solicitud: value }))} />
                     <OfflineDraftTextarea label="Problema reportado" value={offlineDraft.problema_reportado ?? ''} onChange={(value) => setOfflineDraft((prev) => ({ ...prev, problema_reportado: value }))} />
@@ -1400,6 +1423,7 @@ function OTPageContent() {
                     <OfflineDraftTextarea label="Hallazgos" value={offlineDraft.hallazgos ?? ''} onChange={(value) => setOfflineDraft((prev) => ({ ...prev, hallazgos: value }))} />
                     <OfflineDraftTextarea label="Conclusiones técnicas" value={offlineDraft.conclusiones_tecnicas ?? ''} onChange={(value) => setOfflineDraft((prev) => ({ ...prev, conclusiones_tecnicas: value }))} />
                   </div>
+                  )
                 ) : (
                   <div className="mt-5 grid gap-4 md:grid-cols-2">
                     <OfflineDraftTextarea label="Solicitud / problema" value={offlineDraft.problema_reportado ?? ''} onChange={(value) => setOfflineDraft((prev) => ({ ...prev, problema_reportado: value }))} />

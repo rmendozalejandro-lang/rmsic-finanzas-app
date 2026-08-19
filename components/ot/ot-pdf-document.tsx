@@ -1097,22 +1097,21 @@ export function OTPdfDocument({
         ) : null}
 
         {isAsistencia ? (
+          <>
+          {detalle.descripcion_solicitud?.trim() ? (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>ANTECEDENTE DE LA OT</Text>
+              <TextBlock title="Solicitud del cliente" value={detalle.descripcion_solicitud} />
+            </View>
+          ) : null}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>DESARROLLO DE ASISTENCIA TÉCNICA</Text>
             <TextBlock
-              title="Solicitud del cliente"
-              value={detalle.descripcion_solicitud}
+              title="Problema"
+              value={detalle.problema_reportado}
             />
-            <TextBlock
-              title="Desarrollo de asistencia técnica"
-              value={detalle.trabajo_realizado}
-            />
-            <TextBlock
-              title="Resultado / observación técnica"
-              value={detalle.resultado_servicio}
-            />
-            <TextBlock title="Recomendaciones técnicas" value={detalle.recomendaciones} />
-            <TextBlock title="Observaciones" value={observaciones} />
+            <TextBlock title="Causa" value={detalle.causa_probable} />
+            <TextBlock title="Solución" value={detalle.trabajo_realizado} />
 
             {detalle.mostrar_nota_valor_hora ? (
               <View style={styles.noteBox}>
@@ -1135,6 +1134,7 @@ export function OTPdfDocument({
               </View>
             ) : null}
           </View>
+          </>
         ) : null}
 
         {isMantenimientoGeneral ? (

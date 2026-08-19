@@ -39,6 +39,10 @@ export type OTOfflineDraft = {
   seguridad_observacion?: string
   herramientas_materiales_utilizados?: string
   recomendaciones_seguridad?: string
+  es_asistencia_tecnica?: boolean
+  fecha_ot?: string
+  hora_inicio?: string
+  hora_termino?: string
 }
 
 export type OTOfflinePendingPayload = OTOfflineDraft & {

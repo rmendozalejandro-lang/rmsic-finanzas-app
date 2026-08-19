@@ -1307,22 +1307,9 @@ export async function GET(
           ])
         : esAsistenciaTecnica
           ? sectionText("DESARROLLO DE ASISTENCIA TÃ‰CNICA", [
-              optionalTextBlock(
-                "Solicitud del cliente",
-                detalle.descripcion_solicitud,
-              ),
-              optionalTextBlock(
-                "Desarrollo de asistencia tÃ©cnica",
-                detalle.trabajo_realizado,
-              ),
-              optionalTextBlock(
-                "Resultado / observaciÃ³n tÃ©cnica",
-                detalle.resultado_servicio || detalle.observaciones_cierre,
-              ),
-              optionalTextBlock(
-                "Recomendaciones tÃ©cnicas",
-                detalle.recomendaciones,
-              ),
+              optionalTextBlock("Problema", detalle.problema_reportado),
+              optionalTextBlock("Causa", detalle.causa_probable),
+              optionalTextBlock("SoluciÃ³n", detalle.trabajo_realizado),
             ])
           : esMantenimientoGeneral
             ? sectionText("DESARROLLO DE MANTENIMIENTO GENERAL", [
