@@ -874,14 +874,23 @@ if (empresaGuardadaValida) {
         const { removeOfflineQueueItem } = await import('../../lib/offline/offline-queue')
 
         if (payload.es_asistencia_tecnica) {
-          const { buildAssistanceOfflineUpdate } = await import('../../lib/offline/ot-assistance')
-          const updateResp = await supabase
+          const { buildAssistanceOfflineUpdate, requireAssistanceSyncMatch } = await import('../../lib/offline/ot-assistance')
+          let updateQuery = supabase
             .from('ot_ordenes_trabajo')
             .update(buildAssistanceOfflineUpdate(payload))
             .eq('id', payload.ot_id)
             .eq('empresa_id', payload.empresa_id)
 
+          updateQuery = payload.base_updated_at === null
+            ? updateQuery.is('updated_at', null)
+            : updateQuery.eq('updated_at', payload.base_updated_at)
+
+          const updateResp = await updateQuery
+            .select('id')
+            .maybeSingle()
+
           if (updateResp.error) throw updateResp.error
+          requireAssistanceSyncMatch(updateResp.data)
           window.localStorage.removeItem(`tralixia_ot_draft_${payload.empresa_id}_${payload.user_id}_${payload.ot_id}`)
           removeOfflineQueueItem(item.id)
           continue

@@ -7,9 +7,69 @@ export type OTAssistanceOfflineFields = {
   hora_termino?: string
 }
 
-function localDateTime(date: string, time: string) {
-  const value = new Date(`${date}T${time}`)
-  return Number.isNaN(value.getTime()) ? null : value
+const CHILE_TIME_ZONE = 'America/Santiago'
+
+type DateTimeParts = { year: number; month: number; day: number; hour: number; minute: number }
+
+function dateTimePartsInChile(value: Date): DateTimeParts {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: CHILE_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+    hourCycle: 'h23',
+  }).formatToParts(value).reduce<Record<string, string>>((result, part) => {
+    if (part.type !== 'literal') result[part.type] = part.value
+    return result
+  }, {})
+
+  return {
+    year: Number(parts.year),
+    month: Number(parts.month),
+    day: Number(parts.day),
+    hour: Number(parts.hour),
+    minute: Number(parts.minute),
+  }
+}
+
+function chileDateTime(date: string, time: string) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date)
+  const timeMatch = /^(\d{2}):(\d{2})$/.exec(time)
+  if (!match || !timeMatch) return null
+
+  const target: DateTimeParts = {
+    year: Number(match[1]),
+    month: Number(match[2]),
+    day: Number(match[3]),
+    hour: Number(timeMatch[1]),
+    minute: Number(timeMatch[2]),
+  }
+  if (target.hour > 23 || target.minute > 59) return null
+
+  const targetAsUtc = Date.UTC(target.year, target.month - 1, target.day, target.hour, target.minute)
+  let instant = new Date(targetAsUtc)
+
+  // Resolve the Santiago offset at the requested instant; the second pass covers DST boundaries.
+  for (let pass = 0; pass < 2; pass += 1) {
+    const represented = dateTimePartsInChile(instant)
+    const representedAsUtc = Date.UTC(represented.year, represented.month - 1, represented.day, represented.hour, represented.minute)
+    instant = new Date(instant.getTime() + targetAsUtc - representedAsUtc)
+  }
+
+  const resolved = dateTimePartsInChile(instant)
+  return Object.keys(target).every((key) => resolved[key as keyof DateTimeParts] === target[key as keyof DateTimeParts])
+    ? instant
+    : null
+}
+
+function nextCalendarDate(date: string) {
+  const [year, month, day] = date.split('-').map(Number)
+  const value = new Date(year, month - 1, day, 12)
+  value.setDate(value.getDate() + 1)
+  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`
 }
 
 /** Builds the same real OT columns used online, rolling the end into the next day when needed. */
@@ -21,12 +81,15 @@ export function buildAssistanceOfflineUpdate(fields: OTAssistanceOfflineFields) 
   }
 
   const date = fields.fecha_ot?.slice(0, 10)
-  const start = date && fields.hora_inicio ? localDateTime(date, fields.hora_inicio) : null
-  const end = date && fields.hora_termino ? localDateTime(date, fields.hora_termino) : null
-
-  if (start && end && end <= start) {
-    end.setDate(end.getDate() + 1)
+  if (fields.hora_inicio && fields.hora_termino && fields.hora_inicio === fields.hora_termino) {
+    throw new Error('La hora de término debe ser distinta de la hora de inicio.')
   }
+
+  const start = date && fields.hora_inicio ? chileDateTime(date, fields.hora_inicio) : null
+  const endDate = date && fields.hora_inicio && fields.hora_termino && fields.hora_termino < fields.hora_inicio
+    ? nextCalendarDate(date)
+    : date
+  const end = endDate && fields.hora_termino ? chileDateTime(endDate, fields.hora_termino) : null
 
   update.hora_inicio = start?.toISOString() ?? null
   update.hora_termino = end?.toISOString() ?? null
@@ -41,5 +104,13 @@ export function toOfflineTimeInput(value: unknown) {
   if (typeof value !== 'string' || !value) return ''
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return ''
-  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
+  const parts = dateTimePartsInChile(date)
+  return `${String(parts.hour).padStart(2, '0')}:${String(parts.minute).padStart(2, '0')}`
+}
+
+export function requireAssistanceSyncMatch(value: { id: string } | null) {
+  if (!value) {
+    throw new Error('Conflicto de versión: la OT cambió en línea. El avance offline se conservó para revisión manual.')
+  }
+  return value
 }

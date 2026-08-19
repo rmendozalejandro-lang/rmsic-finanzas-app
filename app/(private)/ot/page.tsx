@@ -828,6 +828,14 @@ function OTPageContent() {
 
   const guardarAvanceOffline = () => {
     if (!selectedOfflineDetail || !currentUserId) return
+    if (
+      getOfflineStructure(selectedOfflineDetail).isAsistencia &&
+      offlineDraft.hora_inicio &&
+      offlineDraft.hora_inicio === offlineDraft.hora_termino
+    ) {
+      alert('La hora de término debe ser distinta de la hora de inicio.')
+      return
+    }
 
     window.localStorage.setItem(
       `tralixia_ot_draft_${selectedOfflineDetail.empresa_id}_${currentUserId}_${selectedOfflineDetail.id}`,
