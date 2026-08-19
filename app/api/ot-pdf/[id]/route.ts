@@ -1294,12 +1294,12 @@ export async function GET(
               detalle.descripcion_solicitud,
             ),
             optionalTextBlock("Problema reportado", detalle.problema_reportado),
-            optionalTextBlock("DiagnÃ³stico", detalle.diagnostico),
             optionalTextBlock("Causa detectada", detalle.causa_probable),
             optionalTextBlock(
               "SoluciÃ³n aplicada",
-              detalle.trabajo_realizado || detalle.resultado_servicio,
+              detalle.trabajo_realizado,
             ),
+            optionalTextBlock("Resultado del servicio", detalle.resultado_servicio),
             optionalTextBlock(
               "Recomendaciones tÃ©cnicas",
               detalle.recomendaciones,
