@@ -873,6 +873,23 @@ if (empresaGuardadaValida) {
 
         const { removeOfflineQueueItem } = await import('../../lib/offline/offline-queue')
 
+        if (payload.es_urgencia) {
+          const { syncUrgencyOffline } = await import('../../lib/offline/ot-urgency')
+          await syncUrgencyOffline(payload, item.id, {
+            updateOT: async (values, filters) => {
+              let query = supabase.from('ot_ordenes_trabajo').update(values)
+                .eq('id', filters.id).eq('empresa_id', filters.empresa_id)
+              query = filters.updated_at === null ? query.is('updated_at', null) : query.eq('updated_at', filters.updated_at)
+              return query.select('id').maybeSingle()
+            },
+            removeDraft: (syncedPayload) => window.localStorage.removeItem(
+              `tralixia_ot_draft_${syncedPayload.empresa_id}_${syncedPayload.user_id}_${syncedPayload.ot_id}`,
+            ),
+            removeQueueItem: removeOfflineQueueItem,
+          })
+          continue
+        }
+
         if (payload.es_asistencia_tecnica) {
           const { syncAssistanceOffline } = await import('../../lib/offline/ot-assistance')
           await syncAssistanceOffline(payload, item.id, {

@@ -1071,7 +1071,14 @@ export function OTPdfDocument({
           </View>
         ) : null}
 
-        {isUrgencia ? (
+        {isUrgencia && (
+          detalle.descripcion_solicitud?.trim() ||
+          detalle.problema_reportado?.trim() ||
+          detalle.causa_probable?.trim() ||
+          detalle.trabajo_realizado?.trim() ||
+          detalle.resultado_servicio?.trim() ||
+          detalle.recomendaciones?.trim()
+        ) ? (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>DESARROLLO DE LA URGENCIA</Text>
             <TextBlock
@@ -1092,7 +1099,6 @@ export function OTPdfDocument({
               value={detalle.resultado_servicio}
             />
             <TextBlock title="Recomendaciones técnicas" value={detalle.recomendaciones} />
-            <TextBlock title="Observaciones" value={observaciones} />
           </View>
         ) : null}
 
