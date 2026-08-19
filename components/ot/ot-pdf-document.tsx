@@ -890,8 +890,8 @@ export function OTPdfDocument({
 
   const tipoCodigo = tipoActual?.codigo ?? ''
   const tipoNombre = tipoActual?.nombre ?? resumen.tipo_servicio_nombre ?? '-'
-  const tipoCodigoLower = tipoCodigo.toLowerCase()
-  const tipoNombreLower = tipoNombre.toLowerCase()
+  const tipoCodigoLower = tipoCodigo.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  const tipoNombreLower = tipoNombre.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
 
   const isUrgencia =
     tipoCodigoLower.includes('urgencia') || tipoNombreLower.includes('urgencia')
@@ -899,7 +899,7 @@ export function OTPdfDocument({
     tipoCodigoLower.includes('asistencia') ||
     tipoCodigoLower === 'general' ||
     tipoNombreLower.includes('asistencia')
-  const isMantenimientoGeneral =
+  const hasMantenimientoGeneral =
     tipoCodigoLower.includes('mantencion_general') ||
     tipoCodigoLower.includes('mantenimiento_general') ||
     tipoNombreLower.includes('mantenimiento general')
@@ -907,10 +907,17 @@ export function OTPdfDocument({
     !isUrgencia &&
     !isAsistencia &&
     (tipoCodigoLower.includes('preventiva') ||
-      tipoCodigoLower.includes('mantencion') ||
-      tipoCodigoLower.includes('mantenimiento'))
+      tipoNombreLower.includes('preventiv') ||
+      (!hasMantenimientoGeneral && (
+        tipoCodigoLower.includes('mantencion') ||
+        tipoCodigoLower.includes('mantenimiento')
+      )))
+  const isMantenimientoGeneral = hasMantenimientoGeneral && !isPreventiva
   const isAsesoria =
-    tipoCodigoLower.includes('asesoria') || tipoNombreLower.includes('asesoría')
+    tipoCodigoLower.includes('asesoria') ||
+    tipoCodigoLower.includes('consultoria') ||
+    tipoNombreLower.includes('asesoria') ||
+    tipoNombreLower.includes('consultoria')
 
   const evidenciasImagenes = evidencias.filter((item) =>
     isImageFile(item.archivo_url, item.archivo_nombre)
@@ -1148,7 +1155,11 @@ export function OTPdfDocument({
           </>
         ) : null}
 
-        {isMantenimientoGeneral ? (
+        {isMantenimientoGeneral && (
+          detalle.trabajo_realizado?.trim() || detalle.hallazgos?.trim() ||
+          detalle.resultado_servicio?.trim() || detalle.recomendaciones?.trim() ||
+          observaciones.trim()
+        ) ? (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>DESARROLLO DE MANTENIMIENTO GENERAL</Text>
             <TextBlock
