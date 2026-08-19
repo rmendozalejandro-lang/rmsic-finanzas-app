@@ -914,7 +914,10 @@ export function OTPdfDocument({
       )))
   const isMantenimientoGeneral = hasMantenimientoGeneral && !isPreventiva
   const isAsesoria =
-    tipoCodigoLower.includes('asesoria') || tipoNombreLower.includes('asesoría')
+    tipoCodigoLower.includes('asesoria') ||
+    tipoCodigoLower.includes('consultoria') ||
+    tipoNombreLower.includes('asesoria') ||
+    tipoNombreLower.includes('consultoria')
 
   const evidenciasImagenes = evidencias.filter((item) =>
     isImageFile(item.archivo_url, item.archivo_nombre)
@@ -1154,7 +1157,8 @@ export function OTPdfDocument({
 
         {isMantenimientoGeneral && (
           detalle.trabajo_realizado?.trim() || detalle.hallazgos?.trim() ||
-          detalle.resultado_servicio?.trim() || detalle.recomendaciones?.trim()
+          detalle.resultado_servicio?.trim() || detalle.recomendaciones?.trim() ||
+          observaciones.trim()
         ) ? (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>DESARROLLO DE MANTENIMIENTO GENERAL</Text>
@@ -1168,6 +1172,7 @@ export function OTPdfDocument({
               value={detalle.resultado_servicio}
             />
             <TextBlock title="Recomendaciones técnicas" value={detalle.recomendaciones} />
+            <TextBlock title="Observaciones" value={observaciones} />
           </View>
         ) : null}
 
