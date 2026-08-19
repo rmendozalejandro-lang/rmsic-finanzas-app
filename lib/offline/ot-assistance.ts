@@ -22,10 +22,10 @@ export function buildAssistanceOfflineUpdate(fields: OTAssistanceOfflineFields) 
 
   const date = fields.fecha_ot?.slice(0, 10)
   const start = date && fields.hora_inicio ? localDateTime(date, fields.hora_inicio) : null
-  let end = date && fields.hora_termino ? localDateTime(date, fields.hora_termino) : null
+  const end = date && fields.hora_termino ? localDateTime(date, fields.hora_termino) : null
 
   if (start && end && end <= start) {
-    end = new Date(end.getTime() + 24 * 60 * 60 * 1000)
+    end.setDate(end.getDate() + 1)
   }
 
   update.hora_inicio = start?.toISOString() ?? null

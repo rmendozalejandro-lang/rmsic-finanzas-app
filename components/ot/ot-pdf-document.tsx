@@ -1104,36 +1104,41 @@ export function OTPdfDocument({
               <TextBlock title="Solicitud del cliente" value={detalle.descripcion_solicitud} />
             </View>
           ) : null}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>DESARROLLO DE ASISTENCIA TÉCNICA</Text>
-            <TextBlock
-              title="Problema"
-              value={detalle.problema_reportado}
-            />
-            <TextBlock title="Causa" value={detalle.causa_probable} />
-            <TextBlock title="Solución" value={detalle.trabajo_realizado} />
-
-            {detalle.mostrar_nota_valor_hora ? (
-              <View style={styles.noteBox}>
-                <Text style={styles.noteText}>
-                  <Text style={{ fontWeight: 700 }}>
-                    Nota comercial informativa:{' '}
-                  </Text>
-                  Este servicio fue atendido bajo modalidad de atención inmediata
-                  en terreno. El valor referencial de atención corresponde a{' '}
-                  <Text style={{ fontWeight: 700 }}>
-                    {labelOrDash(
-                      detalle.valor_hora_uf != null
-                        ? `${detalle.valor_hora_uf} UF por hora`
-                        : null
-                    )}
-                  </Text>
-                  , salvo acuerdo comercial, cotización previa o condiciones
-                  particulares pactadas con el cliente.
+          {(
+            detalle.problema_reportado?.trim() ||
+            detalle.causa_probable?.trim() ||
+            detalle.trabajo_realizado?.trim()
+          ) ? (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>DESARROLLO DE ASISTENCIA TÉCNICA</Text>
+              <TextBlock
+                title="Problema"
+                value={detalle.problema_reportado}
+              />
+              <TextBlock title="Causa" value={detalle.causa_probable} />
+              <TextBlock title="Solución" value={detalle.trabajo_realizado} />
+            </View>
+          ) : null}
+          {detalle.mostrar_nota_valor_hora ? (
+            <View style={styles.noteBox}>
+              <Text style={styles.noteText}>
+                <Text style={{ fontWeight: 700 }}>
+                  Nota comercial informativa:{' '}
                 </Text>
-              </View>
-            ) : null}
-          </View>
+                Este servicio fue atendido bajo modalidad de atención inmediata
+                en terreno. El valor referencial de atención corresponde a{' '}
+                <Text style={{ fontWeight: 700 }}>
+                  {labelOrDash(
+                    detalle.valor_hora_uf != null
+                      ? `${detalle.valor_hora_uf} UF por hora`
+                      : null
+                  )}
+                </Text>
+                , salvo acuerdo comercial, cotización previa o condiciones
+                particulares pactadas con el cliente.
+              </Text>
+            </View>
+          ) : null}
           </>
         ) : null}
 
