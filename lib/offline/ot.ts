@@ -6,6 +6,18 @@ export const OT_ROUTE = '/ot'
 export const OT_PENDING_ACTION = 'guardar_avance_ot'
 export const OT_CACHE_SCHEMA_VERSION = 2
 export const OT_CACHE_PREFIX = 'tralixia_ot_offline_cache_v2'
+export const OT_PREPARATION_PREFIX = 'tralixia_ot_offline_preparation_v1'
+export const OT_PREPARATION_CHANGED_EVENT = 'tralixia-ot-offline-preparation-changed'
+
+export type OTOfflinePreparationStatus = {
+  empresa_id: string
+  user_id: string
+  status: 'preparing' | 'ready' | 'error'
+  last_attempt_at: string | null
+  last_success_at: string | null
+  prepared_count: number
+  error?: string
+}
 
 export type OTOfflineDraft = {
   observacion_terreno: string
@@ -68,6 +80,46 @@ export function otCacheKey(empresaId: string, userId: string) {
   return `${OT_CACHE_PREFIX}_${empresaId}_${userId}`
 }
 
+function otPreparationKey(empresaId: string, userId: string) {
+  return `${OT_PREPARATION_PREFIX}_${empresaId}_${userId}`
+}
+
+function validISOString(value: unknown) {
+  return typeof value === 'string' && !Number.isNaN(Date.parse(value)) ? value : null
+}
+
+export function readOTOfflinePreparationStatus(empresaId: string, userId: string): OTOfflinePreparationStatus | null {
+  if (!hasStorage() || !empresaId || !userId) return null
+  try {
+    const raw = window.localStorage.getItem(otPreparationKey(empresaId, userId))
+    if (!raw) return null
+    const value = JSON.parse(raw) as Partial<OTOfflinePreparationStatus>
+    if (value.empresa_id !== empresaId || value.user_id !== userId) return null
+    if (value.status !== 'preparing' && value.status !== 'ready' && value.status !== 'error') return null
+    return {
+      empresa_id: empresaId,
+      user_id: userId,
+      status: value.status,
+      last_attempt_at: validISOString(value.last_attempt_at),
+      last_success_at: validISOString(value.last_success_at),
+      prepared_count: Number.isFinite(value.prepared_count) ? Math.max(0, Number(value.prepared_count)) : 0,
+      ...(typeof value.error === 'string' && value.error ? { error: value.error } : {}),
+    }
+  } catch {
+    return null
+  }
+}
+
+export function writeOTOfflinePreparationStatus(status: OTOfflinePreparationStatus) {
+  if (!hasStorage() || !status.empresa_id || !status.user_id) return
+  try {
+    window.localStorage.setItem(otPreparationKey(status.empresa_id, status.user_id), JSON.stringify(status))
+    window.dispatchEvent(new Event(OT_PREPARATION_CHANGED_EVENT))
+  } catch (error) {
+    console.error('No se pudo guardar el estado local de preparación OT:', error)
+  }
+}
+
 export function isOTOfflineOperative(value: unknown) {
   if (!value || typeof value !== 'object') return false
   const record = value as Record<string, unknown>
@@ -95,8 +147,6 @@ function normalizeOTOfflineCache(cache: Partial<OTOfflineCache>, empresaId: stri
   const ots = cache.ots.filter((ot) => detalleIds.has(ot.id) && isOTOfflineOperative(ot))
   const otIds = new Set(ots.map((ot) => ot.id))
   const detallesFiltrados = detalles.filter((detalle) => otIds.has(detalle.id))
-
-  if (ots.length === 0 || detallesFiltrados.length === 0) return null
 
   return {
     schema_version: OT_CACHE_SCHEMA_VERSION,

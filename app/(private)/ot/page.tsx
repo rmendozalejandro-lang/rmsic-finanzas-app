@@ -6,7 +6,7 @@ import ProtectedModuleRoute from '../../../components/ProtectedModuleRoute'
 import { OTDataTable } from '../../../components/ot/ot-data-table'
 import { supabase } from '../../../lib/supabase/client'
 import type { OTResumen } from '../../../lib/ot/types'
-import { addOTOfflineDraft, findCachedOTDetail, readOTOfflineCache, otHasPendingLocalChanges, type OTOfflineDetail, type OTOfflineDraft } from '../../../lib/offline/ot'
+import { addOTOfflineDraft, findCachedOTDetail, readOTOfflineCache, readOTOfflinePreparationStatus, OT_PREPARATION_CHANGED_EVENT, otHasPendingLocalChanges, type OTOfflineDetail, type OTOfflineDraft, type OTOfflinePreparationStatus } from '../../../lib/offline/ot'
 
 const STORAGE_ID_KEY = 'empresa_activa_id'
 const CHECKLIST_HORAS_OPTIONS = [175, 520, 1040, 2080, 3120, 4160]
@@ -445,6 +445,9 @@ function OTPageContent() {
   const [offlineChecklistHoras, setOfflineChecklistHoras] = useState(175)
   const [offlineDraftSuccess, setOfflineDraftSuccess] = useState('')
   const [offlinePendingRefresh, setOfflinePendingRefresh] = useState(0)
+  const [offlineSelectionNotice, setOfflineSelectionNotice] = useState('')
+  const [preparationStatus, setPreparationStatus] = useState<OTOfflinePreparationStatus | null>(null)
+  const [offlinePreparedIds, setOfflinePreparedIds] = useState<Set<string>>(new Set())
 
   const [empresaActivaId, setEmpresaActivaId] = useState(() =>
     typeof window !== 'undefined' ? window.localStorage.getItem(STORAGE_ID_KEY) || '' : ''
@@ -494,12 +497,41 @@ function OTPageContent() {
   }, [])
 
   useEffect(() => {
+    if (!empresaActivaId || !currentUserId) {
+      setPreparationStatus(null)
+      setOfflinePreparedIds(new Set())
+      return
+    }
+
+    const syncOfflineState = () => {
+      const cache = readOTOfflineCache(empresaActivaId, currentUserId)
+      setPreparationStatus(readOTOfflinePreparationStatus(empresaActivaId, currentUserId))
+      setOfflinePreparedIds(new Set(cache?.detalles.map((detail) => detail.id) ?? []))
+      if (!navigator.onLine) {
+        setOts(cache?.ots ?? [])
+        setError('')
+        setLoading(false)
+        setSelectedOfflineOtId((selectedId) => selectedId && !cache?.detalles.some((detail) => detail.id === selectedId) ? '' : selectedId)
+      }
+    }
+
+    window.addEventListener(OT_PREPARATION_CHANGED_EVENT, syncOfflineState)
+    window.addEventListener('tralixia-ot-offline-cache-changed', syncOfflineState)
+    syncOfflineState()
+    return () => {
+      window.removeEventListener(OT_PREPARATION_CHANGED_EVENT, syncOfflineState)
+      window.removeEventListener('tralixia-ot-offline-cache-changed', syncOfflineState)
+    }
+  }, [currentUserId, empresaActivaId])
+
+  useEffect(() => {
     setFiltroCliente('')
     setFechaDesde('')
     setFechaHasta('')
     setOtIdsSeleccionadas(new Set())
     setSelectedOfflineOtId('')
     setOfflineDraftSuccess('')
+    setOfflineSelectionNotice('')
   }, [empresaActivaId])
 
   useEffect(() => {
@@ -540,10 +572,7 @@ function OTPageContent() {
 
         if (typeof navigator !== 'undefined' && !navigator.onLine) {
           const cache = readOTOfflineCache(empresaActivaId, userId)
-          if (!cache || cache.ots.length === 0) {
-            throw new Error('No hay OT preparadas para trabajar sin conexión.')
-          }
-          if (active) setOts(cache.ots)
+          if (active) setOts(cache?.ots ?? [])
           return
         }
 
@@ -627,7 +656,7 @@ function OTPageContent() {
     return () => {
       active = false
     }
-  }, [empresaActivaId])
+  }, [empresaActivaId, isOffline])
 
   useEffect(() => {
     let active = true
@@ -768,8 +797,16 @@ function OTPageContent() {
 
   const selectOfflineOt = (otId: string) => {
     const detail = findCachedOTDetail(empresaActivaId, currentUserId, otId)
-    setSelectedOfflineOtId(otId)
     setOfflineDraftSuccess('')
+
+    if (!detail) {
+      setSelectedOfflineOtId('')
+      setOfflineSelectionNotice('Esta OT todavía no está disponible offline. Se actualizará automáticamente cuando vuelva la conexión.')
+      return
+    }
+
+    setSelectedOfflineOtId(otId)
+    setOfflineSelectionNotice('')
 
     try {
       const draftRaw = window.localStorage.getItem(`tralixia_ot_draft_${empresaActivaId}_${currentUserId}_${otId}`)
@@ -778,9 +815,6 @@ function OTPageContent() {
       setOfflineDraft(buildOfflineDraftFromDetail(detail))
     }
 
-    if (!detail) {
-      setError('Esta OT no tiene detalle offline preparado. Vuelve a sincronizar con conexión.')
-    }
   }
 
   const volverAlListadoOffline = () => {
@@ -1046,6 +1080,41 @@ function OTPageContent() {
           ) : null}
         </div>
       </div>
+
+      {!isOffline ? (
+        <section className="rounded-2xl border border-sky-200 bg-sky-50 px-5 py-4 text-sm text-sky-950 shadow-sm" aria-live="polite">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="font-semibold">Modo terreno</p>
+              <p className="mt-1">
+                {preparationStatus?.status === 'preparing'
+                  ? 'Preparando OT para terreno…'
+                  : preparationStatus?.status === 'error'
+                    ? 'No se pudo actualizar el modo terreno. Se mantiene la última copia disponible.'
+                    : offlinePreparedIds.size > 0
+                      ? `${offlinePreparedIds.size} OT disponible${offlinePreparedIds.size === 1 ? '' : 's'} offline`
+                      : 'No hay OT preparadas todavía'}
+              </p>
+              {preparationStatus?.last_success_at ? (
+                <p className="mt-1 text-xs text-sky-700">
+                  Última actualización: {new Intl.DateTimeFormat('es-CL', { hour: '2-digit', minute: '2-digit' }).format(new Date(preparationStatus.last_success_at))}
+                </p>
+              ) : null}
+            </div>
+            {preparationStatus?.status === 'error' ? (
+              <button type="button" onClick={() => window.dispatchEvent(new Event('tralixia-ot-cache-refresh-requested'))} className="rounded-xl border border-sky-300 bg-white px-3 py-2 text-xs font-semibold text-sky-900 hover:bg-sky-100">
+                Reintentar actualización
+              </button>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
+
+      {isOffline && offlineSelectionNotice ? (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-medium text-amber-900 shadow-sm" role="status">
+          {offlineSelectionNotice}
+        </div>
+      ) : null}
 
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex flex-col gap-1">
@@ -1506,6 +1575,7 @@ function OTPageContent() {
           onToggleSelectAll={
             todasFiltradasSeleccionadas ? limpiarSeleccion : seleccionarTodasFiltradas
           }
+          offlinePreparedIds={offlinePreparedIds}
         />
         )
       }
