@@ -51,6 +51,9 @@ test('filtra OT operativas en servidor antes de limitar las 50 más recientes', 
       estado_nombre: 'Cerrada',
       fecha_cierre: '2026-08-18',
     })),
+    { id: 'cerrada-sin-fecha', estado_nombre: 'Cerrada', fecha_cierre: null },
+    { id: 'anulada-sin-fecha', estado_nombre: 'Anulada', fecha_cierre: null },
+    { id: 'archivada-sin-fecha', estado_nombre: 'Archivada', fecha_cierre: null },
     { id: 'operativa-anterior', estado_nombre: 'Asignada', fecha_cierre: null },
   ]
   const query = new FakeOTQuery(rows)
