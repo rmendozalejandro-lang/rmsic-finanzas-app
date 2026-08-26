@@ -4,6 +4,7 @@ import { renderToBuffer } from "@react-pdf/renderer";
 import type { DocumentProps } from "@react-pdf/renderer";
 import { OTPdfDocument } from "../../../../components/ot/ot-pdf-document";
 import type { OTResumen } from "../../../../lib/ot/types";
+import { resolvePdfEvidenceImageSource } from "../../../../lib/ot/evidence-images.server";
 import React from "react";
 import { existsSync } from "fs";
 import path from "path";
@@ -1472,10 +1473,19 @@ ${checklistTextoPdf}`
         .filter((value) => value && value.trim())
         .join("\n\n"),
     };
-    const evidencias = [
+    const evidenciasOriginales = [
       ...((evidenciasResp.data ?? []) as Evidencia[]),
       ...evidenciasChecklistPdf,
     ];
+    const evidencias = await Promise.all(
+      evidenciasOriginales.map(async (evidencia) => ({
+        ...evidencia,
+        archivo_pdf_source: await resolvePdfEvidenceImageSource(
+          evidencia.archivo_url,
+          evidencia.archivo_nombre,
+        ),
+      })),
+    );
     const firmas = (firmasResp.data ?? []) as Firma[];
     const logoUrl =
       detalle.empresa_id === RMSIC_EMPRESA_ID

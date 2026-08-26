@@ -7,6 +7,9 @@ import {
   StyleSheet,
   Font,
 } from '@react-pdf/renderer'
+import {
+  isVisualEvidence,
+} from '../../lib/ot/evidence-images'
 
 type ResumenLike = {
   cliente_nombre?: string | null
@@ -52,10 +55,13 @@ type EvidenciaPdf = {
   id: string
   tipo: 'antes' | 'durante' | 'despues' | 'documento' | 'otro'
   archivo_url: string
+  archivo_pdf_source?: string | null
   archivo_nombre: string | null
   descripcion: string | null
   orden: number
 }
+
+type EvidenciaPdfResuelta = EvidenciaPdf & { archivo_pdf_source: string }
 
 type FirmaPdf = {
   id: string
@@ -627,16 +633,7 @@ function labelOrDash(value: string | null | undefined) {
 }
 
 function isImageFile(url: string, fileName?: string | null) {
-  const value = `${url} ${fileName ?? ''}`.toLowerCase()
-  return (
-    value.includes('.jpg') ||
-    value.includes('.jpeg') ||
-    value.includes('.png') ||
-    value.includes('.webp') ||
-    value.includes('.gif') ||
-    value.includes('.bmp') ||
-    value.includes('.svg')
-  )
+  return isVisualEvidence(url, fileName)
 }
 
 function toTitleCase(text: string) {
@@ -825,13 +822,13 @@ function ChecklistTable({ rows }: { rows: ChecklistRow[] }) {
   )
 }
 
-function PhotoCard({ item }: { item: EvidenciaPdf }) {
+function PhotoCard({ item }: { item: EvidenciaPdfResuelta }) {
   const descripcion = item.descripcion?.trim() ?? ''
   const nombreArchivo = item.archivo_nombre?.trim() ?? 'Registro fotográfico'
 
   return (
     <View wrap={false} style={styles.photoCard}>
-      <Image src={item.archivo_url} style={styles.photoImage} />
+      <Image src={item.archivo_pdf_source} style={styles.photoImage} />
 
       <View style={styles.photoBody}>
         <Text style={styles.photoTitle}>
@@ -853,7 +850,7 @@ function PhotoGroup({
   items,
 }: {
   title: string
-  items: EvidenciaPdf[]
+  items: EvidenciaPdfResuelta[]
 }) {
   if (items.length === 0) return null
 
@@ -919,8 +916,10 @@ export function OTPdfDocument({
     tipoNombreLower.includes('asesoria') ||
     tipoNombreLower.includes('consultoria')
 
-  const evidenciasImagenes = evidencias.filter((item) =>
-    isImageFile(item.archivo_url, item.archivo_nombre)
+  const evidenciasImagenes = evidencias.filter(
+    (item): item is EvidenciaPdfResuelta =>
+      isImageFile(item.archivo_url, item.archivo_nombre) &&
+      typeof item.archivo_pdf_source === 'string'
   )
 
   const fotosAntes = evidenciasImagenes.filter((item) => item.tipo === 'antes')

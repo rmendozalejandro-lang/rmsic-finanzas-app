@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../lib/supabase/client'
+import { optimizeEvidenceImageForUpload } from '../../lib/ot/evidence-images'
 
 type EvidenciaTipo = 'antes' | 'durante' | 'despues' | 'documento' | 'otro'
 
@@ -159,12 +160,15 @@ export function OTEvidenciasPanel({
       setError('')
       setSuccess('')
 
-      const safeName = sanitizeFileName(form.file.name)
+      // Keep the logical name aligned with the uploaded file (WebP becomes JPEG).
+      // A failed mandatory WebP conversion cancels the upload with a clear error.
+      const uploadFile = await optimizeEvidenceImageForUpload(form.file)
+      const safeName = sanitizeFileName(uploadFile.name)
       const filePath = `${empresaId}/${otId}/${Date.now()}-${safeName}`
 
       const { error: uploadError } = await supabase.storage
         .from(BUCKET_NAME)
-        .upload(filePath, form.file, {
+        .upload(filePath, uploadFile, {
           cacheControl: '3600',
           upsert: false,
         })
@@ -189,7 +193,7 @@ export function OTEvidenciasPanel({
         ot_id: otId,
         tipo: form.tipo,
         archivo_url: publicUrl,
-        archivo_nombre: form.file.name,
+        archivo_nombre: uploadFile.name,
         descripcion: form.descripcion.trim() || null,
         orden: nextOrder,
         subido_por: currentUserId || null,
