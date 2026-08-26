@@ -1,4 +1,4 @@
-const PDF_IMAGE_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'webp'])
+const PDF_IMAGE_EXTENSIONS = new Set(['jpg', 'jpeg', 'png'])
 const VISUAL_EVIDENCE_EXTENSIONS = new Set([
   ...PDF_IMAGE_EXTENSIONS,
   'gif',
@@ -143,7 +143,9 @@ export async function optimizeEvidenceImageForUpload(file: File) {
 
   const image = await loadBrowserImage(file)
   const longestSide = Math.max(image.naturalWidth, image.naturalHeight)
+  const isWebP = file.type.toLowerCase() === 'image/webp'
   if (
+    !isWebP &&
     longestSide <= CLIENT_MAX_IMAGE_SIDE &&
     file.size <= CLIENT_COMPRESSION_THRESHOLD
   ) {
@@ -158,12 +160,20 @@ export async function optimizeEvidenceImageForUpload(file: File) {
   const context = canvas.getContext('2d')
   if (!context) return file
 
+  if (isWebP) {
+    context.fillStyle = '#ffffff'
+    context.fillRect(0, 0, canvas.width, canvas.height)
+  }
   context.drawImage(image, 0, 0, canvas.width, canvas.height)
-  const blob = await canvasToBlob(canvas, file.type)
+  const outputType = isWebP ? 'image/jpeg' : file.type
+  const blob = await canvasToBlob(canvas, outputType)
 
-  if (!blob || blob.size >= file.size) return file
-  return new File([blob], file.name, {
-    type: file.type,
+  if (!blob || (!isWebP && blob.size >= file.size)) return file
+  const outputName = isWebP
+    ? file.name.replace(/\.[^.]+$/, '') + '.jpg'
+    : file.name
+  return new File([blob], outputName, {
+    type: outputType,
     lastModified: file.lastModified,
   })
 }

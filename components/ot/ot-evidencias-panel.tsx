@@ -160,12 +160,12 @@ export function OTEvidenciasPanel({
       setError('')
       setSuccess('')
 
-      // Keep metadata based on the original file while reducing only supported photos.
+      // Keep the logical name aligned with the uploaded file (WebP becomes JPEG).
       // If a browser cannot process an image, preserve the existing upload behavior.
       const uploadFile = await optimizeEvidenceImageForUpload(form.file).catch(
         () => form.file as File
       )
-      const safeName = sanitizeFileName(form.file.name)
+      const safeName = sanitizeFileName(uploadFile.name)
       const filePath = `${empresaId}/${otId}/${Date.now()}-${safeName}`
 
       const { error: uploadError } = await supabase.storage
@@ -195,7 +195,7 @@ export function OTEvidenciasPanel({
         ot_id: otId,
         tipo: form.tipo,
         archivo_url: publicUrl,
-        archivo_nombre: form.file.name,
+        archivo_nombre: uploadFile.name,
         descripcion: form.descripcion.trim() || null,
         orden: nextOrder,
         subido_por: currentUserId || null,
