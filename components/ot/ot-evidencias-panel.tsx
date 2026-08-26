@@ -161,10 +161,8 @@ export function OTEvidenciasPanel({
       setSuccess('')
 
       // Keep the logical name aligned with the uploaded file (WebP becomes JPEG).
-      // If a browser cannot process an image, preserve the existing upload behavior.
-      const uploadFile = await optimizeEvidenceImageForUpload(form.file).catch(
-        () => form.file as File
-      )
+      // A failed mandatory WebP conversion cancels the upload with a clear error.
+      const uploadFile = await optimizeEvidenceImageForUpload(form.file)
       const safeName = sanitizeFileName(uploadFile.name)
       const filePath = `${empresaId}/${otId}/${Date.now()}-${safeName}`
 

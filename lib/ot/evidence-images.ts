@@ -114,6 +114,8 @@ export async function resolvePdfEvidenceImageUrl(
 const CLIENT_MAX_IMAGE_SIDE = 1920
 const CLIENT_COMPRESSION_THRESHOLD = 750 * 1024
 const CLIENT_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp'])
+const WEBP_CONVERSION_ERROR =
+  'No fue posible convertir la imagen WebP a JPEG. Intenta nuevamente o selecciona una imagen JPG/PNG.'
 
 function loadBrowserImage(file: File) {
   return new Promise<HTMLImageElement>((resolve, reject) => {
@@ -140,41 +142,50 @@ function canvasToBlob(canvas: HTMLCanvasElement, type: string) {
 
 /** Reduces photographic evidence in-browser. Documents and SVG files are untouched. */
 export async function optimizeEvidenceImageForUpload(file: File) {
-  if (!CLIENT_IMAGE_TYPES.has(file.type.toLowerCase())) return file
+  const fileType = file.type.toLowerCase()
+  const isWebP =
+    fileType === 'image/webp' || getFileExtension('', file.name) === 'webp'
+  if (!isWebP && !CLIENT_IMAGE_TYPES.has(fileType)) return file
 
-  const image = await loadBrowserImage(file)
-  const longestSide = Math.max(image.naturalWidth, image.naturalHeight)
-  const isWebP = file.type.toLowerCase() === 'image/webp'
-  if (
-    !isWebP &&
-    longestSide <= CLIENT_MAX_IMAGE_SIDE &&
-    file.size <= CLIENT_COMPRESSION_THRESHOLD
-  ) {
+  try {
+    const image = await loadBrowserImage(file)
+    const longestSide = Math.max(image.naturalWidth, image.naturalHeight)
+    if (
+      !isWebP &&
+      longestSide <= CLIENT_MAX_IMAGE_SIDE &&
+      file.size <= CLIENT_COMPRESSION_THRESHOLD
+    ) {
+      return file
+    }
+
+    const scale = Math.min(1, CLIENT_MAX_IMAGE_SIDE / longestSide)
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale))
+    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale))
+
+    const context = canvas.getContext('2d')
+    if (!context) throw new Error('Canvas 2D no disponible.')
+
+    if (isWebP) {
+      context.fillStyle = '#ffffff'
+      context.fillRect(0, 0, canvas.width, canvas.height)
+    }
+    context.drawImage(image, 0, 0, canvas.width, canvas.height)
+    const outputType = isWebP ? 'image/jpeg' : file.type
+    const blob = await canvasToBlob(canvas, outputType)
+
+    if (!blob) throw new Error('No se pudo codificar la imagen.')
+    if (!isWebP && blob.size >= file.size) return file
+
+    const outputName = isWebP
+      ? file.name.replace(/\.[^.]+$/, '') + '.jpg'
+      : file.name
+    return new File([blob], outputName, {
+      type: outputType,
+      lastModified: file.lastModified,
+    })
+  } catch (error) {
+    if (isWebP) throw new Error(WEBP_CONVERSION_ERROR, { cause: error })
     return file
   }
-
-  const scale = Math.min(1, CLIENT_MAX_IMAGE_SIDE / longestSide)
-  const canvas = document.createElement('canvas')
-  canvas.width = Math.max(1, Math.round(image.naturalWidth * scale))
-  canvas.height = Math.max(1, Math.round(image.naturalHeight * scale))
-
-  const context = canvas.getContext('2d')
-  if (!context) return file
-
-  if (isWebP) {
-    context.fillStyle = '#ffffff'
-    context.fillRect(0, 0, canvas.width, canvas.height)
-  }
-  context.drawImage(image, 0, 0, canvas.width, canvas.height)
-  const outputType = isWebP ? 'image/jpeg' : file.type
-  const blob = await canvasToBlob(canvas, outputType)
-
-  if (!blob || (!isWebP && blob.size >= file.size)) return file
-  const outputName = isWebP
-    ? file.name.replace(/\.[^.]+$/, '') + '.jpg'
-    : file.name
-  return new File([blob], outputName, {
-    type: outputType,
-    lastModified: file.lastModified,
-  })
 }
