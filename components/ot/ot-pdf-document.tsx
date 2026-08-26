@@ -8,8 +8,7 @@ import {
   Font,
 } from '@react-pdf/renderer'
 import {
-  getPdfEvidenceImageUrl,
-  isPdfCompatibleEvidenceImage,
+  isVisualEvidence,
 } from '../../lib/ot/evidence-images'
 
 type ResumenLike = {
@@ -631,7 +630,7 @@ function labelOrDash(value: string | null | undefined) {
 }
 
 function isImageFile(url: string, fileName?: string | null) {
-  return isPdfCompatibleEvidenceImage(url, fileName)
+  return isVisualEvidence(url, fileName)
 }
 
 function toTitleCase(text: string) {
@@ -826,10 +825,7 @@ function PhotoCard({ item }: { item: EvidenciaPdf }) {
 
   return (
     <View wrap={false} style={styles.photoCard}>
-      <Image
-        src={getPdfEvidenceImageUrl(item.archivo_url, item.archivo_nombre)}
-        style={styles.photoImage}
-      />
+      <Image src={item.archivo_url} style={styles.photoImage} />
 
       <View style={styles.photoBody}>
         <Text style={styles.photoTitle}>

@@ -1,4 +1,10 @@
 const PDF_IMAGE_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'webp'])
+const VISUAL_EVIDENCE_EXTENSIONS = new Set([
+  ...PDF_IMAGE_EXTENSIONS,
+  'gif',
+  'bmp',
+  'svg',
+])
 
 const OT_EVIDENCE_PUBLIC_PATH = '/storage/v1/object/public/ot-evidencias/'
 const OT_EVIDENCE_RENDER_PATH = '/storage/v1/render/image/public/ot-evidencias/'
@@ -32,6 +38,14 @@ export function isPdfCompatibleEvidenceImage(
   )
 }
 
+/** Preserves every visual format that was historically included in OT PDFs. */
+export function isVisualEvidence(url: string, fileName?: string | null) {
+  return (
+    VISUAL_EVIDENCE_EXTENSIONS.has(getFileExtension(url)) ||
+    VISUAL_EVIDENCE_EXTENSIONS.has(getFileExtension('', fileName))
+  )
+}
+
 /**
  * Uses Supabase's public image-render endpoint without changing the persisted URL.
  * Unknown hosts/paths and non-PDF-compatible files deliberately retain their source.
@@ -55,9 +69,44 @@ export function getPdfEvidenceImageUrl(
     url.searchParams.set('height', '1600')
     url.searchParams.set('resize', 'contain')
     url.searchParams.set('quality', '80')
+    url.searchParams.set('format', 'origin')
     return url.toString()
   } catch {
     return originalUrl
+  }
+}
+
+/**
+ * Verifies the transformed resource on the server before React PDF receives it.
+ * A disabled/unsupported transformation endpoint therefore falls back to the
+ * persisted public URL instead of leaving a blank image in the generated PDF.
+ */
+export async function resolvePdfEvidenceImageUrl(
+  originalUrl: string,
+  fileName?: string | null
+) {
+  const transformedUrl = getPdfEvidenceImageUrl(originalUrl, fileName)
+  if (transformedUrl === originalUrl) return originalUrl
+
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 8_000)
+
+  try {
+    const response = await fetch(transformedUrl, {
+      method: 'GET',
+      cache: 'no-store',
+      signal: controller.signal,
+    })
+    const contentType = response.headers.get('content-type')?.toLowerCase() ?? ''
+    await response.body?.cancel()
+
+    return response.ok && contentType.startsWith('image/')
+      ? transformedUrl
+      : originalUrl
+  } catch {
+    return originalUrl
+  } finally {
+    clearTimeout(timeout)
   }
 }
 
