@@ -1,8 +1,12 @@
 'use client'
 
 import Link from 'next/link'
+import { useEffect, useMemo, useState } from 'react'
 import type { OTResumen } from '../../lib/ot/types'
 import { isOTOfflineOperative } from '../../lib/offline/ot'
+
+const OT_LIST_CONTEXT_KEY = 'tralixia:ot:list-context'
+const OT_LIST_CONTEXT_TTL_MS = 30 * 60 * 1000
 
 type Props = {
   data: OTResumen[]
@@ -33,17 +37,58 @@ type OTResumenConPlantilla = OTResumen & {
   equipos_asociados_count?: number | null
 }
 
-function formatDate(value: string | null | undefined) {
+type OTListContext = {
+  otId: string
+  scrollY: number
+  savedAt: number
+}
+
+function formatDateOnly(value: string | null | undefined) {
+  if (!value) return '-'
+
+  const dateOnly = value.slice(0, 10)
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateOnly)
+
+  if (match) {
+    return `${match[3]}/${match[2]}/${match[1].slice(2)}`
+  }
+
+  return value
+}
+
+function formatDateTimeAsChile(value: string | null | undefined) {
   if (!value) return '-'
 
   const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
+  if (Number.isNaN(date.getTime())) return formatDateOnly(value)
 
   return new Intl.DateTimeFormat('es-CL', {
     day: '2-digit',
     month: '2-digit',
     year: '2-digit',
+    timeZone: 'America/Santiago',
   }).format(date)
+}
+
+function formatServiceDate(ot: OTResumen) {
+  if (ot.hora_inicio) return formatDateTimeAsChile(ot.hora_inicio)
+  return formatDateOnly(ot.fecha_ot)
+}
+
+function getServiceDateSortValue(ot: OTResumen) {
+  if (ot.hora_inicio) {
+    const timestamp = new Date(ot.hora_inicio).getTime()
+    if (!Number.isNaN(timestamp)) return timestamp
+  }
+
+  const dateOnly = ot.fecha_ot?.slice(0, 10)
+  if (dateOnly && /^\d{4}-\d{2}-\d{2}$/.test(dateOnly)) {
+    const timestamp = Date.parse(`${dateOnly}T12:00:00Z`)
+    if (!Number.isNaN(timestamp)) return timestamp
+  }
+
+  const createdTimestamp = new Date(ot.created_at).getTime()
+  return Number.isNaN(createdTimestamp) ? 0 : createdTimestamp
 }
 
 function formatDuration(minutes: number | null | undefined) {
@@ -245,6 +290,18 @@ function buildEstadoVisual(ot: OTResumenConPlantilla) {
   }
 }
 
+function rememberListContext(otId: string) {
+  if (typeof window === 'undefined') return
+
+  const context: OTListContext = {
+    otId,
+    scrollY: window.scrollY,
+    savedAt: Date.now(),
+  }
+
+  window.sessionStorage.setItem(OT_LIST_CONTEXT_KEY, JSON.stringify(context))
+}
+
 export function OTDataTable({
   data,
   selectable = false,
@@ -254,6 +311,65 @@ export function OTDataTable({
   onToggleSelectAll,
   offlinePreparedIds,
 }: Props) {
+  const [highlightedOtId, setHighlightedOtId] = useState('')
+
+  const orderedData = useMemo(
+    () => [...data].sort((a, b) => getServiceDateSortValue(b) - getServiceDateSortValue(a)),
+    [data]
+  )
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || data.length === 0) return
+
+    const rawContext = window.sessionStorage.getItem(OT_LIST_CONTEXT_KEY)
+    if (!rawContext) return
+
+    let context: OTListContext | null = null
+
+    try {
+      const parsed = JSON.parse(rawContext) as Partial<OTListContext>
+      if (
+        typeof parsed.otId === 'string' &&
+        typeof parsed.scrollY === 'number' &&
+        typeof parsed.savedAt === 'number'
+      ) {
+        context = parsed as OTListContext
+      }
+    } catch {
+      window.sessionStorage.removeItem(OT_LIST_CONTEXT_KEY)
+      return
+    }
+
+    if (!context || Date.now() - context.savedAt > OT_LIST_CONTEXT_TTL_MS) {
+      window.sessionStorage.removeItem(OT_LIST_CONTEXT_KEY)
+      return
+    }
+
+    if (!data.some((ot) => ot.id === context?.otId)) return
+
+    window.sessionStorage.removeItem(OT_LIST_CONTEXT_KEY)
+    setHighlightedOtId(context.otId)
+
+    const restoreTimer = window.setTimeout(() => {
+      const row = document.querySelector<HTMLElement>(`[data-ot-row="${context?.otId}"]`)
+
+      if (row) {
+        row.scrollIntoView({ block: 'center', behavior: 'auto' })
+      } else {
+        window.scrollTo({ top: context?.scrollY ?? 0, behavior: 'auto' })
+      }
+    }, 60)
+
+    const highlightTimer = window.setTimeout(() => {
+      setHighlightedOtId('')
+    }, 3500)
+
+    return () => {
+      window.clearTimeout(restoreTimer)
+      window.clearTimeout(highlightTimer)
+    }
+  }, [data])
+
   if (!data.length) {
     return (
       <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center shadow-sm">
@@ -269,6 +385,9 @@ export function OTDataTable({
 
   return (
     <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="border-b border-slate-100 bg-slate-50/70 px-4 py-3 text-xs text-slate-500">
+        Ordenadas por fecha real del servicio, desde la más reciente.
+      </div>
       <div className="overflow-x-auto">
         <table className="min-w-full text-sm">
           <thead className="bg-slate-50">
@@ -284,8 +403,8 @@ export function OTDataTable({
                   />
                 </th>
               ) : null}
+              <th className="px-4 py-3 font-semibold">Fecha servicio</th>
               <th className="px-4 py-3 font-semibold">Folio</th>
-              <th className="px-4 py-3 font-semibold">Fecha</th>
               <th className="px-4 py-3 font-semibold">Cliente</th>
               <th className="px-4 py-3 font-semibold">Título</th>
               <th className="px-4 py-3 font-semibold">Tipo</th>
@@ -299,16 +418,25 @@ export function OTDataTable({
           </thead>
 
           <tbody>
-            {data.map((ot) => {
+            {orderedData.map((ot) => {
               const otConPlantilla = ot as OTResumenConPlantilla
               const checked = Boolean(selectedIds?.has(ot.id))
               const equipoResumen = buildEquipoResumen(otConPlantilla)
               const estadoVisual = buildEstadoVisual(otConPlantilla)
               const otMainHref = buildOtMainHref(otConPlantilla)
               const otActionLabel = buildOtActionLabel(otConPlantilla)
+              const isHighlighted = highlightedOtId === ot.id
 
               return (
-                <tr key={ot.id} className="border-t border-slate-100 text-slate-700">
+                <tr
+                  key={ot.id}
+                  data-ot-row={ot.id}
+                  className={`border-t text-slate-700 transition-colors duration-500 ${
+                    isHighlighted
+                      ? 'border-blue-200 bg-blue-50 ring-1 ring-inset ring-blue-200'
+                      : 'border-slate-100 hover:bg-slate-50/80'
+                  }`}
+                >
                   {selectable ? (
                     <td className="px-4 py-3 align-middle">
                       <input
@@ -321,14 +449,16 @@ export function OTDataTable({
                     </td>
                   ) : null}
 
+                  <td className="whitespace-nowrap px-4 py-3 font-semibold text-slate-900">
+                    {formatServiceDate(ot)}
+                  </td>
+
                   <td className="px-4 py-3 font-semibold text-slate-900">
                     {labelOrDash(ot.folio)}
                   </td>
 
-                  <td className="px-4 py-3">{formatDate(ot.fecha_ot)}</td>
-
                   <td className="px-4 py-3">
-                    <div className="max-w-[220px] whitespace-normal break-words">
+                    <div className="max-w-[220px] whitespace-normal break-words font-medium text-slate-900">
                       {labelOrDash(ot.cliente_nombre)}
                     </div>
                   </td>
@@ -392,7 +522,8 @@ export function OTDataTable({
                     ) : null}
                     <Link
                       href={otMainHref}
-                      className="inline-flex items-center justify-center rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-100"
+                      onClick={() => rememberListContext(ot.id)}
+                      className="inline-flex items-center justify-center rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:bg-slate-100"
                       title={otConPlantilla.plantilla_nombre || undefined}
                     >
                       {otActionLabel}
