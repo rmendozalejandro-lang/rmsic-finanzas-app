@@ -1,6 +1,7 @@
 const PDF_IMAGE_EXTENSIONS = new Set(['jpg', 'jpeg', 'png'])
 const VISUAL_EVIDENCE_EXTENSIONS = new Set([
   ...PDF_IMAGE_EXTENSIONS,
+  'webp',
   'gif',
   'bmp',
   'svg',
