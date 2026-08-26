@@ -7,6 +7,10 @@ import {
   StyleSheet,
   Font,
 } from '@react-pdf/renderer'
+import {
+  getPdfEvidenceImageUrl,
+  isPdfCompatibleEvidenceImage,
+} from '../../lib/ot/evidence-images'
 
 type ResumenLike = {
   cliente_nombre?: string | null
@@ -627,16 +631,7 @@ function labelOrDash(value: string | null | undefined) {
 }
 
 function isImageFile(url: string, fileName?: string | null) {
-  const value = `${url} ${fileName ?? ''}`.toLowerCase()
-  return (
-    value.includes('.jpg') ||
-    value.includes('.jpeg') ||
-    value.includes('.png') ||
-    value.includes('.webp') ||
-    value.includes('.gif') ||
-    value.includes('.bmp') ||
-    value.includes('.svg')
-  )
+  return isPdfCompatibleEvidenceImage(url, fileName)
 }
 
 function toTitleCase(text: string) {
@@ -831,7 +826,10 @@ function PhotoCard({ item }: { item: EvidenciaPdf }) {
 
   return (
     <View wrap={false} style={styles.photoCard}>
-      <Image src={item.archivo_url} style={styles.photoImage} />
+      <Image
+        src={getPdfEvidenceImageUrl(item.archivo_url, item.archivo_nombre)}
+        style={styles.photoImage}
+      />
 
       <View style={styles.photoBody}>
         <Text style={styles.photoTitle}>

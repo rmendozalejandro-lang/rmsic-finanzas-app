@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../lib/supabase/client'
+import { optimizeEvidenceImageForUpload } from '../../lib/ot/evidence-images'
 
 type EvidenciaTipo = 'antes' | 'durante' | 'despues' | 'documento' | 'otro'
 
@@ -159,12 +160,17 @@ export function OTEvidenciasPanel({
       setError('')
       setSuccess('')
 
+      // Keep metadata based on the original file while reducing only supported photos.
+      // If a browser cannot process an image, preserve the existing upload behavior.
+      const uploadFile = await optimizeEvidenceImageForUpload(form.file).catch(
+        () => form.file as File
+      )
       const safeName = sanitizeFileName(form.file.name)
       const filePath = `${empresaId}/${otId}/${Date.now()}-${safeName}`
 
       const { error: uploadError } = await supabase.storage
         .from(BUCKET_NAME)
-        .upload(filePath, form.file, {
+        .upload(filePath, uploadFile, {
           cacheControl: '3600',
           upsert: false,
         })
