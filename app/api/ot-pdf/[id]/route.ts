@@ -4,7 +4,7 @@ import { renderToBuffer } from "@react-pdf/renderer";
 import type { DocumentProps } from "@react-pdf/renderer";
 import { OTPdfDocument } from "../../../../components/ot/ot-pdf-document";
 import type { OTResumen } from "../../../../lib/ot/types";
-import { resolvePdfEvidenceImageUrl } from "../../../../lib/ot/evidence-images";
+import { resolvePdfEvidenceImageSource } from "../../../../lib/ot/evidence-images.server";
 import React from "react";
 import { existsSync } from "fs";
 import path from "path";
@@ -1480,7 +1480,7 @@ ${checklistTextoPdf}`
     const evidencias = await Promise.all(
       evidenciasOriginales.map(async (evidencia) => ({
         ...evidencia,
-        archivo_url: await resolvePdfEvidenceImageUrl(
+        archivo_pdf_source: await resolvePdfEvidenceImageSource(
           evidencia.archivo_url,
           evidencia.archivo_nombre,
         ),

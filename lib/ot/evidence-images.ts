@@ -77,40 +77,6 @@ export function getPdfEvidenceImageUrl(
   }
 }
 
-/**
- * Verifies the transformed resource on the server before React PDF receives it.
- * A disabled/unsupported transformation endpoint therefore falls back to the
- * persisted public URL instead of leaving a blank image in the generated PDF.
- */
-export async function resolvePdfEvidenceImageUrl(
-  originalUrl: string,
-  fileName?: string | null
-) {
-  const transformedUrl = getPdfEvidenceImageUrl(originalUrl, fileName)
-  if (transformedUrl === originalUrl) return originalUrl
-
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), 8_000)
-
-  try {
-    const response = await fetch(transformedUrl, {
-      method: 'GET',
-      cache: 'no-store',
-      signal: controller.signal,
-    })
-    const contentType = response.headers.get('content-type')?.toLowerCase() ?? ''
-    await response.body?.cancel()
-
-    return response.ok && contentType.startsWith('image/')
-      ? transformedUrl
-      : originalUrl
-  } catch {
-    return originalUrl
-  } finally {
-    clearTimeout(timeout)
-  }
-}
-
 const CLIENT_MAX_IMAGE_SIDE = 1920
 const CLIENT_COMPRESSION_THRESHOLD = 750 * 1024
 const CLIENT_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp'])

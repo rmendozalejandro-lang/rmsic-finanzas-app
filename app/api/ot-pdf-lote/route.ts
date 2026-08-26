@@ -5,7 +5,7 @@ import type { DocumentProps } from '@react-pdf/renderer'
 import { PDFDocument as PDFLibDocument } from 'pdf-lib'
 import { OTPdfDocument } from '../../../components/ot/ot-pdf-document'
 import type { OTResumen } from '../../../lib/ot/types'
-import { resolvePdfEvidenceImageUrl } from '../../../lib/ot/evidence-images'
+import { resolvePdfEvidenceImageSource } from '../../../lib/ot/evidence-images.server'
 import React from 'react'
 
 export const runtime = 'nodejs'
@@ -567,7 +567,7 @@ async function cargarOtParaPdf(params: {
     evidencias: await Promise.all(
       ((evidenciasResp.data ?? []) as Evidencia[]).map(async (evidencia) => ({
         ...evidencia,
-        archivo_url: await resolvePdfEvidenceImageUrl(
+        archivo_pdf_source: await resolvePdfEvidenceImageSource(
           evidencia.archivo_url,
           evidencia.archivo_nombre
         ),
