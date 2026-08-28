@@ -7,6 +7,8 @@ import ProtectedCotizacionesRoute from "@/components/ProtectedCotizacionesRoute"
 
 const STORAGE_ID_KEY = "empresa_activa_id";
 const STORAGE_NAME_KEY = "empresa_activa_nombre";
+const COTIZACIONES_LIST_CONTEXT_KEY = "tralixia:cotizaciones:list-context";
+const COTIZACIONES_LIST_CONTEXT_TTL_MS = 30 * 60 * 1000;
 
 type EstadoCotizacion =
   | "borrador"
@@ -54,6 +56,20 @@ type CotizacionItemRow = {
   precio_unitario: number | string | null;
   subtotal: number | string | null;
   afecto_iva: boolean | null;
+};
+
+type CotizacionesListContext = {
+  cotizacionId: string;
+  empresaId: string;
+  scrollY: number;
+  savedAt: number;
+  filters: {
+    q: string;
+    estado: string;
+    clienteId: string;
+    fechaDesde: string;
+    fechaHasta: string;
+  };
 };
 
 function toNumber(value: number | string | null | undefined) {
@@ -208,6 +224,10 @@ export default function CotizacionesPage() {
 
   const [q, setQ] = useState("");
   const [estado, setEstado] = useState("");
+  const [clienteFiltro, setClienteFiltro] = useState("");
+  const [fechaDesde, setFechaDesde] = useState("");
+  const [fechaHasta, setFechaHasta] = useState("");
+  const [highlightedCotizacionId, setHighlightedCotizacionId] = useState("");
   const [usuarioRol, setUsuarioRol] = useState("");
   const [isAdmin, setIsAdmin] = useState(false);
 
@@ -410,14 +430,144 @@ export default function CotizacionesPage() {
     fetchData();
   }, [empresaActivaId]);
 
+  const clientesFiltro = useMemo(() => {
+    const clientesConCotizacion = new Map<string, string>();
+
+    cotizaciones.forEach((row) => {
+      if (!row.cliente_id) return;
+      const cliente = clientesMap[row.cliente_id];
+      if (!cliente) return;
+
+      clientesConCotizacion.set(
+        row.cliente_id,
+        getClienteDisplayName(cliente),
+      );
+    });
+
+    return Array.from(clientesConCotizacion.entries())
+      .map(([id, nombre]) => ({ id, nombre }))
+      .sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
+  }, [cotizaciones, clientesMap]);
+
+  useEffect(() => {
+    if (loading || !empresaActivaId || cotizaciones.length === 0) return;
+
+    const rawContext = window.sessionStorage.getItem(
+      COTIZACIONES_LIST_CONTEXT_KEY,
+    );
+    if (!rawContext) return;
+
+    let context: CotizacionesListContext | null = null;
+
+    try {
+      const parsed = JSON.parse(rawContext) as Partial<CotizacionesListContext>;
+      const filters = parsed.filters;
+
+      if (
+        typeof parsed.cotizacionId === "string" &&
+        typeof parsed.empresaId === "string" &&
+        typeof parsed.scrollY === "number" &&
+        typeof parsed.savedAt === "number" &&
+        filters &&
+        typeof filters.q === "string" &&
+        typeof filters.estado === "string" &&
+        typeof filters.clienteId === "string" &&
+        typeof filters.fechaDesde === "string" &&
+        typeof filters.fechaHasta === "string"
+      ) {
+        context = parsed as CotizacionesListContext;
+      }
+    } catch {
+      window.sessionStorage.removeItem(COTIZACIONES_LIST_CONTEXT_KEY);
+      return;
+    }
+
+    if (
+      !context ||
+      Date.now() - context.savedAt > COTIZACIONES_LIST_CONTEXT_TTL_MS
+    ) {
+      window.sessionStorage.removeItem(COTIZACIONES_LIST_CONTEXT_KEY);
+      return;
+    }
+
+    if (context.empresaId !== empresaActivaId) {
+      window.sessionStorage.removeItem(COTIZACIONES_LIST_CONTEXT_KEY);
+      return;
+    }
+
+    if (!cotizaciones.some((row) => row.id === context?.cotizacionId)) return;
+
+    setQ(context.filters.q);
+    setEstado(context.filters.estado);
+    setClienteFiltro(context.filters.clienteId);
+    setFechaDesde(context.filters.fechaDesde);
+    setFechaHasta(context.filters.fechaHasta);
+    setHighlightedCotizacionId(context.cotizacionId);
+    window.sessionStorage.removeItem(COTIZACIONES_LIST_CONTEXT_KEY);
+
+    const restoreTimer = window.setTimeout(() => {
+      const row = document.querySelector<HTMLElement>(
+        `[data-cotizacion-row="${context?.cotizacionId}"]`,
+      );
+
+      if (row) {
+        row.scrollIntoView({ block: "center", behavior: "auto" });
+      } else {
+        window.scrollTo({ top: context?.scrollY ?? 0, behavior: "auto" });
+      }
+    }, 180);
+
+    const highlightTimer = window.setTimeout(() => {
+      setHighlightedCotizacionId("");
+    }, 3500);
+
+    return () => {
+      window.clearTimeout(restoreTimer);
+      window.clearTimeout(highlightTimer);
+    };
+  }, [cotizaciones, empresaActivaId, loading]);
+
+  const rememberListContext = (cotizacionId: string) => {
+    if (typeof window === "undefined") return;
+
+    const context: CotizacionesListContext = {
+      cotizacionId,
+      empresaId: empresaActivaId,
+      scrollY: window.scrollY,
+      savedAt: Date.now(),
+      filters: {
+        q,
+        estado,
+        clienteId: clienteFiltro,
+        fechaDesde,
+        fechaHasta,
+      },
+    };
+
+    window.sessionStorage.setItem(
+      COTIZACIONES_LIST_CONTEXT_KEY,
+      JSON.stringify(context),
+    );
+  };
+
   const filteredCotizaciones = useMemo(() => {
     const term = q.trim().toLowerCase();
 
     return cotizaciones.filter((row) => {
       const cliente = row.cliente_id ? clientesMap[row.cliente_id] : undefined;
       const clienteNombre = getClienteDisplayName(cliente).toLowerCase();
+      const fechaEmision = row.fecha_emision?.slice(0, 10) || "";
 
       const matchesEstado = estado ? row.estado === estado : true;
+      const matchesCliente = clienteFiltro
+        ? row.cliente_id === clienteFiltro
+        : true;
+      const matchesFechaDesde = fechaDesde
+        ? Boolean(fechaEmision && fechaEmision >= fechaDesde)
+        : true;
+      const matchesFechaHasta = fechaHasta
+        ? Boolean(fechaEmision && fechaEmision <= fechaHasta)
+        : true;
       const matchesQ = term
         ? [
             row.codigo || "",
@@ -430,9 +580,23 @@ export default function CotizacionesPage() {
             .includes(term)
         : true;
 
-      return matchesEstado && matchesQ;
+      return (
+        matchesEstado &&
+        matchesCliente &&
+        matchesFechaDesde &&
+        matchesFechaHasta &&
+        matchesQ
+      );
     });
-  }, [cotizaciones, clientesMap, q, estado]);
+  }, [
+    cotizaciones,
+    clientesMap,
+    q,
+    estado,
+    clienteFiltro,
+    fechaDesde,
+    fechaHasta,
+  ]);
 
   const resumen = useMemo(() => {
     return filteredCotizaciones.reduce(
@@ -561,8 +725,8 @@ export default function CotizacionesPage() {
         </section>
 
         <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="grid gap-4 md:grid-cols-[1fr_220px_140px]">
-            <div>
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-7">
+            <div className="xl:col-span-2">
               <label
                 htmlFor="q"
                 className="mb-2 block text-sm font-medium text-slate-700"
@@ -576,6 +740,28 @@ export default function CotizacionesPage() {
                 placeholder="Código, título, folio o cliente"
                 className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-slate-500"
               />
+            </div>
+
+            <div>
+              <label
+                htmlFor="cliente"
+                className="mb-2 block text-sm font-medium text-slate-700"
+              >
+                Cliente
+              </label>
+              <select
+                id="cliente"
+                value={clienteFiltro}
+                onChange={(e) => setClienteFiltro(e.target.value)}
+                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-slate-500"
+              >
+                <option value="">Todos</option>
+                {clientesFiltro.map((cliente) => (
+                  <option key={cliente.id} value={cliente.id}>
+                    {cliente.nombre}
+                  </option>
+                ))}
+              </select>
             </div>
 
             <div>
@@ -600,12 +786,47 @@ export default function CotizacionesPage() {
               </select>
             </div>
 
+            <div>
+              <label
+                htmlFor="fechaDesde"
+                className="mb-2 block text-sm font-medium text-slate-700"
+              >
+                Emisión desde
+              </label>
+              <input
+                id="fechaDesde"
+                type="date"
+                value={fechaDesde}
+                onChange={(e) => setFechaDesde(e.target.value)}
+                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-slate-500"
+              />
+            </div>
+
+            <div>
+              <label
+                htmlFor="fechaHasta"
+                className="mb-2 block text-sm font-medium text-slate-700"
+              >
+                Emisión hasta
+              </label>
+              <input
+                id="fechaHasta"
+                type="date"
+                value={fechaHasta}
+                onChange={(e) => setFechaHasta(e.target.value)}
+                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-slate-500"
+              />
+            </div>
+
             <div className="flex items-end">
               <button
                 type="button"
                 onClick={() => {
                   setQ("");
                   setEstado("");
+                  setClienteFiltro("");
+                  setFechaDesde("");
+                  setFechaHasta("");
                 }}
                 className="w-full rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
               >
@@ -613,6 +834,11 @@ export default function CotizacionesPage() {
               </button>
             </div>
           </div>
+
+          <p className="mt-3 text-xs text-slate-500">
+            Los filtros y la posición del listado se conservan al abrir una
+            cotización y volver.
+          </p>
         </section>
 
         <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -676,9 +902,18 @@ export default function CotizacionesPage() {
                       ? clientesMap[row.cliente_id]
                       : undefined;
                     const expired = isExpired(row.fecha_vencimiento);
+                    const isHighlighted = highlightedCotizacionId === row.id;
 
                     return (
-                      <tr key={row.id} className="hover:bg-slate-50/70">
+                      <tr
+                        key={row.id}
+                        data-cotizacion-row={row.id}
+                        className={`transition-colors duration-500 ${
+                          isHighlighted
+                            ? "bg-blue-50 ring-1 ring-inset ring-blue-200"
+                            : "hover:bg-slate-50/70"
+                        }`}
+                      >
                         <td className="px-5 py-4 font-medium text-slate-900">
                           {row.folio ?? "—"}
                         </td>
@@ -739,6 +974,7 @@ export default function CotizacionesPage() {
                           <div className="flex justify-end gap-2">
                             <Link
                               href={`/cotizaciones/${row.id}`}
+                              onClick={() => rememberListContext(row.id)}
                               className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-100"
                             >
                               Ver
@@ -747,6 +983,7 @@ export default function CotizacionesPage() {
                             {isAdmin ? (
                               <Link
                                 href={`/cotizaciones/${row.id}/editar`}
+                                onClick={() => rememberListContext(row.id)}
                                 className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-100"
                               >
                                 Editar
