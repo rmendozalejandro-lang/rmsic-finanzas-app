@@ -37,10 +37,18 @@ type OTResumenConPlantilla = OTResumen & {
   equipos_asociados_count?: number | null
 }
 
+type OTListFilters = {
+  cliente: string
+  fechaDesde: string
+  fechaHasta: string
+}
+
 type OTListContext = {
   otId: string
+  empresaId: string
   scrollY: number
   savedAt: number
+  filters?: OTListFilters
 }
 
 function formatDateOnly(value: string | null | undefined) {
@@ -290,13 +298,70 @@ function buildEstadoVisual(ot: OTResumenConPlantilla) {
   }
 }
 
+function getFilterPanel() {
+  if (typeof document === 'undefined') return null
+
+  const heading = Array.from(document.querySelectorAll('h2')).find(
+    (element) => element.textContent?.trim() === 'Filtros de búsqueda'
+  )
+
+  return heading?.parentElement?.parentElement ?? null
+}
+
+function readVisibleListFilters(): OTListFilters | undefined {
+  const panel = getFilterPanel()
+  if (!panel) return undefined
+
+  const clienteSelect = panel.querySelector<HTMLSelectElement>('select')
+  const dateInputs = Array.from(panel.querySelectorAll<HTMLInputElement>('input[type="date"]'))
+
+  if (!clienteSelect && dateInputs.length === 0) return undefined
+
+  return {
+    cliente: clienteSelect?.value ?? '',
+    fechaDesde: dateInputs[0]?.value ?? '',
+    fechaHasta: dateInputs[1]?.value ?? '',
+  }
+}
+
+function setNativeControlValue(element: HTMLInputElement | HTMLSelectElement, value: string) {
+  const prototype = element instanceof HTMLSelectElement
+    ? HTMLSelectElement.prototype
+    : HTMLInputElement.prototype
+  const descriptor = Object.getOwnPropertyDescriptor(prototype, 'value')
+
+  descriptor?.set?.call(element, value)
+
+  if (element instanceof HTMLInputElement) {
+    element.dispatchEvent(new Event('input', { bubbles: true }))
+  }
+
+  element.dispatchEvent(new Event('change', { bubbles: true }))
+}
+
+function restoreVisibleListFilters(filters: OTListFilters | undefined) {
+  if (!filters) return
+
+  const panel = getFilterPanel()
+  if (!panel) return
+
+  const clienteSelect = panel.querySelector<HTMLSelectElement>('select')
+  const dateInputs = Array.from(panel.querySelectorAll<HTMLInputElement>('input[type="date"]'))
+
+  if (clienteSelect) setNativeControlValue(clienteSelect, filters.cliente)
+  if (dateInputs[0]) setNativeControlValue(dateInputs[0], filters.fechaDesde)
+  if (dateInputs[1]) setNativeControlValue(dateInputs[1], filters.fechaHasta)
+}
+
 function rememberListContext(otId: string) {
   if (typeof window === 'undefined') return
 
   const context: OTListContext = {
     otId,
+    empresaId: window.localStorage.getItem('empresa_activa_id') || '',
     scrollY: window.scrollY,
     savedAt: Date.now(),
+    filters: readVisibleListFilters(),
   }
 
   window.sessionStorage.setItem(OT_LIST_CONTEXT_KEY, JSON.stringify(context))
@@ -333,7 +398,13 @@ export function OTDataTable({
         typeof parsed.scrollY === 'number' &&
         typeof parsed.savedAt === 'number'
       ) {
-        context = parsed as OTListContext
+        context = {
+          otId: parsed.otId,
+          empresaId: typeof parsed.empresaId === 'string' ? parsed.empresaId : '',
+          scrollY: parsed.scrollY,
+          savedAt: parsed.savedAt,
+          filters: parsed.filters,
+        }
       }
     } catch {
       window.sessionStorage.removeItem(OT_LIST_CONTEXT_KEY)
@@ -345,8 +416,15 @@ export function OTDataTable({
       return
     }
 
+    const currentEmpresaId = window.localStorage.getItem('empresa_activa_id') || ''
+    if (context.empresaId && currentEmpresaId && context.empresaId !== currentEmpresaId) {
+      window.sessionStorage.removeItem(OT_LIST_CONTEXT_KEY)
+      return
+    }
+
     if (!data.some((ot) => ot.id === context?.otId)) return
 
+    restoreVisibleListFilters(context.filters)
     window.sessionStorage.removeItem(OT_LIST_CONTEXT_KEY)
     setHighlightedOtId(context.otId)
 
@@ -358,7 +436,7 @@ export function OTDataTable({
       } else {
         window.scrollTo({ top: context?.scrollY ?? 0, behavior: 'auto' })
       }
-    }, 60)
+    }, 250)
 
     const highlightTimer = window.setTimeout(() => {
       setHighlightedOtId('')
@@ -368,7 +446,10 @@ export function OTDataTable({
       window.clearTimeout(restoreTimer)
       window.clearTimeout(highlightTimer)
     }
-  }, [data])
+    // Este efecto se ejecuta solo al montar el listado. Los filtros restaurados cambian
+    // data después y no deben cancelar el scroll pendiente ni consumir el contexto otra vez.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   if (!data.length) {
     return (
