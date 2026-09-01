@@ -153,6 +153,15 @@ export default function PTSDetallePage() {
     : 0
 
   const correccionPendiente = permiso?.estado === 'observado' && !correccionPosterior
+  const esAprobado = permiso?.estado === 'aprobado'
+  const indicadorTitulo = esAprobado ? 'Requisitos del PTS' : 'Avance para revisión'
+  const indicadorEstado = esAprobado
+    ? 'Completado'
+    : completitud === 100
+      ? 'Listo'
+      : correccionPendiente
+        ? 'Corrección pendiente'
+        : 'Incompleto'
 
   const puedeEnviar = Boolean(
     permiso &&
@@ -250,11 +259,11 @@ export default function PTSDetallePage() {
               <aside className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
                 <div className="flex items-end justify-between gap-3">
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Avance para revisión</p>
+                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">{indicadorTitulo}</p>
                     <p className="mt-1 text-3xl font-semibold text-slate-900">{completitud}%</p>
                   </div>
                   <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${completitud === 100 ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
-                    {completitud === 100 ? 'Listo' : correccionPendiente ? 'Corrección pendiente' : 'Incompleto'}
+                    {indicadorEstado}
                   </span>
                 </div>
                 <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-100">
@@ -280,7 +289,11 @@ export default function PTSDetallePage() {
 
             <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
               <h2 className="text-lg font-semibold text-slate-900">V. Aprobaciones</h2>
-              <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">{aprobaciones.map((item) => <div key={item.etapa} className="rounded-2xl border border-slate-200 p-4"><p className="text-sm font-semibold text-slate-900">{ETAPA_LABEL[item.etapa] ?? item.etapa}</p><p className="mt-2 text-sm capitalize text-slate-600">{item.estado.replace('_', ' ')}</p>{item.observacion ? <p className="mt-2 text-xs text-slate-500">{item.observacion}</p> : null}</div>)}</div>
+              <p className="mt-2 text-sm text-slate-500">En este piloto, la aprobación activa corresponde a Seguridad y Salud en el Trabajo. Las demás etapas se habilitarán según el flujo definido por cada empresa.</p>
+              <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">{aprobaciones.map((item) => {
+                const noRequeridoPiloto = item.etapa !== 'seguridad' && item.estado === 'pendiente'
+                return <div key={item.etapa} className="rounded-2xl border border-slate-200 p-4"><p className="text-sm font-semibold text-slate-900">{ETAPA_LABEL[item.etapa] ?? item.etapa}</p><p className={`mt-2 text-sm ${noRequeridoPiloto ? 'text-slate-500' : 'capitalize text-slate-600'}`}>{noRequeridoPiloto ? 'No requerido en piloto' : item.estado.replace('_', ' ')}</p>{item.observacion ? <p className="mt-2 text-xs text-slate-500">{item.observacion}</p> : null}</div>
+              })}</div>
 
               {puedeResolver ? <div className="mt-6 rounded-2xl border border-cyan-200 bg-cyan-50/60 p-5"><h3 className="font-semibold text-slate-900">Revisión de Seguridad</h3><p className="mt-1 text-sm text-slate-600">Aprueba el permiso o devuelve una observación al solicitante.</p><textarea value={observacionRevision} onChange={(e) => setObservacionRevision(e.target.value)} rows={3} placeholder="Observación (obligatoria al observar o rechazar)" className="mt-4 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-[#18B7A8]" /><div className="mt-4 flex flex-wrap gap-3"><button onClick={() => resolver('aprobar')} disabled={acting} className="rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60">Aprobar</button><button onClick={() => resolver('observar')} disabled={acting} className="rounded-xl bg-amber-500 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60">Observar</button><button onClick={() => resolver('rechazar')} disabled={acting} className="rounded-xl bg-red-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60">Rechazar</button></div></div> : null}
             </section>
