@@ -137,9 +137,9 @@ export function PTSPdfDocument({ data }: { data: PTSPdfData }) {
 }
 
 function Field({ label, value, grow = false }: { label: string; value: string; grow?: boolean }) {
-  return <View style={[styles.field, grow ? styles.grow : {}]}><Text style={styles.label}>{label}</Text><Text style={styles.value}>{value || '—'}</Text></View>
+  return <View style={grow ? [styles.field, styles.grow] : styles.field}><Text style={styles.label}>{label}</Text><Text style={styles.value}>{value || '—'}</Text></View>
 }
 
-function Cell({ text, style }: { text: string; style: object }) {
+function Cell({ text, style }: { text: string; style: typeof styles.cStep }) {
   return <Text style={[styles.cell, style]}>{text}</Text>
 }
