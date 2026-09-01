@@ -148,6 +148,7 @@ export default function PTSPage() {
                     <th className="px-5 py-3">Lugar</th>
                     <th className="px-5 py-3">Fecha</th>
                     <th className="px-5 py-3">Estado</th>
+                    <th className="px-5 py-3 text-right">Acción</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -159,6 +160,7 @@ export default function PTSPage() {
                       <td className="px-5 py-4 text-slate-700">{item.lugar_ejecucion}</td>
                       <td className="px-5 py-4 text-slate-700">{item.fecha_inicio}</td>
                       <td className="px-5 py-4"><span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${estadoClass(item.estado)}`}>{ESTADO_LABEL[item.estado] ?? item.estado}</span></td>
+                      <td className="px-5 py-4 text-right"><Link href={`/seguridad/pts/${item.id}`} className="inline-flex rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:border-[#18B7A8] hover:text-[#168F86]">Abrir PTS</Link></td>
                     </tr>
                   ))}
                 </tbody>
