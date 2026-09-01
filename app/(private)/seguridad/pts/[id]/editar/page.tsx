@@ -53,19 +53,21 @@ export default function EditarPTSPage() {
         ])
         const firstError = [permisoResp, riesgosResp, personalResp, eppResp].find((r) => r.error)?.error
         if (firstError) throw firstError
-        if (permisoResp.data.estado !== 'observado') throw new Error('Solo se puede editar un PTS observado.')
+        if (!permisoResp.data) throw new Error('No se encontró el PTS solicitado.')
+        const permisoData = permisoResp.data
+        if (permisoData.estado !== 'observado') throw new Error('Solo se puede editar un PTS observado.')
         if (!active) return
-        setEstado(permisoResp.data.estado)
+        setEstado(permisoData.estado)
         setForm({
-          trabajo_a_realizar: permisoResp.data.trabajo_a_realizar || '',
-          tipo_actividad: permisoResp.data.tipo_actividad || '',
-          lugar_ejecucion: permisoResp.data.lugar_ejecucion || '',
-          empresa_contratista: permisoResp.data.empresa_contratista || '',
-          fecha_inicio: permisoResp.data.fecha_inicio || '',
-          fecha_termino: permisoResp.data.fecha_termino || '',
-          hora_inicio: (permisoResp.data.hora_inicio || '').slice(0, 5),
-          hora_termino: (permisoResp.data.hora_termino || '').slice(0, 5),
-          observaciones: permisoResp.data.observaciones || '',
+          trabajo_a_realizar: permisoData.trabajo_a_realizar || '',
+          tipo_actividad: permisoData.tipo_actividad || '',
+          lugar_ejecucion: permisoData.lugar_ejecucion || '',
+          empresa_contratista: permisoData.empresa_contratista || '',
+          fecha_inicio: permisoData.fecha_inicio || '',
+          fecha_termino: permisoData.fecha_termino || '',
+          hora_inicio: (permisoData.hora_inicio || '').slice(0, 5),
+          hora_termino: (permisoData.hora_termino || '').slice(0, 5),
+          observaciones: permisoData.observaciones || '',
         })
         setRiesgos((riesgosResp.data ?? []) as RiesgoRow[])
         setPersonal(((personalResp.data ?? []) as PersonaRow[]).map((p) => ({ ...p, examen_altura_vigente_hasta: p.examen_altura_vigente_hasta || '' })))
