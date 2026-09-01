@@ -2,6 +2,7 @@ import React from 'react'
 import { NextRequest } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { renderToBuffer } from '@react-pdf/renderer'
+import type { DocumentProps } from '@react-pdf/renderer'
 import { PTSPdfDocument } from '../../../../components/pts/pts-pdf-document'
 import { createVerificationQrMatrix, qrMatrixToSvgPath } from '../../../../lib/pts/qr'
 
@@ -102,7 +103,8 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
       qrViewBoxSize: qr.viewBoxSize,
     }
 
-    const buffer = await renderToBuffer(React.createElement(PTSPdfDocument, { data }))
+    const pdfElement = React.createElement(PTSPdfDocument, { data }) as React.ReactElement<DocumentProps>
+    const buffer = await renderToBuffer(pdfElement)
     const filename = `PTS-${String(permiso.folio).padStart(6, '0')}.pdf`
 
     return new Response(new Uint8Array(buffer), {
