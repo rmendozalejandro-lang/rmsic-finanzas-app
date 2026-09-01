@@ -132,8 +132,6 @@ export default function PTSDetallePage() {
     ]
   }, [permiso, riesgos, personal, epp])
 
-  const completitud = checks.length ? Math.round((checks.filter((item) => item.ok).length / checks.length) * 100) : 0
-
   const correccionPosterior = useMemo(() => {
     const ultimaObservacion = historial.find((item) => item.evento === 'revision_observada')
     const ultimaCorreccion = historial.find((item) => item.evento === 'correccion_guardada')
@@ -141,6 +139,20 @@ export default function PTSDetallePage() {
     if (!ultimaObservacion) return true
     return new Date(ultimaCorreccion.created_at).getTime() > new Date(ultimaObservacion.created_at).getTime()
   }, [historial])
+
+  const checksFlujo = useMemo(() => {
+    if (!permiso || permiso.estado !== 'observado') return checks
+    return [
+      ...checks,
+      { label: 'Corrección de observación', ok: correccionPosterior },
+    ]
+  }, [checks, correccionPosterior, permiso])
+
+  const completitud = checksFlujo.length
+    ? Math.round((checksFlujo.filter((item) => item.ok).length / checksFlujo.length) * 100)
+    : 0
+
+  const correccionPendiente = permiso?.estado === 'observado' && !correccionPosterior
 
   const puedeEnviar = Boolean(
     permiso &&
@@ -215,7 +227,7 @@ export default function PTSDetallePage() {
 
         {!loading && permiso ? (
           <>
-            {permiso.estado === 'observado' && !correccionPosterior ? (
+            {correccionPendiente ? (
               <section className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
                 Este PTS fue observado. Debes corregirlo y guardar la corrección antes de poder reenviarlo a revisión.
               </section>
@@ -236,10 +248,20 @@ export default function PTSDetallePage() {
               </div>
 
               <aside className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-                <div className="flex items-end justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Prevalidación</p><p className="mt-1 text-3xl font-semibold text-slate-900">{completitud}%</p></div><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${completitud === 100 ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>{completitud === 100 ? 'Listo' : 'Incompleto'}</span></div>
-                <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-[#18B7A8] transition-all" style={{ width: `${completitud}%` }} /></div>
-                <div className="mt-5 space-y-2">{checks.map((item) => <div key={item.label} className="flex items-center justify-between gap-3 text-sm"><span className="text-slate-600">{item.label}</span><span className={item.ok ? 'text-emerald-600' : 'text-amber-600'}>{item.ok ? '✓' : 'Pendiente'}</span></div>)}</div>
-                {permiso.estado === 'observado' && !correccionPosterior ? (
+                <div className="flex items-end justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Avance para revisión</p>
+                    <p className="mt-1 text-3xl font-semibold text-slate-900">{completitud}%</p>
+                  </div>
+                  <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${completitud === 100 ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
+                    {completitud === 100 ? 'Listo' : correccionPendiente ? 'Corrección pendiente' : 'Incompleto'}
+                  </span>
+                </div>
+                <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-100">
+                  <div className={`h-full rounded-full transition-all ${correccionPendiente ? 'bg-amber-500' : 'bg-[#18B7A8]'}`} style={{ width: `${completitud}%` }} />
+                </div>
+                <div className="mt-5 space-y-2">{checksFlujo.map((item) => <div key={item.label} className="flex items-center justify-between gap-3 text-sm"><span className="text-slate-600">{item.label}</span><span className={item.ok ? 'text-emerald-600' : 'text-amber-600'}>{item.ok ? '✓' : 'Pendiente'}</span></div>)}</div>
+                {correccionPendiente ? (
                   <Link href={`/seguridad/pts/${permisoId}/editar`} className="mt-6 inline-flex w-full items-center justify-center rounded-2xl bg-amber-500 px-4 py-3 text-sm font-semibold text-white hover:bg-amber-600">Corregir PTS</Link>
                 ) : null}
                 {puedeEnviar ? <button onClick={enviarRevision} disabled={acting} className="mt-6 w-full rounded-2xl bg-[#18B7A8] px-4 py-3 text-sm font-semibold text-white hover:bg-[#11998E] disabled:opacity-60">{acting ? 'Procesando...' : 'Enviar a revisión'}</button> : null}
