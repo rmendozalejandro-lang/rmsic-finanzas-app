@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import type { ReactNode } from 'react'
+import PTSPdfContextAction from '../../../components/pts/PTSPdfContextAction'
 
 const items = [
   {
@@ -28,25 +29,28 @@ export default function SeguridadLayout({ children }: { children: ReactNode }) {
             </h1>
           </div>
 
-          <nav className="flex flex-wrap gap-2" aria-label="Módulo Seguridad">
-            {items.map((item) => {
-              const active = pathname === item.href || pathname.startsWith(`${item.href}/`)
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={`rounded-2xl border px-4 py-2.5 text-sm font-medium transition ${
-                    active
-                      ? 'border-[#163A5F] bg-[#163A5F] text-white shadow-sm'
-                      : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                  }`}
-                  title={item.description}
-                >
-                  {item.label}
-                </Link>
-              )
-            })}
-          </nav>
+          <div className="flex flex-wrap items-center gap-2">
+            <nav className="flex flex-wrap gap-2" aria-label="Módulo Seguridad">
+              {items.map((item) => {
+                const active = pathname === item.href || pathname.startsWith(`${item.href}/`)
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={`rounded-2xl border px-4 py-2.5 text-sm font-medium transition ${
+                      active
+                        ? 'border-[#163A5F] bg-[#163A5F] text-white shadow-sm'
+                        : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                    }`}
+                    title={item.description}
+                  >
+                    {item.label}
+                  </Link>
+                )
+              })}
+            </nav>
+            <PTSPdfContextAction />
+          </div>
         </div>
       </div>
 
