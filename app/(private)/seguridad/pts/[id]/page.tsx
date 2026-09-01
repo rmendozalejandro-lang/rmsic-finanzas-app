@@ -142,7 +142,7 @@ export default function PTSDetallePage() {
       setError('')
       setSuccess('')
       const { error: rpcError } = await supabase.rpc('pts_enviar_revision', { p_permiso_id: permisoId })
-      if (rpcError) throw rpcError
+      if (rpcError) throw new Error(rpcError.message)
       setSuccess('PTS enviado a revisión de Seguridad.')
       await load()
     } catch (err) {
@@ -153,6 +153,12 @@ export default function PTSDetallePage() {
   }
 
   const resolver = async (decision: 'aprobar' | 'observar' | 'rechazar') => {
+    if ((decision === 'observar' || decision === 'rechazar') && !observacionRevision.trim()) {
+      setSuccess('')
+      setError('Debes registrar una observación antes de observar o rechazar el PTS.')
+      return
+    }
+
     try {
       setActing(true)
       setError('')
@@ -162,7 +168,7 @@ export default function PTSDetallePage() {
         p_decision: decision,
         p_observacion: observacionRevision.trim() || null,
       })
-      if (rpcError) throw rpcError
+      if (rpcError) throw new Error(rpcError.message)
       setSuccess(decision === 'aprobar' ? 'PTS aprobado.' : decision === 'observar' ? 'PTS devuelto con observaciones.' : 'PTS rechazado.')
       setObservacionRevision('')
       await load()
