@@ -37,7 +37,7 @@ export default function PTSPdfButton({ permisoId }: { permisoId: string }) {
 
   return (
     <div>
-      <button onClick={abrirPdf} disabled={loading} className="rounded-xl bg-[#0B2947] px-5 py-3 text-sm font-semibold text-white hover:bg-[#123A61] disabled:opacity-60">
+      <button onClick={abrirPdf} disabled={loading} className="rounded-xl border border-[#18B7A8] bg-[#18B7A8] px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:border-[#11998E] hover:bg-[#11998E] disabled:opacity-60">
         {loading ? 'Generando PDF...' : 'PDF oficial'}
       </button>
       {error ? <p className="mt-2 text-xs text-red-600">{error}</p> : null}
