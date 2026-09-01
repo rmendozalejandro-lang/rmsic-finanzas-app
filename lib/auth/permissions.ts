@@ -8,6 +8,7 @@ export type RolEmpresa =
   | 'gerencia'
   | 'tecnico_ot'
   | 'demo_cliente'
+  | 'seguridad_pts'
 
 export type ModuloPrincipal =
   | 'comercial'
@@ -17,6 +18,7 @@ export type ModuloPrincipal =
   | 'rrhh'
   | 'administracion'
   | 'haras'
+  | 'seguridad'
 
 export type ModuleKey =
   | 'dashboard'
@@ -36,6 +38,7 @@ export type ModuleKey =
   | 'configuracion_usuarios'
   | 'configuracion_auditoria'
   | 'haras'
+  | 'pts'
 
 /**
  * Recursos maestros/transversales.
@@ -109,6 +112,7 @@ export const MODULOS_PRINCIPALES: ModuloPrincipal[] = [
   'rrhh',
   'administracion',
   'haras',
+  'seguridad',
 ]
 
 export const MODULO_PRINCIPAL_LABELS: Record<ModuloPrincipal, string> = {
@@ -119,17 +123,11 @@ export const MODULO_PRINCIPAL_LABELS: Record<ModuloPrincipal, string> = {
   rrhh: 'Recursos Humanos',
   administracion: 'Administración',
   haras: 'Tralixia Haras',
+  seguridad: 'Seguridad',
 }
 
 /**
  * Relación entre submódulos/rutas actuales y módulos principales.
- *
- * Importante:
- * - dashboard queda sin módulo principal porque debe funcionar como entrada general.
- * - clientes, proveedores y contactos quedan sin módulo principal directo porque ahora
- *   son recursos transversales/maestros. Su habilitación depende de RESOURCE_TO_MODULES.
- * - reportes queda asociado a contable por ahora.
- * - OT queda asociado a operacional.
  */
 const MODULE_TO_PRINCIPAL: Record<ModuleKey, ModuloPrincipal | null> = {
   dashboard: null,
@@ -150,6 +148,7 @@ const MODULE_TO_PRINCIPAL: Record<ModuleKey, ModuloPrincipal | null> = {
   reportes: 'contable',
 
   ot: 'operacional',
+  pts: 'seguridad',
 
   remuneraciones: 'rrhh',
 
@@ -158,46 +157,18 @@ const MODULE_TO_PRINCIPAL: Record<ModuleKey, ModuloPrincipal | null> = {
   haras: 'haras',
 }
 
-/**
- * Relación entre rutas del menú y recursos maestros/transversales.
- *
- * Esto permite que /clientes o /maestros/clientes se pueda controlar como recurso,
- * no como dependencia exclusiva del módulo Comercial.
- */
 const MODULE_TO_RESOURCE: Partial<Record<ModuleKey, RecursoTransversal>> = {
   clientes: 'clientes',
   proveedores: 'proveedores',
   contactos: 'contactos',
 }
 
-/**
- * Módulos principales que justifican el uso de cada recurso transversal.
- *
- * Criterio actual:
- * - clientes: lo usan Operacional/OT, Comercial, Financiero y Contable.
- * - proveedores: lo usan Operacional, Financiero y Contable.
- * - contactos: lo usan Operacional, Comercial y Financiero.
- *
- * Nota futura:
- * - Cuando exista módulo principal "compras", conviene agregarlo a proveedores.
- */
 const RESOURCE_TO_MODULES: Record<RecursoTransversal, ModuloPrincipal[]> = {
   clientes: ['operacional', 'comercial', 'financiero', 'contable'],
   proveedores: ['operacional', 'financiero', 'contable'],
   contactos: ['operacional', 'comercial', 'financiero'],
 }
 
-/**
- * Permisos por rol dentro de una empresa.
- *
- * Importante:
- * - super_admin no se controla aquí.
- * - super_admin se valida con roles_sistema/es_super_admin().
- * - Estos permisos aplican a usuario_empresas.rol.
- * - tecnico_ot queda limitado exclusivamente al módulo OT en menú,
- *   pero puede consultar clientes/contactos dentro del flujo OT si se requiere.
- * - cobranzas/cobranza queda limitado a cobranza y módulos relacionados.
- */
 const ROLE_MODULES: Record<RolEmpresa, ModuleKey[]> = {
   admin: [
     'dashboard',
@@ -214,6 +185,7 @@ const ROLE_MODULES: Record<RolEmpresa, ModuleKey[]> = {
     'reportes',
     'plan_cuentas',
     'ot',
+    'pts',
     'configuracion_usuarios',
     'configuracion_auditoria',
     'haras',
@@ -264,6 +236,7 @@ const ROLE_MODULES: Record<RolEmpresa, ModuleKey[]> = {
     'reportes',
     'plan_cuentas',
     'ot',
+    'pts',
     'configuracion_usuarios',
     'configuracion_auditoria',
     'haras',
@@ -304,16 +277,10 @@ const ROLE_MODULES: Record<RolEmpresa, ModuleKey[]> = {
     'cotizaciones',
     'ot',
   ],
+
+  seguridad_pts: ['pts'],
 }
 
-/**
- * Permisos finos por recurso transversal.
- *
- * Esto permite que el menú y los formularios puedan preguntar:
- * - puede ver clientes?
- * - puede crear clientes desde Nueva OT?
- * - puede editar proveedores?
- */
 const ROLE_RESOURCE_PERMISSIONS: Record<
   RolEmpresa,
   Partial<Record<RecursoTransversal, AccionRecurso[]>>
@@ -367,6 +334,8 @@ const ROLE_RESOURCE_PERMISSIONS: Record<
     proveedores: ['ver'],
     contactos: ['ver'],
   },
+
+  seguridad_pts: {},
 }
 
 export function getModuloPrincipal(
