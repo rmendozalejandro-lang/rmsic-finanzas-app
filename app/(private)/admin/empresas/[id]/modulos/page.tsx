@@ -31,6 +31,7 @@ const MODULO_DESCRIPCIONES: Record<ModuloPrincipal, string> = {
   rrhh: 'Remuneraciones, personal, contratos y gestión de recursos humanos.',
   administracion: 'Empresas, usuarios, roles y configuración interna.',
   haras: 'Gestión veterinaria y administrativa de animales, insumos y procedimientos.',
+  seguridad: 'Permisos de Trabajo Seguro, revisión, autorización y trazabilidad de contratistas.',
 }
 
 export default function EmpresaModulosPage() {
