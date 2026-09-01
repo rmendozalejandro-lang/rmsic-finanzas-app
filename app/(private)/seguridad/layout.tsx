@@ -37,9 +37,9 @@ export default function SeguridadLayout({ children }: { children: ReactNode }) {
                   <Link
                     key={item.href}
                     href={item.href}
-                    className={`rounded-2xl border px-4 py-2.5 text-sm font-medium transition ${
+                    className={`rounded-2xl border px-4 py-2.5 text-sm font-semibold transition ${
                       active
-                        ? 'border-[#163A5F] bg-[#163A5F] text-white shadow-sm'
+                        ? 'border-[#163A5F] bg-[#163A5F] !text-white shadow-sm hover:bg-[#0B2947] hover:!text-white'
                         : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900'
                     }`}
                     title={item.description}
