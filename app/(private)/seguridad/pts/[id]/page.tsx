@@ -156,15 +156,18 @@ export default function PTSDetallePage() {
     : 0
 
   const correccionPendiente = permiso?.estado === 'observado' && !correccionPosterior
-  const etapaOperativa = Boolean(permiso && ['aprobado', 'en_ejecucion', 'cerrado'].includes(permiso.estado))
-  const indicadorTitulo = etapaOperativa ? 'Requisitos del PTS' : 'Avance para revisión'
-  const indicadorEstado = etapaOperativa
-    ? 'Completado'
-    : completitud === 100
-      ? 'Listo'
-      : correccionPendiente
-        ? 'Corrección pendiente'
-        : 'Incompleto'
+  const esCerrado = permiso?.estado === 'cerrado'
+  const etapaOperativa = Boolean(permiso && ['aprobado', 'en_ejecucion'].includes(permiso.estado))
+  const indicadorTitulo = esCerrado ? 'Ciclo del PTS' : etapaOperativa ? 'Requisitos del PTS' : 'Avance para revisión'
+  const indicadorEstado = esCerrado
+    ? 'Cerrado'
+    : etapaOperativa
+      ? 'Completado'
+      : completitud === 100
+        ? 'Listo'
+        : correccionPendiente
+          ? 'Corrección pendiente'
+          : 'Incompleto'
 
   const puedeEnviar = Boolean(
     permiso &&
