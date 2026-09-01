@@ -93,7 +93,7 @@ export default function EditarPTSPage() {
   const guardar = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     setError('')
-    if (!correccion.trim()) { setError('Describe brevemente qué se corrigió antes de guardar.'); return }
+    if (correccion.trim().length < 10) { setError('Describe la corrección con al menos 10 caracteres para mantener una trazabilidad útil.'); return }
     if (!form.trabajo_a_realizar.trim() || !form.tipo_actividad.trim() || !form.lugar_ejecucion.trim() || !form.empresa_contratista.trim() || !form.fecha_inicio) { setError('Completa los datos obligatorios de identificación.'); return }
     if (!riesgosValidos.length || riesgosValidos.length !== riesgos.length) { setError('Todos los pasos del análisis de riesgos deben estar completos.'); return }
     if (!personalValido.length || personalValido.length !== personal.length) { setError('Nombre y RUT son obligatorios para todo el personal.'); return }
@@ -134,7 +134,7 @@ export default function EditarPTSPage() {
           <form onSubmit={guardar} className="space-y-6">
             <section className="rounded-3xl border border-amber-200 bg-amber-50 p-6">
               <h2 className="text-lg font-semibold text-amber-900">Corrección realizada *</h2>
-              <p className="mt-1 text-sm text-amber-800">Indica qué cambiaste para responder a la observación de Seguridad.</p>
+              <p className="mt-1 text-sm text-amber-800">Indica qué cambiaste para responder a la observación de Seguridad. Mínimo 10 caracteres.</p>
               <textarea value={correccion} onChange={(e) => setCorreccion(e.target.value)} rows={3} placeholder="Ej.: Se agregó verificación explícita de bloqueo y etiquetado antes de intervenir el motor." className={inputClass} />
             </section>
 
