@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
+import type { ReactNode } from 'react'
 import PTSAccessGuard from '../../../../../components/pts/PTSAccessGuard'
 import { supabase } from '../../../../../lib/supabase/client'
 
@@ -241,6 +242,6 @@ function Info({ label, value }: { label: string; value: string }) {
   return <div><dt className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">{label}</dt><dd className="mt-1 text-sm font-medium text-slate-900">{value || '—'}</dd></div>
 }
 
-function Tag({ ok, children }: { ok: boolean; children: React.ReactNode }) {
+function Tag({ ok, children }: { ok: boolean; children: ReactNode }) {
   return <span className={`rounded-full px-2.5 py-1 font-medium ${ok ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{ok ? '✓ ' : ''}{children}</span>
 }
