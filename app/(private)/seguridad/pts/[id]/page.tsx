@@ -22,6 +22,11 @@ type Permiso = {
   hora_inicio: string | null
   hora_termino: string | null
   observaciones: string | null
+  iniciado_at: string | null
+  cerrado_at: string | null
+  iniciado_por_nombre: string | null
+  cerrado_por_nombre: string | null
+  cierre_observaciones: string | null
 }
 
 type Riesgo = {
@@ -84,6 +89,7 @@ export default function PTSDetallePage() {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [observacionRevision, setObservacionRevision] = useState('')
+  const [observacionCierre, setObservacionCierre] = useState('')
 
   const load = async () => {
     try {
@@ -142,10 +148,7 @@ export default function PTSDetallePage() {
 
   const checksFlujo = useMemo(() => {
     if (!permiso || permiso.estado !== 'observado') return checks
-    return [
-      ...checks,
-      { label: 'Corrección de observación', ok: correccionPosterior },
-    ]
+    return [...checks, { label: 'Corrección de observación', ok: correccionPosterior }]
   }, [checks, correccionPosterior, permiso])
 
   const completitud = checksFlujo.length
@@ -153,9 +156,9 @@ export default function PTSDetallePage() {
     : 0
 
   const correccionPendiente = permiso?.estado === 'observado' && !correccionPosterior
-  const esAprobado = permiso?.estado === 'aprobado'
-  const indicadorTitulo = esAprobado ? 'Requisitos del PTS' : 'Avance para revisión'
-  const indicadorEstado = esAprobado
+  const etapaOperativa = Boolean(permiso && ['aprobado', 'en_ejecucion', 'cerrado'].includes(permiso.estado))
+  const indicadorTitulo = etapaOperativa ? 'Requisitos del PTS' : 'Avance para revisión'
+  const indicadorEstado = etapaOperativa
     ? 'Completado'
     : completitud === 100
       ? 'Listo'
@@ -213,6 +216,48 @@ export default function PTSDetallePage() {
     }
   }
 
+  const iniciarTrabajo = async () => {
+    try {
+      setActing(true)
+      setError('')
+      setSuccess('')
+      const { error: rpcError } = await supabase.rpc('pts_iniciar_ejecucion', { p_permiso_id: permisoId })
+      if (rpcError) throw new Error(rpcError.message)
+      setSuccess('Inicio del trabajo registrado. El PTS está en ejecución.')
+      await load()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudo iniciar el trabajo.')
+    } finally {
+      setActing(false)
+    }
+  }
+
+  const cerrarTrabajo = async () => {
+    if (observacionCierre.trim().length < 10) {
+      setSuccess('')
+      setError('Describe el resultado del cierre con al menos 10 caracteres.')
+      return
+    }
+
+    try {
+      setActing(true)
+      setError('')
+      setSuccess('')
+      const { error: rpcError } = await supabase.rpc('pts_cerrar_trabajo', {
+        p_permiso_id: permisoId,
+        p_observacion_cierre: observacionCierre.trim(),
+      })
+      if (rpcError) throw new Error(rpcError.message)
+      setSuccess('Trabajo cerrado y registrado en la trazabilidad del PTS.')
+      setObservacionCierre('')
+      await load()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudo cerrar el trabajo.')
+    } finally {
+      setActing(false)
+    }
+  }
+
   return (
     <PTSAccessGuard>
       <main className="mx-auto max-w-7xl space-y-6 px-6 py-8">
@@ -242,6 +287,48 @@ export default function PTSDetallePage() {
               </section>
             ) : null}
 
+            {permiso.estado === 'aprobado' ? (
+              <section className="rounded-3xl border border-emerald-200 bg-emerald-50 p-5">
+                <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">Autorizado para ejecución</p>
+                    <h2 className="mt-1 text-lg font-semibold text-emerald-950">El PTS está aprobado y puede iniciar el trabajo.</h2>
+                    <p className="mt-1 text-sm text-emerald-800">Al iniciar se registrará automáticamente la fecha, hora y usuario responsable.</p>
+                  </div>
+                  <button onClick={iniciarTrabajo} disabled={acting} className="rounded-xl bg-emerald-600 px-5 py-3 text-sm font-semibold text-white disabled:opacity-60">{acting ? 'Procesando...' : 'Iniciar trabajo'}</button>
+                </div>
+              </section>
+            ) : null}
+
+            {permiso.estado === 'en_ejecucion' ? (
+              <section className="rounded-3xl border border-cyan-200 bg-cyan-50/70 p-5">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-cyan-700">Trabajo en ejecución</p>
+                <div className="mt-2 grid gap-3 md:grid-cols-2">
+                  <Info label="Inicio registrado" value={permiso.iniciado_at ? new Date(permiso.iniciado_at).toLocaleString('es-CL') : '—'} />
+                  <Info label="Iniciado por" value={permiso.iniciado_por_nombre || 'Usuario autorizado'} />
+                </div>
+                <div className="mt-5 rounded-2xl border border-cyan-200 bg-white p-4">
+                  <h3 className="font-semibold text-slate-900">Cierre del trabajo</h3>
+                  <p className="mt-1 text-sm text-slate-600">Registra el resultado final antes de cerrar el permiso. Mínimo 10 caracteres.</p>
+                  <textarea value={observacionCierre} onChange={(e) => setObservacionCierre(e.target.value)} rows={3} placeholder="Ej.: Trabajo finalizado sin incidentes, área despejada y equipo entregado a operación." className="mt-3 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-[#18B7A8]" />
+                  <button onClick={cerrarTrabajo} disabled={acting} className="mt-3 rounded-xl bg-[#0B2947] px-5 py-3 text-sm font-semibold text-white disabled:opacity-60">{acting ? 'Procesando...' : 'Cerrar trabajo'}</button>
+                </div>
+              </section>
+            ) : null}
+
+            {permiso.estado === 'cerrado' ? (
+              <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Trabajo cerrado</p>
+                <div className="mt-3 grid gap-4 md:grid-cols-2">
+                  <Info label="Inicio" value={permiso.iniciado_at ? new Date(permiso.iniciado_at).toLocaleString('es-CL') : '—'} />
+                  <Info label="Iniciado por" value={permiso.iniciado_por_nombre || '—'} />
+                  <Info label="Cierre" value={permiso.cerrado_at ? new Date(permiso.cerrado_at).toLocaleString('es-CL') : '—'} />
+                  <Info label="Cerrado por" value={permiso.cerrado_por_nombre || '—'} />
+                </div>
+                {permiso.cierre_observaciones ? <div className="mt-4 rounded-2xl bg-slate-50 p-4 text-sm text-slate-700"><span className="font-semibold">Resultado final:</span> {permiso.cierre_observaciones}</div> : null}
+              </section>
+            ) : null}
+
             <section className="grid gap-5 xl:grid-cols-[1fr_320px]">
               <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
                 <h2 className="text-lg font-semibold text-slate-900">I. Identificación</h2>
@@ -262,17 +349,11 @@ export default function PTSDetallePage() {
                     <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">{indicadorTitulo}</p>
                     <p className="mt-1 text-3xl font-semibold text-slate-900">{completitud}%</p>
                   </div>
-                  <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${completitud === 100 ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
-                    {indicadorEstado}
-                  </span>
+                  <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${completitud === 100 ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>{indicadorEstado}</span>
                 </div>
-                <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-100">
-                  <div className={`h-full rounded-full transition-all ${correccionPendiente ? 'bg-amber-500' : 'bg-[#18B7A8]'}`} style={{ width: `${completitud}%` }} />
-                </div>
+                <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-100"><div className={`h-full rounded-full transition-all ${correccionPendiente ? 'bg-amber-500' : 'bg-[#18B7A8]'}`} style={{ width: `${completitud}%` }} /></div>
                 <div className="mt-5 space-y-2">{checksFlujo.map((item) => <div key={item.label} className="flex items-center justify-between gap-3 text-sm"><span className="text-slate-600">{item.label}</span><span className={item.ok ? 'text-emerald-600' : 'text-amber-600'}>{item.ok ? '✓' : 'Pendiente'}</span></div>)}</div>
-                {correccionPendiente ? (
-                  <Link href={`/seguridad/pts/${permisoId}/editar`} className="mt-6 inline-flex w-full items-center justify-center rounded-2xl bg-amber-500 px-4 py-3 text-sm font-semibold text-white hover:bg-amber-600">Corregir PTS</Link>
-                ) : null}
+                {correccionPendiente ? <Link href={`/seguridad/pts/${permisoId}/editar`} className="mt-6 inline-flex w-full items-center justify-center rounded-2xl bg-amber-500 px-4 py-3 text-sm font-semibold text-white hover:bg-amber-600">Corregir PTS</Link> : null}
                 {puedeEnviar ? <button onClick={enviarRevision} disabled={acting} className="mt-6 w-full rounded-2xl bg-[#18B7A8] px-4 py-3 text-sm font-semibold text-white hover:bg-[#11998E] disabled:opacity-60">{acting ? 'Procesando...' : 'Enviar a revisión'}</button> : null}
               </aside>
             </section>
