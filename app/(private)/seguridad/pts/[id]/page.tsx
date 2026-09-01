@@ -133,7 +133,20 @@ export default function PTSDetallePage() {
   }, [permiso, riesgos, personal, epp])
 
   const completitud = checks.length ? Math.round((checks.filter((item) => item.ok).length / checks.length) * 100) : 0
-  const puedeEnviar = Boolean(permiso && ['borrador', 'observado'].includes(permiso.estado) && completitud === 100)
+
+  const correccionPosterior = useMemo(() => {
+    const ultimaObservacion = historial.find((item) => item.evento === 'revision_observada')
+    const ultimaCorreccion = historial.find((item) => item.evento === 'correccion_guardada')
+    if (!ultimaCorreccion) return false
+    if (!ultimaObservacion) return true
+    return new Date(ultimaCorreccion.created_at).getTime() > new Date(ultimaObservacion.created_at).getTime()
+  }, [historial])
+
+  const puedeEnviar = Boolean(
+    permiso &&
+      completitud === 100 &&
+      (permiso.estado === 'borrador' || (permiso.estado === 'observado' && correccionPosterior))
+  )
   const puedeResolver = permiso?.estado === 'en_revision'
 
   const enviarRevision = async () => {
@@ -188,7 +201,12 @@ export default function PTSDetallePage() {
             <h1 className="mt-2 text-3xl font-semibold text-slate-900">{permiso ? `PTS-${String(permiso.folio ?? 0).padStart(6, '0')}` : 'Permiso de Trabajo Seguro'}</h1>
             {permiso ? <p className="mt-1 text-sm text-slate-500">{permiso.trabajo_a_realizar}</p> : null}
           </div>
-          {permiso ? <span className="inline-flex rounded-full border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-700">{ESTADO_LABEL[permiso.estado] ?? permiso.estado}</span> : null}
+          <div className="flex flex-wrap items-center gap-2">
+            {permiso?.estado === 'observado' ? (
+              <Link href={`/seguridad/pts/${permisoId}/editar`} className="inline-flex rounded-xl bg-amber-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-amber-600">Corregir PTS</Link>
+            ) : null}
+            {permiso ? <span className="inline-flex rounded-full border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-700">{ESTADO_LABEL[permiso.estado] ?? permiso.estado}</span> : null}
+          </div>
         </div>
 
         {loading ? <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-500">Cargando PTS...</div> : null}
@@ -197,6 +215,12 @@ export default function PTSDetallePage() {
 
         {!loading && permiso ? (
           <>
+            {permiso.estado === 'observado' && !correccionPosterior ? (
+              <section className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                Este PTS fue observado. Debes corregirlo y guardar la corrección antes de poder reenviarlo a revisión.
+              </section>
+            ) : null}
+
             <section className="grid gap-5 xl:grid-cols-[1fr_320px]">
               <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
                 <h2 className="text-lg font-semibold text-slate-900">I. Identificación</h2>
@@ -215,6 +239,9 @@ export default function PTSDetallePage() {
                 <div className="flex items-end justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Prevalidación</p><p className="mt-1 text-3xl font-semibold text-slate-900">{completitud}%</p></div><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${completitud === 100 ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>{completitud === 100 ? 'Listo' : 'Incompleto'}</span></div>
                 <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-[#18B7A8] transition-all" style={{ width: `${completitud}%` }} /></div>
                 <div className="mt-5 space-y-2">{checks.map((item) => <div key={item.label} className="flex items-center justify-between gap-3 text-sm"><span className="text-slate-600">{item.label}</span><span className={item.ok ? 'text-emerald-600' : 'text-amber-600'}>{item.ok ? '✓' : 'Pendiente'}</span></div>)}</div>
+                {permiso.estado === 'observado' && !correccionPosterior ? (
+                  <Link href={`/seguridad/pts/${permisoId}/editar`} className="mt-6 inline-flex w-full items-center justify-center rounded-2xl bg-amber-500 px-4 py-3 text-sm font-semibold text-white hover:bg-amber-600">Corregir PTS</Link>
+                ) : null}
                 {puedeEnviar ? <button onClick={enviarRevision} disabled={acting} className="mt-6 w-full rounded-2xl bg-[#18B7A8] px-4 py-3 text-sm font-semibold text-white hover:bg-[#11998E] disabled:opacity-60">{acting ? 'Procesando...' : 'Enviar a revisión'}</button> : null}
               </aside>
             </section>
