@@ -64,12 +64,24 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
       admin.from('pts_analisis_riesgos').select('paso,actividad,peligros,riesgos,medidas_preventivas').eq('permiso_id', id).eq('empresa_id', permiso.empresa_id).order('orden'),
       admin.from('pts_personal').select('nombre_apellido,rut,induccion_ingreso_ok,charla_5_min_ok,examen_altura_vigente_hasta').eq('permiso_id', id).eq('empresa_id', permiso.empresa_id).order('orden'),
       admin.from('pts_epp').select('nombre,requerido').eq('permiso_id', id).eq('empresa_id', permiso.empresa_id).order('orden'),
-      admin.from('pts_aprobaciones').select('etapa,estado,observacion').eq('permiso_id', id).eq('empresa_id', permiso.empresa_id).order('orden'),
-      admin.from('pts_historial').select('evento,detalle,created_at').eq('permiso_id', id).eq('empresa_id', permiso.empresa_id).order('created_at', { ascending: true }),
+      admin.from('pts_aprobaciones').select('etapa,estado,observacion,usuario_id,firmado_at').eq('permiso_id', id).eq('empresa_id', permiso.empresa_id).order('orden'),
+      admin.from('pts_historial').select('evento,detalle,created_at,usuario_id').eq('permiso_id', id).eq('empresa_id', permiso.empresa_id).order('created_at', { ascending: true }),
     ])
 
     const firstError = [empresaResp, riesgosResp, personalResp, eppResp, aprobacionesResp, historialResp].find((result) => result.error)?.error
     if (firstError) return jsonError(`No se pudo construir el PDF: ${firstError.message}`, 500)
+
+    const userIds = Array.from(new Set([
+      ...(aprobacionesResp.data ?? []).map((item) => item.usuario_id),
+      ...(historialResp.data ?? []).map((item) => item.usuario_id),
+    ].filter((value): value is string => Boolean(value))))
+
+    let perfilesMap = new Map<string, string>()
+    if (userIds.length > 0) {
+      const perfilesResp = await admin.from('perfiles').select('id,nombre_completo,email').in('id', userIds)
+      if (perfilesResp.error) return jsonError(`No se pudieron cargar responsables del PDF: ${perfilesResp.error.message}`, 500)
+      perfilesMap = new Map((perfilesResp.data ?? []).map((item) => [item.id, item.nombre_completo || item.email || item.id]))
+    }
 
     const verificationUrl = new URL(`/verificar/pts/${permiso.verificacion_token}`, request.url).toString()
     const matrix = createVerificationQrMatrix(verificationUrl)
@@ -96,8 +108,19 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
       riesgos: riesgosResp.data ?? [],
       personal: personalResp.data ?? [],
       epp: (eppResp.data ?? []).filter((item) => item.requerido).map((item) => item.nombre),
-      aprobaciones: aprobacionesResp.data ?? [],
-      historial: historialResp.data ?? [],
+      aprobaciones: (aprobacionesResp.data ?? []).map((item) => ({
+        etapa: item.etapa,
+        estado: item.estado,
+        observacion: item.observacion,
+        responsable_nombre: item.usuario_id ? perfilesMap.get(item.usuario_id) || null : null,
+        firmado_at: item.firmado_at,
+      })),
+      historial: (historialResp.data ?? []).map((item) => ({
+        evento: item.evento,
+        detalle: item.detalle,
+        created_at: item.created_at,
+        usuario_nombre: item.usuario_id ? perfilesMap.get(item.usuario_id) || null : null,
+      })),
       verificationUrl,
       qrPath: qr.path,
       qrViewBoxSize: qr.viewBoxSize,
