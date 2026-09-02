@@ -41,3 +41,37 @@ export const PERMISO_GENERAL_CHECKLIST: PTSChecklistDefinition[] = [
 ]
 
 export const PERMISO_GENERAL_EXPECTED_CODES = PERMISO_GENERAL_CHECKLIST.map((item) => item.codigo)
+
+export const PERMISO_ALTURA_REQUISITOS_PERSONAS = [
+  'El personal debe conocer las tareas, áreas, materiales y procesos expuestos a riesgo de trabajos en altura.',
+  'El personal debe conocer el Estándar de Trabajo en Altura y el procedimiento específico de la tarea.',
+  'El personal debe contar con los Elementos de Protección Personal para desarrollar su actividad, de acuerdo con la condición de trabajo en altura definida en el procedimiento específico.',
+  'Antes de desarrollar tareas con trabajos en altura donde puedan existir condiciones inseguras, el personal debe aplicar las acciones necesarias para controlar el riesgo de caídas.',
+]
+
+export const PERMISO_ALTURA_CHECKLIST: PTSChecklistDefinition[] = [
+  { codigo: 'ALT-CHK-01', seccion: 'Listado de Chequeos Previos', pregunta: 'Se realizó análisis de seguridad antes de iniciar los trabajos AST', bloqueanteSiNo: true, permiteNA: true, orden: 1 },
+  { codigo: 'ALT-CHK-02', seccion: 'Listado de Chequeos Previos', pregunta: 'Los trabajadores tienen formación e información específica sobre los riesgos y medidas preventivas', bloqueanteSiNo: true, permiteNA: true, orden: 2 },
+  { codigo: 'ALT-CHK-03', seccion: 'Listado de Chequeos Previos', pregunta: 'Existe un procedimiento de trabajo específico dado a conocer a los trabajadores', bloqueanteSiNo: true, permiteNA: true, orden: 3 },
+  { codigo: 'ALT-CHK-04', seccion: 'Listado de Chequeos Previos', pregunta: 'Los equipos y herramientas se encuentran revisados y en buen estado', bloqueanteSiNo: true, permiteNA: true, orden: 4 },
+  { codigo: 'ALT-CHK-05', seccion: 'Listado de Chequeos Previos', pregunta: 'Se debe delimitar zona de trabajo y señalizarla', bloqueanteSiNo: true, permiteNA: true, orden: 5 },
+  { codigo: 'ALT-CHK-06', seccion: 'Listado de Chequeos Previos', pregunta: 'Se dispone de arnés con dos colas de enganche y cuerda de seguridad en buen estado', bloqueanteSiNo: true, permiteNA: true, orden: 6 },
+  { codigo: 'ALT-CHK-07', seccion: 'Listado de Chequeos Previos', pregunta: 'Línea de vida en buen estado y anclada a sistemas fijos, sobre la cabeza del trabajador', bloqueanteSiNo: true, permiteNA: true, orden: 7 },
+  { codigo: 'ALT-CHK-08', seccion: 'Listado de Chequeos Previos', pregunta: 'Las escaleras fijas cumplen con norma de seguridad', bloqueanteSiNo: true, permiteNA: true, orden: 8 },
+  { codigo: 'ALT-CHK-09', seccion: 'Listado de Chequeos Previos', pregunta: 'Las plataformas elevadoras cumplen con normas de seguridad', bloqueanteSiNo: true, permiteNA: true, orden: 9 },
+  { codigo: 'ALT-CHK-10', seccion: 'Listado de Chequeos Previos', pregunta: 'Los equipos y herramientas se encuentran en buen estado', bloqueanteSiNo: true, permiteNA: true, orden: 10 },
+  { codigo: 'ALT-CHK-11', seccion: 'Listado de Chequeos Previos', pregunta: 'Cuentan con eslinga de seguridad absorbente de caídas', bloqueanteSiNo: true, permiteNA: true, orden: 11 },
+  { codigo: 'ALT-CHK-12', seccion: 'Listado de Chequeos Previos', pregunta: 'El personal cuenta con el equipo de protección personal definido para la tarea', bloqueanteSiNo: true, permiteNA: true, orden: 12 },
+  { codigo: 'ALT-CHK-13', seccion: 'Listado de Chequeos Previos', pregunta: 'El personal cuenta con la capacitación necesaria sobre armado de andamios', bloqueanteSiNo: true, permiteNA: true, orden: 13 },
+  { codigo: 'ALT-CHK-14', seccion: 'Listado de Chequeos Previos', pregunta: 'Existe supervisión de los trabajos', bloqueanteSiNo: true, permiteNA: true, orden: 14 },
+  { codigo: 'ALT-EPP-01', seccion: 'Elementos de Protección Personal y Sistema de Protección Contra Caídas', pregunta: 'Casco con barbiquejo', bloqueanteSiNo: true, permiteNA: true, orden: 15 },
+  { codigo: 'ALT-EPP-02', seccion: 'Elementos de Protección Personal y Sistema de Protección Contra Caídas', pregunta: 'Guantes de cabritilla cortos', bloqueanteSiNo: true, permiteNA: true, orden: 16 },
+  { codigo: 'ALT-EPP-03', seccion: 'Elementos de Protección Personal y Sistema de Protección Contra Caídas', pregunta: 'Calzado de Seguridad', bloqueanteSiNo: true, permiteNA: true, orden: 17 },
+  { codigo: 'ALT-EPP-04', seccion: 'Elementos de Protección Personal y Sistema de Protección Contra Caídas', pregunta: 'Arnés de cuerpo entero', bloqueanteSiNo: true, permiteNA: true, orden: 18 },
+  { codigo: 'ALT-EPP-05', seccion: 'Elementos de Protección Personal y Sistema de Protección Contra Caídas', pregunta: 'Antiparras de seguridad con filtro UV', bloqueanteSiNo: true, permiteNA: true, orden: 19 },
+  { codigo: 'ALT-EPP-06', seccion: 'Elementos de Protección Personal y Sistema de Protección Contra Caídas', pregunta: 'Sistema de anclaje', bloqueanteSiNo: true, permiteNA: true, orden: 20 },
+  { codigo: 'ALT-EPP-07', seccion: 'Elementos de Protección Personal y Sistema de Protección Contra Caídas', pregunta: 'Línea de vida vertical', bloqueanteSiNo: true, permiteNA: true, orden: 21 },
+  { codigo: 'ALT-EPP-08', seccion: 'Elementos de Protección Personal y Sistema de Protección Contra Caídas', pregunta: 'Línea de vida horizontal', bloqueanteSiNo: true, permiteNA: true, orden: 22 },
+]
+
+export const PERMISO_ALTURA_EXPECTED_CODES = PERMISO_ALTURA_CHECKLIST.map((item) => item.codigo)
