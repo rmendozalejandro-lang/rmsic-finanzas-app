@@ -104,8 +104,13 @@ export default function PermisosComplementariosPage() {
         {!loading && !error && rows.length > 0 ? (
           <section className="grid gap-4 md:grid-cols-2">
             {rows.map((item) => {
-              const habilitado = item.tipo === 'general'
-              const href = item.tipo === 'general' ? `/seguridad/pts/${permisoId}/general` : '#'
+              const hrefPorTipo: Record<string, string> = {
+                general: `/seguridad/pts/${permisoId}/general`,
+                altura: `/seguridad/pts/${permisoId}/altura`,
+              }
+              const href = hrefPorTipo[item.tipo]
+              const habilitado = Boolean(href)
+
               return (
                 <div key={item.id} className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
                   <div className="flex items-start justify-between gap-4">
