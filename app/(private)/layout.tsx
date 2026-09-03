@@ -97,6 +97,8 @@ const menuItems: MenuItem[] = [
 { href: '/operacional/tecnicos-dyf', label: 'Técnicos DyF', moduleKey: 'ot' },
   { href: '/informes', label: 'Informes Técnicos', moduleKey: 'ot' },
 
+  { href: '/seguridad/pts', label: 'Permisos de Trabajo Seguro (PTS)', moduleKey: 'pts' },
+
   { href: '/remuneraciones', label: 'Remuneraciones', moduleKey: 'remuneraciones' },
 { href: '/remuneraciones/prestamos', label: 'Prestamos y anticipos', moduleKey: 'remuneraciones' },
 { href: '/remuneraciones/cotizaciones', label: 'Cotizaciones / Leyes sociales', moduleKey: 'remuneraciones' },
@@ -130,6 +132,7 @@ const MENU_GROUP_ORDER: MenuGroupKey[] = [
   'financiero',
   'contable',
   'operacional',
+  'seguridad',
   'rrhh',
   'administracion',
   'haras',

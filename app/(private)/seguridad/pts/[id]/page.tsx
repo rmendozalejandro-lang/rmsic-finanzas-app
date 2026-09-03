@@ -1,0 +1,522 @@
+'use client'
+
+import Link from 'next/link'
+import { useParams } from 'next/navigation'
+import { useEffect, useMemo, useState } from 'react'
+import type { ReactNode } from 'react'
+import PTSAccessGuard from '../../../../../components/pts/PTSAccessGuard'
+import { supabase } from '../../../../../lib/supabase/client'
+
+const STORAGE_KEY = 'empresa_activa_id'
+
+type Permiso = {
+  id: string
+  folio: number | null
+  estado: string
+  trabajo_a_realizar: string
+  tipo_actividad: string
+  lugar_ejecucion: string
+  empresa_contratista: string
+  fecha_inicio: string
+  fecha_termino: string | null
+  hora_inicio: string | null
+  hora_termino: string | null
+  observaciones: string | null
+  iniciado_at: string | null
+  cerrado_at: string | null
+  iniciado_por_nombre: string | null
+  cerrado_por_nombre: string | null
+  cierre_observaciones: string | null
+}
+
+type Riesgo = {
+  id: string
+  paso: number
+  actividad: string
+  peligros: string
+  riesgos: string
+  medidas_preventivas: string
+}
+
+type Persona = {
+  id: string
+  nombre_apellido: string
+  rut: string
+  induccion_ingreso_ok: boolean
+  charla_5_min_ok: boolean
+  examen_altura_vigente_hasta: string | null
+}
+
+type Epp = { id: string; nombre: string; requerido: boolean }
+type FirmaParticipante = { personal_id: string; firmado_at: string }
+type Aprobacion = {
+  etapa: string
+  estado: string
+  observacion: string | null
+  nombre_firmante: string | null
+  cargo_firmante: string | null
+  firmado_at: string | null
+}
+type Historial = { id: string; evento: string; detalle: string | null; created_at: string }
+type Complementario = { id: string; tipo: string; nombre: string; estado: string; requerido: boolean }
+
+type VigilanciaEstado = 'pendiente' | 'en_curso' | 'observada' | 'completa'
+
+const ESTADO_LABEL: Record<string, string> = {
+  borrador: 'Borrador',
+  en_revision: 'En revisión',
+  observado: 'Observado',
+  aprobado: 'Aprobado',
+  en_ejecucion: 'En ejecución',
+  cerrado: 'Cerrado',
+  rechazado: 'Rechazado',
+}
+
+const ETAPA_LABEL: Record<string, string> = {
+  supervisor_contratista: 'Supervisor contratista',
+  coordinador_contratista: 'Coordinador contratista',
+  jefatura_area: 'Jefatura del área',
+  seguridad: 'Seguridad y Salud en el Trabajo',
+}
+
+const COMPLEMENTARIO_LABEL: Record<string, string> = {
+  general: 'Permiso Trabajo General',
+  altura: 'Permiso Trabajo en Altura',
+  izaje: 'Permiso Maniobras de Izaje',
+  excavacion: 'Permiso de Excavación',
+  caliente: 'Permiso Trabajo en Caliente',
+}
+
+export default function PTSDetallePage() {
+  const params = useParams<{ id: string }>()
+  const permisoId = params.id
+  const [permiso, setPermiso] = useState<Permiso | null>(null)
+  const [riesgos, setRiesgos] = useState<Riesgo[]>([])
+  const [personal, setPersonal] = useState<Persona[]>([])
+  const [epp, setEpp] = useState<Epp[]>([])
+  const [firmasParticipantes, setFirmasParticipantes] = useState<FirmaParticipante[]>([])
+  const [aprobaciones, setAprobaciones] = useState<Aprobacion[]>([])
+  const [historial, setHistorial] = useState<Historial[]>([])
+  const [complementarios, setComplementarios] = useState<Complementario[]>([])
+  const [loading, setLoading] = useState(true)
+  const [acting, setActing] = useState(false)
+  const [error, setError] = useState('')
+  const [success, setSuccess] = useState('')
+  const [observacionRevision, setObservacionRevision] = useState('')
+  const [observacionCierre, setObservacionCierre] = useState('')
+
+  const load = async () => {
+    try {
+      setLoading(true)
+      setError('')
+      const empresaId = window.localStorage.getItem(STORAGE_KEY) || ''
+      if (!empresaId) throw new Error('No hay empresa activa seleccionada.')
+
+      const [permisoResp, riesgosResp, personalResp, eppResp, firmasResp, aprobResp, historialResp, complementariosResp] = await Promise.all([
+        supabase.from('pts_permisos').select('*').eq('id', permisoId).eq('empresa_id', empresaId).single(),
+        supabase.from('pts_analisis_riesgos').select('id,paso,actividad,peligros,riesgos,medidas_preventivas').eq('permiso_id', permisoId).eq('empresa_id', empresaId).order('orden'),
+        supabase.from('pts_personal').select('id,nombre_apellido,rut,induccion_ingreso_ok,charla_5_min_ok,examen_altura_vigente_hasta').eq('permiso_id', permisoId).eq('empresa_id', empresaId).order('orden'),
+        supabase.from('pts_epp').select('id,nombre,requerido').eq('permiso_id', permisoId).eq('empresa_id', empresaId).order('orden'),
+        supabase.from('pts_firmas_participantes').select('personal_id,firmado_at').eq('permiso_id', permisoId).eq('empresa_id', empresaId),
+        supabase.from('pts_aprobaciones').select('etapa,estado,observacion,nombre_firmante,cargo_firmante,firmado_at').eq('permiso_id', permisoId).eq('empresa_id', empresaId).order('orden'),
+        supabase.from('pts_historial').select('id,evento,detalle,created_at').eq('permiso_id', permisoId).eq('empresa_id', empresaId).order('created_at', { ascending: false }),
+        supabase.from('pts_permisos_complementarios').select('id,tipo,nombre,estado,requerido').eq('permiso_id', permisoId).eq('empresa_id', empresaId).eq('requerido', true).order('created_at'),
+      ])
+
+      const firstError = [permisoResp, riesgosResp, personalResp, eppResp, firmasResp, aprobResp, historialResp, complementariosResp].find((result) => result.error)?.error
+      if (firstError) throw firstError
+
+      setPermiso(permisoResp.data as Permiso)
+      setRiesgos((riesgosResp.data ?? []) as Riesgo[])
+      setPersonal((personalResp.data ?? []) as Persona[])
+      setEpp((eppResp.data ?? []) as Epp[])
+      setFirmasParticipantes((firmasResp.data ?? []) as FirmaParticipante[])
+      setAprobaciones((aprobResp.data ?? []) as Aprobacion[])
+      setHistorial((historialResp.data ?? []) as Historial[])
+      setComplementarios((complementariosResp.data ?? []) as Complementario[])
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudo cargar el PTS.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    void load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [permisoId])
+
+  const checks = useMemo(() => {
+    if (!permiso) return []
+    const baseChecks = [
+      { label: 'Identificación del trabajo', ok: Boolean(permiso.trabajo_a_realizar && permiso.tipo_actividad && permiso.lugar_ejecucion && permiso.empresa_contratista && permiso.fecha_inicio) },
+      { label: 'Análisis de riesgos', ok: riesgos.length > 0 && riesgos.every((item) => item.actividad && item.peligros && item.riesgos && item.medidas_preventivas) },
+      { label: 'Personal participante', ok: personal.length > 0 && personal.every((item) => item.nombre_apellido && item.rut) },
+      { label: 'EPP / elementos de seguridad', ok: epp.some((item) => item.requerido) },
+    ]
+    const permisosChecks = complementarios.map((item) => ({
+      label: COMPLEMENTARIO_LABEL[item.tipo] ?? item.nombre,
+      ok: ['completo', 'aprobado', 'cerrado'].includes(item.estado),
+    }))
+    return [...baseChecks, ...permisosChecks]
+  }, [permiso, riesgos, personal, epp, complementarios])
+
+  const complementariosPendientes = useMemo(
+    () => complementarios.filter((item) => !['completo', 'aprobado', 'cerrado'].includes(item.estado)),
+    [complementarios]
+  )
+
+  const requiereVigilanciaCaliente = useMemo(
+    () => complementarios.some((item) => item.tipo === 'caliente' && item.requerido),
+    [complementarios]
+  )
+
+  const vigilanciaCalienteEstado = useMemo<VigilanciaEstado | null>(() => {
+    if (!requiereVigilanciaCaliente) return null
+    const ultimoEvento = historial.find((item) => ['vigilancia_post_iniciada', 'vigilancia_post_observada', 'vigilancia_post_completa'].includes(item.evento))
+    if (!ultimoEvento) return 'pendiente'
+    if (ultimoEvento.evento === 'vigilancia_post_completa') return 'completa'
+    if (ultimoEvento.evento === 'vigilancia_post_observada') return 'observada'
+    return 'en_curso'
+  }, [historial, requiereVigilanciaCaliente])
+
+  const correccionPosterior = useMemo(() => {
+    const ultimaObservacion = historial.find((item) => item.evento === 'revision_observada')
+    const ultimaCorreccion = historial.find((item) => item.evento === 'correccion_guardada')
+    if (!ultimaCorreccion) return false
+    if (!ultimaObservacion) return true
+    return new Date(ultimaCorreccion.created_at).getTime() > new Date(ultimaObservacion.created_at).getTime()
+  }, [historial])
+
+  const checksFlujo = useMemo(() => {
+    if (!permiso || permiso.estado !== 'observado') return checks
+    return [...checks, { label: 'Corrección de observación', ok: correccionPosterior }]
+  }, [checks, correccionPosterior, permiso])
+
+  const completitud = checksFlujo.length
+    ? Math.round((checksFlujo.filter((item) => item.ok).length / checksFlujo.length) * 100)
+    : 0
+
+  const firmasCompletas = personal.length > 0 && firmasParticipantes.length === personal.length
+  const correccionPendiente = permiso?.estado === 'observado' && !correccionPosterior
+  const esCerrado = permiso?.estado === 'cerrado'
+  const etapaOperativa = Boolean(permiso && ['aprobado', 'en_ejecucion'].includes(permiso.estado))
+  const estaEnRevision = permiso?.estado === 'en_revision'
+  const indicadorTitulo = esCerrado
+    ? 'Ciclo del PTS'
+    : etapaOperativa
+      ? 'Requisitos del PTS'
+      : estaEnRevision
+        ? 'Expediente en revisión'
+        : 'Requisitos para enviar a revisión'
+  const indicadorEstado = esCerrado
+    ? 'Cerrado'
+    : permiso?.estado === 'aprobado' && !firmasCompletas
+      ? 'Firmas pendientes'
+      : etapaOperativa
+        ? 'Completado'
+        : estaEnRevision
+          ? 'En revisión'
+          : completitud === 100
+            ? 'Listo para enviar'
+            : correccionPendiente
+              ? 'Corrección pendiente'
+              : 'Incompleto'
+
+  const puedeEnviar = Boolean(
+    permiso &&
+      completitud === 100 &&
+      complementariosPendientes.length === 0 &&
+      (permiso.estado === 'borrador' || (permiso.estado === 'observado' && correccionPosterior))
+  )
+  const puedeResolver = permiso?.estado === 'en_revision'
+  const cierreBloqueadoPorVigilancia = Boolean(requiereVigilanciaCaliente && vigilanciaCalienteEstado !== 'completa')
+
+  const enviarRevision = async () => {
+    try {
+      setActing(true)
+      setError('')
+      setSuccess('')
+      const { error: rpcError } = await supabase.rpc('pts_enviar_revision', { p_permiso_id: permisoId })
+      if (rpcError) throw new Error(rpcError.message)
+      setSuccess('PTS enviado a revisión de Seguridad.')
+      await load()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudo enviar el PTS a revisión.')
+    } finally {
+      setActing(false)
+    }
+  }
+
+  const resolver = async (decision: 'aprobar' | 'observar' | 'rechazar') => {
+    if ((decision === 'observar' || decision === 'rechazar') && !observacionRevision.trim()) {
+      setSuccess('')
+      setError('Debes registrar una observación antes de observar o rechazar el PTS.')
+      return
+    }
+
+    try {
+      setActing(true)
+      setError('')
+      setSuccess('')
+      const { error: rpcError } = await supabase.rpc('pts_resolver_revision', {
+        p_permiso_id: permisoId,
+        p_decision: decision,
+        p_observacion: observacionRevision.trim() || null,
+      })
+      if (rpcError) throw new Error(rpcError.message)
+      setSuccess(decision === 'aprobar' ? 'PTS aprobado.' : decision === 'observar' ? 'PTS devuelto con observaciones.' : 'PTS rechazado.')
+      setObservacionRevision('')
+      await load()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudo resolver la revisión.')
+    } finally {
+      setActing(false)
+    }
+  }
+
+  const iniciarTrabajo = async () => {
+    try {
+      setActing(true)
+      setError('')
+      setSuccess('')
+      const { error: rpcError } = await supabase.rpc('pts_iniciar_ejecucion', { p_permiso_id: permisoId })
+      if (rpcError) throw new Error(rpcError.message)
+      setSuccess('Inicio del trabajo registrado. El PTS está en ejecución.')
+      await load()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudo iniciar el trabajo.')
+    } finally {
+      setActing(false)
+    }
+  }
+
+  const cerrarTrabajo = async () => {
+    if (observacionCierre.trim().length < 10) {
+      setSuccess('')
+      setError('Describe el resultado del cierre con al menos 10 caracteres.')
+      return
+    }
+
+    try {
+      setActing(true)
+      setError('')
+      setSuccess('')
+      const { error: rpcError } = await supabase.rpc('pts_cerrar_trabajo', {
+        p_permiso_id: permisoId,
+        p_observacion_cierre: observacionCierre.trim(),
+      })
+      if (rpcError) throw new Error(rpcError.message)
+      setSuccess('Trabajo cerrado y registrado en la trazabilidad del PTS.')
+      setObservacionCierre('')
+      await load()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudo cerrar el trabajo.')
+    } finally {
+      setActing(false)
+    }
+  }
+
+  return (
+    <PTSAccessGuard>
+      <main className="mx-auto max-w-7xl space-y-6 px-6 py-8">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <Link href="/seguridad/pts" className="text-sm font-medium text-slate-500 hover:text-slate-900">← Volver a permisos</Link>
+            <h1 className="mt-2 text-3xl font-semibold text-slate-900">{permiso ? `PTS-${String(permiso.folio ?? 0).padStart(6, '0')}` : 'Permiso de Trabajo Seguro'}</h1>
+            {permiso ? <p className="mt-1 text-sm text-slate-500">{permiso.trabajo_a_realizar}</p> : null}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {permiso?.estado === 'observado' ? (
+              <Link href={`/seguridad/pts/${permisoId}/editar`} className="inline-flex rounded-xl bg-amber-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-amber-600">Corregir PTS</Link>
+            ) : null}
+            {permiso ? <span className="inline-flex rounded-full border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-700">{ESTADO_LABEL[permiso.estado] ?? permiso.estado}</span> : null}
+          </div>
+        </div>
+
+        {loading ? <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-500">Cargando PTS...</div> : null}
+        {error ? <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div> : null}
+        {success ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700">{success}</div> : null}
+
+        {!loading && permiso ? (
+          <>
+            {correccionPendiente ? (
+              <section className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                Este PTS fue observado. Debes corregirlo y guardar la corrección antes de poder reenviarlo a revisión.
+              </section>
+            ) : null}
+
+            {permiso.estado === 'aprobado' ? (
+              firmasCompletas ? (
+                <section className="rounded-3xl border border-emerald-200 bg-emerald-50 p-5">
+                  <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">Autorizado para ejecución</p>
+                      <h2 className="mt-1 text-lg font-semibold text-emerald-950">PTS aprobado y firmas previas completas. Puede iniciar el trabajo.</h2>
+                      <p className="mt-1 text-sm text-emerald-800">{firmasParticipantes.length} de {personal.length} participantes firmaron. Al iniciar se registrará fecha, hora y usuario responsable.</p>
+                    </div>
+                    <button onClick={iniciarTrabajo} disabled={acting} className="rounded-xl bg-emerald-600 px-5 py-3 text-sm font-semibold text-white disabled:opacity-60">{acting ? 'Procesando...' : 'Iniciar trabajo'}</button>
+                  </div>
+                </section>
+              ) : (
+                <section className="rounded-3xl border border-amber-200 bg-amber-50 p-5">
+                  <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-amber-700">Aprobado — firmas previas pendientes</p>
+                      <h2 className="mt-1 text-lg font-semibold text-amber-950">El PTS está aprobado, pero todavía no está autorizado para iniciar el trabajo.</h2>
+                      <p className="mt-1 text-sm text-amber-800">{firmasParticipantes.length} de {personal.length} participantes firmaron. Todos deben firmar antes del inicio.</p>
+                    </div>
+                    <Link href={`/seguridad/pts/${permisoId}/firmas`} className="inline-flex items-center justify-center rounded-xl bg-amber-500 px-5 py-3 text-sm font-semibold text-white hover:bg-amber-600">Completar firmas</Link>
+                  </div>
+                </section>
+              )
+            ) : null}
+
+            {permiso.estado === 'en_ejecucion' ? (
+              <section className="rounded-3xl border border-cyan-200 bg-cyan-50/70 p-5">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-cyan-700">Trabajo en ejecución</p>
+                <div className="mt-2 grid gap-3 md:grid-cols-2">
+                  <Info label="Inicio registrado" value={permiso.iniciado_at ? new Date(permiso.iniciado_at).toLocaleString('es-CL') : '—'} />
+                  <Info label="Iniciado por" value={permiso.iniciado_por_nombre || 'Usuario autorizado'} />
+                </div>
+                {requiereVigilanciaCaliente ? (
+                  <div className={`mt-5 rounded-2xl border p-4 ${vigilanciaCalienteEstado === 'completa' ? 'border-emerald-200 bg-emerald-50' : vigilanciaCalienteEstado === 'observada' ? 'border-red-200 bg-red-50' : 'border-amber-200 bg-amber-50'}`}>
+                    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className={vigilanciaCalienteEstado === 'completa' ? 'font-semibold text-emerald-950' : vigilanciaCalienteEstado === 'observada' ? 'font-semibold text-red-950' : 'font-semibold text-amber-950'}>Vigilancia post trabajo en caliente</h3>
+                          <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${vigilanciaCalienteEstado === 'completa' ? 'bg-emerald-100 text-emerald-800' : vigilanciaCalienteEstado === 'en_curso' ? 'bg-cyan-100 text-cyan-800' : vigilanciaCalienteEstado === 'observada' ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-800'}`}>
+                            {vigilanciaCalienteEstado === 'completa' ? 'Completa' : vigilanciaCalienteEstado === 'en_curso' ? 'En curso' : vigilanciaCalienteEstado === 'observada' ? 'Observada' : 'Pendiente'}
+                          </span>
+                        </div>
+                        <p className={`mt-1 text-sm ${vigilanciaCalienteEstado === 'completa' ? 'text-emerald-800' : vigilanciaCalienteEstado === 'observada' ? 'text-red-800' : 'text-amber-800'}`}>
+                          {vigilanciaCalienteEstado === 'completa'
+                            ? 'La vigilancia obligatoria fue completada. El PTS puede continuar a su cierre general.'
+                            : vigilanciaCalienteEstado === 'en_curso'
+                              ? 'La vigilancia está en curso. Debe cumplir al menos 60 minutos y finalizar sus verificaciones antes de cerrar el PTS.'
+                              : vigilanciaCalienteEstado === 'observada'
+                                ? 'La vigilancia registró desviaciones. Debes corregirlas e iniciar una nueva vigilancia completa de 60 minutos.'
+                                : 'Al finalizar la labor en caliente debes iniciar y completar una vigilancia mínima de 60 minutos antes de cerrar el PTS.'}
+                        </p>
+                      </div>
+                      <Link href={`/seguridad/pts/${permisoId}/caliente/vigilancia`} className={`inline-flex shrink-0 items-center justify-center rounded-xl px-5 py-3 text-sm font-semibold text-white ${vigilanciaCalienteEstado === 'completa' ? 'bg-emerald-600 hover:bg-emerald-700' : vigilanciaCalienteEstado === 'observada' ? 'bg-red-600 hover:bg-red-700' : 'bg-amber-500 hover:bg-amber-600'}`}>
+                        {vigilanciaCalienteEstado === 'completa' ? 'Ver vigilancia completada' : vigilanciaCalienteEstado === 'en_curso' ? 'Continuar vigilancia' : vigilanciaCalienteEstado === 'observada' ? 'Revisar vigilancia' : 'Abrir vigilancia post trabajo'}
+                      </Link>
+                    </div>
+                  </div>
+                ) : null}
+                <div className="mt-5 rounded-2xl border border-cyan-200 bg-white p-4">
+                  <h3 className="font-semibold text-slate-900">Cierre del trabajo</h3>
+                  <p className="mt-1 text-sm text-slate-600">Registra el resultado final antes de cerrar el permiso. Mínimo 10 caracteres.</p>
+                  {cierreBloqueadoPorVigilancia ? <p className="mt-3 rounded-xl bg-amber-50 p-3 text-sm font-medium text-amber-800">El cierre permanecerá bloqueado hasta completar la vigilancia post trabajo en caliente.</p> : null}
+                  <textarea value={observacionCierre} onChange={(e) => setObservacionCierre(e.target.value)} rows={3} placeholder="Ej.: Trabajo finalizado sin incidentes, área despejada y equipo entregado a operación." className="mt-3 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-[#18B7A8]" />
+                  <button onClick={cerrarTrabajo} disabled={acting || cierreBloqueadoPorVigilancia} className="mt-3 rounded-xl bg-[#0B2947] px-5 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">{acting ? 'Procesando...' : cierreBloqueadoPorVigilancia ? 'Vigilancia pendiente' : 'Cerrar trabajo'}</button>
+                </div>
+              </section>
+            ) : null}
+
+            {permiso.estado === 'cerrado' ? (
+              <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Trabajo cerrado</p>
+                <div className="mt-3 grid gap-4 md:grid-cols-2">
+                  <Info label="Inicio" value={permiso.iniciado_at ? new Date(permiso.iniciado_at).toLocaleString('es-CL') : '—'} />
+                  <Info label="Iniciado por" value={permiso.iniciado_por_nombre || '—'} />
+                  <Info label="Cierre" value={permiso.cerrado_at ? new Date(permiso.cerrado_at).toLocaleString('es-CL') : '—'} />
+                  <Info label="Cerrado por" value={permiso.cerrado_por_nombre || '—'} />
+                </div>
+                {permiso.cierre_observaciones ? <div className="mt-4 rounded-2xl bg-slate-50 p-4 text-sm text-slate-700"><span className="font-semibold">Resultado final:</span> {permiso.cierre_observaciones}</div> : null}
+              </section>
+            ) : null}
+
+            <section className="grid gap-5 xl:grid-cols-[1fr_320px]">
+              <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+                <h2 className="text-lg font-semibold text-slate-900">I. Identificación</h2>
+                <dl className="mt-5 grid gap-4 md:grid-cols-2">
+                  <Info label="Trabajo" value={permiso.trabajo_a_realizar} />
+                  <Info label="Tipo de actividad" value={permiso.tipo_actividad} />
+                  <Info label="Empresa contratista" value={permiso.empresa_contratista} />
+                  <Info label="Lugar de ejecución" value={permiso.lugar_ejecucion} />
+                  <Info label="Fecha" value={`${permiso.fecha_inicio}${permiso.fecha_termino ? ` → ${permiso.fecha_termino}` : ''}`} />
+                  <Info label="Horario" value={`${permiso.hora_inicio || '—'}${permiso.hora_termino ? ` → ${permiso.hora_termino}` : ''}`} />
+                </dl>
+                {permiso.observaciones ? <div className="mt-5 rounded-2xl bg-slate-50 p-4 text-sm text-slate-700"><span className="font-semibold">Observaciones:</span> {permiso.observaciones}</div> : null}
+              </div>
+
+              <aside className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+                <div className="flex items-end justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">{indicadorTitulo}</p>
+                    <p className="mt-1 text-3xl font-semibold text-slate-900">{completitud}%</p>
+                  </div>
+                  <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${completitud === 100 ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>{indicadorEstado}</span>
+                </div>
+                <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-100"><div className={`h-full rounded-full transition-all ${correccionPendiente ? 'bg-amber-500' : 'bg-[#18B7A8]'}`} style={{ width: `${completitud}%` }} /></div>
+                {!esCerrado && !etapaOperativa ? (
+                  <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-medium leading-5 text-amber-900">
+                    {estaEnRevision
+                      ? 'El expediente está completo y fue enviado a Seguridad. Aún no está autorizado para iniciar los trabajos.'
+                      : 'Este porcentaje indica completitud documental para revisión. No autoriza el inicio de los trabajos.'}
+                  </p>
+                ) : null}
+                {permiso.estado === 'aprobado' && !firmasCompletas ? (
+                  <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-medium leading-5 text-amber-900">El expediente está aprobado, pero faltan firmas previas de participantes. El trabajo aún no puede iniciarse.</p>
+                ) : null}
+                <div className="mt-5 space-y-2">{checksFlujo.map((item) => <div key={item.label} className="flex items-center justify-between gap-3 text-sm"><span className="text-slate-600">{item.label}</span><span className={item.ok ? 'text-emerald-600' : 'text-amber-600'}>{item.ok ? '✓' : 'Pendiente'}</span></div>)}</div>
+                {complementariosPendientes.length > 0 && permiso.estado === 'borrador' ? <Link href={`/seguridad/pts/${permisoId}/permisos`} className="mt-6 inline-flex w-full items-center justify-center rounded-2xl border border-[#18B7A8] bg-white px-4 py-3 text-sm font-semibold text-[#168F86] hover:bg-cyan-50">Completar permisos complementarios</Link> : null}
+                {correccionPendiente ? <Link href={`/seguridad/pts/${permisoId}/editar`} className="mt-6 inline-flex w-full items-center justify-center rounded-2xl bg-amber-500 px-4 py-3 text-sm font-semibold text-white hover:bg-amber-600">Corregir PTS</Link> : null}
+                {puedeEnviar ? <button onClick={enviarRevision} disabled={acting} className="mt-6 w-full rounded-2xl bg-[#18B7A8] px-4 py-3 text-sm font-semibold text-white hover:bg-[#11998E] disabled:opacity-60">{acting ? 'Procesando...' : 'Enviar a revisión'}</button> : null}
+              </aside>
+            </section>
+
+            <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+              <h2 className="text-lg font-semibold text-slate-900">II. Análisis de riesgos</h2>
+              <div className="mt-5 overflow-x-auto"><table className="min-w-full divide-y divide-slate-200 text-sm"><thead className="bg-slate-50 text-left text-xs uppercase text-slate-500"><tr><th className="px-4 py-3">Paso</th><th className="px-4 py-3">Actividad</th><th className="px-4 py-3">Peligros</th><th className="px-4 py-3">Incidentes / riesgos</th><th className="px-4 py-3">Medidas preventivas</th></tr></thead><tbody className="divide-y divide-slate-100">{riesgos.map((item) => <tr key={item.id}><td className="px-4 py-4 font-semibold">{item.paso}</td><td className="px-4 py-4">{item.actividad}</td><td className="px-4 py-4">{item.peligros}</td><td className="px-4 py-4">{item.riesgos}</td><td className="px-4 py-4">{item.medidas_preventivas}</td></tr>)}</tbody></table></div>
+            </section>
+
+            <section className="grid gap-5 lg:grid-cols-2">
+              <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm"><h2 className="text-lg font-semibold text-slate-900">III. Personal participante</h2><div className="mt-4 space-y-3">{personal.map((item) => <div key={item.id} className="rounded-2xl border border-slate-200 p-4"><div className="font-medium text-slate-900">{item.nombre_apellido}</div><div className="mt-1 text-sm text-slate-500">RUT {item.rut}</div><div className="mt-3 flex flex-wrap gap-2 text-xs"><Tag ok={item.induccion_ingreso_ok}>Inducción</Tag><Tag ok={item.charla_5_min_ok}>Charla 5 min.</Tag><Tag ok={Boolean(item.examen_altura_vigente_hasta)}>Examen altura {item.examen_altura_vigente_hasta || ''}</Tag></div></div>)}</div></div>
+              <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm"><h2 className="text-lg font-semibold text-slate-900">IV. EPP y elementos requeridos</h2><div className="mt-4 flex flex-wrap gap-2">{epp.map((item) => <span key={item.id} className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-700">✓ {item.nombre}</span>)}</div></div>
+            </section>
+
+            <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+              <h2 className="text-lg font-semibold text-slate-900">V. Aprobaciones</h2>
+              <p className="mt-2 text-sm text-slate-500">En este piloto, la aprobación activa corresponde a Seguridad y Salud en el Trabajo. Las demás etapas se habilitarán según el flujo definido por cada empresa.</p>
+              <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">{aprobaciones.map((item) => {
+                const noRequeridoPiloto = item.etapa !== 'seguridad' && item.estado === 'pendiente'
+                const tieneResolucion = Boolean(item.firmado_at)
+                const responsableLabel = item.estado === 'aprobado' ? 'Aprobado por' : item.estado === 'observado' ? 'Observado por' : item.estado === 'rechazado' ? 'Rechazado por' : 'Resuelto por'
+                return (
+                  <div key={item.etapa} className="rounded-2xl border border-slate-200 p-4">
+                    <p className="text-sm font-semibold text-slate-900">{ETAPA_LABEL[item.etapa] ?? item.etapa}</p>
+                    <p className={`mt-2 text-sm ${noRequeridoPiloto ? 'text-slate-500' : 'capitalize text-slate-600'}`}>{noRequeridoPiloto ? 'No requerido en piloto' : item.estado.replace('_', ' ')}</p>
+                    {item.observacion ? <p className="mt-2 text-xs text-slate-500">{item.observacion}</p> : null}
+                    {tieneResolucion ? (
+                      <div className="mt-4 rounded-xl border border-slate-100 bg-slate-50 p-3">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-500">{responsableLabel}</p>
+                        <p className="mt-1 text-sm font-semibold text-slate-900">{item.nombre_firmante || 'Firmante no registrado en este expediente'}</p>
+                        <p className="mt-0.5 text-xs text-slate-600">{item.cargo_firmante || 'Cargo no registrado'}</p>
+                        <p className="mt-2 text-xs text-slate-500">{item.firmado_at ? new Date(item.firmado_at).toLocaleString('es-CL') : '—'}</p>
+                      </div>
+                    ) : null}
+                  </div>
+                )
+              })}</div>
+
+              {puedeResolver ? <div className="mt-6 rounded-2xl border border-cyan-200 bg-cyan-50/60 p-5"><h3 className="font-semibold text-slate-900">Revisión de Seguridad</h3><p className="mt-1 text-sm text-slate-600">Aprueba el permiso o devuelve una observación al solicitante.</p><textarea value={observacionRevision} onChange={(e) => setObservacionRevision(e.target.value)} rows={3} placeholder="Observación (obligatoria al observar o rechazar)" className="mt-4 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-[#18B7A8]" /><div className="mt-4 flex flex-wrap gap-3"><button onClick={() => resolver('aprobar')} disabled={acting} className="rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60">Aprobar</button><button onClick={() => resolver('observar')} disabled={acting} className="rounded-xl bg-amber-500 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60">Observar</button><button onClick={() => resolver('rechazar')} disabled={acting} className="rounded-xl bg-red-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60">Rechazar</button></div></div> : null}
+            </section>
+
+            <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm"><h2 className="text-lg font-semibold text-slate-900">Trazabilidad</h2><div className="mt-4 space-y-3">{historial.map((item) => <div key={item.id} className="border-l-2 border-slate-200 pl-4"><div className="text-sm font-medium text-slate-800">{item.evento.replaceAll('_', ' ')}</div><div className="mt-1 text-xs text-slate-500">{new Date(item.created_at).toLocaleString('es-CL')}</div>{item.detalle ? <p className="mt-1 text-sm text-slate-600">{item.detalle}</p> : null}</div>)}</div></section>
+          </>
+        ) : null}
+      </main>
+    </PTSAccessGuard>
+  )
+}
+
+function Info({ label, value }: { label: string; value: string }) {
+  return <div><dt className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">{label}</dt><dd className="mt-1 text-sm font-medium text-slate-900">{value || '—'}</dd></div>
+}
+
+function Tag({ ok, children }: { ok: boolean; children: ReactNode }) {
+  return <span className={`rounded-full px-2.5 py-1 font-medium ${ok ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{ok ? '✓ ' : ''}{children}</span>
+}
