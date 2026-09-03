@@ -108,6 +108,7 @@ export default function PermisosComplementariosPage() {
                 general: `/seguridad/pts/${permisoId}/general`,
                 altura: `/seguridad/pts/${permisoId}/altura`,
                 izaje: `/seguridad/pts/${permisoId}/izaje`,
+                excavacion: `/seguridad/pts/${permisoId}/excavacion`,
               }
               const href = hrefPorTipo[item.tipo]
               const habilitado = Boolean(href)
