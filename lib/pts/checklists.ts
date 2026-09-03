@@ -75,3 +75,27 @@ export const PERMISO_ALTURA_CHECKLIST: PTSChecklistDefinition[] = [
 ]
 
 export const PERMISO_ALTURA_EXPECTED_CODES = PERMISO_ALTURA_CHECKLIST.map((item) => item.codigo)
+
+export const PERMISO_IZAJE_REQUISITOS_PERSONAS = [
+  'El personal debe conocer las tareas, áreas, materiales y procesos a los que se encuentra expuesto al realizar maniobras de izaje.',
+  'El personal debe conocer los procedimientos requeridos y métodos empleados para trabajar en maniobras de izaje, y debe existir registro de ello.',
+  'El personal debe contar con los Elementos de Protección Personal definidos para la condición de trabajo y el procedimiento específico.',
+]
+
+export const PERMISO_IZAJE_CHECKLIST: PTSChecklistDefinition[] = [
+  { codigo: 'IZA-CHK-01', seccion: 'Listado de Chequeos Previos', pregunta: 'Se realizó análisis de seguridad antes de iniciar los trabajos AST', bloqueanteSiNo: true, permiteNA: false, orden: 1 },
+  { codigo: 'IZA-CHK-02', seccion: 'Listado de Chequeos Previos', pregunta: 'El personal conoce los procedimientos requeridos y métodos empleados para trabajar en maniobras de izaje', bloqueanteSiNo: true, permiteNA: false, orden: 2 },
+  { codigo: 'IZA-CHK-03', seccion: 'Listado de Chequeos Previos', pregunta: 'Se ha delimitado y aislado el área de trabajo con conos, cinta de peligro y/o letreros de advertencia', bloqueanteSiNo: true, permiteNA: false, orden: 3 },
+  { codigo: 'IZA-CHK-04', seccion: 'Listado de Chequeos Previos', pregunta: 'Se cuenta con operador de grúa certificado y autorizado para la maniobra de izaje', bloqueanteSiNo: true, permiteNA: false, orden: 4 },
+  { codigo: 'IZA-CHK-05', seccion: 'Listado de Chequeos Previos', pregunta: 'Se cuenta con rigger calificado y autorizado para la maniobra', bloqueanteSiNo: true, permiteNA: false, orden: 5 },
+  { codigo: 'IZA-CHK-06', seccion: 'Listado de Chequeos Previos', pregunta: 'El operador cuenta con joystick para realizar la maniobra', bloqueanteSiNo: true, permiteNA: true, orden: 6 },
+  { codigo: 'IZA-CHK-07', seccion: 'Listado de Chequeos Previos', pregunta: 'Se verificó que la carga a izar es menor a la capacidad de carga de la grúa', bloqueanteSiNo: true, permiteNA: false, orden: 7 },
+  { codigo: 'IZA-CHK-08', seccion: 'Listado de Chequeos Previos', pregunta: 'Se verificó que no exista personal ajeno a la maniobra en el área de trabajo', bloqueanteSiNo: true, permiteNA: false, orden: 8 },
+  { codigo: 'IZA-CHK-09', seccion: 'Listado de Chequeos Previos', pregunta: 'Se han inspeccionado las condiciones operativas antes de iniciar los trabajos', bloqueanteSiNo: true, permiteNA: false, orden: 9 },
+  { codigo: 'IZA-CHK-10', seccion: 'Listado de Chequeos Previos', pregunta: 'Se verificó que no existan líneas energizadas cercanas al lugar de trabajo', bloqueanteSiNo: true, permiteNA: false, orden: 10 },
+  { codigo: 'IZA-CHK-11', seccion: 'Listado de Chequeos Previos', pregunta: 'Se muestra la capacidad máxima de los equipos, sistemas y accesorios de izaje', bloqueanteSiNo: true, permiteNA: false, orden: 11 },
+  { codigo: 'IZA-CHK-12', seccion: 'Listado de Chequeos Previos', pregunta: 'La alarma de retroceso se encuentra conectada y funcionando', bloqueanteSiNo: true, permiteNA: true, orden: 12 },
+  { codigo: 'IZA-CHK-13', seccion: 'Listado de Chequeos Previos', pregunta: 'Se utilizan almohadillas para el uso de estabilizadores', bloqueanteSiNo: true, permiteNA: true, orden: 13 },
+]
+
+export const PERMISO_IZAJE_EXPECTED_CODES = PERMISO_IZAJE_CHECKLIST.map((item) => item.codigo)
