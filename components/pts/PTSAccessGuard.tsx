@@ -18,6 +18,11 @@ export default function PTSAccessGuard({ children }: Props) {
 
     const validate = async () => {
       try {
+        if (active) {
+          setLoading(true)
+          setAllowed(false)
+        }
+
         const empresaId = window.localStorage.getItem(STORAGE_KEY) || ''
         const {
           data: { session },
@@ -52,9 +57,19 @@ export default function PTSAccessGuard({ children }: Props) {
       }
     }
 
-    void validate()
+    const revalidate = () => void validate()
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === STORAGE_KEY) revalidate()
+    }
+
+    revalidate()
+    window.addEventListener('empresa-activa-cambiada', revalidate)
+    window.addEventListener('storage', handleStorage)
+
     return () => {
       active = false
+      window.removeEventListener('empresa-activa-cambiada', revalidate)
+      window.removeEventListener('storage', handleStorage)
     }
   }, [])
 
