@@ -184,7 +184,21 @@ export default function VigilanciaPostTrabajoPage() {
               {(!vigilancia?.iniciado_at || observada) ? <button onClick={iniciar} disabled={acting || permiso?.estado !== 'en_ejecucion'} className="rounded-xl bg-[#18B7A8] px-5 py-3 text-sm font-semibold text-white disabled:opacity-50">{acting ? 'Procesando...' : observada ? 'Corregido: iniciar nueva vigilancia de 60 min' : 'Iniciar vigilancia'}</button> : null}
             </div>
             {permiso?.estado !== 'en_ejecucion' && (!vigilancia?.iniciado_at || observada) ? <p className="mt-4 rounded-xl bg-amber-50 p-3 text-sm text-amber-800">La vigilancia solo puede comenzar cuando el PTS se encuentre en ejecución y haya finalizado la labor en caliente.</p> : null}
-            {enCurso ? <div className="mt-5 rounded-2xl border border-cyan-200 bg-cyan-50 p-5"><p className="text-sm font-semibold text-cyan-900">Tiempo mínimo restante</p><p className="mt-1 text-4xl font-semibold tabular-nums text-cyan-950">{String(minutos).padStart(2,'0')}:{String(segundos).padStart(2,'0')}</p><p className="mt-2 text-xs text-cyan-700">El tiempo definitivo se valida en el servidor; modificar el reloj del navegador no permite adelantar el cierre.</p></div> : null}
+            {enCurso ? (
+              puedeFinalizarTiempo ? (
+                <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 p-5">
+                  <p className="text-sm font-semibold text-emerald-900">Tiempo mínimo cumplido</p>
+                  <p className="mt-1 text-2xl font-semibold text-emerald-950">✓ 60 minutos mínimos cumplidos</p>
+                  <p className="mt-2 text-xs text-emerald-700">La vigilancia puede finalizar cuando completes las verificaciones y responsables requeridos. El servidor validará nuevamente el tiempo antes de aceptar el cierre.</p>
+                </div>
+              ) : (
+                <div className="mt-5 rounded-2xl border border-cyan-200 bg-cyan-50 p-5">
+                  <p className="text-sm font-semibold text-cyan-900">Tiempo mínimo restante</p>
+                  <p className="mt-1 text-4xl font-semibold tabular-nums text-cyan-950">{String(minutos).padStart(2,'0')}:{String(segundos).padStart(2,'0')}</p>
+                  <p className="mt-2 text-xs text-cyan-700">El tiempo definitivo se valida en el servidor; modificar el reloj del navegador no permite adelantar el cierre.</p>
+                </div>
+              )
+            ) : null}
           </section>
 
           {vigilancia?.iniciado_at ? <>
