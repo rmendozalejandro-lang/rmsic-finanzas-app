@@ -59,16 +59,17 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
       return jsonError('El PDF oficial solo está disponible para PTS aprobados, en ejecución o cerrados.', 409)
     }
 
-    const [empresaResp, riesgosResp, personalResp, eppResp, aprobacionesResp, historialResp] = await Promise.all([
+    const [empresaResp, riesgosResp, personalResp, eppResp, firmasResp, aprobacionesResp, historialResp] = await Promise.all([
       admin.from('empresas').select('nombre').eq('id', permiso.empresa_id).single(),
       admin.from('pts_analisis_riesgos').select('paso,actividad,peligros,riesgos,medidas_preventivas').eq('permiso_id', id).eq('empresa_id', permiso.empresa_id).order('orden'),
-      admin.from('pts_personal').select('nombre_apellido,rut,induccion_ingreso_ok,charla_5_min_ok,examen_altura_vigente_hasta').eq('permiso_id', id).eq('empresa_id', permiso.empresa_id).order('orden'),
+      admin.from('pts_personal').select('id,nombre_apellido,rut,induccion_ingreso_ok,charla_5_min_ok,examen_altura_vigente_hasta').eq('permiso_id', id).eq('empresa_id', permiso.empresa_id).order('orden'),
       admin.from('pts_epp').select('nombre,requerido').eq('permiso_id', id).eq('empresa_id', permiso.empresa_id).order('orden'),
-      admin.from('pts_aprobaciones').select('etapa,estado,observacion,usuario_id,firmado_at').eq('permiso_id', id).eq('empresa_id', permiso.empresa_id).order('orden'),
+      admin.from('pts_firmas_participantes').select('personal_id,nombre_firmante,rut_firmante,declaracion,declaracion_version,firma_trazos,metodo,capturado_por_nombre,firmado_at').eq('permiso_id', id).eq('empresa_id', permiso.empresa_id).order('firmado_at'),
+      admin.from('pts_aprobaciones').select('etapa,estado,observacion,nombre_firmante,cargo_firmante,usuario_id,firmado_at').eq('permiso_id', id).eq('empresa_id', permiso.empresa_id).order('orden'),
       admin.from('pts_historial').select('evento,detalle,created_at,usuario_id').eq('permiso_id', id).eq('empresa_id', permiso.empresa_id).order('created_at', { ascending: true }),
     ])
 
-    const firstError = [empresaResp, riesgosResp, personalResp, eppResp, aprobacionesResp, historialResp].find((result) => result.error)?.error
+    const firstError = [empresaResp, riesgosResp, personalResp, eppResp, firmasResp, aprobacionesResp, historialResp].find((result) => result.error)?.error
     if (firstError) return jsonError(`No se pudo construir el PDF: ${firstError.message}`, 500)
 
     const userIds = Array.from(new Set([
@@ -108,11 +109,23 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
       riesgos: riesgosResp.data ?? [],
       personal: personalResp.data ?? [],
       epp: (eppResp.data ?? []).filter((item) => item.requerido).map((item) => item.nombre),
+      firmas_participantes: (firmasResp.data ?? []).map((item) => ({
+        personal_id: item.personal_id,
+        nombre_firmante: item.nombre_firmante,
+        rut_firmante: item.rut_firmante,
+        declaracion: item.declaracion,
+        declaracion_version: item.declaracion_version,
+        firma_trazos: item.firma_trazos,
+        metodo: item.metodo,
+        capturado_por_nombre: item.capturado_por_nombre,
+        firmado_at: item.firmado_at,
+      })),
       aprobaciones: (aprobacionesResp.data ?? []).map((item) => ({
         etapa: item.etapa,
         estado: item.estado,
         observacion: item.observacion,
-        responsable_nombre: item.usuario_id ? perfilesMap.get(item.usuario_id) || null : null,
+        responsable_nombre: item.nombre_firmante || (item.usuario_id ? perfilesMap.get(item.usuario_id) || null : null),
+        cargo_firmante: item.cargo_firmante,
         firmado_at: item.firmado_at,
       })),
       historial: (historialResp.data ?? []).map((item) => ({
