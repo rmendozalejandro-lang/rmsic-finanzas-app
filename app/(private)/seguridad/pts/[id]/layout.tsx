@@ -4,10 +4,19 @@ import Link from 'next/link'
 import { useParams, usePathname } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
+import { supabase } from '../../../../../lib/supabase/client'
+
+const STORAGE_KEY = 'empresa_activa_id'
 
 type Feedback = {
   type: 'success' | 'error'
   message: string
+}
+
+type SignatureGate = {
+  estado: string
+  total: number
+  firmadas: number
 }
 
 export default function PTSExpedienteLayout({ children }: { children: ReactNode }) {
@@ -16,15 +25,48 @@ export default function PTSExpedienteLayout({ children }: { children: ReactNode 
   const permisoId = params.id
   const contentRef = useRef<HTMLDivElement>(null)
   const [feedback, setFeedback] = useState<Feedback | null>(null)
+  const [signatureGate, setSignatureGate] = useState<SignatureGate | null>(null)
 
   const links = [
     { href: `/seguridad/pts/${permisoId}`, label: 'Resumen del expediente', exact: true },
     { href: `/seguridad/pts/${permisoId}/permisos`, label: 'Permisos complementarios', exact: false },
+    { href: `/seguridad/pts/${permisoId}/firmas`, label: 'Firmas participantes', exact: false },
   ]
 
   useEffect(() => {
     setFeedback(null)
   }, [pathname])
+
+  useEffect(() => {
+    const loadSignatureGate = async () => {
+      try {
+        const empresaId = window.localStorage.getItem(STORAGE_KEY) || ''
+        if (!empresaId) return setSignatureGate(null)
+
+        const permisoResp = await supabase.from('pts_permisos').select('estado').eq('id', permisoId).eq('empresa_id', empresaId).maybeSingle()
+        if (permisoResp.error || !permisoResp.data) return setSignatureGate(null)
+
+        const estado = permisoResp.data.estado as string
+        if (!['aprobado', 'en_ejecucion', 'cerrado'].includes(estado)) return setSignatureGate(null)
+
+        const [personalResp, firmasResp] = await Promise.all([
+          supabase.from('pts_personal').select('id').eq('permiso_id', permisoId).eq('empresa_id', empresaId),
+          supabase.from('pts_firmas_participantes').select('id').eq('permiso_id', permisoId).eq('empresa_id', empresaId),
+        ])
+        if (personalResp.error || firmasResp.error) return setSignatureGate(null)
+
+        setSignatureGate({
+          estado,
+          total: personalResp.data?.length ?? 0,
+          firmadas: firmasResp.data?.length ?? 0,
+        })
+      } catch {
+        setSignatureGate(null)
+      }
+    }
+
+    void loadSignatureGate()
+  }, [permisoId, pathname])
 
   useEffect(() => {
     const root = contentRef.current
@@ -70,6 +112,9 @@ export default function PTSExpedienteLayout({ children }: { children: ReactNode 
     return () => observer.disconnect()
   }, [pathname])
 
+  const firmasCompletas = Boolean(signatureGate && signatureGate.total > 0 && signatureGate.firmadas === signatureGate.total)
+  const firmasPendientes = signatureGate ? Math.max(0, signatureGate.total - signatureGate.firmadas) : 0
+
   return (
     <>
       <div className="border-b border-slate-200 bg-white px-6 py-3">
@@ -93,6 +138,19 @@ export default function PTSExpedienteLayout({ children }: { children: ReactNode 
           })}
         </div>
       </div>
+
+      {signatureGate?.estado === 'aprobado' ? (
+        <div className={`border-b px-6 py-3 ${firmasCompletas ? 'border-emerald-200 bg-emerald-50' : 'border-amber-200 bg-amber-50'}`}>
+          <div className="mx-auto flex max-w-7xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className={`text-xs font-semibold uppercase tracking-[0.12em] ${firmasCompletas ? 'text-emerald-700' : 'text-amber-700'}`}>Firmas previas al inicio</p>
+              <p className={`mt-0.5 text-sm font-semibold ${firmasCompletas ? 'text-emerald-950' : 'text-amber-950'}`}>{signatureGate.firmadas} de {signatureGate.total} participantes firmaron</p>
+              <p className={`mt-0.5 text-xs ${firmasCompletas ? 'text-emerald-800' : 'text-amber-800'}`}>{firmasCompletas ? 'Todos los participantes aceptaron el PTS. Ya puede iniciarse el trabajo.' : `El inicio está bloqueado hasta completar ${firmasPendientes} firma${firmasPendientes === 1 ? '' : 's'} pendiente${firmasPendientes === 1 ? '' : 's'}.`}</p>
+            </div>
+            <Link href={`/seguridad/pts/${permisoId}/firmas`} className={`inline-flex shrink-0 items-center justify-center rounded-xl px-4 py-2.5 text-sm font-semibold text-white ${firmasCompletas ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-amber-500 hover:bg-amber-600'}`}>{firmasCompletas ? 'Ver firmas' : 'Completar firmas'}</Link>
+          </div>
+        </div>
+      ) : null}
 
       <div ref={contentRef}>{children}</div>
 
