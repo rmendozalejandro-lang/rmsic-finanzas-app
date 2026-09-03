@@ -3,11 +3,25 @@
 import { useState } from 'react'
 import { supabase } from '../../lib/supabase/client'
 
+function filenameFromDisposition(value: string | null) {
+  if (!value) return ''
+  const utf8 = value.match(/filename\*=UTF-8''([^;]+)/i)?.[1]
+  if (utf8) {
+    try {
+      return decodeURIComponent(utf8)
+    } catch {
+      return utf8
+    }
+  }
+
+  return value.match(/filename="([^"]+)"/i)?.[1] || ''
+}
+
 export default function PTSPdfButton({ permisoId }: { permisoId: string }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
-  const abrirPdf = async () => {
+  const descargarPdf = async () => {
     try {
       setLoading(true)
       setError('')
@@ -25,9 +39,15 @@ export default function PTSPdfButton({ permisoId }: { permisoId: string }) {
       }
 
       const blob = await response.blob()
+      const filename = filenameFromDisposition(response.headers.get('content-disposition')) || 'PTS.pdf'
       const url = URL.createObjectURL(blob)
-      window.open(url, '_blank', 'noopener,noreferrer')
-      window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = filename
+      document.body.appendChild(anchor)
+      anchor.click()
+      anchor.remove()
+      window.setTimeout(() => URL.revokeObjectURL(url), 5_000)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo generar el PDF del PTS.')
     } finally {
@@ -37,8 +57,8 @@ export default function PTSPdfButton({ permisoId }: { permisoId: string }) {
 
   return (
     <div>
-      <button onClick={abrirPdf} disabled={loading} className="rounded-xl border border-[#18B7A8] bg-[#18B7A8] px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:border-[#11998E] hover:bg-[#11998E] disabled:opacity-60">
-        {loading ? 'Generando PDF...' : 'PDF oficial'}
+      <button onClick={descargarPdf} disabled={loading} className="rounded-xl border border-[#18B7A8] bg-[#18B7A8] px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:border-[#11998E] hover:bg-[#11998E] disabled:opacity-60">
+        {loading ? 'Generando PDF...' : 'Descargar PDF oficial'}
       </button>
       {error ? <p className="mt-2 text-xs text-red-600">{error}</p> : null}
     </div>

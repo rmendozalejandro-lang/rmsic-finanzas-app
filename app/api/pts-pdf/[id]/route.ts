@@ -13,6 +13,17 @@ function jsonError(message: string, status = 500) {
   return new Response(JSON.stringify({ error: message }), { status, headers: { 'Content-Type': 'application/json' } })
 }
 
+function filenamePart(value: unknown, fallback: string) {
+  const normalized = String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .replace(/-+/g, '-')
+
+  return normalized || fallback
+}
+
 export async function GET(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await context.params
@@ -147,13 +158,16 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
 
     const pdfElement = React.createElement(PTSPdfDocument, { data }) as React.ReactElement<DocumentProps>
     const buffer = await renderToBuffer(pdfElement)
-    const filename = `PTS-${String(permiso.folio).padStart(6, '0')}.pdf`
+    const folio = String(permiso.folio).padStart(6, '0')
+    const actividad = filenamePart(permiso.tipo_actividad, 'Actividad')
+    const empresa = filenamePart(empresaResp.data?.nombre, 'Empresa')
+    const filename = `PTS-${folio}_${actividad}_${empresa}.pdf`
 
     return new Response(new Uint8Array(buffer), {
       status: 200,
       headers: {
         'Content-Type': 'application/pdf',
-        'Content-Disposition': `inline; filename="${filename}"`,
+        'Content-Disposition': `attachment; filename="${filename}"`,
         'Cache-Control': 'private, no-store',
       },
     })
