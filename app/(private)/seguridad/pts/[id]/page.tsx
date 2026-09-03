@@ -48,6 +48,7 @@ type Persona = {
 }
 
 type Epp = { id: string; nombre: string; requerido: boolean }
+type FirmaParticipante = { personal_id: string; firmado_at: string }
 type Aprobacion = {
   etapa: string
   estado: string
@@ -93,6 +94,7 @@ export default function PTSDetallePage() {
   const [riesgos, setRiesgos] = useState<Riesgo[]>([])
   const [personal, setPersonal] = useState<Persona[]>([])
   const [epp, setEpp] = useState<Epp[]>([])
+  const [firmasParticipantes, setFirmasParticipantes] = useState<FirmaParticipante[]>([])
   const [aprobaciones, setAprobaciones] = useState<Aprobacion[]>([])
   const [historial, setHistorial] = useState<Historial[]>([])
   const [complementarios, setComplementarios] = useState<Complementario[]>([])
@@ -110,23 +112,25 @@ export default function PTSDetallePage() {
       const empresaId = window.localStorage.getItem(STORAGE_KEY) || ''
       if (!empresaId) throw new Error('No hay empresa activa seleccionada.')
 
-      const [permisoResp, riesgosResp, personalResp, eppResp, aprobResp, historialResp, complementariosResp] = await Promise.all([
+      const [permisoResp, riesgosResp, personalResp, eppResp, firmasResp, aprobResp, historialResp, complementariosResp] = await Promise.all([
         supabase.from('pts_permisos').select('*').eq('id', permisoId).eq('empresa_id', empresaId).single(),
         supabase.from('pts_analisis_riesgos').select('id,paso,actividad,peligros,riesgos,medidas_preventivas').eq('permiso_id', permisoId).eq('empresa_id', empresaId).order('orden'),
         supabase.from('pts_personal').select('id,nombre_apellido,rut,induccion_ingreso_ok,charla_5_min_ok,examen_altura_vigente_hasta').eq('permiso_id', permisoId).eq('empresa_id', empresaId).order('orden'),
         supabase.from('pts_epp').select('id,nombre,requerido').eq('permiso_id', permisoId).eq('empresa_id', empresaId).order('orden'),
+        supabase.from('pts_firmas_participantes').select('personal_id,firmado_at').eq('permiso_id', permisoId).eq('empresa_id', empresaId),
         supabase.from('pts_aprobaciones').select('etapa,estado,observacion,nombre_firmante,cargo_firmante,firmado_at').eq('permiso_id', permisoId).eq('empresa_id', empresaId).order('orden'),
         supabase.from('pts_historial').select('id,evento,detalle,created_at').eq('permiso_id', permisoId).eq('empresa_id', empresaId).order('created_at', { ascending: false }),
         supabase.from('pts_permisos_complementarios').select('id,tipo,nombre,estado,requerido').eq('permiso_id', permisoId).eq('empresa_id', empresaId).eq('requerido', true).order('created_at'),
       ])
 
-      const firstError = [permisoResp, riesgosResp, personalResp, eppResp, aprobResp, historialResp, complementariosResp].find((result) => result.error)?.error
+      const firstError = [permisoResp, riesgosResp, personalResp, eppResp, firmasResp, aprobResp, historialResp, complementariosResp].find((result) => result.error)?.error
       if (firstError) throw firstError
 
       setPermiso(permisoResp.data as Permiso)
       setRiesgos((riesgosResp.data ?? []) as Riesgo[])
       setPersonal((personalResp.data ?? []) as Persona[])
       setEpp((eppResp.data ?? []) as Epp[])
+      setFirmasParticipantes((firmasResp.data ?? []) as FirmaParticipante[])
       setAprobaciones((aprobResp.data ?? []) as Aprobacion[])
       setHistorial((historialResp.data ?? []) as Historial[])
       setComplementarios((complementariosResp.data ?? []) as Complementario[])
@@ -193,6 +197,7 @@ export default function PTSDetallePage() {
     ? Math.round((checksFlujo.filter((item) => item.ok).length / checksFlujo.length) * 100)
     : 0
 
+  const firmasCompletas = personal.length > 0 && firmasParticipantes.length === personal.length
   const correccionPendiente = permiso?.estado === 'observado' && !correccionPosterior
   const esCerrado = permiso?.estado === 'cerrado'
   const etapaOperativa = Boolean(permiso && ['aprobado', 'en_ejecucion'].includes(permiso.estado))
@@ -206,15 +211,17 @@ export default function PTSDetallePage() {
         : 'Requisitos para enviar a revisión'
   const indicadorEstado = esCerrado
     ? 'Cerrado'
-    : etapaOperativa
-      ? 'Completado'
-      : estaEnRevision
-        ? 'En revisión'
-        : completitud === 100
-          ? 'Listo para enviar'
-          : correccionPendiente
-            ? 'Corrección pendiente'
-            : 'Incompleto'
+    : permiso?.estado === 'aprobado' && !firmasCompletas
+      ? 'Firmas pendientes'
+      : etapaOperativa
+        ? 'Completado'
+        : estaEnRevision
+          ? 'En revisión'
+          : completitud === 100
+            ? 'Listo para enviar'
+            : correccionPendiente
+              ? 'Corrección pendiente'
+              : 'Incompleto'
 
   const puedeEnviar = Boolean(
     permiso &&
@@ -340,16 +347,29 @@ export default function PTSDetallePage() {
             ) : null}
 
             {permiso.estado === 'aprobado' ? (
-              <section className="rounded-3xl border border-emerald-200 bg-emerald-50 p-5">
-                <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">Autorizado para ejecución</p>
-                    <h2 className="mt-1 text-lg font-semibold text-emerald-950">El PTS está aprobado y puede iniciar el trabajo.</h2>
-                    <p className="mt-1 text-sm text-emerald-800">Al iniciar se registrará automáticamente la fecha, hora y usuario responsable.</p>
+              firmasCompletas ? (
+                <section className="rounded-3xl border border-emerald-200 bg-emerald-50 p-5">
+                  <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">Autorizado para ejecución</p>
+                      <h2 className="mt-1 text-lg font-semibold text-emerald-950">PTS aprobado y firmas previas completas. Puede iniciar el trabajo.</h2>
+                      <p className="mt-1 text-sm text-emerald-800">{firmasParticipantes.length} de {personal.length} participantes firmaron. Al iniciar se registrará fecha, hora y usuario responsable.</p>
+                    </div>
+                    <button onClick={iniciarTrabajo} disabled={acting} className="rounded-xl bg-emerald-600 px-5 py-3 text-sm font-semibold text-white disabled:opacity-60">{acting ? 'Procesando...' : 'Iniciar trabajo'}</button>
                   </div>
-                  <button onClick={iniciarTrabajo} disabled={acting} className="rounded-xl bg-emerald-600 px-5 py-3 text-sm font-semibold text-white disabled:opacity-60">{acting ? 'Procesando...' : 'Iniciar trabajo'}</button>
-                </div>
-              </section>
+                </section>
+              ) : (
+                <section className="rounded-3xl border border-amber-200 bg-amber-50 p-5">
+                  <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-amber-700">Aprobado — firmas previas pendientes</p>
+                      <h2 className="mt-1 text-lg font-semibold text-amber-950">El PTS está aprobado, pero todavía no está autorizado para iniciar el trabajo.</h2>
+                      <p className="mt-1 text-sm text-amber-800">{firmasParticipantes.length} de {personal.length} participantes firmaron. Todos deben firmar antes del inicio.</p>
+                    </div>
+                    <Link href={`/seguridad/pts/${permisoId}/firmas`} className="inline-flex items-center justify-center rounded-xl bg-amber-500 px-5 py-3 text-sm font-semibold text-white hover:bg-amber-600">Completar firmas</Link>
+                  </div>
+                </section>
+              )
             ) : null}
 
             {permiso.estado === 'en_ejecucion' ? (
@@ -437,6 +457,9 @@ export default function PTSDetallePage() {
                       ? 'El expediente está completo y fue enviado a Seguridad. Aún no está autorizado para iniciar los trabajos.'
                       : 'Este porcentaje indica completitud documental para revisión. No autoriza el inicio de los trabajos.'}
                   </p>
+                ) : null}
+                {permiso.estado === 'aprobado' && !firmasCompletas ? (
+                  <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-medium leading-5 text-amber-900">El expediente está aprobado, pero faltan firmas previas de participantes. El trabajo aún no puede iniciarse.</p>
                 ) : null}
                 <div className="mt-5 space-y-2">{checksFlujo.map((item) => <div key={item.label} className="flex items-center justify-between gap-3 text-sm"><span className="text-slate-600">{item.label}</span><span className={item.ok ? 'text-emerald-600' : 'text-amber-600'}>{item.ok ? '✓' : 'Pendiente'}</span></div>)}</div>
                 {complementariosPendientes.length > 0 && permiso.estado === 'borrador' ? <Link href={`/seguridad/pts/${permisoId}/permisos`} className="mt-6 inline-flex w-full items-center justify-center rounded-2xl border border-[#18B7A8] bg-white px-4 py-3 text-sm font-semibold text-[#168F86] hover:bg-cyan-50">Completar permisos complementarios</Link> : null}
