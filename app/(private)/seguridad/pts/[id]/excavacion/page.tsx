@@ -150,10 +150,21 @@ export default function PermisoExcavacionPage() {
   const guardar = async () => {
     if (!permiso || !empresaId) return
 
+    setError('')
+    setSuccess('')
+
+    if (naInvalidos > 0) {
+      setError('Hay controles esenciales marcados como N/A. Deben responderse Sí o No antes de guardar.')
+      return
+    }
+
+    if (naSinJustificacion > 0) {
+      setError(`Debes justificar técnicamente ${naSinJustificacion} respuesta(s) N/A antes de guardar el permiso.`)
+      return
+    }
+
     try {
       setSaving(true)
-      setError('')
-      setSuccess('')
 
       const rows = PERMISO_EXCAVACION_CHECKLIST.map((item) => ({
         permiso_complementario_id: permiso.id,
@@ -175,7 +186,7 @@ export default function PermisoExcavacionPage() {
 
       const nuevoEstado = listo
         ? 'completo'
-        : bloqueantesNo > 0 || naInvalidos > 0 || naSinJustificacion > 0
+        : bloqueantesNo > 0
           ? 'observado'
           : 'borrador'
 
@@ -195,9 +206,7 @@ export default function PermisoExcavacionPage() {
           ? 'Permiso de Excavación completado sin respuestas bloqueantes.'
           : bloqueantesNo > 0
             ? `Permiso de Excavación guardado con ${bloqueantesNo} respuesta(s) NO bloqueante(s).`
-            : naSinJustificacion > 0
-              ? `Permiso de Excavación guardado con ${naSinJustificacion} respuesta(s) N/A sin justificación.`
-              : `Permiso de Excavación guardado con ${pendientes} respuesta(s) pendiente(s).`,
+            : `Permiso de Excavación guardado con ${pendientes} respuesta(s) pendiente(s).`,
       })
 
       if (historialError) throw historialError
@@ -208,9 +217,7 @@ export default function PermisoExcavacionPage() {
           ? 'Permiso de Excavación completo y habilitado para continuar el flujo.'
           : bloqueantesNo > 0
             ? 'Guardado. La excavación permanece bloqueada porque existe al menos una respuesta NO.'
-            : naSinJustificacion > 0
-              ? 'Guardado. Todo N/A permitido debe quedar técnicamente justificado en observaciones.'
-              : 'Borrador guardado. Aún quedan controles pendientes.'
+            : 'Borrador guardado. Aún quedan controles pendientes.'
       )
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo guardar el Permiso de Excavación.')
@@ -343,7 +350,7 @@ export default function PermisoExcavacionPage() {
                           }
                           className="mt-4 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-[#18B7A8]"
                         />
-                        {naSinDetalle ? <p className="mt-2 text-xs font-semibold text-red-600">Debes justificar el N/A antes de completar el permiso.</p> : null}
+                        {naSinDetalle ? <p className="mt-2 text-xs font-semibold text-red-600">Debes justificar el N/A antes de guardar el permiso.</p> : null}
                       </div>
                     )
                   })}
@@ -359,7 +366,7 @@ export default function PermisoExcavacionPage() {
 
             {naSinJustificacion > 0 ? (
               <section className="rounded-2xl border border-red-200 bg-red-50 p-5 text-sm text-red-800">
-                <strong>N/A incompleto:</strong> {naSinJustificacion} control(es) marcado(s) N/A requieren justificación técnica antes de completar el permiso.
+                <strong>N/A incompleto:</strong> {naSinJustificacion} control(es) marcado(s) N/A requieren justificación técnica antes de guardar el permiso.
               </section>
             ) : null}
 
