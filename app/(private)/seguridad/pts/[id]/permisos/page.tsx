@@ -125,7 +125,7 @@ export default function PermisosComplementariosPage() {
                     <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${estadoClass(item.estado)}`}>{ESTADO_LABEL[item.estado] ?? item.estado}</span>
                   </div>
 
-                  <div className="mt-5 border-t border-slate-100 pt-4">
+                  <div className="mt-5 space-y-2 border-t border-slate-100 pt-4">
                     {habilitado ? (
                       <Link href={href} className="inline-flex w-full items-center justify-center rounded-xl bg-[#18B7A8] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#11998E]">
                         {item.estado === 'completo' ? 'Revisar / actualizar permiso' : 'Completar permiso'}
@@ -133,6 +133,11 @@ export default function PermisosComplementariosPage() {
                     ) : (
                       <div className="rounded-xl bg-slate-50 px-4 py-3 text-center text-sm font-medium text-slate-500">Formulario específico en siguiente etapa de desarrollo</div>
                     )}
+                    {item.tipo === 'caliente' ? (
+                      <Link href={`/seguridad/pts/${permisoId}/caliente/vigilancia`} className="inline-flex w-full items-center justify-center rounded-xl border border-cyan-300 bg-cyan-50 px-4 py-2.5 text-sm font-semibold text-cyan-800 hover:bg-cyan-100">
+                        Vigilancia post trabajo · 60 min
+                      </Link>
+                    ) : null}
                   </div>
                 </div>
               )
