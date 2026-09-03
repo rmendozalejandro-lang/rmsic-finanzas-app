@@ -48,7 +48,7 @@ export default function PTSAccessGuard({ children }: Props) {
         ])
 
         const rol = usuarioResp.data?.rol || ''
-        const hasRole = rol === 'admin' || rol === 'seguridad_pts'
+        const hasRole = ['admin', 'seguridad_pts', 'demo_cliente'].includes(rol)
         const hasModule = Boolean(moduloResp.data?.habilitado)
 
         if (active) setAllowed(hasRole && hasModule)
