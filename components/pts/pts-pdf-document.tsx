@@ -344,7 +344,7 @@ export function PTSPdfDocument({ data }: { data: PTSPdfData }) {
           <Text style={styles.subtitle}>{data.empresa_nombre} | Estado: {data.estado.toUpperCase()}</Text>
         </View>
 
-        <View style={styles.card}>
+        <View style={styles.card} wrap={false}>
           <Text style={styles.sectionTitle}>I. Identificación</Text>
           <View style={styles.row}>
             <Field label="Trabajo" value={data.trabajo_a_realizar} grow />
@@ -418,14 +418,14 @@ export function PTSPdfDocument({ data }: { data: PTSPdfData }) {
           })}
         </View>
 
-        <View style={styles.card}>
+        <View style={styles.card} wrap={false}>
           <Text style={styles.sectionTitle}>IV. EPP y elementos</Text>
           <View style={styles.pills}>
             {data.epp.map((name) => <Text key={name} style={styles.pill}>{name}</Text>)}
           </View>
         </View>
 
-        <View style={styles.card}>
+        <View style={styles.card} wrap={false}>
           <Text style={styles.sectionTitle}>V. Aprobaciones</Text>
           {data.aprobaciones.map((approval) => {
             const noRequeridoPiloto = approval.etapa !== 'seguridad' && approval.estado === 'pendiente'
