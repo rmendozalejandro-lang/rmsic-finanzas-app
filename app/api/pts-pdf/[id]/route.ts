@@ -72,6 +72,12 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
     const firstError = [empresaResp, riesgosResp, personalResp, eppResp, firmasResp, aprobacionesResp, historialResp].find((result) => result.error)?.error
     if (firstError) return jsonError(`No se pudo construir el PDF: ${firstError.message}`, 500)
 
+    const personalTotal = (personalResp.data ?? []).length
+    const firmasTotal = (firmasResp.data ?? []).length
+    if (permiso.estado === 'aprobado' && (personalTotal === 0 || firmasTotal !== personalTotal)) {
+      return jsonError('El PDF oficial requiere que todos los participantes hayan firmado el PTS antes del inicio.', 409)
+    }
+
     const userIds = Array.from(new Set([
       ...(aprobacionesResp.data ?? []).map((item) => item.usuario_id),
       ...(historialResp.data ?? []).map((item) => item.usuario_id),
