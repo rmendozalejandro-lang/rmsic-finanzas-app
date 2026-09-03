@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import PTSAccessGuard from '../../../../../../../components/pts/PTSAccessGuard'
 import { supabase } from '../../../../../../../lib/supabase/client'
 import { VIGILANCIA_POST_CHECKLIST } from '../../../../../../../lib/pts/caliente-checklist'
@@ -65,17 +65,25 @@ export default function VigilanciaPostTrabajoPage() {
       const vig = vigResp.data as Vigilancia | null
       setPermiso(permisoResp.data as Permiso)
       setVigilancia(vig)
+
+      const map: Record<string, Respuesta> = {}
       if (vig) {
-        const map: Record<string, Respuesta> = {}
         for (const item of vig.verificaciones ?? []) map[item.codigo] = item.respuesta as Respuesta
-        setRespuestas(map)
         setEmisor(vig.emisor_notificado_nombre ?? '')
         setIncidencias(vig.incidencias ?? '')
         setConclusion((vig.conclusion as 'cumple' | 'requiere_acciones' | null) ?? 'cumple')
         setAcciones(vig.acciones_correctivas ?? '')
         setResponsableMantencion(vig.responsable_mantencion ?? '')
         setResponsablePrevencion(vig.responsable_prevencion ?? '')
+      } else {
+        setEmisor('')
+        setIncidencias('')
+        setConclusion('cumple')
+        setAcciones('')
+        setResponsableMantencion('')
+        setResponsablePrevencion('')
       }
+      setRespuestas(map)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo cargar la vigilancia post trabajo.')
     } finally {
@@ -89,33 +97,42 @@ export default function VigilanciaPostTrabajoPage() {
     return () => window.clearInterval(timer)
   }, [])
 
-  const segundosTranscurridos = vigilancia?.iniciado_at ? Math.max(0, Math.floor((now - new Date(vigilancia.iniciado_at).getTime()) / 1000)) : 0
+  const enCurso = vigilancia?.estado === 'en_curso'
+  const completa = vigilancia?.estado === 'completa'
+  const observada = vigilancia?.estado === 'observada'
+  const segundosTranscurridos = enCurso && vigilancia?.iniciado_at ? Math.max(0, Math.floor((now - new Date(vigilancia.iniciado_at).getTime()) / 1000)) : 0
   const minimoSegundos = Math.max(vigilancia?.minutos_minimos ?? 60, 60) * 60
-  const segundosRestantes = Math.max(0, minimoSegundos - segundosTranscurridos)
-  const puedeFinalizarTiempo = Boolean(vigilancia?.iniciado_at && segundosRestantes === 0)
+  const segundosRestantes = enCurso ? Math.max(0, minimoSegundos - segundosTranscurridos) : minimoSegundos
+  const puedeFinalizarTiempo = Boolean(enCurso && vigilancia?.iniciado_at && segundosRestantes === 0)
   const respuestasCompletas = VIGILANCIA_POST_CHECKLIST.every((item) => Boolean(respuestas[item.codigo]))
   const existeNo = VIGILANCIA_POST_CHECKLIST.some((item) => respuestas[item.codigo] === 'no')
   const minutos = Math.floor(segundosRestantes / 60)
   const segundos = segundosRestantes % 60
-  const vigilanciaCerrada = vigilancia?.estado === 'completa' || vigilancia?.estado === 'observada'
 
   const iniciar = async () => {
     try {
-      setActing(true); setError(''); setSuccess('')
+      setActing(true)
+      setError('')
+      setSuccess('')
       const { error: rpcError } = await supabase.rpc('pts_iniciar_vigilancia_post_trabajo', { p_permiso_id: permisoId })
       if (rpcError) throw new Error(rpcError.message)
-      setSuccess('Vigilancia post trabajo iniciada. El plazo mínimo de 60 minutos comenzó a contabilizarse en el servidor.')
+      setSuccess(observada ? 'Nueva vigilancia iniciada. El período mínimo de 60 minutos se reinició desde cero en el servidor.' : 'Vigilancia post trabajo iniciada. El plazo mínimo de 60 minutos comenzó a contabilizarse en el servidor.')
       await load()
-    } catch (err) { setError(err instanceof Error ? err.message : 'No se pudo iniciar la vigilancia.') }
-    finally { setActing(false) }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudo iniciar la vigilancia.')
+    } finally {
+      setActing(false)
+    }
   }
 
   const finalizar = async () => {
-    setError(''); setSuccess('')
+    setError('')
+    setSuccess('')
     if (!respuestasCompletas) return setError('Debes responder las 4 verificaciones antes de finalizar.')
     if (!puedeFinalizarTiempo) return setError('Aún no se cumplen los 60 minutos mínimos de vigilancia.')
     if (existeNo && incidencias.trim().length < 3) return setError('Registra las incidencias detectadas durante la vigilancia.')
     if (!emisor.trim()) return setError('Debes registrar a quién se notificó como emisor del permiso.')
+    if (existeNo && conclusion === 'cumple') return setError('No puedes concluir que cumple mientras exista una verificación NO.')
     if ((existeNo || conclusion === 'requiere_acciones') && acciones.trim().length < 10) return setError('Las desviaciones requieren acciones correctivas detalladas.')
     if (!responsableMantencion.trim() || !responsablePrevencion.trim()) return setError('Debes identificar responsables de Mantención y Prevención.')
 
@@ -133,10 +150,13 @@ export default function VigilanciaPostTrabajoPage() {
         p_responsable_prevencion: responsablePrevencion.trim(),
       })
       if (rpcError) throw new Error(rpcError.message)
-      setSuccess(conclusion === 'cumple' && !existeNo ? 'Vigilancia completada. El área quedó liberada para continuar con el cierre del PTS.' : 'Vigilancia registrada con observaciones. El PTS permanece bloqueado para cierre.')
+      setSuccess(conclusion === 'cumple' && !existeNo ? 'Vigilancia completada. El área quedó liberada para continuar con el cierre del PTS.' : 'Vigilancia registrada con observaciones. Debes corregir la condición y ejecutar una nueva vigilancia completa de 60 minutos.')
       await load()
-    } catch (err) { setError(err instanceof Error ? err.message : 'No se pudo finalizar la vigilancia.') }
-    finally { setActing(false) }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudo finalizar la vigilancia.')
+    } finally {
+      setActing(false)
+    }
   }
 
   return (
@@ -158,36 +178,36 @@ export default function VigilanciaPostTrabajoPage() {
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Estado</p>
-                <p className="mt-1 text-xl font-semibold text-slate-900">{vigilancia?.estado === 'completa' ? 'Completa' : vigilancia?.estado === 'observada' ? 'Observada' : vigilancia?.estado === 'en_curso' ? 'En curso' : 'Pendiente'}</p>
+                <p className="mt-1 text-xl font-semibold text-slate-900">{completa ? 'Completa' : observada ? 'Observada' : enCurso ? 'En curso' : 'Pendiente'}</p>
                 {vigilancia?.vigia_incendios_nombre ? <p className="mt-1 text-sm text-slate-500">Vigía de Incendios: {vigilancia.vigia_incendios_nombre}</p> : null}
               </div>
-              {!vigilancia?.iniciado_at ? <button onClick={iniciar} disabled={acting || permiso?.estado !== 'en_ejecucion'} className="rounded-xl bg-[#18B7A8] px-5 py-3 text-sm font-semibold text-white disabled:opacity-50">{acting ? 'Procesando...' : 'Iniciar vigilancia'}</button> : null}
+              {(!vigilancia?.iniciado_at || observada) ? <button onClick={iniciar} disabled={acting || permiso?.estado !== 'en_ejecucion'} className="rounded-xl bg-[#18B7A8] px-5 py-3 text-sm font-semibold text-white disabled:opacity-50">{acting ? 'Procesando...' : observada ? 'Corregido: iniciar nueva vigilancia de 60 min' : 'Iniciar vigilancia'}</button> : null}
             </div>
-            {permiso?.estado !== 'en_ejecucion' && !vigilancia?.iniciado_at ? <p className="mt-4 rounded-xl bg-amber-50 p-3 text-sm text-amber-800">La vigilancia solo puede comenzar cuando el PTS se encuentre en ejecución y haya finalizado la labor en caliente.</p> : null}
-            {vigilancia?.iniciado_at && !vigilanciaCerrada ? <div className="mt-5 rounded-2xl border border-cyan-200 bg-cyan-50 p-5"><p className="text-sm font-semibold text-cyan-900">Tiempo mínimo restante</p><p className="mt-1 text-4xl font-semibold tabular-nums text-cyan-950">{String(minutos).padStart(2,'0')}:{String(segundos).padStart(2,'0')}</p><p className="mt-2 text-xs text-cyan-700">El tiempo definitivo se valida en el servidor; modificar el reloj del navegador no permite adelantar el cierre.</p></div> : null}
+            {permiso?.estado !== 'en_ejecucion' && (!vigilancia?.iniciado_at || observada) ? <p className="mt-4 rounded-xl bg-amber-50 p-3 text-sm text-amber-800">La vigilancia solo puede comenzar cuando el PTS se encuentre en ejecución y haya finalizado la labor en caliente.</p> : null}
+            {enCurso ? <div className="mt-5 rounded-2xl border border-cyan-200 bg-cyan-50 p-5"><p className="text-sm font-semibold text-cyan-900">Tiempo mínimo restante</p><p className="mt-1 text-4xl font-semibold tabular-nums text-cyan-950">{String(minutos).padStart(2,'0')}:{String(segundos).padStart(2,'0')}</p><p className="mt-2 text-xs text-cyan-700">El tiempo definitivo se valida en el servidor; modificar el reloj del navegador no permite adelantar el cierre.</p></div> : null}
           </section>
 
           {vigilancia?.iniciado_at ? <>
             <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
               <h2 className="text-lg font-semibold text-slate-900">Verificaciones durante la vigilancia</h2>
-              <div className="mt-5 space-y-4">{VIGILANCIA_POST_CHECKLIST.map((item) => <div key={item.codigo} className={`rounded-2xl border p-4 ${respuestas[item.codigo] === 'no' ? 'border-red-200 bg-red-50' : 'border-slate-200'}`}><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><span className="text-xs font-semibold text-slate-400">{item.codigo}</span><p className="mt-1 text-sm font-medium text-slate-900">{item.pregunta}</p></div><div className="flex gap-2">{(['si','no'] as const).map((value) => <button key={value} type="button" onClick={() => setRespuestas((current) => ({...current,[item.codigo]:value}))} disabled={vigilanciaCerrada} className={`rounded-xl border px-4 py-2 text-sm font-semibold disabled:opacity-60 ${respuestas[item.codigo] === value ? value === 'si' ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-red-600 bg-red-600 text-white' : 'border-slate-300 bg-white text-slate-600'}`}>{value === 'si' ? 'Sí' : 'No'}</button>)}</div></div></div>)}</div>
+              <div className="mt-5 space-y-4">{VIGILANCIA_POST_CHECKLIST.map((item) => <div key={item.codigo} className={`rounded-2xl border p-4 ${respuestas[item.codigo] === 'no' ? 'border-red-200 bg-red-50' : 'border-slate-200'}`}><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><span className="text-xs font-semibold text-slate-400">{item.codigo}</span><p className="mt-1 text-sm font-medium text-slate-900">{item.pregunta}</p></div><div className="flex gap-2">{(['si','no'] as const).map((value) => <button key={value} type="button" onClick={() => setRespuestas((current) => ({...current,[item.codigo]:value}))} disabled={!enCurso} className={`rounded-xl border px-4 py-2 text-sm font-semibold disabled:opacity-60 ${respuestas[item.codigo] === value ? value === 'si' ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-red-600 bg-red-600 text-white' : 'border-slate-300 bg-white text-slate-600'}`}>{value === 'si' ? 'Sí' : 'No'}</button>)}</div></div></div>)}</div>
             </section>
 
             <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
               <h2 className="text-lg font-semibold text-slate-900">Cierre de la verificación</h2>
               <div className="mt-4 grid gap-4 md:grid-cols-2">
-                <label className="text-sm font-medium text-slate-700">Notificación al emisor<input value={emisor} onChange={(e) => setEmisor(e.target.value)} disabled={vigilanciaCerrada} className="mt-2 w-full rounded-xl border border-slate-300 px-3 py-2.5 disabled:bg-slate-50" /></label>
-                <label className="text-sm font-medium text-slate-700">Responsable Mantención<input value={responsableMantencion} onChange={(e) => setResponsableMantencion(e.target.value)} disabled={vigilanciaCerrada} className="mt-2 w-full rounded-xl border border-slate-300 px-3 py-2.5 disabled:bg-slate-50" /></label>
-                <label className="text-sm font-medium text-slate-700">Responsable Prevención<input value={responsablePrevencion} onChange={(e) => setResponsablePrevencion(e.target.value)} disabled={vigilanciaCerrada} className="mt-2 w-full rounded-xl border border-slate-300 px-3 py-2.5 disabled:bg-slate-50" /></label>
-                <label className="text-sm font-medium text-slate-700">Conclusión<select value={conclusion} onChange={(e) => setConclusion(e.target.value as 'cumple' | 'requiere_acciones')} disabled={vigilanciaCerrada} className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 disabled:bg-slate-50"><option value="cumple">Cumple condiciones de seguridad</option><option value="requiere_acciones">Requiere acciones correctivas</option></select></label>
+                <label className="text-sm font-medium text-slate-700">Notificación al emisor<input value={emisor} onChange={(e) => setEmisor(e.target.value)} disabled={!enCurso} className="mt-2 w-full rounded-xl border border-slate-300 px-3 py-2.5 disabled:bg-slate-50" /></label>
+                <label className="text-sm font-medium text-slate-700">Responsable Mantención<input value={responsableMantencion} onChange={(e) => setResponsableMantencion(e.target.value)} disabled={!enCurso} className="mt-2 w-full rounded-xl border border-slate-300 px-3 py-2.5 disabled:bg-slate-50" /></label>
+                <label className="text-sm font-medium text-slate-700">Responsable Prevención<input value={responsablePrevencion} onChange={(e) => setResponsablePrevencion(e.target.value)} disabled={!enCurso} className="mt-2 w-full rounded-xl border border-slate-300 px-3 py-2.5 disabled:bg-slate-50" /></label>
+                <label className="text-sm font-medium text-slate-700">Conclusión<select value={conclusion} onChange={(e) => setConclusion(e.target.value as 'cumple' | 'requiere_acciones')} disabled={!enCurso} className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 disabled:bg-slate-50"><option value="cumple">Cumple condiciones de seguridad</option><option value="requiere_acciones">Requiere acciones correctivas</option></select></label>
               </div>
-              <label className="mt-4 block text-sm font-medium text-slate-700">Incidencias<textarea value={incidencias} onChange={(e) => setIncidencias(e.target.value)} disabled={vigilanciaCerrada} rows={3} className="mt-2 w-full rounded-xl border border-slate-300 px-3 py-2.5 disabled:bg-slate-50" /></label>
-              <label className="mt-4 block text-sm font-medium text-slate-700">Acciones correctivas<textarea value={acciones} onChange={(e) => setAcciones(e.target.value)} disabled={vigilanciaCerrada} rows={3} className="mt-2 w-full rounded-xl border border-slate-300 px-3 py-2.5 disabled:bg-slate-50" /></label>
-              {!vigilanciaCerrada ? <button onClick={finalizar} disabled={acting || !puedeFinalizarTiempo} className="mt-5 rounded-xl bg-[#0B2947] px-5 py-3 text-sm font-semibold text-white disabled:opacity-50">{acting ? 'Procesando...' : puedeFinalizarTiempo ? 'Finalizar vigilancia' : 'Esperando 60 minutos mínimos'}</button> : null}
+              <label className="mt-4 block text-sm font-medium text-slate-700">Incidencias<textarea value={incidencias} onChange={(e) => setIncidencias(e.target.value)} disabled={!enCurso} rows={3} className="mt-2 w-full rounded-xl border border-slate-300 px-3 py-2.5 disabled:bg-slate-50" /></label>
+              <label className="mt-4 block text-sm font-medium text-slate-700">Acciones correctivas<textarea value={acciones} onChange={(e) => setAcciones(e.target.value)} disabled={!enCurso} rows={3} className="mt-2 w-full rounded-xl border border-slate-300 px-3 py-2.5 disabled:bg-slate-50" /></label>
+              {enCurso ? <button onClick={finalizar} disabled={acting || !puedeFinalizarTiempo} className="mt-5 rounded-xl bg-[#0B2947] px-5 py-3 text-sm font-semibold text-white disabled:opacity-50">{acting ? 'Procesando...' : puedeFinalizarTiempo ? 'Finalizar vigilancia' : 'Esperando 60 minutos mínimos'}</button> : null}
             </section>
 
-            {vigilancia.estado === 'completa' ? <section className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 text-sm text-emerald-800"><strong>Área liberada:</strong> vigilancia post trabajo completada sin desviaciones bloqueantes. El PTS puede continuar a su cierre general.</section> : null}
-            {vigilancia.estado === 'observada' ? <section className="rounded-2xl border border-red-200 bg-red-50 p-5 text-sm text-red-800"><strong>Cierre bloqueado:</strong> la vigilancia terminó con desviaciones o acciones correctivas. El PTS no puede cerrarse hasta resolver la condición.</section> : null}
+            {completa ? <section className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 text-sm text-emerald-800"><strong>Área liberada:</strong> vigilancia post trabajo completada sin desviaciones bloqueantes. El PTS puede continuar a su cierre general.</section> : null}
+            {observada ? <section className="rounded-2xl border border-red-200 bg-red-50 p-5 text-sm text-red-800"><strong>Cierre bloqueado:</strong> corrige la condición detectada y luego inicia una nueva vigilancia completa. El nuevo período deberá cumplir nuevamente 60 minutos reales.</section> : null}
           </> : null}
         </> : null}
       </main>
