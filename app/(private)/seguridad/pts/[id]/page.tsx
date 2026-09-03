@@ -57,6 +57,7 @@ type Aprobacion = {
   firmado_at: string | null
 }
 type Historial = { id: string; evento: string; detalle: string | null; created_at: string }
+type Complementario = { id: string; tipo: string; nombre: string; estado: string; requerido: boolean }
 
 const ESTADO_LABEL: Record<string, string> = {
   borrador: 'Borrador',
@@ -75,6 +76,14 @@ const ETAPA_LABEL: Record<string, string> = {
   seguridad: 'Seguridad y Salud en el Trabajo',
 }
 
+const COMPLEMENTARIO_LABEL: Record<string, string> = {
+  general: 'Permiso Trabajo General',
+  altura: 'Permiso Trabajo en Altura',
+  izaje: 'Permiso Maniobras de Izaje',
+  excavacion: 'Permiso de Excavación',
+  caliente: 'Permiso Trabajo en Caliente',
+}
+
 export default function PTSDetallePage() {
   const params = useParams<{ id: string }>()
   const permisoId = params.id
@@ -84,6 +93,7 @@ export default function PTSDetallePage() {
   const [epp, setEpp] = useState<Epp[]>([])
   const [aprobaciones, setAprobaciones] = useState<Aprobacion[]>([])
   const [historial, setHistorial] = useState<Historial[]>([])
+  const [complementarios, setComplementarios] = useState<Complementario[]>([])
   const [loading, setLoading] = useState(true)
   const [acting, setActing] = useState(false)
   const [error, setError] = useState('')
@@ -98,16 +108,17 @@ export default function PTSDetallePage() {
       const empresaId = window.localStorage.getItem(STORAGE_KEY) || ''
       if (!empresaId) throw new Error('No hay empresa activa seleccionada.')
 
-      const [permisoResp, riesgosResp, personalResp, eppResp, aprobResp, historialResp] = await Promise.all([
+      const [permisoResp, riesgosResp, personalResp, eppResp, aprobResp, historialResp, complementariosResp] = await Promise.all([
         supabase.from('pts_permisos').select('*').eq('id', permisoId).eq('empresa_id', empresaId).single(),
         supabase.from('pts_analisis_riesgos').select('id,paso,actividad,peligros,riesgos,medidas_preventivas').eq('permiso_id', permisoId).eq('empresa_id', empresaId).order('orden'),
         supabase.from('pts_personal').select('id,nombre_apellido,rut,induccion_ingreso_ok,charla_5_min_ok,examen_altura_vigente_hasta').eq('permiso_id', permisoId).eq('empresa_id', empresaId).order('orden'),
         supabase.from('pts_epp').select('id,nombre,requerido').eq('permiso_id', permisoId).eq('empresa_id', empresaId).order('orden'),
         supabase.from('pts_aprobaciones').select('etapa,estado,observacion,nombre_firmante,cargo_firmante,firmado_at').eq('permiso_id', permisoId).eq('empresa_id', empresaId).order('orden'),
         supabase.from('pts_historial').select('id,evento,detalle,created_at').eq('permiso_id', permisoId).eq('empresa_id', empresaId).order('created_at', { ascending: false }),
+        supabase.from('pts_permisos_complementarios').select('id,tipo,nombre,estado,requerido').eq('permiso_id', permisoId).eq('empresa_id', empresaId).eq('requerido', true).order('created_at'),
       ])
 
-      const firstError = [permisoResp, riesgosResp, personalResp, eppResp, aprobResp, historialResp].find((result) => result.error)?.error
+      const firstError = [permisoResp, riesgosResp, personalResp, eppResp, aprobResp, historialResp, complementariosResp].find((result) => result.error)?.error
       if (firstError) throw firstError
 
       setPermiso(permisoResp.data as Permiso)
@@ -116,6 +127,7 @@ export default function PTSDetallePage() {
       setEpp((eppResp.data ?? []) as Epp[])
       setAprobaciones((aprobResp.data ?? []) as Aprobacion[])
       setHistorial((historialResp.data ?? []) as Historial[])
+      setComplementarios((complementariosResp.data ?? []) as Complementario[])
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo cargar el PTS.')
     } finally {
@@ -130,13 +142,23 @@ export default function PTSDetallePage() {
 
   const checks = useMemo(() => {
     if (!permiso) return []
-    return [
+    const baseChecks = [
       { label: 'Identificación del trabajo', ok: Boolean(permiso.trabajo_a_realizar && permiso.tipo_actividad && permiso.lugar_ejecucion && permiso.empresa_contratista && permiso.fecha_inicio) },
       { label: 'Análisis de riesgos', ok: riesgos.length > 0 && riesgos.every((item) => item.actividad && item.peligros && item.riesgos && item.medidas_preventivas) },
       { label: 'Personal participante', ok: personal.length > 0 && personal.every((item) => item.nombre_apellido && item.rut) },
       { label: 'EPP / elementos de seguridad', ok: epp.some((item) => item.requerido) },
     ]
-  }, [permiso, riesgos, personal, epp])
+    const permisosChecks = complementarios.map((item) => ({
+      label: COMPLEMENTARIO_LABEL[item.tipo] ?? item.nombre,
+      ok: ['completo', 'aprobado', 'cerrado'].includes(item.estado),
+    }))
+    return [...baseChecks, ...permisosChecks]
+  }, [permiso, riesgos, personal, epp, complementarios])
+
+  const complementariosPendientes = useMemo(
+    () => complementarios.filter((item) => !['completo', 'aprobado', 'cerrado'].includes(item.estado)),
+    [complementarios]
+  )
 
   const correccionPosterior = useMemo(() => {
     const ultimaObservacion = historial.find((item) => item.evento === 'revision_observada')
@@ -172,6 +194,7 @@ export default function PTSDetallePage() {
   const puedeEnviar = Boolean(
     permiso &&
       completitud === 100 &&
+      complementariosPendientes.length === 0 &&
       (permiso.estado === 'borrador' || (permiso.estado === 'observado' && correccionPosterior))
   )
   const puedeResolver = permiso?.estado === 'en_revision'
@@ -356,6 +379,7 @@ export default function PTSDetallePage() {
                 </div>
                 <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-100"><div className={`h-full rounded-full transition-all ${correccionPendiente ? 'bg-amber-500' : 'bg-[#18B7A8]'}`} style={{ width: `${completitud}%` }} /></div>
                 <div className="mt-5 space-y-2">{checksFlujo.map((item) => <div key={item.label} className="flex items-center justify-between gap-3 text-sm"><span className="text-slate-600">{item.label}</span><span className={item.ok ? 'text-emerald-600' : 'text-amber-600'}>{item.ok ? '✓' : 'Pendiente'}</span></div>)}</div>
+                {complementariosPendientes.length > 0 && permiso.estado === 'borrador' ? <Link href={`/seguridad/pts/${permisoId}/permisos`} className="mt-6 inline-flex w-full items-center justify-center rounded-2xl border border-[#18B7A8] bg-white px-4 py-3 text-sm font-semibold text-[#168F86] hover:bg-cyan-50">Completar permisos complementarios</Link> : null}
                 {correccionPendiente ? <Link href={`/seguridad/pts/${permisoId}/editar`} className="mt-6 inline-flex w-full items-center justify-center rounded-2xl bg-amber-500 px-4 py-3 text-sm font-semibold text-white hover:bg-amber-600">Corregir PTS</Link> : null}
                 {puedeEnviar ? <button onClick={enviarRevision} disabled={acting} className="mt-6 w-full rounded-2xl bg-[#18B7A8] px-4 py-3 text-sm font-semibold text-white hover:bg-[#11998E] disabled:opacity-60">{acting ? 'Procesando...' : 'Enviar a revisión'}</button> : null}
               </aside>
