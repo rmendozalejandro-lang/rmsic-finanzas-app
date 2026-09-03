@@ -59,6 +59,8 @@ type Aprobacion = {
 type Historial = { id: string; evento: string; detalle: string | null; created_at: string }
 type Complementario = { id: string; tipo: string; nombre: string; estado: string; requerido: boolean }
 
+type VigilanciaEstado = 'pendiente' | 'en_curso' | 'observada' | 'completa'
+
 const ESTADO_LABEL: Record<string, string> = {
   borrador: 'Borrador',
   en_revision: 'En revisión',
@@ -165,6 +167,15 @@ export default function PTSDetallePage() {
     [complementarios]
   )
 
+  const vigilanciaCalienteEstado = useMemo<VigilanciaEstado | null>(() => {
+    if (!requiereVigilanciaCaliente) return null
+    const ultimoEvento = historial.find((item) => ['vigilancia_post_iniciada', 'vigilancia_post_observada', 'vigilancia_post_completa'].includes(item.evento))
+    if (!ultimoEvento) return 'pendiente'
+    if (ultimoEvento.evento === 'vigilancia_post_completa') return 'completa'
+    if (ultimoEvento.evento === 'vigilancia_post_observada') return 'observada'
+    return 'en_curso'
+  }, [historial, requiereVigilanciaCaliente])
+
   const correccionPosterior = useMemo(() => {
     const ultimaObservacion = historial.find((item) => item.evento === 'revision_observada')
     const ultimaCorreccion = historial.find((item) => item.evento === 'correccion_guardada')
@@ -203,6 +214,7 @@ export default function PTSDetallePage() {
       (permiso.estado === 'borrador' || (permiso.estado === 'observado' && correccionPosterior))
   )
   const puedeResolver = permiso?.estado === 'en_revision'
+  const cierreBloqueadoPorVigilancia = Boolean(requiereVigilanciaCaliente && vigilanciaCalienteEstado !== 'completa')
 
   const enviarRevision = async () => {
     try {
@@ -339,21 +351,37 @@ export default function PTSDetallePage() {
                   <Info label="Iniciado por" value={permiso.iniciado_por_nombre || 'Usuario autorizado'} />
                 </div>
                 {requiereVigilanciaCaliente ? (
-                  <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                  <div className={`mt-5 rounded-2xl border p-4 ${vigilanciaCalienteEstado === 'completa' ? 'border-emerald-200 bg-emerald-50' : vigilanciaCalienteEstado === 'observada' ? 'border-red-200 bg-red-50' : 'border-amber-200 bg-amber-50'}`}>
                     <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                       <div>
-                        <h3 className="font-semibold text-amber-950">Vigilancia post trabajo en caliente</h3>
-                        <p className="mt-1 text-sm text-amber-800">Al finalizar la labor en caliente debes iniciar y completar una vigilancia mínima de 60 minutos antes de cerrar el PTS.</p>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className={vigilanciaCalienteEstado === 'completa' ? 'font-semibold text-emerald-950' : vigilanciaCalienteEstado === 'observada' ? 'font-semibold text-red-950' : 'font-semibold text-amber-950'}>Vigilancia post trabajo en caliente</h3>
+                          <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${vigilanciaCalienteEstado === 'completa' ? 'bg-emerald-100 text-emerald-800' : vigilanciaCalienteEstado === 'en_curso' ? 'bg-cyan-100 text-cyan-800' : vigilanciaCalienteEstado === 'observada' ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-800'}`}>
+                            {vigilanciaCalienteEstado === 'completa' ? 'Completa' : vigilanciaCalienteEstado === 'en_curso' ? 'En curso' : vigilanciaCalienteEstado === 'observada' ? 'Observada' : 'Pendiente'}
+                          </span>
+                        </div>
+                        <p className={`mt-1 text-sm ${vigilanciaCalienteEstado === 'completa' ? 'text-emerald-800' : vigilanciaCalienteEstado === 'observada' ? 'text-red-800' : 'text-amber-800'}`}>
+                          {vigilanciaCalienteEstado === 'completa'
+                            ? 'La vigilancia obligatoria fue completada. El PTS puede continuar a su cierre general.'
+                            : vigilanciaCalienteEstado === 'en_curso'
+                              ? 'La vigilancia está en curso. Debe cumplir al menos 60 minutos y finalizar sus verificaciones antes de cerrar el PTS.'
+                              : vigilanciaCalienteEstado === 'observada'
+                                ? 'La vigilancia registró desviaciones. Debes corregirlas e iniciar una nueva vigilancia completa de 60 minutos.'
+                                : 'Al finalizar la labor en caliente debes iniciar y completar una vigilancia mínima de 60 minutos antes de cerrar el PTS.'}
+                        </p>
                       </div>
-                      <Link href={`/seguridad/pts/${permisoId}/caliente/vigilancia`} className="inline-flex shrink-0 items-center justify-center rounded-xl bg-amber-500 px-5 py-3 text-sm font-semibold text-white hover:bg-amber-600">Abrir vigilancia post trabajo</Link>
+                      <Link href={`/seguridad/pts/${permisoId}/caliente/vigilancia`} className={`inline-flex shrink-0 items-center justify-center rounded-xl px-5 py-3 text-sm font-semibold text-white ${vigilanciaCalienteEstado === 'completa' ? 'bg-emerald-600 hover:bg-emerald-700' : vigilanciaCalienteEstado === 'observada' ? 'bg-red-600 hover:bg-red-700' : 'bg-amber-500 hover:bg-amber-600'}`}>
+                        {vigilanciaCalienteEstado === 'completa' ? 'Ver vigilancia completada' : vigilanciaCalienteEstado === 'en_curso' ? 'Continuar vigilancia' : vigilanciaCalienteEstado === 'observada' ? 'Revisar vigilancia' : 'Abrir vigilancia post trabajo'}
+                      </Link>
                     </div>
                   </div>
                 ) : null}
                 <div className="mt-5 rounded-2xl border border-cyan-200 bg-white p-4">
                   <h3 className="font-semibold text-slate-900">Cierre del trabajo</h3>
                   <p className="mt-1 text-sm text-slate-600">Registra el resultado final antes de cerrar el permiso. Mínimo 10 caracteres.</p>
+                  {cierreBloqueadoPorVigilancia ? <p className="mt-3 rounded-xl bg-amber-50 p-3 text-sm font-medium text-amber-800">El cierre permanecerá bloqueado hasta completar la vigilancia post trabajo en caliente.</p> : null}
                   <textarea value={observacionCierre} onChange={(e) => setObservacionCierre(e.target.value)} rows={3} placeholder="Ej.: Trabajo finalizado sin incidentes, área despejada y equipo entregado a operación." className="mt-3 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-[#18B7A8]" />
-                  <button onClick={cerrarTrabajo} disabled={acting} className="mt-3 rounded-xl bg-[#0B2947] px-5 py-3 text-sm font-semibold text-white disabled:opacity-60">{acting ? 'Procesando...' : 'Cerrar trabajo'}</button>
+                  <button onClick={cerrarTrabajo} disabled={acting || cierreBloqueadoPorVigilancia} className="mt-3 rounded-xl bg-[#0B2947] px-5 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">{acting ? 'Procesando...' : cierreBloqueadoPorVigilancia ? 'Vigilancia pendiente' : 'Cerrar trabajo'}</button>
                 </div>
               </section>
             ) : null}
