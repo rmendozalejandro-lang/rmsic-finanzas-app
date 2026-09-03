@@ -444,7 +444,23 @@ export default function PTSDetallePage() {
               <p className="mt-2 text-sm text-slate-500">En este piloto, la aprobación activa corresponde a Seguridad y Salud en el Trabajo. Las demás etapas se habilitarán según el flujo definido por cada empresa.</p>
               <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">{aprobaciones.map((item) => {
                 const noRequeridoPiloto = item.etapa !== 'seguridad' && item.estado === 'pendiente'
-                return <div key={item.etapa} className="rounded-2xl border border-slate-200 p-4"><p className="text-sm font-semibold text-slate-900">{ETAPA_LABEL[item.etapa] ?? item.etapa}</p><p className={`mt-2 text-sm ${noRequeridoPiloto ? 'text-slate-500' : 'capitalize text-slate-600'}`}>{noRequeridoPiloto ? 'No requerido en piloto' : item.estado.replace('_', ' ')}</p>{item.observacion ? <p className="mt-2 text-xs text-slate-500">{item.observacion}</p> : null}</div>
+                const tieneResolucion = Boolean(item.firmado_at)
+                const responsableLabel = item.estado === 'aprobado' ? 'Aprobado por' : item.estado === 'observado' ? 'Observado por' : item.estado === 'rechazado' ? 'Rechazado por' : 'Resuelto por'
+                return (
+                  <div key={item.etapa} className="rounded-2xl border border-slate-200 p-4">
+                    <p className="text-sm font-semibold text-slate-900">{ETAPA_LABEL[item.etapa] ?? item.etapa}</p>
+                    <p className={`mt-2 text-sm ${noRequeridoPiloto ? 'text-slate-500' : 'capitalize text-slate-600'}`}>{noRequeridoPiloto ? 'No requerido en piloto' : item.estado.replace('_', ' ')}</p>
+                    {item.observacion ? <p className="mt-2 text-xs text-slate-500">{item.observacion}</p> : null}
+                    {tieneResolucion ? (
+                      <div className="mt-4 rounded-xl border border-slate-100 bg-slate-50 p-3">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-500">{responsableLabel}</p>
+                        <p className="mt-1 text-sm font-semibold text-slate-900">{item.nombre_firmante || 'Firmante no registrado en este expediente'}</p>
+                        <p className="mt-0.5 text-xs text-slate-600">{item.cargo_firmante || 'Cargo no registrado'}</p>
+                        <p className="mt-2 text-xs text-slate-500">{item.firmado_at ? new Date(item.firmado_at).toLocaleString('es-CL') : '—'}</p>
+                      </div>
+                    ) : null}
+                  </div>
+                )
               })}</div>
 
               {puedeResolver ? <div className="mt-6 rounded-2xl border border-cyan-200 bg-cyan-50/60 p-5"><h3 className="font-semibold text-slate-900">Revisión de Seguridad</h3><p className="mt-1 text-sm text-slate-600">Aprueba el permiso o devuelve una observación al solicitante.</p><textarea value={observacionRevision} onChange={(e) => setObservacionRevision(e.target.value)} rows={3} placeholder="Observación (obligatoria al observar o rechazar)" className="mt-4 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-[#18B7A8]" /><div className="mt-4 flex flex-wrap gap-3"><button onClick={() => resolver('aprobar')} disabled={acting} className="rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60">Aprobar</button><button onClick={() => resolver('observar')} disabled={acting} className="rounded-xl bg-amber-500 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60">Observar</button><button onClick={() => resolver('rechazar')} disabled={acting} className="rounded-xl bg-red-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60">Rechazar</button></div></div> : null}
