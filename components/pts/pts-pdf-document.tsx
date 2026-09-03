@@ -10,6 +10,7 @@ export type PTSPdfRisk = {
 }
 
 export type PTSPdfPerson = {
+  id: string
   nombre_apellido: string
   rut: string
   induccion_ingreso_ok: boolean
@@ -17,11 +18,27 @@ export type PTSPdfPerson = {
   examen_altura_vigente_hasta: string | null
 }
 
+type SignaturePoint = { x: number; y: number }
+type SignatureStroke = SignaturePoint[]
+
+export type PTSPdfParticipantSignature = {
+  personal_id: string
+  nombre_firmante: string
+  rut_firmante: string
+  declaracion: string
+  declaracion_version: number
+  firma_trazos: SignatureStroke[]
+  metodo: string
+  capturado_por_nombre: string
+  firmado_at: string
+}
+
 export type PTSPdfApproval = {
   etapa: string
   estado: string
   observacion: string | null
   responsable_nombre: string | null
+  cargo_firmante: string | null
   firmado_at: string | null
 }
 
@@ -53,6 +70,7 @@ export type PTSPdfData = {
   riesgos: PTSPdfRisk[]
   personal: PTSPdfPerson[]
   epp: string[]
+  firmas_participantes: PTSPdfParticipantSignature[]
   aprobaciones: PTSPdfApproval[]
   historial: PTSPdfHistory[]
   verificationUrl: string
@@ -98,7 +116,6 @@ const styles = StyleSheet.create({
     color: '#dbeafe',
   },
   row: { flexDirection: 'row' },
-  rowCards: { flexDirection: 'row', justifyContent: 'space-between' },
   grow: { flexGrow: 1, flexBasis: 0 },
   card: {
     border: '1 solid #dbe3ea',
@@ -106,7 +123,6 @@ const styles = StyleSheet.create({
     padding: 9,
     marginBottom: 10,
   },
-  halfCard: { width: '49%' },
   fieldRight: { marginLeft: 10 },
   sectionTitle: {
     fontSize: 10,
@@ -145,9 +161,42 @@ const styles = StyleSheet.create({
   cHaz: { width: '20%' },
   cRisk: { width: '20%' },
   cPrev: { width: '34%' },
-  personBlock: { marginBottom: 7 },
-  personName: { fontWeight: 700, fontSize: 8.1 },
+  personBlock: {
+    borderBottom: '1 solid #e2e8f0',
+    paddingBottom: 8,
+    marginBottom: 8,
+  },
+  personName: { fontWeight: 700, fontSize: 8.4 },
   personMeta: { marginTop: 2, fontSize: 7.2, color: '#64748b' },
+  signatureRow: { flexDirection: 'row', marginTop: 6, alignItems: 'stretch' },
+  signatureBox: {
+    width: '42%',
+    height: 66,
+    border: '1 solid #cbd5e1',
+    borderRadius: 4,
+    padding: 3,
+    backgroundColor: '#ffffff',
+  },
+  signatureSvg: { width: '100%', height: 58 },
+  signatureInfo: { width: '56%', marginLeft: '2%' },
+  signatureStatus: { fontSize: 7.8, fontWeight: 700, color: '#047857' },
+  signatureMeta: { marginTop: 2, fontSize: 6.9, color: '#475569' },
+  declaration: {
+    marginTop: 5,
+    borderRadius: 4,
+    backgroundColor: '#f8fafc',
+    padding: 6,
+    fontSize: 6.8,
+    color: '#475569',
+  },
+  unsigned: {
+    marginTop: 5,
+    borderRadius: 4,
+    backgroundColor: '#fff7ed',
+    padding: 6,
+    color: '#9a3412',
+    fontSize: 7.2,
+  },
   pills: { flexDirection: 'row', flexWrap: 'wrap' },
   pill: {
     paddingTop: 3,
@@ -202,6 +251,7 @@ const eventoLabel: Record<string, string> = {
   correccion_guardada: 'Corrección guardada',
   revision_aprobada: 'Revisión aprobada',
   revision_rechazada: 'Revisión rechazada',
+  participante_firmado: 'Participante firmado',
   trabajo_iniciado: 'Trabajo iniciado',
   trabajo_cerrado: 'Trabajo cerrado',
 }
@@ -261,6 +311,14 @@ function approvalStatus(value: string) {
   return value
 }
 
+function signaturePath(strokes: SignatureStroke[] | null | undefined) {
+  if (!Array.isArray(strokes)) return ''
+  return strokes
+    .filter((stroke) => Array.isArray(stroke) && stroke.length >= 2)
+    .map((stroke) => stroke.map((point, index) => `${index === 0 ? 'M' : 'L'} ${Number(point.x)} ${Number(point.y)}`).join(' '))
+    .join(' ')
+}
+
 function shouldShowHistoryDetail(item: PTSPdfHistory) {
   if (!item.detalle) return false
   if (
@@ -275,6 +333,7 @@ function shouldShowHistoryDetail(item: PTSPdfHistory) {
 export function PTSPdfDocument({ data }: { data: PTSPdfData }) {
   const folio = `PTS-${String(data.folio).padStart(6, '0')}`
   const verificationCode = data.verificationUrl.split('/').filter(Boolean).pop() || '—'
+  const firmasMap = new Map(data.firmas_participantes.map((firma) => [firma.personal_id, firma]))
 
   return (
     <Document title={`${folio} - Permiso de Trabajo Seguro`} author="Tralixia">
@@ -322,27 +381,47 @@ export function PTSPdfDocument({ data }: { data: PTSPdfData }) {
           ))}
         </View>
 
-        <View style={styles.rowCards} wrap={false}>
-          <View style={[styles.card, styles.halfCard]}>
-            <Text style={styles.sectionTitle}>III. Personal participante</Text>
-            {data.personal.map((person) => (
-              <View key={`${person.rut}-${person.nombre_apellido}`} style={styles.personBlock}>
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>III. Personal participante y firmas previas</Text>
+          {data.personal.map((person) => {
+            const firma = firmasMap.get(person.id)
+            const path = signaturePath(firma?.firma_trazos)
+            return (
+              <View key={person.id} style={styles.personBlock} wrap={false}>
                 <Text style={styles.personName}>{person.nombre_apellido} - RUT {person.rut}</Text>
                 <Text style={styles.personMeta}>
-                  Inducción: {person.induccion_ingreso_ok ? 'Sí' : 'No'} | Charla 5 min: {person.charla_5_min_ok ? 'Sí' : 'No'}
+                  Inducción: {person.induccion_ingreso_ok ? 'Sí' : 'No'} | Charla 5 min: {person.charla_5_min_ok ? 'Sí' : 'No'} | Examen altura: {formatDateOnly(person.examen_altura_vigente_hasta)}
                 </Text>
-                <Text style={styles.personMeta}>
-                  Examen altura vigente hasta: {formatDateOnly(person.examen_altura_vigente_hasta)}
-                </Text>
+                {firma ? (
+                  <>
+                    <View style={styles.signatureRow}>
+                      <View style={styles.signatureBox}>
+                        <Svg viewBox="0 0 1000 300" style={styles.signatureSvg}>
+                          {path ? <Path d={path} fill="none" stroke="#111827" strokeWidth={5} strokeLinecap="round" strokeLinejoin="round" /> : null}
+                        </Svg>
+                      </View>
+                      <View style={styles.signatureInfo}>
+                        <Text style={styles.signatureStatus}>FIRMA REGISTRADA</Text>
+                        <Text style={styles.signatureMeta}>Firmante: {firma.nombre_firmante} - RUT {firma.rut_firmante}</Text>
+                        <Text style={styles.signatureMeta}>Fecha y hora: {dt(firma.firmado_at)}</Text>
+                        <Text style={styles.signatureMeta}>Captura registrada por: {firma.capturado_por_nombre}</Text>
+                        <Text style={styles.signatureMeta}>Método: firma manuscrita en dispositivo</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.declaration}>Declaración aceptada (v{firma.declaracion_version}): {firma.declaracion}</Text>
+                  </>
+                ) : (
+                  <Text style={styles.unsigned}>Firma previa no registrada para este participante.</Text>
+                )}
               </View>
-            ))}
-          </View>
+            )
+          })}
+        </View>
 
-          <View style={[styles.card, styles.halfCard]}>
-            <Text style={styles.sectionTitle}>IV. EPP y elementos</Text>
-            <View style={styles.pills}>
-              {data.epp.map((name) => <Text key={name} style={styles.pill}>{name}</Text>)}
-            </View>
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>IV. EPP y elementos</Text>
+          <View style={styles.pills}>
+            {data.epp.map((name) => <Text key={name} style={styles.pill}>{name}</Text>)}
           </View>
         </View>
 
@@ -357,6 +436,9 @@ export function PTSPdfDocument({ data }: { data: PTSPdfData }) {
                 </Text>
                 {!noRequeridoPiloto && approval.responsable_nombre ? (
                   <Text style={styles.approvalMeta}>Responsable: {approval.responsable_nombre}</Text>
+                ) : null}
+                {!noRequeridoPiloto && approval.cargo_firmante ? (
+                  <Text style={styles.approvalMeta}>Cargo: {approval.cargo_firmante}</Text>
                 ) : null}
                 {!noRequeridoPiloto && approval.firmado_at ? (
                   <Text style={styles.approvalMeta}>Fecha de revisión: {dt(approval.firmado_at)}</Text>
