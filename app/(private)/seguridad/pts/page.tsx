@@ -48,8 +48,12 @@ export default function PTSPage() {
 
     const load = async () => {
       try {
-        setLoading(true)
-        setError('')
+        if (active) {
+          setLoading(true)
+          setError('')
+          setRows([])
+        }
+
         const empresaId = window.localStorage.getItem(STORAGE_KEY) || ''
         if (!empresaId) throw new Error('No hay empresa activa seleccionada.')
 
@@ -62,15 +66,28 @@ export default function PTSPage() {
         if (queryError) throw queryError
         if (active) setRows((data ?? []) as PTSRow[])
       } catch (err) {
-        if (active) setError(err instanceof Error ? err.message : 'No se pudieron cargar los PTS.')
+        if (active) {
+          setRows([])
+          setError(err instanceof Error ? err.message : 'No se pudieron cargar los PTS.')
+        }
       } finally {
         if (active) setLoading(false)
       }
     }
 
-    void load()
+    const reload = () => void load()
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === STORAGE_KEY) reload()
+    }
+
+    reload()
+    window.addEventListener('empresa-activa-cambiada', reload)
+    window.addEventListener('storage', handleStorage)
+
     return () => {
       active = false
+      window.removeEventListener('empresa-activa-cambiada', reload)
+      window.removeEventListener('storage', handleStorage)
     }
   }, [])
 
