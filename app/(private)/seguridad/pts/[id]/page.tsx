@@ -196,16 +196,25 @@ export default function PTSDetallePage() {
   const correccionPendiente = permiso?.estado === 'observado' && !correccionPosterior
   const esCerrado = permiso?.estado === 'cerrado'
   const etapaOperativa = Boolean(permiso && ['aprobado', 'en_ejecucion'].includes(permiso.estado))
-  const indicadorTitulo = esCerrado ? 'Ciclo del PTS' : etapaOperativa ? 'Requisitos del PTS' : 'Avance para revisión'
+  const estaEnRevision = permiso?.estado === 'en_revision'
+  const indicadorTitulo = esCerrado
+    ? 'Ciclo del PTS'
+    : etapaOperativa
+      ? 'Requisitos del PTS'
+      : estaEnRevision
+        ? 'Expediente en revisión'
+        : 'Requisitos para enviar a revisión'
   const indicadorEstado = esCerrado
     ? 'Cerrado'
     : etapaOperativa
       ? 'Completado'
-      : completitud === 100
-        ? 'Listo'
-        : correccionPendiente
-          ? 'Corrección pendiente'
-          : 'Incompleto'
+      : estaEnRevision
+        ? 'En revisión'
+        : completitud === 100
+          ? 'Listo para enviar'
+          : correccionPendiente
+            ? 'Corrección pendiente'
+            : 'Incompleto'
 
   const puedeEnviar = Boolean(
     permiso &&
@@ -422,6 +431,13 @@ export default function PTSDetallePage() {
                   <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${completitud === 100 ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>{indicadorEstado}</span>
                 </div>
                 <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-100"><div className={`h-full rounded-full transition-all ${correccionPendiente ? 'bg-amber-500' : 'bg-[#18B7A8]'}`} style={{ width: `${completitud}%` }} /></div>
+                {!esCerrado && !etapaOperativa ? (
+                  <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-medium leading-5 text-amber-900">
+                    {estaEnRevision
+                      ? 'El expediente está completo y fue enviado a Seguridad. Aún no está autorizado para iniciar los trabajos.'
+                      : 'Este porcentaje indica completitud documental para revisión. No autoriza el inicio de los trabajos.'}
+                  </p>
+                ) : null}
                 <div className="mt-5 space-y-2">{checksFlujo.map((item) => <div key={item.label} className="flex items-center justify-between gap-3 text-sm"><span className="text-slate-600">{item.label}</span><span className={item.ok ? 'text-emerald-600' : 'text-amber-600'}>{item.ok ? '✓' : 'Pendiente'}</span></div>)}</div>
                 {complementariosPendientes.length > 0 && permiso.estado === 'borrador' ? <Link href={`/seguridad/pts/${permisoId}/permisos`} className="mt-6 inline-flex w-full items-center justify-center rounded-2xl border border-[#18B7A8] bg-white px-4 py-3 text-sm font-semibold text-[#168F86] hover:bg-cyan-50">Completar permisos complementarios</Link> : null}
                 {correccionPendiente ? <Link href={`/seguridad/pts/${permisoId}/editar`} className="mt-6 inline-flex w-full items-center justify-center rounded-2xl bg-amber-500 px-4 py-3 text-sm font-semibold text-white hover:bg-amber-600">Corregir PTS</Link> : null}
