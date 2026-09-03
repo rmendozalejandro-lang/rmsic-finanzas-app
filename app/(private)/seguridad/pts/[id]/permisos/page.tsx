@@ -107,6 +107,7 @@ export default function PermisosComplementariosPage() {
               const hrefPorTipo: Record<string, string> = {
                 general: `/seguridad/pts/${permisoId}/general`,
                 altura: `/seguridad/pts/${permisoId}/altura`,
+                izaje: `/seguridad/pts/${permisoId}/izaje`,
               }
               const href = hrefPorTipo[item.tipo]
               const habilitado = Boolean(href)
