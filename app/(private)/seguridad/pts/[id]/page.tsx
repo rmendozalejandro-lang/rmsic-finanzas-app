@@ -160,6 +160,11 @@ export default function PTSDetallePage() {
     [complementarios]
   )
 
+  const requiereVigilanciaCaliente = useMemo(
+    () => complementarios.some((item) => item.tipo === 'caliente' && item.requerido),
+    [complementarios]
+  )
+
   const correccionPosterior = useMemo(() => {
     const ultimaObservacion = historial.find((item) => item.evento === 'revision_observada')
     const ultimaCorreccion = historial.find((item) => item.evento === 'correccion_guardada')
@@ -333,6 +338,17 @@ export default function PTSDetallePage() {
                   <Info label="Inicio registrado" value={permiso.iniciado_at ? new Date(permiso.iniciado_at).toLocaleString('es-CL') : '—'} />
                   <Info label="Iniciado por" value={permiso.iniciado_por_nombre || 'Usuario autorizado'} />
                 </div>
+                {requiereVigilanciaCaliente ? (
+                  <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                      <div>
+                        <h3 className="font-semibold text-amber-950">Vigilancia post trabajo en caliente</h3>
+                        <p className="mt-1 text-sm text-amber-800">Al finalizar la labor en caliente debes iniciar y completar una vigilancia mínima de 60 minutos antes de cerrar el PTS.</p>
+                      </div>
+                      <Link href={`/seguridad/pts/${permisoId}/caliente/vigilancia`} className="inline-flex shrink-0 items-center justify-center rounded-xl bg-amber-500 px-5 py-3 text-sm font-semibold text-white hover:bg-amber-600">Abrir vigilancia post trabajo</Link>
+                    </div>
+                  </div>
+                ) : null}
                 <div className="mt-5 rounded-2xl border border-cyan-200 bg-white p-4">
                   <h3 className="font-semibold text-slate-900">Cierre del trabajo</h3>
                   <p className="mt-1 text-sm text-slate-600">Registra el resultado final antes de cerrar el permiso. Mínimo 10 caracteres.</p>
