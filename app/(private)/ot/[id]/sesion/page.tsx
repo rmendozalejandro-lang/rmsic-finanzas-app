@@ -103,6 +103,12 @@ const CERTEZAS: Array<{ value: NivelCerteza; label: string }> = [
   { value: 'descartado', label: 'DESCARTADO' },
 ]
 
+const CERTEZA_OBLIGATORIA: Partial<Record<TipoEvento, NivelCerteza>> = {
+  hipotesis: 'hipotesis',
+  medicion: 'medido',
+  decision_cliente: 'informado',
+}
+
 const RAPIDOS: Array<{ tipo: TipoEvento; label: string; certeza: NivelCerteza }> = [
   { tipo: 'hallazgo', label: 'Hallazgo', certeza: 'observado' },
   { tipo: 'medicion', label: 'Medición', certeza: 'medido' },
@@ -113,6 +119,14 @@ const RAPIDOS: Array<{ tipo: TipoEvento; label: string; certeza: NivelCerteza }>
   { tipo: 'recomendacion', label: 'Recomendación', certeza: 'observado' },
   { tipo: 'pendiente', label: 'Pendiente', certeza: 'observado' },
 ]
+
+function certezaObligatoria(tipo: TipoEvento) {
+  return CERTEZA_OBLIGATORIA[tipo] ?? null
+}
+
+function normalizarCertezaEvento(tipo: TipoEvento, nivel: NivelCerteza): NivelCerteza {
+  return certezaObligatoria(tipo) ?? nivel
+}
 
 function storageKey(empresaId: string, otId: string, userId: string) {
   return `tralixia_ot_viva_local_v1_${empresaId}_${otId}_${userId}`
@@ -225,11 +239,15 @@ function separarFraseNatural(value: string) {
 }
 
 function analizarFraseLocal(value: string): PropuestaLocal[] {
-  return separarFraseNatural(value).map((texto) => ({
-    id: crypto.randomUUID(),
-    texto,
-    ...clasificarSegmento(texto),
-  }))
+  return separarFraseNatural(value).map((texto) => {
+    const clasificacion = clasificarSegmento(texto)
+    return {
+      id: crypto.randomUUID(),
+      texto,
+      ...clasificacion,
+      nivel_certeza: normalizarCertezaEvento(clasificacion.tipo_evento, clasificacion.nivel_certeza),
+    }
+  })
 }
 
 export default function OTVivaSesionPage() {
@@ -256,6 +274,8 @@ export default function OTVivaSesionPage() {
 
   const [fraseNatural, setFraseNatural] = useState('')
   const [propuestas, setPropuestas] = useState<PropuestaLocal[]>([])
+
+  const certezaFija = certezaObligatoria(tipoEvento)
 
   useEffect(() => {
     let mounted = true
@@ -310,7 +330,15 @@ export default function OTVivaSesionPage() {
 
         if (raw) {
           try {
-            sessionDraft = JSON.parse(raw) as SesionLocal
+            const parsed = JSON.parse(raw) as SesionLocal
+            sessionDraft = {
+              ...parsed,
+              eventos: (parsed.eventos ?? []).map((evento) => ({
+                ...evento,
+                nivel_certeza: normalizarCertezaEvento(evento.tipo_evento, evento.nivel_certeza),
+              })),
+            }
+            window.localStorage.setItem(key, JSON.stringify(sessionDraft))
           } catch {
             window.localStorage.removeItem(key)
           }
@@ -367,9 +395,15 @@ export default function OTVivaSesionPage() {
     iniciarSesion()
   }
 
-  const seleccionarRapido = (tipo: TipoEvento, nivel: NivelCerteza) => {
+  const seleccionarTipoEvento = (tipo: TipoEvento, nivelSugerido?: NivelCerteza) => {
     setTipoEvento(tipo)
-    setCerteza(nivel)
+    const obligatoria = certezaObligatoria(tipo)
+    if (obligatoria) setCerteza(obligatoria)
+    else if (nivelSugerido) setCerteza(nivelSugerido)
+  }
+
+  const seleccionarRapido = (tipo: TipoEvento, nivel: NivelCerteza) => {
+    seleccionarTipoEvento(tipo, nivel)
     window.setTimeout(() => textoRef.current?.focus(), 40)
   }
 
@@ -381,7 +415,7 @@ export default function OTVivaSesionPage() {
   ): EventoLocal => ({
     id: crypto.randomUUID(),
     tipo_evento: tipo,
-    nivel_certeza: nivel,
+    nivel_certeza: normalizarCertezaEvento(tipo, nivel),
     texto_original: textoOriginal.trim(),
     descripcion_tecnica: '',
     componente: '',
@@ -696,7 +730,12 @@ export default function OTVivaSesionPage() {
                     <div className="mt-5 space-y-4">
                       <div>
                         <label className="mb-1.5 block text-sm font-bold text-slate-700">Tipo</label>
-                        <select value={tipoEvento} onChange={(event) => setTipoEvento(event.target.value as TipoEvento)} disabled={sesion.estado !== 'en_curso'} className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 disabled:bg-slate-100">
+                        <select
+                          value={tipoEvento}
+                          onChange={(event) => seleccionarTipoEvento(event.target.value as TipoEvento)}
+                          disabled={sesion.estado !== 'en_curso'}
+                          className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 disabled:bg-slate-100"
+                        >
                           {EVENTOS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
                         </select>
                         <p className="mt-1 text-xs leading-5 text-slate-500">{EVENTOS.find((item) => item.value === tipoEvento)?.ayuda}</p>
@@ -704,9 +743,21 @@ export default function OTVivaSesionPage() {
 
                       <div>
                         <label className="mb-1.5 block text-sm font-bold text-slate-700">Certeza</label>
-                        <select value={certeza} onChange={(event) => setCerteza(event.target.value as NivelCerteza)} disabled={sesion.estado !== 'en_curso'} className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 disabled:bg-slate-100">
+                        <select
+                          value={certeza}
+                          onChange={(event) => setCerteza(event.target.value as NivelCerteza)}
+                          disabled={sesion.estado !== 'en_curso' || Boolean(certezaFija)}
+                          className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 disabled:bg-slate-100 disabled:text-slate-600"
+                        >
                           {CERTEZAS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
                         </select>
+                        {certezaFija ? (
+                          <p className="mt-1.5 rounded-lg border border-blue-100 bg-blue-50 px-2.5 py-2 text-xs font-semibold leading-5 text-blue-700">
+                            Certeza protegida: {eventLabel(tipoEvento)} siempre se registra como {certezaFija.toUpperCase()} para mantener consistencia técnica.
+                          </p>
+                        ) : (
+                          <p className="mt-1 text-xs leading-5 text-slate-500">Puedes ajustar la certeza cuando el tipo de evento admite más de una interpretación técnica.</p>
+                        )}
                       </div>
 
                       <div>
