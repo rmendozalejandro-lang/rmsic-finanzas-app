@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import ProtectedModuleRoute from '@/components/ProtectedModuleRoute'
 import { supabase } from '@/lib/supabase/client'
 
@@ -73,6 +73,14 @@ type OTResumen = {
   equipo_nombre: string | null
 }
 
+type PropuestaLocal = {
+  id: string
+  tipo_evento: TipoEvento
+  nivel_certeza: NivelCerteza
+  texto: string
+  prioridad: Prioridad | null
+}
+
 const EVENTOS: Array<{ value: TipoEvento; label: string; ayuda: string }> = [
   { value: 'hallazgo', label: 'Hallazgo', ayuda: 'Condición encontrada durante la intervención.' },
   { value: 'medicion', label: 'Medición', ayuda: 'Valor obtenido con instrumento, HMI o lectura técnica.' },
@@ -93,6 +101,17 @@ const CERTEZAS: Array<{ value: NivelCerteza; label: string }> = [
   { value: 'hipotesis', label: 'HIPÓTESIS' },
   { value: 'confirmado', label: 'CONFIRMADO' },
   { value: 'descartado', label: 'DESCARTADO' },
+]
+
+const RAPIDOS: Array<{ tipo: TipoEvento; label: string; certeza: NivelCerteza }> = [
+  { tipo: 'hallazgo', label: 'Hallazgo', certeza: 'observado' },
+  { tipo: 'medicion', label: 'Medición', certeza: 'medido' },
+  { tipo: 'hipotesis', label: 'Hipótesis', certeza: 'hipotesis' },
+  { tipo: 'prueba', label: 'Prueba', certeza: 'observado' },
+  { tipo: 'accion', label: 'Acción', certeza: 'observado' },
+  { tipo: 'resultado', label: 'Resultado', certeza: 'observado' },
+  { tipo: 'recomendacion', label: 'Recomendación', certeza: 'observado' },
+  { tipo: 'pendiente', label: 'Pendiente', certeza: 'observado' },
 ]
 
 function storageKey(empresaId: string, otId: string, userId: string) {
@@ -139,9 +158,84 @@ function groupText(eventos: EventoLocal[], tipos: TipoEvento[]) {
     .filter(Boolean)
 }
 
+function normalizarTexto(value: string) {
+  return value
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+}
+
+function clasificarSegmento(texto: string): Omit<PropuestaLocal, 'id' | 'texto'> {
+  const t = normalizarTexto(texto)
+
+  if (/\b(cliente|responsable)\b.*\b(autoriza|acepta|rechaza|posterga|no autoriza|no acepta)\b/.test(t)) {
+    return { tipo_evento: 'decision_cliente', nivel_certeza: 'informado', prioridad: null }
+  }
+
+  if (/\b(recomiendo|recomendamos|se recomienda|reemplazar|cambiar preventivamente)\b/.test(t)) {
+    return { tipo_evento: 'recomendacion', nivel_certeza: 'observado', prioridad: 'media' }
+  }
+
+  if (/\b(pendiente|queda pendiente|falta|por realizar|no se interviene|no intervenid)\b/.test(t)) {
+    return { tipo_evento: 'pendiente', nivel_certeza: 'observado', prioridad: 'media' }
+  }
+
+  if (/\b(descartamos|se descarta|queda descartad|no corresponde a la causa)\b/.test(t)) {
+    return { tipo_evento: 'resultado', nivel_certeza: 'descartado', prioridad: null }
+  }
+
+  if (/\b(confirmamos|se confirma|queda confirmad|causa confirmada)\b/.test(t)) {
+    return { tipo_evento: 'resultado', nivel_certeza: 'confirmado', prioridad: null }
+  }
+
+  if (/\b(creo|creemos|posible|podria|podría|probable|sospecha|hipotesis|hipótesis)\b/.test(t)) {
+    return { tipo_evento: 'hipotesis', nivel_certeza: 'hipotesis', prioridad: null }
+  }
+
+  if (/\b(medimos|se mide|medicion|medición|lectura|marca)\b/.test(t) || /\b\d+(?:[.,]\d+)?\s?(v|a|ma|mv|ohm|ω|mω|bar|psi|°c|c|hz|mm|cm|rpm|db)\b/i.test(texto)) {
+    return { tipo_evento: 'medicion', nivel_certeza: 'medido', prioridad: null }
+  }
+
+  if (/\b(probamos|se prueba|verificamos|se verifica|comprobamos|se comprueba|testeamos)\b/.test(t)) {
+    return { tipo_evento: 'prueba', nivel_certeza: 'observado', prioridad: null }
+  }
+
+  if (/\b(ajustamos|se ajusta|reemplazamos|se reemplaza|cambiamos|se cambia|limpiamos|se limpia|reparamos|se repara|apretamos|se aprieta|reseteamos|se resetea)\b/.test(t)) {
+    return { tipo_evento: 'accion', nivel_certeza: 'observado', prioridad: null }
+  }
+
+  if (/\b(funciona|continua|continúa|persiste|queda operativo|queda operativa|sin falla|falla desaparece|resultado)\b/.test(t)) {
+    return { tipo_evento: 'resultado', nivel_certeza: 'observado', prioridad: null }
+  }
+
+  if (/\b(encontramos|se detecta|detectamos|observamos|se observa|presenta|se aprecia|se evidencia)\b/.test(t)) {
+    return { tipo_evento: 'hallazgo', nivel_certeza: 'observado', prioridad: null }
+  }
+
+  return { tipo_evento: 'observacion', nivel_certeza: 'observado', prioridad: null }
+}
+
+function separarFraseNatural(value: string) {
+  return value
+    .replace(/\s+/g, ' ')
+    .trim()
+    .split(/(?:[.;]\s+|\s+y\s+(?=(?:recomiendo|recomendamos|se recomienda|medimos|se mide|probamos|se prueba|verificamos|se verifica|ajustamos|se ajusta|reemplazamos|se reemplaza|cambiamos|se cambia|limpiamos|se limpia|confirmamos|se confirma|descartamos|se descarta|queda pendiente|pendiente|el cliente|cliente)\b))/i)
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
+function analizarFraseLocal(value: string): PropuestaLocal[] {
+  return separarFraseNatural(value).map((texto) => ({
+    id: crypto.randomUUID(),
+    texto,
+    ...clasificarSegmento(texto),
+  }))
+}
+
 export default function OTVivaSesionPage() {
   const params = useParams<{ id: string }>()
   const otId = params?.id || ''
+  const textoRef = useRef<HTMLTextAreaElement | null>(null)
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -159,6 +253,9 @@ export default function OTVivaSesionPage() {
   const [prioridad, setPrioridad] = useState<Prioridad>('media')
   const [visibleCliente, setVisibleCliente] = useState(false)
   const [incluirOt, setIncluirOt] = useState(true)
+
+  const [fraseNatural, setFraseNatural] = useState('')
+  const [propuestas, setPropuestas] = useState<PropuestaLocal[]>([])
 
   useEffect(() => {
     let mounted = true
@@ -233,10 +330,7 @@ export default function OTVivaSesionPage() {
     }
 
     if (otId) void load()
-
-    return () => {
-      mounted = false
-    }
+    return () => { mounted = false }
   }, [otId])
 
   const persist = (next: SesionLocal | null) => {
@@ -273,22 +367,46 @@ export default function OTVivaSesionPage() {
     iniciarSesion()
   }
 
+  const seleccionarRapido = (tipo: TipoEvento, nivel: NivelCerteza) => {
+    setTipoEvento(tipo)
+    setCerteza(nivel)
+    window.setTimeout(() => textoRef.current?.focus(), 40)
+  }
+
+  const crearEvento = (
+    tipo: TipoEvento,
+    nivel: NivelCerteza,
+    textoOriginal: string,
+    prioridadEvento: Prioridad | null = null,
+  ): EventoLocal => ({
+    id: crypto.randomUUID(),
+    tipo_evento: tipo,
+    nivel_certeza: nivel,
+    texto_original: textoOriginal.trim(),
+    descripcion_tecnica: '',
+    componente: '',
+    prioridad: prioridadEvento,
+    visible_cliente: false,
+    incluir_ot: true,
+    ocurrido_at: new Date().toISOString(),
+  })
+
   const agregarEvento = () => {
     if (!sesion || sesion.estado !== 'en_curso') return
     const limpio = texto.trim()
     if (!limpio) return
 
     const evento: EventoLocal = {
-      id: crypto.randomUUID(),
-      tipo_evento: tipoEvento,
-      nivel_certeza: certeza,
-      texto_original: limpio,
+      ...crearEvento(
+        tipoEvento,
+        certeza,
+        limpio,
+        tipoEvento === 'recomendacion' || tipoEvento === 'pendiente' ? prioridad : null,
+      ),
       descripcion_tecnica: descripcionTecnica.trim(),
       componente: componente.trim(),
-      prioridad: tipoEvento === 'recomendacion' || tipoEvento === 'pendiente' ? prioridad : null,
       visible_cliente: visibleCliente,
       incluir_ot: incluirOt,
-      ocurrido_at: new Date().toISOString(),
     }
 
     persist({ ...sesion, eventos: [...sesion.eventos, evento] })
@@ -297,6 +415,45 @@ export default function OTVivaSesionPage() {
     setComponente('')
     setVisibleCliente(false)
     setIncluirOt(true)
+    window.setTimeout(() => textoRef.current?.focus(), 40)
+  }
+
+  const analizarFrase = () => {
+    const limpio = fraseNatural.trim()
+    if (!limpio) return
+    setPropuestas(analizarFraseLocal(limpio))
+  }
+
+  const agregarPropuesta = (propuesta: PropuestaLocal) => {
+    if (!sesion || sesion.estado !== 'en_curso') return
+    persist({
+      ...sesion,
+      eventos: [
+        ...sesion.eventos,
+        crearEvento(
+          propuesta.tipo_evento,
+          propuesta.nivel_certeza,
+          propuesta.texto,
+          propuesta.prioridad,
+        ),
+      ],
+    })
+    setPropuestas((prev) => prev.filter((item) => item.id !== propuesta.id))
+  }
+
+  const agregarTodasLasPropuestas = () => {
+    if (!sesion || sesion.estado !== 'en_curso' || propuestas.length === 0) return
+    const nuevos = propuestas.map((propuesta) =>
+      crearEvento(
+        propuesta.tipo_evento,
+        propuesta.nivel_certeza,
+        propuesta.texto,
+        propuesta.prioridad,
+      ),
+    )
+    persist({ ...sesion, eventos: [...sesion.eventos, ...nuevos] })
+    setPropuestas([])
+    setFraseNatural('')
   }
 
   const eliminarEvento = (eventoId: string) => {
@@ -306,7 +463,7 @@ export default function OTVivaSesionPage() {
 
   const pendientes = useMemo(
     () => sesion?.eventos.filter((evento) => evento.tipo_evento === 'recomendacion' || evento.tipo_evento === 'pendiente') ?? [],
-    [sesion]
+    [sesion],
   )
 
   const borrador = useMemo(() => {
@@ -398,7 +555,7 @@ export default function OTVivaSesionPage() {
         </header>
 
         <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 shadow-sm">
-          <strong>Prototipo seguro:</strong> esta versión guarda la sesión únicamente en este dispositivo. No modifica la base productiva ni la OT formal. La sincronización con las nuevas tablas se habilitará cuando probemos la migración en una rama Supabase.
+          <strong>Prototipo seguro:</strong> la sesión y el análisis de frase se ejecutan localmente en este dispositivo. No modifican Supabase productivo ni la OT formal.
         </div>
 
         {!sesion ? (
@@ -455,103 +612,178 @@ export default function OTVivaSesionPage() {
             </div>
 
             {tab === 'sesion' ? (
-              <div className="grid gap-5 lg:grid-cols-[0.95fr_1.35fr]">
-                <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm lg:sticky lg:top-4 lg:self-start">
+              <div className="space-y-5">
+                <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                   <div>
-                    <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Registro rápido</p>
-                    <h2 className="mt-1 text-lg font-black text-slate-900">Nuevo evento técnico</h2>
+                    <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Uso en terreno</p>
+                    <h2 className="mt-1 text-lg font-black text-slate-900">Acciones rápidas</h2>
+                    <p className="mt-1 text-sm text-slate-600">Selecciona una categoría y escribe directamente. La certeza se ajusta automáticamente al tipo elegido.</p>
                   </div>
-
-                  <div className="mt-5 space-y-4">
-                    <div>
-                      <label className="mb-1.5 block text-sm font-bold text-slate-700">Tipo</label>
-                      <select value={tipoEvento} onChange={(event) => setTipoEvento(event.target.value as TipoEvento)} disabled={sesion.estado !== 'en_curso'} className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 disabled:bg-slate-100">
-                        {EVENTOS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
-                      </select>
-                      <p className="mt-1 text-xs leading-5 text-slate-500">{EVENTOS.find((item) => item.value === tipoEvento)?.ayuda}</p>
-                    </div>
-
-                    <div>
-                      <label className="mb-1.5 block text-sm font-bold text-slate-700">Certeza</label>
-                      <select value={certeza} onChange={(event) => setCerteza(event.target.value as NivelCerteza)} disabled={sesion.estado !== 'en_curso'} className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 disabled:bg-slate-100">
-                        {CERTEZAS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="mb-1.5 block text-sm font-bold text-slate-700">Registro original *</label>
-                      <textarea value={texto} onChange={(event) => setTexto(event.target.value)} disabled={sesion.estado !== 'en_curso'} rows={4} placeholder="Ej.: Se detecta juego radial en rodamiento lado motor." className="w-full rounded-xl border border-slate-300 bg-white px-3 py-3 text-sm text-slate-900 outline-none focus:border-[#163A5F] disabled:bg-slate-100" />
-                    </div>
-
-                    <details className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                      <summary className="cursor-pointer text-sm font-bold text-slate-700">Campos técnicos opcionales</summary>
-                      <div className="mt-4 space-y-4">
-                        <div>
-                          <label className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-slate-500">Componente</label>
-                          <input value={componente} onChange={(event) => setComponente(event.target.value)} disabled={sesion.estado !== 'en_curso'} placeholder="Rodamiento, PLC, mordaza H..." className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 disabled:bg-slate-100" />
-                        </div>
-                        <div>
-                          <label className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-slate-500">Redacción técnica</label>
-                          <textarea value={descripcionTecnica} onChange={(event) => setDescripcionTecnica(event.target.value)} disabled={sesion.estado !== 'en_curso'} rows={3} placeholder="Más adelante la IA podrá proponer esta redacción sin alterar el registro original." className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 disabled:bg-slate-100" />
-                        </div>
-                        {(tipoEvento === 'recomendacion' || tipoEvento === 'pendiente') ? (
-                          <div>
-                            <label className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-slate-500">Prioridad</label>
-                            <select value={prioridad} onChange={(event) => setPrioridad(event.target.value as Prioridad)} disabled={sesion.estado !== 'en_curso'} className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 disabled:bg-slate-100">
-                              <option value="baja">Baja</option><option value="media">Media</option><option value="alta">Alta</option><option value="critica">Crítica</option>
-                            </select>
-                          </div>
-                        ) : null}
-                        <label className="flex items-center gap-3 text-sm text-slate-700"><input type="checkbox" checked={incluirOt} onChange={(event) => setIncluirOt(event.target.checked)} disabled={sesion.estado !== 'en_curso'} /> Incluir en borrador de OT</label>
-                        <label className="flex items-center gap-3 text-sm text-slate-700"><input type="checkbox" checked={visibleCliente} onChange={(event) => setVisibleCliente(event.target.checked)} disabled={sesion.estado !== 'en_curso'} /> Información visible para cliente</label>
-                      </div>
-                    </details>
-
-                    <button type="button" onClick={agregarEvento} disabled={sesion.estado !== 'en_curso' || !texto.trim()} className="w-full rounded-xl bg-[#163A5F] px-4 py-3 text-sm font-black text-white hover:bg-[#245C90] disabled:cursor-not-allowed disabled:opacity-50">
-                      Registrar evento
-                    </button>
+                  <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-8">
+                    {RAPIDOS.map((item) => (
+                      <button
+                        key={item.tipo}
+                        type="button"
+                        onClick={() => seleccionarRapido(item.tipo, item.certeza)}
+                        disabled={sesion.estado !== 'en_curso'}
+                        className={`min-h-16 rounded-xl border px-3 py-3 text-sm font-black transition disabled:cursor-not-allowed disabled:opacity-45 ${tipoEvento === item.tipo ? 'border-[#163A5F] bg-[#163A5F] text-white' : 'border-slate-200 bg-slate-50 text-slate-700 hover:border-slate-300 hover:bg-slate-100'}`}
+                      >
+                        {item.label}
+                      </button>
+                    ))}
                   </div>
                 </section>
 
-                <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                  <div className="flex items-center justify-between gap-3">
+                <section className="rounded-2xl border border-violet-200 bg-violet-50 p-5 shadow-sm">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                     <div>
-                      <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Cronología</p>
-                      <h2 className="mt-1 text-lg font-black text-slate-900">Eventos técnicos</h2>
+                      <p className="text-xs font-bold uppercase tracking-wide text-violet-600">Preparación para voz</p>
+                      <h2 className="mt-1 text-lg font-black text-slate-900">Registro natural simulado</h2>
+                      <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-600">
+                        Escribe lo que dirías hablando en terreno. Tralixia lo separa con reglas locales para probar el flujo antes de conectar OpenAI y reconocimiento de voz.
+                      </p>
                     </div>
-                    <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-600">{sesion.eventos.length}</span>
+                    <span className="whitespace-nowrap rounded-full border border-violet-200 bg-white px-3 py-1 text-xs font-black text-violet-700">SIN IA</span>
                   </div>
 
-                  {sesion.eventos.length === 0 ? (
-                    <div className="mt-5 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
-                      Todavía no hay eventos. Registra el primer hallazgo, medición, hipótesis o acción.
-                    </div>
-                  ) : (
-                    <div className="mt-5 space-y-3">
-                      {[...sesion.eventos].reverse().map((evento) => (
-                        <article key={evento.id} className="rounded-2xl border border-slate-200 p-4">
-                          <div className="flex flex-wrap items-start justify-between gap-3">
+                  <textarea
+                    value={fraseNatural}
+                    onChange={(event) => setFraseNatural(event.target.value)}
+                    disabled={sesion.estado !== 'en_curso'}
+                    rows={3}
+                    placeholder="Ej.: Encontramos juego en el rodamiento lado motor y recomiendo cambiarlo. Medimos 24.3 VDC en X14 y la falla continúa."
+                    className="mt-4 w-full rounded-xl border border-violet-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-violet-500 disabled:bg-slate-100"
+                  />
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button type="button" onClick={analizarFrase} disabled={sesion.estado !== 'en_curso' || !fraseNatural.trim()} className="rounded-xl bg-violet-700 px-4 py-2.5 text-sm font-black text-white hover:bg-violet-800 disabled:cursor-not-allowed disabled:opacity-50">
+                      Analizar frase
+                    </button>
+                    {propuestas.length > 0 ? (
+                      <button type="button" onClick={agregarTodasLasPropuestas} className="rounded-xl border border-violet-300 bg-white px-4 py-2.5 text-sm font-black text-violet-700 hover:bg-violet-100">
+                        Registrar todas ({propuestas.length})
+                      </button>
+                    ) : null}
+                  </div>
+
+                  {propuestas.length > 0 ? (
+                    <div className="mt-4 space-y-2">
+                      {propuestas.map((propuesta) => (
+                        <div key={propuesta.id} className="flex flex-col gap-3 rounded-xl border border-violet-200 bg-white p-3 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="min-w-0">
                             <div className="flex flex-wrap items-center gap-2">
-                              <span className="text-sm font-black text-slate-900">{localTime(evento.ocurrido_at)} · {eventLabel(evento.tipo_evento)}</span>
-                              <span className={`rounded-full border px-2.5 py-1 text-[11px] font-black tracking-wide ${certaintyClass(evento.nivel_certeza)}`}>{evento.nivel_certeza.toUpperCase()}</span>
-                              {evento.prioridad ? <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-black uppercase text-amber-700">{evento.prioridad}</span> : null}
+                              <span className="text-xs font-black uppercase tracking-wide text-slate-700">{eventLabel(propuesta.tipo_evento)}</span>
+                              <span className={`rounded-full border px-2 py-0.5 text-[10px] font-black ${certaintyClass(propuesta.nivel_certeza)}`}>{propuesta.nivel_certeza.toUpperCase()}</span>
                             </div>
-                            <button type="button" onClick={() => eliminarEvento(evento.id)} className="text-xs font-bold text-red-600 hover:text-red-800">Eliminar</button>
+                            <p className="mt-1 text-sm text-slate-700">{propuesta.texto}</p>
                           </div>
-                          {evento.componente ? <p className="mt-2 text-xs font-bold uppercase tracking-wide text-slate-500">{evento.componente}</p> : null}
-                          <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-800">{evento.texto_original}</p>
-                          {evento.descripcion_tecnica ? (
-                            <div className="mt-3 rounded-xl bg-slate-50 px-3 py-2.5 text-sm text-slate-700"><strong>Redacción técnica:</strong> {evento.descripcion_tecnica}</div>
-                          ) : null}
-                          <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-bold text-slate-500">
-                            {evento.incluir_ot ? <span className="rounded-full bg-slate-100 px-2 py-1">Incluye OT</span> : <span className="rounded-full bg-slate-100 px-2 py-1">Solo interno</span>}
-                            {evento.visible_cliente ? <span className="rounded-full bg-blue-50 px-2 py-1 text-blue-700">Visible cliente</span> : <span className="rounded-full bg-slate-100 px-2 py-1">Interno RMSIC</span>}
+                          <div className="flex shrink-0 gap-2">
+                            <button type="button" onClick={() => agregarPropuesta(propuesta)} className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-700 hover:bg-emerald-100">Registrar</button>
+                            <button type="button" onClick={() => setPropuestas((prev) => prev.filter((item) => item.id !== propuesta.id))} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-black text-slate-600 hover:bg-slate-50">Omitir</button>
                           </div>
-                        </article>
+                        </div>
                       ))}
                     </div>
-                  )}
+                  ) : null}
                 </section>
+
+                <div className="grid gap-5 lg:grid-cols-[0.95fr_1.35fr]">
+                  <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm lg:sticky lg:top-4 lg:self-start">
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Registro manual</p>
+                      <h2 className="mt-1 text-lg font-black text-slate-900">Nuevo evento técnico</h2>
+                    </div>
+
+                    <div className="mt-5 space-y-4">
+                      <div>
+                        <label className="mb-1.5 block text-sm font-bold text-slate-700">Tipo</label>
+                        <select value={tipoEvento} onChange={(event) => setTipoEvento(event.target.value as TipoEvento)} disabled={sesion.estado !== 'en_curso'} className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 disabled:bg-slate-100">
+                          {EVENTOS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+                        </select>
+                        <p className="mt-1 text-xs leading-5 text-slate-500">{EVENTOS.find((item) => item.value === tipoEvento)?.ayuda}</p>
+                      </div>
+
+                      <div>
+                        <label className="mb-1.5 block text-sm font-bold text-slate-700">Certeza</label>
+                        <select value={certeza} onChange={(event) => setCerteza(event.target.value as NivelCerteza)} disabled={sesion.estado !== 'en_curso'} className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 disabled:bg-slate-100">
+                          {CERTEZAS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="mb-1.5 block text-sm font-bold text-slate-700">Registro original *</label>
+                        <textarea ref={textoRef} value={texto} onChange={(event) => setTexto(event.target.value)} disabled={sesion.estado !== 'en_curso'} rows={4} placeholder="Ej.: Se detecta juego radial en rodamiento lado motor." className="w-full rounded-xl border border-slate-300 bg-white px-3 py-3 text-sm text-slate-900 outline-none focus:border-[#163A5F] disabled:bg-slate-100" />
+                      </div>
+
+                      <details className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                        <summary className="cursor-pointer text-sm font-bold text-slate-700">Campos técnicos opcionales</summary>
+                        <div className="mt-4 space-y-4">
+                          <div>
+                            <label className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-slate-500">Componente</label>
+                            <input value={componente} onChange={(event) => setComponente(event.target.value)} disabled={sesion.estado !== 'en_curso'} placeholder="Rodamiento, PLC, mordaza H..." className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 disabled:bg-slate-100" />
+                          </div>
+                          <div>
+                            <label className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-slate-500">Redacción técnica</label>
+                            <textarea value={descripcionTecnica} onChange={(event) => setDescripcionTecnica(event.target.value)} disabled={sesion.estado !== 'en_curso'} rows={3} placeholder="Más adelante la IA podrá proponer esta redacción sin alterar el registro original." className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 disabled:bg-slate-100" />
+                          </div>
+                          {(tipoEvento === 'recomendacion' || tipoEvento === 'pendiente') ? (
+                            <div>
+                              <label className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-slate-500">Prioridad</label>
+                              <select value={prioridad} onChange={(event) => setPrioridad(event.target.value as Prioridad)} disabled={sesion.estado !== 'en_curso'} className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 disabled:bg-slate-100">
+                                <option value="baja">Baja</option><option value="media">Media</option><option value="alta">Alta</option><option value="critica">Crítica</option>
+                              </select>
+                            </div>
+                          ) : null}
+                          <label className="flex items-center gap-3 text-sm text-slate-700"><input type="checkbox" checked={incluirOt} onChange={(event) => setIncluirOt(event.target.checked)} disabled={sesion.estado !== 'en_curso'} /> Incluir en borrador de OT</label>
+                          <label className="flex items-center gap-3 text-sm text-slate-700"><input type="checkbox" checked={visibleCliente} onChange={(event) => setVisibleCliente(event.target.checked)} disabled={sesion.estado !== 'en_curso'} /> Información visible para cliente</label>
+                        </div>
+                      </details>
+
+                      <button type="button" onClick={agregarEvento} disabled={sesion.estado !== 'en_curso' || !texto.trim()} className="w-full rounded-xl bg-[#163A5F] px-4 py-3 text-sm font-black text-white hover:bg-[#245C90] disabled:cursor-not-allowed disabled:opacity-50">
+                        Registrar evento
+                      </button>
+                    </div>
+                  </section>
+
+                  <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Cronología</p>
+                        <h2 className="mt-1 text-lg font-black text-slate-900">Eventos técnicos</h2>
+                      </div>
+                      <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-600">{sesion.eventos.length}</span>
+                    </div>
+
+                    {sesion.eventos.length === 0 ? (
+                      <div className="mt-5 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
+                        Todavía no hay eventos. Registra el primer hallazgo, medición, hipótesis o acción.
+                      </div>
+                    ) : (
+                      <div className="mt-5 space-y-3">
+                        {[...sesion.eventos].reverse().map((evento) => (
+                          <article key={evento.id} className="rounded-2xl border border-slate-200 p-4">
+                            <div className="flex flex-wrap items-start justify-between gap-3">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="text-sm font-black text-slate-900">{localTime(evento.ocurrido_at)} · {eventLabel(evento.tipo_evento)}</span>
+                                <span className={`rounded-full border px-2.5 py-1 text-[11px] font-black tracking-wide ${certaintyClass(evento.nivel_certeza)}`}>{evento.nivel_certeza.toUpperCase()}</span>
+                                {evento.prioridad ? <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-black uppercase text-amber-700">{evento.prioridad}</span> : null}
+                              </div>
+                              <button type="button" onClick={() => eliminarEvento(evento.id)} className="text-xs font-bold text-red-600 hover:text-red-800">Eliminar</button>
+                            </div>
+                            {evento.componente ? <p className="mt-2 text-xs font-bold uppercase tracking-wide text-slate-500">{evento.componente}</p> : null}
+                            <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-800">{evento.texto_original}</p>
+                            {evento.descripcion_tecnica ? (
+                              <div className="mt-3 rounded-xl bg-slate-50 px-3 py-2.5 text-sm text-slate-700"><strong>Redacción técnica:</strong> {evento.descripcion_tecnica}</div>
+                            ) : null}
+                            <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-bold text-slate-500">
+                              {evento.incluir_ot ? <span className="rounded-full bg-slate-100 px-2 py-1">Incluye OT</span> : <span className="rounded-full bg-slate-100 px-2 py-1">Solo interno</span>}
+                              {evento.visible_cliente ? <span className="rounded-full bg-blue-50 px-2 py-1 text-blue-700">Visible cliente</span> : <span className="rounded-full bg-slate-100 px-2 py-1">Interno RMSIC</span>}
+                            </div>
+                          </article>
+                        ))}
+                      </div>
+                    )}
+                  </section>
+                </div>
               </div>
             ) : (
               <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
