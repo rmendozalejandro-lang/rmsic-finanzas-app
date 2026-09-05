@@ -181,15 +181,17 @@ export default function OTVivaHypothesisQuickActions() {
 
   if (pathname.endsWith('/relaciones') || !store || hipotesis.length === 0) return null
 
+  const abiertas = hipotesis.filter((h) => estadoHipotesis(h.id) === 'abierta').length
+
   return (
     <section className="mx-auto max-w-6xl rounded-2xl border border-violet-200 bg-violet-50 p-5 shadow-sm">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <p className="text-xs font-black uppercase tracking-wide text-violet-600">Hipótesis activas</p>
+          <p className="text-xs font-black uppercase tracking-wide text-violet-600">Hipótesis técnicas</p>
           <h2 className="mt-1 text-lg font-black text-slate-900">Validación rápida desde terreno</h2>
           <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-600">Selecciona la evidencia que sustenta tu decisión y confirma o descarta la hipótesis sin salir del registro de terreno.</p>
         </div>
-        <span className="rounded-full border border-violet-200 bg-white px-3 py-1 text-xs font-black text-violet-700">{hipotesis.filter((h) => estadoHipotesis(h.id) === 'abierta').length} ABIERTAS</span>
+        <span className="rounded-full border border-violet-200 bg-white px-3 py-1 text-xs font-black text-violet-700">{abiertas} ABIERTAS · {hipotesis.length} TOTAL</span>
       </div>
 
       <div className="mt-4 space-y-3">
