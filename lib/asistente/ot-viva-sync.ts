@@ -1,4 +1,4 @@
-export type EstadoSesionLocal = 'en_curso' | 'pausada' | 'finalizada'
+export type EstadoSesionLocal = 'en_curso' | 'pausada' | 'interrumpida' | 'finalizada'
 export type EstadoSyncLocal = 'local' | 'pendiente_sync' | 'sincronizada' | 'error'
 
 export type EventoOTVivaLocal = {
@@ -20,6 +20,9 @@ export type SesionOTVivaLocal = {
   estado_sync: EstadoSyncLocal
   iniciado_at: string
   finalizado_at: string | null
+  motivo_pausa?: string | null
+  interrumpido_at?: string | null
+  reanudado_at?: string | null
   eventos: EventoOTVivaLocal[]
 }
 
@@ -59,18 +62,21 @@ export type VinculoOTSeed = {
 export type SesionAsistenteSeed = {
   empresa_id: string
   modo: 'ot_terreno'
-  estado: 'en_curso' | 'pausada' | 'finalizada'
+  estado: 'en_curso' | 'pausada' | 'interrumpida' | 'finalizada'
   origen_interfaz: 'movil' | 'web' | 'offline_sync'
   iniciado_por: string
   finalizado_por: string | null
   iniciado_at: string
   ultima_actividad_at: string
   finalizado_at: string | null
+  motivo_pausa: string | null
   checkpoint: Record<string, unknown>
   datos: {
     origen_modulo: 'ot'
     ot_id: string
     local_session_id: string
+    interrumpido_at?: string | null
+    reanudado_at?: string | null
   }
 }
 
@@ -120,7 +126,7 @@ function textoInicial(contexto: ContextoOTParaSync) {
 
 function ultimaActividad(sesion: SesionOTVivaLocal) {
   const ultima = sesion.eventos.at(-1)?.ocurrido_at
-  return ultima ?? sesion.finalizado_at ?? sesion.iniciado_at
+  return sesion.reanudado_at ?? sesion.interrumpido_at ?? ultima ?? sesion.finalizado_at ?? sesion.iniciado_at
 }
 
 function checkpointBasico(sesion: SesionOTVivaLocal) {
@@ -136,6 +142,10 @@ function checkpointBasico(sesion: SesionOTVivaLocal) {
     .map((evento) => ({ id: evento.id, tipo: evento.tipo_evento, texto: evento.texto_original }))
 
   return {
+    estado_sesion: sesion.estado,
+    motivo_pausa: sesion.motivo_pausa ?? null,
+    interrumpido_at: sesion.interrumpido_at ?? null,
+    reanudado_at: sesion.reanudado_at ?? null,
     ultimo_evento: ultimo ? {
       id: ultimo.id,
       tipo: ultimo.tipo_evento,
@@ -163,8 +173,6 @@ export function construirPlanSyncOTViva(
       tipo_caso: 'ot_terreno',
       titulo: contexto.titulo,
       descripcion_inicial: textoInicial(contexto),
-      // Finalizar una sesion de terreno no significa cerrar el caso tecnico.
-      // El cierre del caso debe ser una decision explicita posterior.
       estado: 'en_ejecucion',
       origen: 'ot',
       responsable_id: contexto.usuario_id,
@@ -191,11 +199,14 @@ export function construirPlanSyncOTViva(
         iniciado_at: sesion.iniciado_at,
         ultima_actividad_at: ultimaActividad(sesion),
         finalizado_at: sesion.finalizado_at,
+        motivo_pausa: sesion.motivo_pausa ?? null,
         checkpoint: checkpointBasico(sesion),
         datos: {
           origen_modulo: 'ot',
           ot_id: contexto.ot_id,
           local_session_id: sesion.id,
+          interrumpido_at: sesion.interrumpido_at ?? null,
+          reanudado_at: sesion.reanudado_at ?? null,
         },
       },
       eventos: sesion.eventos.map((evento) => ({
