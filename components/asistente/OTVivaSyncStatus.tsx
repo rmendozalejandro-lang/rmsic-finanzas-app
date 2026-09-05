@@ -3,7 +3,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'next/navigation'
 import SyncStatusCard from '@/components/asistente/SyncStatusCard'
-import { construirPlanSyncOTViva, type SesionOTVivaLocal } from '@/lib/asistente/ot-viva-sync'
+import {
+  construirPlanSyncOTViva,
+  type RelacionOTVivaLocal,
+  type SesionOTVivaLocal,
+} from '@/lib/asistente/ot-viva-sync'
 import { sincronizarPlanOTVivaSupabase } from '@/lib/asistente/ot-viva-sync-supabase'
 import { guardarOTVivaIndexedDB, leerOTVivaIndexedDB } from '@/lib/offline/ot-viva-indexeddb'
 import { supabase } from '@/lib/supabase/client'
@@ -23,11 +27,24 @@ type EventoLocal = {
 
 type SesionLocal = {
   id: string
-  estado: 'en_curso' | 'pausada' | 'finalizada'
+  estado: 'en_curso' | 'pausada' | 'interrumpida' | 'finalizada'
   estado_sync: 'local' | 'pendiente_sync' | 'sincronizada' | 'error'
   iniciado_at: string
   finalizado_at: string | null
+  motivo_pausa?: string | null
+  interrumpido_at?: string | null
+  reanudado_at?: string | null
   eventos: EventoLocal[]
+}
+
+type RelacionLocal = {
+  id: string
+  evento_origen_id: string
+  evento_destino_id: string
+  tipo_relacion: string
+  observacion?: string | null
+  created_at: string
+  estado_sync?: 'local' | 'pendiente_sync' | 'sincronizada' | 'error'
 }
 
 type StoreV2 = {
@@ -35,6 +52,7 @@ type StoreV2 = {
   sesiones: SesionLocal[]
   sesion_activa_id: string | null
   sesion_seleccionada_id: string | null
+  relaciones?: RelacionLocal[]
   updated_at: string
 }
 
@@ -56,6 +74,7 @@ function storeVacio(): StoreV2 {
     sesiones: [],
     sesion_activa_id: null,
     sesion_seleccionada_id: null,
+    relaciones: [],
     updated_at: new Date().toISOString(),
   }
 }
@@ -65,7 +84,7 @@ function parseStore(raw: string): StoreV2 {
   if (parsed.version !== 2 || !Array.isArray(parsed.sesiones)) {
     throw new Error('Formato local OT Viva no reconocido.')
   }
-  return parsed
+  return { ...parsed, relaciones: Array.isArray(parsed.relaciones) ? parsed.relaciones : [] }
 }
 
 export default function OTVivaSyncStatus() {
@@ -197,10 +216,16 @@ export default function OTVivaSyncStatus() {
 
   const resumen = useMemo(() => {
     const sesiones = store.sesiones ?? []
+    const relaciones = store.relaciones ?? []
+    const sesionesPendientes = sesiones.filter((sesion) => sesion.estado_sync !== 'sincronizada').length
+    const relacionesPendientes = relaciones.filter((relacion) => relacion.estado_sync !== 'sincronizada').length
     return {
       sesiones: sesiones.length,
       eventos: sesiones.reduce((total, sesion) => total + (sesion.eventos?.length ?? 0), 0),
-      pendientesSync: sesiones.filter((sesion) => sesion.estado_sync !== 'sincronizada').length,
+      relaciones: relaciones.length,
+      sesionesPendientes,
+      relacionesPendientes,
+      pendientesSync: sesionesPendientes + relacionesPendientes,
     }
   }, [store])
 
@@ -208,6 +233,7 @@ export default function OTVivaSyncStatus() {
     if (!contextoOT || !userId) return
     const normalized: StoreV2 = {
       ...next,
+      relaciones: next.relaciones ?? [],
       version: 2,
       updated_at: new Date().toISOString(),
     }
@@ -224,11 +250,13 @@ export default function OTVivaSyncStatus() {
   const sincronizar = async () => {
     if (!contextoOT || !userId || resumen.pendientesSync === 0 || sincronizando) return
 
+    const relacionesPendientes = (store.relaciones ?? []).filter((relacion) => relacion.estado_sync !== 'sincronizada')
     const sesionesPendientes = store.sesiones.filter((sesion) => sesion.estado_sync !== 'sincronizada')
-    const totalEventos = sesionesPendientes.reduce((total, sesion) => total + sesion.eventos.length, 0)
+    const sesionesParaPlan = relacionesPendientes.length > 0 ? store.sesiones : sesionesPendientes
+    const totalEventos = sesionesParaPlan.reduce((total, sesion) => total + sesion.eventos.length, 0)
 
     const confirmado = window.confirm(
-      `Se sincronizarán ${sesionesPendientes.length} sesión(es) y ${totalEventos} evento(s) con Tralixia. Los datos locales se conservarán. ¿Continuar?`,
+      `Se sincronizarán ${sesionesParaPlan.length} sesión(es), ${totalEventos} evento(s) y ${relacionesPendientes.length} relación(es) técnica(s) con Tralixia. Los datos locales se conservarán. ¿Continuar?`,
     )
     if (!confirmado) return
 
@@ -239,9 +267,14 @@ export default function OTVivaSyncStatus() {
     persistirStore({
       ...store,
       sesiones: store.sesiones.map((sesion) =>
-        sesion.estado_sync === 'sincronizada'
-          ? sesion
-          : { ...sesion, estado_sync: 'pendiente_sync' as const },
+        sesionesParaPlan.some((item) => item.id === sesion.id) && sesion.estado_sync !== 'sincronizada'
+          ? { ...sesion, estado_sync: 'pendiente_sync' as const }
+          : sesion,
+      ),
+      relaciones: (store.relaciones ?? []).map((relacion) =>
+        relacion.estado_sync === 'sincronizada'
+          ? relacion
+          : { ...relacion, estado_sync: 'pendiente_sync' as const },
       ),
     })
 
@@ -256,30 +289,51 @@ export default function OTVivaSyncStatus() {
           problema_reportado: contextoOT.problema_reportado,
           usuario_id: userId,
         },
-        sesionesPendientes as SesionOTVivaLocal[],
+        sesionesParaPlan as SesionOTVivaLocal[],
+        relacionesPendientes as RelacionOTVivaLocal[],
       )
 
       const resultado = await sincronizarPlanOTVivaSupabase(supabase, plan)
-      const syncedIds = new Set(sesionesPendientes.map((sesion) => sesion.id))
+      const syncedSessionIds = new Set(sesionesParaPlan.map((sesion) => sesion.id))
+      const syncedRelationIds = new Set(relacionesPendientes.map((relacion) => relacion.id))
+
+      const key = storageKeyV2(contextoOT.empresa_id, otId, userId)
+      const rawActual = window.localStorage.getItem(key)
+      const base = rawActual ? parseStore(rawActual) : store
 
       persistirStore({
-        ...store,
-        sesiones: store.sesiones.map((sesion) =>
-          syncedIds.has(sesion.id)
+        ...base,
+        sesiones: base.sesiones.map((sesion) =>
+          syncedSessionIds.has(sesion.id)
             ? { ...sesion, estado_sync: 'sincronizada' as const }
             : sesion,
         ),
+        relaciones: (base.relaciones ?? []).map((relacion) =>
+          syncedRelationIds.has(relacion.id)
+            ? { ...relacion, estado_sync: 'sincronizada' as const }
+            : relacion,
+        ),
       })
 
-      setMensaje(`Sincronización completada: ${resultado.sesiones_procesadas} sesión(es) y ${resultado.eventos_procesados} evento(s).${offlineProtegido ? ' Respaldo offline activo.' : ''}`)
+      setMensaje(`Sincronización completada: ${resultado.sesiones_procesadas} sesión(es), ${resultado.eventos_procesados} evento(s) y ${resultado.relaciones_procesadas} relación(es).${offlineProtegido ? ' Respaldo offline activo.' : ''}`)
     } catch (err) {
-      const failedIds = new Set(sesionesPendientes.map((sesion) => sesion.id))
+      const key = storageKeyV2(contextoOT.empresa_id, otId, userId)
+      const rawActual = window.localStorage.getItem(key)
+      const base = rawActual ? parseStore(rawActual) : store
+      const failedSessionIds = new Set(sesionesParaPlan.map((sesion) => sesion.id))
+      const failedRelationIds = new Set(relacionesPendientes.map((relacion) => relacion.id))
+
       persistirStore({
-        ...store,
-        sesiones: store.sesiones.map((sesion) =>
-          failedIds.has(sesion.id)
+        ...base,
+        sesiones: base.sesiones.map((sesion) =>
+          failedSessionIds.has(sesion.id) && sesion.estado_sync !== 'sincronizada'
             ? { ...sesion, estado_sync: 'error' as const }
             : sesion,
+        ),
+        relaciones: (base.relaciones ?? []).map((relacion) =>
+          failedRelationIds.has(relacion.id)
+            ? { ...relacion, estado_sync: 'error' as const }
+            : relacion,
         ),
       })
       setErrorSync(err instanceof Error ? err.message : 'La sincronización falló. Los datos locales permanecen intactos.')
@@ -295,7 +349,7 @@ export default function OTVivaSyncStatus() {
         eventos={resumen.eventos}
         pendientesSync={resumen.pendientesSync}
         sincronizando={sincronizando}
-        mensaje={mensaje || (offlineProtegido ? 'Respaldo offline protegido activo en este dispositivo.' : '')}
+        mensaje={mensaje || (offlineProtegido ? `Respaldo offline protegido activo. ${resumen.relaciones} relación(es) técnica(s) local(es).` : '')}
         errorSync={errorSync}
         onSync={sincronizar}
       />
