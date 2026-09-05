@@ -3,17 +3,46 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'next/navigation'
 import SyncStatusCard from '@/components/asistente/SyncStatusCard'
+import { construirPlanSyncOTViva, type SesionOTVivaLocal } from '@/lib/asistente/ot-viva-sync'
+import { sincronizarPlanOTVivaSupabase } from '@/lib/asistente/ot-viva-sync-supabase'
 import { supabase } from '@/lib/supabase/client'
 
-type EventoLocal = { id?: string }
-type SesionLocal = {
-  id?: string
-  estado_sync?: 'local' | 'pendiente_sync' | 'sincronizada' | 'error'
-  eventos?: EventoLocal[]
+type EventoLocal = {
+  id: string
+  tipo_evento: string
+  nivel_certeza: string
+  texto_original: string
+  descripcion_tecnica?: string
+  componente?: string
+  prioridad?: 'baja' | 'media' | 'alta' | 'critica' | null
+  visible_cliente?: boolean
+  incluir_ot?: boolean
+  ocurrido_at: string
 }
+
+type SesionLocal = {
+  id: string
+  estado: 'en_curso' | 'pausada' | 'finalizada'
+  estado_sync: 'local' | 'pendiente_sync' | 'sincronizada' | 'error'
+  iniciado_at: string
+  finalizado_at: string | null
+  eventos: EventoLocal[]
+}
+
 type StoreV2 = {
-  version?: number
-  sesiones?: SesionLocal[]
+  version: 2
+  sesiones: SesionLocal[]
+  sesion_activa_id: string | null
+  sesion_seleccionada_id: string | null
+  updated_at: string
+}
+
+type ContextoOT = {
+  empresa_id: string
+  cliente_id: string
+  titulo: string
+  descripcion_solicitud: string | null
+  problema_reportado: string | null
 }
 
 function storageKeyV2(empresaId: string, otId: string, userId: string) {
@@ -23,7 +52,18 @@ function storageKeyV2(empresaId: string, otId: string, userId: string) {
 export default function OTVivaSyncStatus() {
   const params = useParams<{ id: string }>()
   const otId = params?.id || ''
-  const [store, setStore] = useState<StoreV2>({ sesiones: [] })
+  const [store, setStore] = useState<StoreV2>({
+    version: 2,
+    sesiones: [],
+    sesion_activa_id: null,
+    sesion_seleccionada_id: null,
+    updated_at: new Date().toISOString(),
+  })
+  const [userId, setUserId] = useState('')
+  const [contextoOT, setContextoOT] = useState<ContextoOT | null>(null)
+  const [sincronizando, setSincronizando] = useState(false)
+  const [mensaje, setMensaje] = useState('')
+  const [errorSync, setErrorSync] = useState('')
 
   useEffect(() => {
     let mounted = true
@@ -32,22 +72,43 @@ export default function OTVivaSyncStatus() {
       if (!otId) return
 
       const { data: authData } = await supabase.auth.getUser()
-      const userId = authData.user?.id
-      if (!userId) return
+      const currentUserId = authData.user?.id
+      if (!currentUserId) return
 
       const { data: ot } = await supabase
         .from('ot_ordenes_trabajo')
-        .select('empresa_id')
+        .select('empresa_id, cliente_id, titulo, descripcion_solicitud, problema_reportado')
         .eq('id', otId)
         .maybeSingle()
 
-      const empresaId = ot?.empresa_id as string | undefined
-      if (!empresaId) return
+      if (!ot?.empresa_id || !ot.cliente_id) return
+
+      const empresaId = ot.empresa_id as string
+      const key = storageKeyV2(empresaId, otId, currentUserId)
+
+      if (mounted) {
+        setUserId(currentUserId)
+        setContextoOT({
+          empresa_id: empresaId,
+          cliente_id: ot.cliente_id as string,
+          titulo: (ot.titulo as string) || 'OT sin título',
+          descripcion_solicitud: (ot.descripcion_solicitud as string | null) ?? null,
+          problema_reportado: (ot.problema_reportado as string | null) ?? null,
+        })
+      }
 
       const leer = () => {
-        const raw = window.localStorage.getItem(storageKeyV2(empresaId, otId, userId))
+        const raw = window.localStorage.getItem(key)
         if (!raw) {
-          if (mounted) setStore({ sesiones: [] })
+          if (mounted) {
+            setStore({
+              version: 2,
+              sesiones: [],
+              sesion_activa_id: null,
+              sesion_seleccionada_id: null,
+              updated_at: new Date().toISOString(),
+            })
+          }
           return
         }
 
@@ -55,14 +116,14 @@ export default function OTVivaSyncStatus() {
           const parsed = JSON.parse(raw) as StoreV2
           if (mounted) setStore(parsed)
         } catch {
-          if (mounted) setStore({ sesiones: [] })
+          if (mounted) setErrorSync('No se pudo leer el historial local de esta OT.')
         }
       }
 
       leer()
 
       const onStorage = (event: StorageEvent) => {
-        if (event.key === storageKeyV2(empresaId, otId, userId)) leer()
+        if (event.key === key) leer()
       }
       const onLocalUpdate = () => leer()
 
@@ -93,12 +154,97 @@ export default function OTVivaSyncStatus() {
     }
   }, [store])
 
+  const persistirStore = (next: StoreV2) => {
+    if (!contextoOT || !userId) return
+    const normalized: StoreV2 = {
+      ...next,
+      version: 2,
+      updated_at: new Date().toISOString(),
+    }
+    window.localStorage.setItem(storageKeyV2(contextoOT.empresa_id, otId, userId), JSON.stringify(normalized))
+    setStore(normalized)
+    window.dispatchEvent(new Event('tralixia:ot-viva-local-updated'))
+  }
+
+  const sincronizar = async () => {
+    if (!contextoOT || !userId || resumen.pendientesSync === 0 || sincronizando) return
+
+    const sesionesPendientes = store.sesiones.filter((sesion) => sesion.estado_sync !== 'sincronizada')
+    const totalEventos = sesionesPendientes.reduce((total, sesion) => total + sesion.eventos.length, 0)
+
+    const confirmado = window.confirm(
+      `Se sincronizarán ${sesionesPendientes.length} sesión(es) y ${totalEventos} evento(s) con Tralixia. Los datos locales se conservarán. ¿Continuar?`,
+    )
+    if (!confirmado) return
+
+    setSincronizando(true)
+    setMensaje('')
+    setErrorSync('')
+
+    persistirStore({
+      ...store,
+      sesiones: store.sesiones.map((sesion) =>
+        sesion.estado_sync === 'sincronizada'
+          ? sesion
+          : { ...sesion, estado_sync: 'pendiente_sync' as const },
+      ),
+    })
+
+    try {
+      const plan = construirPlanSyncOTViva(
+        {
+          empresa_id: contextoOT.empresa_id,
+          cliente_id: contextoOT.cliente_id,
+          ot_id: otId,
+          titulo: contextoOT.titulo,
+          descripcion_inicial: contextoOT.descripcion_solicitud,
+          problema_reportado: contextoOT.problema_reportado,
+          usuario_id: userId,
+        },
+        sesionesPendientes as SesionOTVivaLocal[],
+      )
+
+      const resultado = await sincronizarPlanOTVivaSupabase(supabase, plan)
+
+      const syncedIds = new Set(sesionesPendientes.map((sesion) => sesion.id))
+      const next: StoreV2 = {
+        ...store,
+        sesiones: store.sesiones.map((sesion) =>
+          syncedIds.has(sesion.id)
+            ? { ...sesion, estado_sync: 'sincronizada' as const }
+            : sesion,
+        ),
+        version: 2,
+        updated_at: new Date().toISOString(),
+      }
+      persistirStore(next)
+      setMensaje(`Sincronización completada: ${resultado.sesiones_procesadas} sesión(es) y ${resultado.eventos_procesados} evento(s).`)
+    } catch (err) {
+      const failedIds = new Set(sesionesPendientes.map((sesion) => sesion.id))
+      persistirStore({
+        ...store,
+        sesiones: store.sesiones.map((sesion) =>
+          failedIds.has(sesion.id)
+            ? { ...sesion, estado_sync: 'error' as const }
+            : sesion,
+        ),
+      })
+      setErrorSync(err instanceof Error ? err.message : 'La sincronización falló. Los datos locales permanecen intactos.')
+    } finally {
+      setSincronizando(false)
+    }
+  }
+
   return (
     <div className="mx-auto max-w-6xl px-0 pb-0">
       <SyncStatusCard
         sesiones={resumen.sesiones}
         eventos={resumen.eventos}
         pendientesSync={resumen.pendientesSync}
+        sincronizando={sincronizando}
+        mensaje={mensaje}
+        errorSync={errorSync}
+        onSync={sincronizar}
       />
     </div>
   )
