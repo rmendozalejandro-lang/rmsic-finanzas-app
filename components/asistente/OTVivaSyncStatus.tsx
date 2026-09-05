@@ -166,15 +166,23 @@ export default function OTVivaSyncStatus() {
         if (event.key === key) leerYRespaldar()
       }
       const onLocalUpdate = () => leerYRespaldar()
-      const intervalId = window.setInterval(leerYRespaldar, 1000)
+      const onPageHide = () => leerYRespaldar()
+      const onVisibilityChange = () => {
+        if (document.visibilityState === 'hidden') leerYRespaldar()
+      }
+      const intervalId = window.setInterval(leerYRespaldar, 250)
 
       window.addEventListener('storage', onStorage)
       window.addEventListener('tralixia:ot-viva-local-updated', onLocalUpdate)
+      window.addEventListener('pagehide', onPageHide)
+      document.addEventListener('visibilitychange', onVisibilityChange)
 
       return () => {
         window.clearInterval(intervalId)
         window.removeEventListener('storage', onStorage)
         window.removeEventListener('tralixia:ot-viva-local-updated', onLocalUpdate)
+        window.removeEventListener('pagehide', onPageHide)
+        document.removeEventListener('visibilitychange', onVisibilityChange)
       }
     }
 
