@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useParams, usePathname } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 
@@ -33,6 +33,66 @@ type OTInfo = {
 
 function storageKeyV2(empresaId: string, otId: string, userId: string) {
   return `tralixia_ot_viva_local_v2_${empresaId}_${otId}_${userId}`
+}
+
+function renderInline(texto: string): ReactNode[] {
+  const partes = texto.split(/(\*\*[^*]+\*\*)/g)
+  return partes.filter(Boolean).map((parte, index) => {
+    if (parte.startsWith('**') && parte.endsWith('**')) {
+      return <strong key={index} className="font-black text-slate-900">{parte.slice(2, -2)}</strong>
+    }
+    return <Fragment key={index}>{parte}</Fragment>
+  })
+}
+
+function RespuestaFormateada({ texto }: { texto: string }) {
+  const lineas = texto.split(/\r?\n/)
+  const bloques: ReactNode[] = []
+  let lista: string[] = []
+
+  const vaciarLista = () => {
+    if (!lista.length) return
+    bloques.push(
+      <ul key={`lista-${bloques.length}`} className="my-2 list-disc space-y-1 pl-5 text-sm leading-6 text-slate-800">
+        {lista.map((item, index) => <li key={index}>{renderInline(item)}</li>)}
+      </ul>,
+    )
+    lista = []
+  }
+
+  lineas.forEach((linea, index) => {
+    const limpia = linea.trim()
+    if (!limpia) {
+      vaciarLista()
+      return
+    }
+
+    if (/^[-*]\s+/.test(limpia)) {
+      lista.push(limpia.replace(/^[-*]\s+/, ''))
+      return
+    }
+
+    vaciarLista()
+
+    const heading = limpia.match(/^(#{1,4})\s+(.*)$/)
+    if (heading) {
+      bloques.push(
+        <h3 key={`h-${index}`} className="mb-1 mt-4 text-sm font-black text-slate-950 first:mt-0">
+          {renderInline(heading[2])}
+        </h3>,
+      )
+      return
+    }
+
+    bloques.push(
+      <p key={`p-${index}`} className="my-1 text-sm leading-6 text-slate-800">
+        {renderInline(limpia)}
+      </p>,
+    )
+  })
+
+  vaciarLista()
+  return <div>{bloques}</div>
 }
 
 export default function OTVivaAssistantPanel() {
@@ -196,7 +256,7 @@ export default function OTVivaAssistantPanel() {
           >
             {cargando ? 'Analizando…' : 'Consultar asistente'}
           </button>
-          <button type="button" onClick={() => setPregunta('¿Qué hechos están confirmados, qué hipótesis siguen abiertas y cuál sería la próxima prueba más segura?')} className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-xs font-black text-slate-700 hover:bg-slate-50">Usar pregunta sugerida</button>
+          <button type="button" onClick={() => setPregunta('Distingue estrictamente lo registrado en Tralixia de tu interpretación. Indica qué está observado, medido o informado, qué hipótesis siguen abiertas y qué evidencia falta.')} className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-xs font-black text-slate-700 hover:bg-slate-50">Usar pregunta sugerida</button>
         </div>
       </div>
 
@@ -204,7 +264,7 @@ export default function OTVivaAssistantPanel() {
       {respuesta ? (
         <div className="mt-4 rounded-xl border border-violet-200 bg-violet-50 p-4">
           <p className="text-xs font-black uppercase tracking-wide text-violet-600">Respuesta del asistente</p>
-          <div className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-800">{respuesta}</div>
+          <div className="mt-2"><RespuestaFormateada texto={respuesta} /></div>
         </div>
       ) : null}
     </section>
