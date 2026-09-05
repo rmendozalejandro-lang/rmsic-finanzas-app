@@ -148,6 +148,7 @@ export default function OTVivaSyncStatus() {
               setMensaje('Historial local recuperado desde almacenamiento offline protegido.')
             }
             window.dispatchEvent(new Event('tralixia:ot-viva-local-updated'))
+            window.setTimeout(() => window.location.reload(), 80)
           } else if (mounted) {
             setStore(storeVacio())
           }
@@ -165,7 +166,7 @@ export default function OTVivaSyncStatus() {
         if (event.key === key) leerYRespaldar()
       }
       const onLocalUpdate = () => leerYRespaldar()
-      const intervalId = window.setInterval(() => { void leerLocal() }, 1500)
+      const intervalId = window.setInterval(leerYRespaldar, 1000)
 
       window.addEventListener('storage', onStorage)
       window.addEventListener('tralixia:ot-viva-local-updated', onLocalUpdate)
