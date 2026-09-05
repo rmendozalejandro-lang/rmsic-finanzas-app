@@ -5,6 +5,7 @@ export type ResultadoSyncOTViva = {
   caso_id: string
   sesiones_procesadas: number
   eventos_procesados: number
+  relaciones_procesadas: number
 }
 
 const ORIGEN_EXTERNO = 'ot_viva_local'
@@ -40,11 +41,7 @@ async function upsertCaso(supabase: SupabaseClient, plan: PlanSyncOTViva) {
   return data.id as string
 }
 
-async function asegurarVinculoOT(
-  supabase: SupabaseClient,
-  plan: PlanSyncOTViva,
-  casoId: string,
-) {
+async function asegurarVinculoOT(supabase: SupabaseClient, plan: PlanSyncOTViva, casoId: string) {
   const { error } = await supabase
     .from('asistente_caso_ots')
     .upsert({
@@ -97,13 +94,36 @@ async function upsertEvento(
     updated_by: plan.contexto.usuario_id,
   }
 
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('asistente_eventos')
     .upsert(payload, { onConflict: 'empresa_id,origen_externo,clave_externa' })
+    .select('id')
+    .single()
 
-  if (error) {
-    throw new Error(`No se pudo sincronizar el evento ${eventoPlan.local_event_id}: ${error.message}`)
+  if (error) throw new Error(`No se pudo sincronizar el evento ${eventoPlan.local_event_id}: ${error.message}`)
+  if (!data?.id) throw new Error(`El evento ${eventoPlan.local_event_id} no devolvió un identificador.`)
+  return data.id as string
+}
+
+async function upsertRelacion(
+  supabase: SupabaseClient,
+  casoId: string,
+  sourceEventId: string,
+  targetEventId: string,
+  relacionPlan: PlanSyncOTViva['relaciones'][number],
+) {
+  const payload = {
+    ...relacionPlan.relacion,
+    caso_id: casoId,
+    evento_origen_id: sourceEventId,
+    evento_destino_id: targetEventId,
   }
+
+  const { error } = await supabase
+    .from('asistente_evento_relaciones')
+    .upsert(payload, { onConflict: 'evento_origen_id,evento_destino_id,tipo_relacion' })
+
+  if (error) throw new Error(`No se pudo sincronizar la relación ${relacionPlan.local_relation_id}: ${error.message}`)
 }
 
 export async function sincronizarPlanOTVivaSupabase(
@@ -119,12 +139,13 @@ export async function sincronizarPlanOTVivaSupabase(
   await asegurarVinculoOT(supabase, plan, casoId)
 
   let eventosProcesados = 0
+  const eventIdMap = new Map<string, string>()
 
   for (const sesionPlan of plan.sesiones) {
     const sesionId = await upsertSesion(supabase, plan, casoId, sesionPlan)
 
     for (const eventoPlan of sesionPlan.eventos) {
-      await upsertEvento(
+      const eventId = await upsertEvento(
         supabase,
         plan,
         casoId,
@@ -132,13 +153,25 @@ export async function sincronizarPlanOTVivaSupabase(
         sesionPlan.local_session_id,
         eventoPlan,
       )
+      eventIdMap.set(eventoPlan.local_event_id, eventId)
       eventosProcesados += 1
     }
+  }
+
+  let relacionesProcesadas = 0
+  for (const relacionPlan of plan.relaciones ?? []) {
+    const sourceEventId = eventIdMap.get(relacionPlan.local_source_event_id)
+    const targetEventId = eventIdMap.get(relacionPlan.local_target_event_id)
+    if (!sourceEventId || !targetEventId) continue
+
+    await upsertRelacion(supabase, casoId, sourceEventId, targetEventId, relacionPlan)
+    relacionesProcesadas += 1
   }
 
   return {
     caso_id: casoId,
     sesiones_procesadas: plan.sesiones.length,
     eventos_procesados: eventosProcesados,
+    relaciones_procesadas: relacionesProcesadas,
   }
 }
