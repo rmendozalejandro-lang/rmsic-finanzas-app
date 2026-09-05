@@ -49,16 +49,20 @@ function storageKeyV2(empresaId: string, otId: string, userId: string) {
   return `tralixia_ot_viva_local_v2_${empresaId}_${otId}_${userId}`
 }
 
-export default function OTVivaSyncStatus() {
-  const params = useParams<{ id: string }>()
-  const otId = params?.id || ''
-  const [store, setStore] = useState<StoreV2>({
+function storeVacio(): StoreV2 {
+  return {
     version: 2,
     sesiones: [],
     sesion_activa_id: null,
     sesion_seleccionada_id: null,
     updated_at: new Date().toISOString(),
-  })
+  }
+}
+
+export default function OTVivaSyncStatus() {
+  const params = useParams<{ id: string }>()
+  const otId = params?.id || ''
+  const [store, setStore] = useState<StoreV2>(storeVacio)
   const [userId, setUserId] = useState('')
   const [contextoOT, setContextoOT] = useState<ContextoOT | null>(null)
   const [sincronizando, setSincronizando] = useState(false)
@@ -100,15 +104,7 @@ export default function OTVivaSyncStatus() {
       const leer = () => {
         const raw = window.localStorage.getItem(key)
         if (!raw) {
-          if (mounted) {
-            setStore({
-              version: 2,
-              sesiones: [],
-              sesion_activa_id: null,
-              sesion_seleccionada_id: null,
-              updated_at: new Date().toISOString(),
-            })
-          }
+          if (mounted) setStore(storeVacio())
           return
         }
 
@@ -126,11 +122,13 @@ export default function OTVivaSyncStatus() {
         if (event.key === key) leer()
       }
       const onLocalUpdate = () => leer()
+      const intervalId = window.setInterval(leer, 1000)
 
       window.addEventListener('storage', onStorage)
       window.addEventListener('tralixia:ot-viva-local-updated', onLocalUpdate)
 
       return () => {
+        window.clearInterval(intervalId)
         window.removeEventListener('storage', onStorage)
         window.removeEventListener('tralixia:ot-viva-local-updated', onLocalUpdate)
       }
@@ -205,19 +203,17 @@ export default function OTVivaSyncStatus() {
       )
 
       const resultado = await sincronizarPlanOTVivaSupabase(supabase, plan)
-
       const syncedIds = new Set(sesionesPendientes.map((sesion) => sesion.id))
-      const next: StoreV2 = {
+
+      persistirStore({
         ...store,
         sesiones: store.sesiones.map((sesion) =>
           syncedIds.has(sesion.id)
             ? { ...sesion, estado_sync: 'sincronizada' as const }
             : sesion,
         ),
-        version: 2,
-        updated_at: new Date().toISOString(),
-      }
-      persistirStore(next)
+      })
+
       setMensaje(`Sincronización completada: ${resultado.sesiones_procesadas} sesión(es) y ${resultado.eventos_procesados} evento(s).`)
     } catch (err) {
       const failedIds = new Set(sesionesPendientes.map((sesion) => sesion.id))
