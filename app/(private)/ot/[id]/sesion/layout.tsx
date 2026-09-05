@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useParams, usePathname } from 'next/navigation'
 import type { ReactNode } from 'react'
+import OTVivaAssistantPanel from '@/components/asistente/OTVivaAssistantPanel'
 import OTVivaHypothesisQuickActions from '@/components/asistente/OTVivaHypothesisQuickActions'
 import OTVivaInterruptionCard from '@/components/asistente/OTVivaInterruptionCard'
 import OTVivaSyncStatus from '@/components/asistente/OTVivaSyncStatus'
@@ -41,6 +42,7 @@ export default function OTVivaSesionLayout({ children }: { children: ReactNode }
       <OTVivaSyncStatus />
       <OTVivaInterruptionCard />
       <OTVivaHypothesisQuickActions />
+      <OTVivaAssistantPanel />
       {children}
     </div>
   )
