@@ -26,6 +26,16 @@ export type SesionOTVivaLocal = {
   eventos: EventoOTVivaLocal[]
 }
 
+export type RelacionOTVivaLocal = {
+  id: string
+  evento_origen_id: string
+  evento_destino_id: string
+  tipo_relacion: string
+  observacion?: string | null
+  created_at: string
+  estado_sync?: EstadoSyncLocal
+}
+
 export type ContextoOTParaSync = {
   empresa_id: string
   cliente_id: string
@@ -104,6 +114,13 @@ export type EventoAsistenteSeed = {
   }
 }
 
+export type RelacionAsistenteSeed = {
+  empresa_id: string
+  tipo_relacion: string
+  observacion: string | null
+  created_by: string
+}
+
 export type PlanSyncOTViva = {
   version: 1
   contexto: ContextoOTParaSync
@@ -116,6 +133,12 @@ export type PlanSyncOTViva = {
       local_event_id: string
       evento: EventoAsistenteSeed
     }>
+  }>
+  relaciones: Array<{
+    local_relation_id: string
+    local_source_event_id: string
+    local_target_event_id: string
+    relacion: RelacionAsistenteSeed
   }>
 }
 
@@ -162,7 +185,13 @@ function checkpointBasico(sesion: SesionOTVivaLocal) {
 export function construirPlanSyncOTViva(
   contexto: ContextoOTParaSync,
   sesiones: SesionOTVivaLocal[],
+  relaciones: RelacionOTVivaLocal[] = [],
 ): PlanSyncOTViva {
+  const eventIds = new Set(sesiones.flatMap((sesion) => sesion.eventos.map((evento) => evento.id)))
+  const relacionesValidas = relaciones.filter(
+    (relacion) => eventIds.has(relacion.evento_origen_id) && eventIds.has(relacion.evento_destino_id),
+  )
+
   return {
     version: 1,
     contexto,
@@ -235,6 +264,17 @@ export function construirPlanSyncOTViva(
           },
         },
       })),
+    })),
+    relaciones: relacionesValidas.map((relacion) => ({
+      local_relation_id: relacion.id,
+      local_source_event_id: relacion.evento_origen_id,
+      local_target_event_id: relacion.evento_destino_id,
+      relacion: {
+        empresa_id: contexto.empresa_id,
+        tipo_relacion: relacion.tipo_relacion,
+        observacion: relacion.observacion?.trim() || null,
+        created_by: contexto.usuario_id,
+      },
     })),
   }
 }
