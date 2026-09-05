@@ -151,6 +151,7 @@ export default function OTVivaInterruptionCard() {
         interrumpido_at: ahora,
       } : item),
     })
+    window.location.reload()
   }
 
   const reanudar = async () => {
@@ -165,6 +166,7 @@ export default function OTVivaInterruptionCard() {
         reanudado_at: ahora,
       } : item),
     })
+    window.location.reload()
   }
 
   if (!activa || (activa.estado !== 'en_curso' && activa.estado !== 'interrumpida')) return null
