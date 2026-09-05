@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useParams, usePathname } from 'next/navigation'
 import type { ReactNode } from 'react'
+import OTVivaSyncStatus from '@/components/asistente/OTVivaSyncStatus'
 
 export default function OTVivaSesionLayout({ children }: { children: ReactNode }) {
   const params = useParams<{ id: string }>()
@@ -34,6 +35,8 @@ export default function OTVivaSesionLayout({ children }: { children: ReactNode }
           Relaciones técnicas
         </Link>
       </nav>
+
+      <OTVivaSyncStatus />
       {children}
     </div>
   )
