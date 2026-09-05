@@ -40,7 +40,7 @@ export type CasoTecnicoSeed = {
   tipo_caso: 'ot_terreno'
   titulo: string
   descripcion_inicial: string | null
-  estado: 'en_ejecucion' | 'cerrado'
+  estado: 'en_ejecucion'
   origen: 'ot'
   responsable_id: string
   datos: {
@@ -153,8 +153,6 @@ export function construirPlanSyncOTViva(
   contexto: ContextoOTParaSync,
   sesiones: SesionOTVivaLocal[],
 ): PlanSyncOTViva {
-  const haySesionAbierta = sesiones.some((sesion) => sesion.estado !== 'finalizada')
-
   return {
     version: 1,
     contexto,
@@ -165,7 +163,9 @@ export function construirPlanSyncOTViva(
       tipo_caso: 'ot_terreno',
       titulo: contexto.titulo,
       descripcion_inicial: textoInicial(contexto),
-      estado: haySesionAbierta ? 'en_ejecucion' : 'cerrado',
+      // Finalizar una sesion de terreno no significa cerrar el caso tecnico.
+      // El cierre del caso debe ser una decision explicita posterior.
+      estado: 'en_ejecucion',
       origen: 'ot',
       responsable_id: contexto.usuario_id,
       datos: {
