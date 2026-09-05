@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation'
 import SyncStatusCard from '@/components/asistente/SyncStatusCard'
 import { construirPlanSyncOTViva, type SesionOTVivaLocal } from '@/lib/asistente/ot-viva-sync'
 import { sincronizarPlanOTVivaSupabase } from '@/lib/asistente/ot-viva-sync-supabase'
+import { guardarOTVivaIndexedDB, leerOTVivaIndexedDB } from '@/lib/offline/ot-viva-indexeddb'
 import { supabase } from '@/lib/supabase/client'
 
 type EventoLocal = {
@@ -59,6 +60,14 @@ function storeVacio(): StoreV2 {
   }
 }
 
+function parseStore(raw: string): StoreV2 {
+  const parsed = JSON.parse(raw) as StoreV2
+  if (parsed.version !== 2 || !Array.isArray(parsed.sesiones)) {
+    throw new Error('Formato local OT Viva no reconocido.')
+  }
+  return parsed
+}
+
 export default function OTVivaSyncStatus() {
   const params = useParams<{ id: string }>()
   const otId = params?.id || ''
@@ -68,6 +77,7 @@ export default function OTVivaSyncStatus() {
   const [sincronizando, setSincronizando] = useState(false)
   const [mensaje, setMensaje] = useState('')
   const [errorSync, setErrorSync] = useState('')
+  const [offlineProtegido, setOfflineProtegido] = useState(false)
 
   useEffect(() => {
     let mounted = true
@@ -101,28 +111,61 @@ export default function OTVivaSyncStatus() {
         })
       }
 
-      const leer = () => {
+      const leerLocal = () => {
         const raw = window.localStorage.getItem(key)
-        if (!raw) {
-          if (mounted) setStore(storeVacio())
-          return
-        }
-
+        if (!raw) return null
         try {
-          const parsed = JSON.parse(raw) as StoreV2
+          const parsed = parseStore(raw)
           if (mounted) setStore(parsed)
+          return { raw, parsed }
         } catch {
           if (mounted) setErrorSync('No se pudo leer el historial local de esta OT.')
+          return null
         }
       }
 
-      leer()
+      const respaldar = async (raw: string) => {
+        try {
+          await guardarOTVivaIndexedDB(key, raw)
+          if (mounted) setOfflineProtegido(true)
+        } catch {
+          if (mounted) setOfflineProtegido(false)
+        }
+      }
+
+      const actual = leerLocal()
+      if (actual) {
+        await respaldar(actual.raw)
+      } else {
+        try {
+          const respaldo = await leerOTVivaIndexedDB(key)
+          if (respaldo?.payload) {
+            const recovered = parseStore(respaldo.payload)
+            window.localStorage.setItem(key, respaldo.payload)
+            if (mounted) {
+              setStore(recovered)
+              setOfflineProtegido(true)
+              setMensaje('Historial local recuperado desde almacenamiento offline protegido.')
+            }
+            window.dispatchEvent(new Event('tralixia:ot-viva-local-updated'))
+          } else if (mounted) {
+            setStore(storeVacio())
+          }
+        } catch {
+          if (mounted) setStore(storeVacio())
+        }
+      }
+
+      const leerYRespaldar = () => {
+        const value = leerLocal()
+        if (value) void respaldar(value.raw)
+      }
 
       const onStorage = (event: StorageEvent) => {
-        if (event.key === key) leer()
+        if (event.key === key) leerYRespaldar()
       }
-      const onLocalUpdate = () => leer()
-      const intervalId = window.setInterval(leer, 1000)
+      const onLocalUpdate = () => leerYRespaldar()
+      const intervalId = window.setInterval(() => { void leerLocal() }, 1500)
 
       window.addEventListener('storage', onStorage)
       window.addEventListener('tralixia:ot-viva-local-updated', onLocalUpdate)
@@ -159,7 +202,12 @@ export default function OTVivaSyncStatus() {
       version: 2,
       updated_at: new Date().toISOString(),
     }
-    window.localStorage.setItem(storageKeyV2(contextoOT.empresa_id, otId, userId), JSON.stringify(normalized))
+    const key = storageKeyV2(contextoOT.empresa_id, otId, userId)
+    const raw = JSON.stringify(normalized)
+    window.localStorage.setItem(key, raw)
+    void guardarOTVivaIndexedDB(key, raw)
+      .then(() => setOfflineProtegido(true))
+      .catch(() => setOfflineProtegido(false))
     setStore(normalized)
     window.dispatchEvent(new Event('tralixia:ot-viva-local-updated'))
   }
@@ -214,7 +262,7 @@ export default function OTVivaSyncStatus() {
         ),
       })
 
-      setMensaje(`Sincronización completada: ${resultado.sesiones_procesadas} sesión(es) y ${resultado.eventos_procesados} evento(s).`)
+      setMensaje(`Sincronización completada: ${resultado.sesiones_procesadas} sesión(es) y ${resultado.eventos_procesados} evento(s).${offlineProtegido ? ' Respaldo offline activo.' : ''}`)
     } catch (err) {
       const failedIds = new Set(sesionesPendientes.map((sesion) => sesion.id))
       persistirStore({
@@ -238,7 +286,7 @@ export default function OTVivaSyncStatus() {
         eventos={resumen.eventos}
         pendientesSync={resumen.pendientesSync}
         sincronizando={sincronizando}
-        mensaje={mensaje}
+        mensaje={mensaje || (offlineProtegido ? 'Respaldo offline protegido activo en este dispositivo.' : '')}
         errorSync={errorSync}
         onSync={sincronizar}
       />
