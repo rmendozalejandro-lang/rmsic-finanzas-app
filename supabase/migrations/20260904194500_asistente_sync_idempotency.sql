@@ -55,17 +55,9 @@ begin
 end;
 $$;
 
-create index if not exists asistente_casos_clave_externa_idx
-  on public.asistente_casos (empresa_id, origen_externo, clave_externa)
-  where clave_externa is not null;
-
-create index if not exists asistente_sesiones_clave_externa_idx
-  on public.asistente_sesiones (empresa_id, origen_externo, clave_externa)
-  where clave_externa is not null;
-
-create index if not exists asistente_eventos_clave_externa_idx
-  on public.asistente_eventos (empresa_id, origen_externo, clave_externa)
-  where clave_externa is not null;
+-- No se crean indices adicionales sobre estas mismas tres columnas:
+-- las restricciones UNIQUE anteriores ya generan los indices necesarios
+-- para los upsert idempotentes y evitamos costo de escritura duplicado.
 
 comment on column public.asistente_casos.clave_externa is
   'Clave estable del origen para reintentos idempotentes de sincronizacion.';
