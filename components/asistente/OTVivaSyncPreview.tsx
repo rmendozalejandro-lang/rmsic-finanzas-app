@@ -7,6 +7,7 @@ import {
   type RelacionOTVivaLocal,
   type SesionOTVivaLocal,
 } from '@/lib/asistente/ot-viva-sync'
+import { validarPlanSyncOTViva } from '@/lib/asistente/ot-viva-sync-validation'
 import { supabase } from '@/lib/supabase/client'
 
 type StoreV2 = {
@@ -149,35 +150,69 @@ export default function OTVivaSyncPreview() {
     }
   }, [plan])
 
-  if (!plan || !resumen) return null
+  const validacion = useMemo(() => plan ? validarPlanSyncOTViva(plan) : null, [plan])
+
+  if (!plan || !resumen || !validacion) return null
+
+  const borde = validacion.valido ? 'border-blue-200 bg-blue-50' : 'border-red-300 bg-red-50'
 
   return (
-    <section className="mx-auto max-w-6xl rounded-2xl border border-blue-200 bg-blue-50 p-4 shadow-sm">
+    <section className={`mx-auto max-w-6xl rounded-2xl border p-4 shadow-sm ${borde}`}>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <p className="text-xs font-black uppercase tracking-wide text-blue-700">Vista previa segura</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <p className={`text-xs font-black uppercase tracking-wide ${validacion.valido ? 'text-blue-700' : 'text-red-700'}`}>Vista previa segura</p>
+            <span className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase ${validacion.valido ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'}`}>
+              {validacion.valido ? 'Plan válido' : 'Plan bloqueado'}
+            </span>
+          </div>
           <h2 className="mt-1 text-base font-black text-slate-900">Plan de sincronización OT Viva → Asistente Tralixia</h2>
-          <p className="mt-1 text-sm text-slate-600">Construye el plan localmente para validar estructura y conteos. No escribe nada en Supabase.</p>
+          <p className="mt-1 text-sm text-slate-600">Construye y valida el plan localmente antes de cualquier escritura. No modifica Supabase.</p>
         </div>
         <button
           type="button"
           onClick={() => setAbierto((actual) => !actual)}
-          className="rounded-xl border border-blue-300 bg-white px-4 py-2.5 text-sm font-black text-blue-800 hover:bg-blue-100"
+          className={`rounded-xl border bg-white px-4 py-2.5 text-sm font-black ${validacion.valido ? 'border-blue-300 text-blue-800 hover:bg-blue-100' : 'border-red-300 text-red-800 hover:bg-red-100'}`}
         >
           {abierto ? 'Ocultar detalle' : 'Ver detalle'}
         </button>
       </div>
 
       <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-5">
-        <div className="rounded-xl border border-blue-200 bg-white p-3 text-center"><p className="text-lg font-black text-slate-900">{resumen.sesiones}</p><p className="text-[10px] font-black uppercase text-slate-500">Sesiones</p></div>
-        <div className="rounded-xl border border-blue-200 bg-white p-3 text-center"><p className="text-lg font-black text-slate-900">{resumen.eventos}</p><p className="text-[10px] font-black uppercase text-slate-500">Eventos</p></div>
-        <div className="rounded-xl border border-blue-200 bg-white p-3 text-center"><p className="text-lg font-black text-slate-900">{resumen.relaciones}</p><p className="text-[10px] font-black uppercase text-slate-500">Relaciones</p></div>
-        <div className="rounded-xl border border-blue-200 bg-white p-3 text-center"><p className="text-lg font-black text-slate-900">{resumen.interrumpidas}</p><p className="text-[10px] font-black uppercase text-slate-500">Interrumpidas</p></div>
-        <div className="rounded-xl border border-blue-200 bg-white p-3 text-center"><p className="text-lg font-black text-slate-900">{resumen.finalizadas}</p><p className="text-[10px] font-black uppercase text-slate-500">Finalizadas</p></div>
+        <div className="rounded-xl border border-slate-200 bg-white p-3 text-center"><p className="text-lg font-black text-slate-900">{resumen.sesiones}</p><p className="text-[10px] font-black uppercase text-slate-500">Sesiones</p></div>
+        <div className="rounded-xl border border-slate-200 bg-white p-3 text-center"><p className="text-lg font-black text-slate-900">{resumen.eventos}</p><p className="text-[10px] font-black uppercase text-slate-500">Eventos</p></div>
+        <div className="rounded-xl border border-slate-200 bg-white p-3 text-center"><p className="text-lg font-black text-slate-900">{resumen.relaciones}</p><p className="text-[10px] font-black uppercase text-slate-500">Relaciones</p></div>
+        <div className="rounded-xl border border-slate-200 bg-white p-3 text-center"><p className="text-lg font-black text-slate-900">{resumen.interrumpidas}</p><p className="text-[10px] font-black uppercase text-slate-500">Interrumpidas</p></div>
+        <div className="rounded-xl border border-slate-200 bg-white p-3 text-center"><p className="text-lg font-black text-slate-900">{resumen.finalizadas}</p><p className="text-[10px] font-black uppercase text-slate-500">Finalizadas</p></div>
       </div>
 
+      {!validacion.valido ? (
+        <div className="mt-4 rounded-xl border border-red-200 bg-white p-4">
+          <p className="text-sm font-black text-red-800">Sincronización bloqueada por validación local</p>
+          <div className="mt-2 space-y-2">
+            {validacion.errores.map((item, index) => (
+              <div key={`${item.codigo}-${item.referencia ?? index}`} className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-800">
+                <span className="font-black">{item.codigo}:</span> {item.mensaje}{item.referencia ? ` · Ref. ${item.referencia}` : ''}
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {validacion.advertencias.length > 0 ? (
+        <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4">
+          <p className="text-sm font-black text-amber-900">Advertencias del plan</p>
+          <div className="mt-2 space-y-1">
+            {validacion.advertencias.map((item, index) => (
+              <p key={`${item.codigo}-${index}`} className="text-xs text-amber-800"><span className="font-black">{item.codigo}:</span> {item.mensaje}</p>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
       {abierto ? (
-        <div className="mt-4 space-y-3 rounded-xl border border-blue-200 bg-white p-4 text-sm text-slate-700">
+        <div className="mt-4 space-y-3 rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-700">
+          <div><span className="font-black text-slate-900">Validación:</span> {validacion.valido ? 'Sin errores bloqueantes.' : `${validacion.errores.length} error(es) bloqueante(s).`}</div>
           <div><span className="font-black text-slate-900">Caso:</span> {plan.caso.titulo}</div>
           <div><span className="font-black text-slate-900">Dominio:</span> {plan.caso.dominio} · <span className="font-black text-slate-900">Tipo:</span> {plan.caso.tipo_caso}</div>
           <div><span className="font-black text-slate-900">Estado del caso:</span> {plan.caso.estado} <span className="text-slate-500">(finalizar una sesión no cierra automáticamente el caso)</span></div>
@@ -192,6 +227,9 @@ export default function OTVivaSyncPreview() {
               ))}
             </div>
           </div>
+          <p className={`text-xs font-bold ${validacion.valido ? 'text-emerald-800' : 'text-red-800'}`}>
+            {validacion.valido ? 'Plan apto para la siguiente etapa de sincronización controlada.' : 'Plan no apto para sincronizar hasta corregir los errores.'}
+          </p>
           <p className="text-xs font-bold text-blue-800">Vista previa únicamente. No se ejecutan INSERT, UPDATE, UPSERT ni DELETE.</p>
         </div>
       ) : null}
