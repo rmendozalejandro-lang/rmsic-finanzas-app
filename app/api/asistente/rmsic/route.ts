@@ -103,7 +103,7 @@ export async function POST(request: NextRequest) {
 
     const { data: ot, error: otError } = await authClient
       .from('ot_ordenes_trabajo')
-      .select('id, empresa_id, folio, titulo, cliente_id, tecnico_responsable_id, responsable_id')
+      .select('id, empresa_id, folio, titulo, cliente_id, tecnico_responsable_id')
       .eq('id', otId)
       .eq('activo', true)
       .is('deleted_at', null)
@@ -117,10 +117,7 @@ export async function POST(request: NextRequest) {
       return jsonError('No tienes acceso a esta OT o la OT no existe.', 403)
     }
 
-    const responsableId =
-      (ot as any).tecnico_responsable_id ||
-      (ot as any).responsable_id ||
-      null
+    const responsableId = (ot as any).tecnico_responsable_id || null
 
     const { data: accesoAsistente, error: accesoError } = await authClient.rpc(
       'usuario_tiene_acceso_asistente',
