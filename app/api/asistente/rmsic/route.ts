@@ -19,6 +19,7 @@ type RelacionEntrada = {
 
 type Body = {
   pregunta?: string
+  ot_id?: string
   ot?: {
     folio?: string | null
     titulo?: string | null
@@ -83,6 +84,7 @@ export async function POST(request: NextRequest) {
 
     const authClient = createClient(supabaseUrl, supabaseAnonKey, {
       auth: { persistSession: false, autoRefreshToken: false },
+      global: { headers: { Authorization: `Bearer ${token}` } },
     })
 
     const {
@@ -94,13 +96,76 @@ export async function POST(request: NextRequest) {
 
     const body = (await request.json()) as Body
     const pregunta = String(body.pregunta || '').trim()
+    const otId = String(body.ot_id || '').trim()
+
     if (!pregunta) return jsonError('Escribe una consulta técnica.', 400)
+    if (!otId) return jsonError('No se recibió la OT asociada a la consulta.', 400)
+
+    const { data: ot, error: otError } = await authClient
+      .from('ot_ordenes_trabajo')
+      .select('id, empresa_id, folio, titulo, cliente_id, tecnico_responsable_id, responsable_id')
+      .eq('id', otId)
+      .eq('activo', true)
+      .is('deleted_at', null)
+      .maybeSingle()
+
+    if (otError) {
+      return jsonError(`No se pudo validar la OT: ${otError.message}`, 500)
+    }
+
+    if (!ot) {
+      return jsonError('No tienes acceso a esta OT o la OT no existe.', 403)
+    }
+
+    const responsableId =
+      (ot as any).tecnico_responsable_id ||
+      (ot as any).responsable_id ||
+      null
+
+    const { data: accesoAsistente, error: accesoError } = await authClient.rpc(
+      'usuario_tiene_acceso_asistente',
+      {
+        p_empresa_id: (ot as any).empresa_id,
+        p_dominio: 'tecnico',
+      }
+    )
+
+    if (accesoError) {
+      return jsonError(`No se pudo validar el acceso al Asistente: ${accesoError.message}`, 500)
+    }
+
+    if (accesoAsistente !== true) {
+      return jsonError('No tienes permisos para usar el Asistente Técnico en esta empresa.', 403)
+    }
+
+    const { data: accesoCaso, error: accesoCasoError } = await authClient.rpc(
+      'usuario_puede_acceder_caso_asistente',
+      {
+        p_empresa_id: (ot as any).empresa_id,
+        p_dominio: 'tecnico',
+        p_responsable_id: responsableId,
+      }
+    )
+
+    if (accesoCasoError) {
+      return jsonError(`No se pudo validar el acceso a esta OT: ${accesoCasoError.message}`, 500)
+    }
+
+    if (accesoCaso !== true) {
+      return jsonError('No tienes permisos para consultar el Asistente sobre esta OT.', 403)
+    }
 
     const eventos = Array.isArray(body.eventos) ? body.eventos.slice(-40) : []
     const relaciones = Array.isArray(body.relaciones) ? body.relaciones.slice(-30) : []
 
     const contexto = {
-      ot: body.ot ?? {},
+      ot: {
+        id: otId,
+        folio: (ot as any).folio ?? body.ot?.folio ?? null,
+        titulo: (ot as any).titulo ?? body.ot?.titulo ?? null,
+        cliente: body.ot?.cliente ?? null,
+        equipo: body.ot?.equipo ?? null,
+      },
       eventos,
       relaciones,
     }
