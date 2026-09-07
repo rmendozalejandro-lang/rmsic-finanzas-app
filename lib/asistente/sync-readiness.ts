@@ -7,12 +7,12 @@ export type EstadoPreparacionSync = {
   errores: Array<{ tabla: string; mensaje: string }>
 }
 
-const TABLAS_REQUERIDAS = [
-  'asistente_casos',
-  'asistente_caso_ots',
-  'asistente_sesiones',
-  'asistente_eventos',
-  'asistente_evento_relaciones',
+const REQUISITOS_SYNC = [
+  { tabla: 'asistente_casos', columnas: 'id, origen_externo, clave_externa' },
+  { tabla: 'asistente_caso_ots', columnas: 'id' },
+  { tabla: 'asistente_sesiones', columnas: 'id, origen_externo, clave_externa' },
+  { tabla: 'asistente_eventos', columnas: 'id, origen_externo, clave_externa' },
+  { tabla: 'asistente_evento_relaciones', columnas: 'id' },
 ] as const
 
 function esTablaInexistente(mensaje: string) {
@@ -27,9 +27,10 @@ function esTablaInexistente(mensaje: string) {
 /**
  * Verificacion no destructiva previa a sincronizar OT Viva.
  *
- * Solo realiza SELECT de id con limit 1. No inserta, modifica ni elimina datos.
- * Su objetivo es impedir que la UI intente sincronizar mientras el nucleo
- * asistente_* aun no exista o no sea accesible en la base seleccionada.
+ * Solo realiza SELECT con limit 1. No inserta, modifica ni elimina datos.
+ * Ademas de las tablas base, valida las columnas de idempotencia usadas por
+ * los upsert para impedir que la UI habilite sincronizacion con un esquema
+ * parcialmente migrado.
  */
 export async function verificarPreparacionSyncAsistente(
   supabase: SupabaseClient,
@@ -38,23 +39,23 @@ export async function verificarPreparacionSyncAsistente(
   const tablas_faltantes: string[] = []
   const errores: Array<{ tabla: string; mensaje: string }> = []
 
-  for (const tabla of TABLAS_REQUERIDAS) {
+  for (const requisito of REQUISITOS_SYNC) {
     const { error } = await supabase
-      .from(tabla)
-      .select('id')
+      .from(requisito.tabla)
+      .select(requisito.columnas)
       .limit(1)
 
     if (!error) {
-      tablas_ok.push(tabla)
+      tablas_ok.push(requisito.tabla)
       continue
     }
 
     if (esTablaInexistente(error.message)) {
-      tablas_faltantes.push(tabla)
+      tablas_faltantes.push(requisito.tabla)
       continue
     }
 
-    errores.push({ tabla, mensaje: error.message })
+    errores.push({ tabla: requisito.tabla, mensaje: error.message })
   }
 
   return {
@@ -75,7 +76,7 @@ export function descripcionPreparacionSync(estado: EstadoPreparacionSync) {
   }
 
   if (estado.errores.length > 0) {
-    return 'Sincronización bloqueada: no fue posible validar permisos o acceso al núcleo asistente_*.'
+    return 'Sincronización bloqueada: el núcleo asistente_* está incompleto o no fue posible validar su acceso.'
   }
 
   return 'Sincronización no disponible.'
