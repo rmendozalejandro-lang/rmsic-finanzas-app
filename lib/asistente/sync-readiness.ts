@@ -12,6 +12,7 @@ const TABLAS_REQUERIDAS = [
   'asistente_caso_ots',
   'asistente_sesiones',
   'asistente_eventos',
+  'asistente_evento_relaciones',
 ] as const
 
 function esTablaInexistente(mensaje: string) {
@@ -19,7 +20,7 @@ function esTablaInexistente(mensaje: string) {
   return (
     m.includes('does not exist') ||
     m.includes('could not find the table') ||
-    m.includes('relation') && m.includes('does not exist')
+    (m.includes('relation') && m.includes('does not exist'))
   )
 }
 
@@ -28,7 +29,7 @@ function esTablaInexistente(mensaje: string) {
  *
  * Solo realiza SELECT de id con limit 1. No inserta, modifica ni elimina datos.
  * Su objetivo es impedir que la UI intente sincronizar mientras el nucleo
- * asistente_* aun no exista en la base de datos seleccionada.
+ * asistente_* aun no exista o no sea accesible en la base seleccionada.
  */
 export async function verificarPreparacionSyncAsistente(
   supabase: SupabaseClient,
