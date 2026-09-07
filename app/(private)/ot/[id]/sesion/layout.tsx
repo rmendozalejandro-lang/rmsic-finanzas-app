@@ -6,6 +6,7 @@ import type { ReactNode } from 'react'
 import OTVivaAssistantPanel from '@/components/asistente/OTVivaAssistantPanel'
 import OTVivaHypothesisQuickActions from '@/components/asistente/OTVivaHypothesisQuickActions'
 import OTVivaInterruptionCard from '@/components/asistente/OTVivaInterruptionCard'
+import OTVivaSyncPreview from '@/components/asistente/OTVivaSyncPreview'
 import OTVivaSyncStatus from '@/components/asistente/OTVivaSyncStatus'
 
 export default function OTVivaSesionLayout({ children }: { children: ReactNode }) {
@@ -40,6 +41,7 @@ export default function OTVivaSesionLayout({ children }: { children: ReactNode }
       </nav>
 
       <OTVivaSyncStatus />
+      <OTVivaSyncPreview />
       <OTVivaInterruptionCard />
       <OTVivaHypothesisQuickActions />
       <OTVivaAssistantPanel />
