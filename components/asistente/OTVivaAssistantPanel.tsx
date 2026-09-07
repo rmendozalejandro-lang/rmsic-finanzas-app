@@ -220,7 +220,7 @@ export default function OTVivaAssistantPanel() {
 
   const consultar = async () => {
     const texto = pregunta.trim()
-    if (!texto || cargando || !ot || !userId) return
+    if (!texto || cargando || !ot || !userId || !otId) return
 
     setCargando(true)
     setError('')
@@ -238,6 +238,7 @@ export default function OTVivaAssistantPanel() {
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           pregunta: texto,
+          ot_id: otId,
           ot: { folio: ot.folio, titulo: ot.titulo, cliente: clienteNombre },
           eventos: eventos.map((evento) => ({
             tipo_evento: evento.tipo_evento,
