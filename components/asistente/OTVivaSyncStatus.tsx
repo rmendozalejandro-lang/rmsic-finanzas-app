@@ -8,6 +8,7 @@ import {
   type RelacionOTVivaLocal,
   type SesionOTVivaLocal,
 } from '@/lib/asistente/ot-viva-sync'
+import { validarPlanSyncOTViva } from '@/lib/asistente/ot-viva-sync-validation'
 import { sincronizarPlanOTVivaSupabase } from '@/lib/asistente/ot-viva-sync-supabase'
 import { guardarOTVivaIndexedDB, leerOTVivaIndexedDB } from '@/lib/offline/ot-viva-indexeddb'
 import { supabase } from '@/lib/supabase/client'
@@ -63,6 +64,9 @@ type ContextoOT = {
   descripcion_solicitud: string | null
   problema_reportado: string | null
 }
+
+const syncWritesEnabled =
+  process.env.NEXT_PUBLIC_TRALIXIA_ASSISTANT_SYNC_ENABLED === 'true'
 
 function storageKeyV2(empresaId: string, otId: string, userId: string) {
   return `tralixia_ot_viva_local_v2_${empresaId}_${otId}_${userId}`
@@ -229,6 +233,46 @@ export default function OTVivaSyncStatus() {
     }
   }, [store])
 
+  const preparacionPlan = useMemo(() => {
+    if (!contextoOT || !userId || !otId || resumen.pendientesSync === 0) {
+      return {
+        plan: null,
+        validacion: null,
+        sesionesParaPlan: [] as SesionLocal[],
+        relacionesPendientes: [] as RelacionLocal[],
+      }
+    }
+
+    const relacionesPendientes = (store.relaciones ?? []).filter(
+      (relacion) => relacion.estado_sync !== 'sincronizada',
+    )
+    const sesionesPendientes = store.sesiones.filter(
+      (sesion) => sesion.estado_sync !== 'sincronizada',
+    )
+    const sesionesParaPlan = relacionesPendientes.length > 0 ? store.sesiones : sesionesPendientes
+
+    const plan = construirPlanSyncOTViva(
+      {
+        empresa_id: contextoOT.empresa_id,
+        cliente_id: contextoOT.cliente_id,
+        ot_id: otId,
+        titulo: contextoOT.titulo,
+        descripcion_inicial: contextoOT.descripcion_solicitud,
+        problema_reportado: contextoOT.problema_reportado,
+        usuario_id: userId,
+      },
+      sesionesParaPlan as SesionOTVivaLocal[],
+      relacionesPendientes as RelacionOTVivaLocal[],
+    )
+
+    return {
+      plan,
+      validacion: validarPlanSyncOTViva(plan),
+      sesionesParaPlan,
+      relacionesPendientes,
+    }
+  }, [contextoOT, userId, otId, resumen.pendientesSync, store])
+
   const persistirStore = (next: StoreV2) => {
     if (!contextoOT || !userId) return
     const normalized: StoreV2 = {
@@ -250,10 +294,32 @@ export default function OTVivaSyncStatus() {
   const sincronizar = async () => {
     if (!contextoOT || !userId || resumen.pendientesSync === 0 || sincronizando) return
 
-    const relacionesPendientes = (store.relaciones ?? []).filter((relacion) => relacion.estado_sync !== 'sincronizada')
-    const sesionesPendientes = store.sesiones.filter((sesion) => sesion.estado_sync !== 'sincronizada')
-    const sesionesParaPlan = relacionesPendientes.length > 0 ? store.sesiones : sesionesPendientes
-    const totalEventos = sesionesParaPlan.reduce((total, sesion) => total + sesion.eventos.length, 0)
+    if (!syncWritesEnabled) {
+      setErrorSync('Sincronización bloqueada: la escritura está deshabilitada por configuración de entorno.')
+      return
+    }
+
+    const { plan, validacion, sesionesParaPlan, relacionesPendientes } = preparacionPlan
+
+    if (!plan || !validacion) {
+      setErrorSync('No fue posible construir un plan de sincronización válido.')
+      return
+    }
+
+    const validacionFinal = validarPlanSyncOTViva(plan)
+    if (!validacionFinal.valido) {
+      const detalle = validacionFinal.errores
+        .slice(0, 3)
+        .map((item) => `${item.codigo}: ${item.mensaje}`)
+        .join(' · ')
+      setErrorSync(`Sincronización bloqueada por validación previa. ${detalle}`)
+      return
+    }
+
+    const totalEventos = sesionesParaPlan.reduce(
+      (total, sesion) => total + sesion.eventos.length,
+      0,
+    )
 
     const confirmado = window.confirm(
       `Se sincronizarán ${sesionesParaPlan.length} sesión(es), ${totalEventos} evento(s) y ${relacionesPendientes.length} relación(es) técnica(s) con Tralixia. Los datos locales se conservarán. ¿Continuar?`,
@@ -279,20 +345,6 @@ export default function OTVivaSyncStatus() {
     })
 
     try {
-      const plan = construirPlanSyncOTViva(
-        {
-          empresa_id: contextoOT.empresa_id,
-          cliente_id: contextoOT.cliente_id,
-          ot_id: otId,
-          titulo: contextoOT.titulo,
-          descripcion_inicial: contextoOT.descripcion_solicitud,
-          problema_reportado: contextoOT.problema_reportado,
-          usuario_id: userId,
-        },
-        sesionesParaPlan as SesionOTVivaLocal[],
-        relacionesPendientes as RelacionOTVivaLocal[],
-      )
-
       const resultado = await sincronizarPlanOTVivaSupabase(supabase, plan)
       const syncedSessionIds = new Set(sesionesParaPlan.map((sesion) => sesion.id))
       const syncedRelationIds = new Set(relacionesPendientes.map((relacion) => relacion.id))
@@ -342,6 +394,13 @@ export default function OTVivaSyncStatus() {
     }
   }
 
+  const planError = preparacionPlan.validacion && !preparacionPlan.validacion.valido
+    ? preparacionPlan.validacion.errores
+        .slice(0, 2)
+        .map((item) => `${item.codigo}: ${item.mensaje}`)
+        .join(' · ')
+    : ''
+
   return (
     <div className="mx-auto max-w-6xl px-0 pb-0">
       <SyncStatusCard
@@ -352,6 +411,9 @@ export default function OTVivaSyncStatus() {
         mensaje={mensaje || (offlineProtegido ? `Respaldo offline protegido activo. ${resumen.relaciones} relación(es) técnica(s) local(es).` : '')}
         errorSync={errorSync}
         onSync={sincronizar}
+        writesEnabled={syncWritesEnabled}
+        planValid={preparacionPlan.validacion?.valido ?? resumen.pendientesSync === 0}
+        planError={planError}
       />
     </div>
   )
