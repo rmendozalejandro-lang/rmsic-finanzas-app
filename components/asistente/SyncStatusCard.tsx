@@ -16,6 +16,9 @@ type Props = {
   mensaje?: string
   errorSync?: string
   onSync?: () => void | Promise<void>
+  writesEnabled?: boolean
+  planValid?: boolean
+  planError?: string
 }
 
 type EstadoUI = 'revisando' | 'disponible' | 'bloqueada'
@@ -28,6 +31,9 @@ export default function SyncStatusCard({
   mensaje = '',
   errorSync = '',
   onSync,
+  writesEnabled = false,
+  planValid = false,
+  planError = '',
 }: Props) {
   const [estado, setEstado] = useState<EstadoPreparacionSync | null>(null)
   const [revisando, setRevisando] = useState(true)
@@ -64,12 +70,18 @@ export default function SyncStatusCard({
     if (estado.errores.length > 0) {
       return `Validación pendiente por acceso/permisos en ${estado.errores.map((item) => item.tabla).join(', ')}`
     }
-    return 'El núcleo mínimo requerido está disponible.'
-  }, [estado, revisando])
+    if (!writesEnabled) {
+      return 'Núcleo disponible · escritura deshabilitada por entorno.'
+    }
+    if (!planValid && pendientesSync > 0) {
+      return planError || 'El plan local debe ser válido antes de habilitar la escritura.'
+    }
+    return 'Núcleo disponible · escritura habilitada y plan validado.'
+  }, [estado, revisando, writesEnabled, planValid, planError, pendientesSync])
 
-  const tono = errorSync
+  const tono = errorSync || (!planValid && pendientesSync > 0 && writesEnabled)
     ? 'border-red-200 bg-red-50 text-red-800'
-    : estadoUI === 'disponible'
+    : estadoUI === 'disponible' && writesEnabled
       ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
       : estadoUI === 'revisando'
         ? 'border-slate-200 bg-slate-50 text-slate-700'
@@ -77,10 +89,22 @@ export default function SyncStatusCard({
 
   const puedeSincronizar = Boolean(
     estado?.disponible &&
+    writesEnabled &&
+    planValid &&
     pendientesSync > 0 &&
     !sincronizando &&
     onSync,
   )
+
+  const titleBoton = pendientesSync === 0
+    ? 'No hay sesiones pendientes de sincronización.'
+    : !estado?.disponible
+      ? 'El núcleo Asistente Tralixia no está disponible.'
+      : !writesEnabled
+        ? 'La escritura está deshabilitada por configuración de entorno.'
+        : !planValid
+          ? planError || 'El plan local no superó la validación previa.'
+          : 'Sincroniza una copia estructurada con el núcleo Asistente Tralixia.'
 
   return (
     <section className={`rounded-2xl border p-5 shadow-sm ${tono}`}>
@@ -112,7 +136,13 @@ export default function SyncStatusCard({
       <div className="mt-4 flex flex-wrap items-center gap-2">
         <span className="rounded-full border border-current/20 bg-white/70 px-3 py-1 text-xs font-black uppercase tracking-wide">
           {estadoUI === 'disponible'
-            ? pendientesSync > 0 ? 'Lista para sincronizar' : 'Sin pendientes'
+            ? pendientesSync === 0
+              ? 'Sin pendientes'
+              : !writesEnabled
+                ? 'Escritura deshabilitada'
+                : planValid
+                  ? 'Lista para sincronizar'
+                  : 'Plan bloqueado'
             : estadoUI === 'revisando' ? 'Verificando' : 'Solo local'}
         </span>
         <button
@@ -120,7 +150,7 @@ export default function SyncStatusCard({
           disabled={!puedeSincronizar}
           onClick={() => { if (puedeSincronizar) void onSync?.() }}
           className="rounded-xl border border-current/20 bg-white/80 px-4 py-2 text-xs font-black transition enabled:hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
-          title={pendientesSync === 0 ? 'No hay sesiones pendientes de sincronización.' : 'Sincroniza una copia estructurada con el núcleo Asistente Tralixia.'}
+          title={titleBoton}
         >
           {sincronizando ? 'Sincronizando...' : 'Sincronizar con Tralixia'}
         </button>
