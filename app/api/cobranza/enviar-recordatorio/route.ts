@@ -24,6 +24,13 @@ type Cliente = {
   email: string | null
 }
 
+type ContactoCobranza = {
+  id: string
+  nombre: string | null
+  email: string | null
+  es_principal: boolean | null
+}
+
 type Movimiento = {
   id: string
   tipo_documento: string | null
@@ -111,6 +118,24 @@ function splitEmails(value: string | null | undefined) {
     .split(/[;,]/)
     .map((email) => email.trim())
     .filter(Boolean)
+}
+
+function uniqueEmails(values: Array<string | null | undefined>) {
+  const seen = new Set<string>()
+  const result: string[] = []
+
+  for (const raw of values) {
+    const email = String(raw ?? '').trim()
+    if (!email) continue
+
+    const key = email.toLowerCase()
+    if (seen.has(key)) continue
+
+    seen.add(key)
+    result.push(email)
+  }
+
+  return result
 }
 
 export async function POST(request: NextRequest) {
@@ -233,8 +258,46 @@ export async function POST(request: NextRequest) {
       cliente = (clienteResp.data ?? null) as Cliente | null
     }
 
-    if (!cliente?.email) {
-      return jsonError('El cliente no tiene email registrado.', 400)
+    if (!cliente) {
+      return jsonError('El documento no tiene un cliente válido asociado.', 400)
+    }
+
+    const contactosResp = await adminClient
+      .from('contactos')
+      .select('id, nombre, email, es_principal')
+      .eq('empresa_id', cxc.empresa_id)
+      .eq('cliente_id', cliente.id)
+      .eq('activo', true)
+      .eq('recibe_cobranza', true)
+      .not('email', 'is', null)
+      .order('es_principal', { ascending: false })
+      .order('nombre', { ascending: true })
+
+    if (contactosResp.error) {
+      return jsonError(
+        `No se pudieron cargar los contactos de cobranza: ${contactosResp.error.message}`,
+        500
+      )
+    }
+
+    const contactosCobranza = (contactosResp.data ?? []) as ContactoCobranza[]
+    const destinatariosCobranza = uniqueEmails(
+      contactosCobranza.map((contacto) => contacto.email)
+    )
+
+    // Regla actual:
+    // 1) todos los contactos activos marcados recibe_cobranza=true;
+    // 2) si no existe ninguno, fallback al email general del cliente.
+    const destinatarios =
+      destinatariosCobranza.length > 0
+        ? destinatariosCobranza
+        : uniqueEmails([cliente.email])
+
+    if (destinatarios.length === 0) {
+      return jsonError(
+        'El cliente no tiene contactos de cobranza con email ni un email general registrado.',
+        400
+      )
     }
 
     const movimientoResp = await adminClient
@@ -383,7 +446,7 @@ export async function POST(request: NextRequest) {
 
     const emailPayload: Record<string, unknown> = {
       from,
-      to: [cliente.email],
+      to: destinatarios,
       subject: asunto,
       html,
       text,
@@ -407,13 +470,14 @@ export async function POST(request: NextRequest) {
     })
 
     const resendJson = await resendResp.json().catch(() => null)
+    const destinatarioRegistro = destinatarios.join(', ')
 
     await adminClient.from('cobranza_recordatorios').insert({
       empresa_id: cxc.empresa_id,
       cuenta_por_cobrar_id: cxc.id,
       movimiento_id: cxc.movimiento_id,
       cliente_id: cxc.cliente_id,
-      destinatario: cliente.email,
+      destinatario: destinatarioRegistro,
       asunto,
       estado: resendResp.ok ? 'enviado' : 'error',
       error: resendResp.ok ? null : JSON.stringify(resendJson),
@@ -429,7 +493,7 @@ export async function POST(request: NextRequest) {
 
     return jsonResponse({
       ok: true,
-      destinatario: cliente.email,
+      destinatario: destinatarioRegistro,
       asunto,
     })
   } catch (error) {
