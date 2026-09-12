@@ -22,9 +22,31 @@ function claveEvento(otId: string, localSessionId: string, localEventId: string)
   return `ot:${otId}:sesion:${localSessionId}:evento:${localEventId}`
 }
 
+async function resolverResponsableOT(supabase: SupabaseClient, plan: PlanSyncOTViva) {
+  const { data, error } = await supabase
+    .from('ot_ordenes_trabajo')
+    .select('tecnico_responsable_id')
+    .eq('id', plan.contexto.ot_id)
+    .eq('empresa_id', plan.contexto.empresa_id)
+    .maybeSingle()
+
+  if (error) {
+    throw new Error(`No se pudo validar el técnico responsable de la OT: ${error.message}`)
+  }
+
+  const responsableId = data?.tecnico_responsable_id as string | null | undefined
+  if (!responsableId) {
+    throw new Error('La OT no tiene un técnico responsable asignado. La sincronización fue bloqueada para evitar crear un caso sin responsable técnico.')
+  }
+
+  return responsableId
+}
+
 async function upsertCaso(supabase: SupabaseClient, plan: PlanSyncOTViva) {
+  const responsableId = await resolverResponsableOT(supabase, plan)
   const payload = {
     ...plan.caso,
+    responsable_id: responsableId,
     origen_externo: ORIGEN_EXTERNO,
     clave_externa: claveCaso(plan.contexto.ot_id),
     updated_by: plan.contexto.usuario_id,
