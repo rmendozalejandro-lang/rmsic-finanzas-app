@@ -3,6 +3,37 @@
 import { FormEvent, useState } from 'react'
 import { supabase } from '../../lib/supabase/client'
 
+function describirError(error: unknown) {
+  if (!error) return 'Sin detalle de error'
+
+  const value = error as {
+    name?: unknown
+    message?: unknown
+    status?: unknown
+    code?: unknown
+    cause?: unknown
+  }
+
+  const detail = {
+    name: typeof value.name === 'string' ? value.name : null,
+    message:
+      typeof value.message === 'string'
+        ? value.message
+        : value.message != null
+          ? JSON.stringify(value.message)
+          : null,
+    status: value.status ?? null,
+    code: value.code ?? null,
+    cause:
+      value.cause instanceof Error
+        ? { name: value.cause.name, message: value.cause.message }
+        : value.cause ?? null,
+    stringValue: String(error),
+  }
+
+  return JSON.stringify(detail, null, 2)
+}
+
 export default function DiagnosticoAuthPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -21,7 +52,7 @@ export default function DiagnosticoAuthPage() {
       })
 
       if (error) {
-        setResultado(`ERROR SUPABASE: ${error.message}`)
+        setResultado(`ERROR SUPABASE:\n${describirError(error)}`)
         return
       }
 
@@ -31,9 +62,7 @@ export default function DiagnosticoAuthPage() {
           : 'RESPUESTA SIN ERROR, PERO SIN SESIÓN.'
       )
     } catch (error) {
-      setResultado(
-        `EXCEPCIÓN: ${error instanceof Error ? error.message : 'Error desconocido'}`
-      )
+      setResultado(`EXCEPCIÓN:\n${describirError(error)}`)
     } finally {
       setLoading(false)
     }
