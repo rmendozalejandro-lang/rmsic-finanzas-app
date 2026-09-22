@@ -1152,18 +1152,29 @@ if (empresaGuardadaValida) {
     item.payload && typeof item.payload === 'object' &&
     (item.payload as { empresa_id?: string }).empresa_id === empresaActivaId
   ).length
-  const isCachedOtDetailRoute = useMemo(() => {
-    if (!empresaActivaId || !usuarioId) return false
-    const match = pathname.match(/^\/ot\/([^/]+)$/)
-    if (!match?.[1]) return false
+  const cachedOtIdFromRoute = useMemo(() => {
+    if (!empresaActivaId || !usuarioId) return ''
+    const match = pathname.match(/^\/ot\/([^/]+)/)
+    if (!match?.[1]) return ''
     const cache = readOTOfflineCache(empresaActivaId, usuarioId)
-    return Boolean(cache?.detalles.some((detalle) => detalle.id === match[1]))
+    return cache?.detalles.some((detalle) => detalle.id === match[1]) ? match[1] : ''
   }, [empresaActivaId, pathname, usuarioId])
+
+  const isCachedOtDetailRoute =
+    Boolean(cachedOtIdFromRoute) && pathname === `/ot/${cachedOtIdFromRoute}`
+
+  const isCachedOtVivaRoute =
+    Boolean(cachedOtIdFromRoute) &&
+    (
+      pathname === `/ot/${cachedOtIdFromRoute}/sesion` ||
+      pathname === `/ot/${cachedOtIdFromRoute}/sesion/relaciones`
+    )
 
   const isOfflineSafeRoute = pathname === HARAS_PARTOS_ROUTE ||
     pathname.startsWith(`${HARAS_PARTOS_ROUTE}/`) ||
     pathname === OT_ROUTE ||
-    isCachedOtDetailRoute
+    isCachedOtDetailRoute ||
+    isCachedOtVivaRoute
   const showOfflineRouteBlocked = isOffline && !isOfflineSafeRoute
   const showOtOfflineRouteBlocked = showOfflineRouteBlocked && pathname.startsWith(`${OT_ROUTE}/`)
 
