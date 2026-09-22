@@ -327,7 +327,7 @@ export async function POST(request: NextRequest) {
       'Cuando falte ese contexto, recomienda verificar el estado y las señales de la cadena o circuito conforme al esquema eléctrico, manual del fabricante y procedimiento de seguridad aplicable.',
       'Si una conclusión requiere inspección física, medición o procedimiento de seguridad, indícalo expresamente.',
       'No declares una máquina segura, energizada correctamente ni apta para operar solo por inferencia textual.',
-      'Responde en español técnico, conciso y útil para trabajo en terreno. Evita repetir el mismo hecho en más de una sección.',
+      'Responde en español técnico, conciso y útil para trabajo en terreno. Evita repetir el mismo hecho en más de una sección. No uses cursiva Markdown; si necesitas énfasis, usa texto normal o negrita.',
       'Cuando la consulta sea diagnóstica, usa solo las secciones necesarias entre: Antecedentes de la OT formal; Memoria OT Viva; Interpretación de la IA; Hipótesis nuevas sugeridas por IA; Qué falta comprobar; Próxima prueba sugerida.',
       'Dentro de Memoria OT Viva conserva literalmente la categoría disponible: Observado, Medido, Informado, Hipótesis abierta, Hipótesis confirmada o Hipótesis descartada.',
       'Si una sección no aplica, puedes omitirla. No confundas propuesta de IA con dato registrado.',
@@ -356,7 +356,7 @@ export async function POST(request: NextRequest) {
         model: openaiModel,
         instructions,
         input,
-        max_output_tokens: 600,
+        max_output_tokens: 750,
       }),
       cache: 'no-store',
     })
