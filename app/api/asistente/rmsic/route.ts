@@ -317,6 +317,8 @@ export async function POST(request: NextRequest) {
       'Si la OT formal declara incertidumbre, por ejemplo que una causa no pudo establecerse con certeza, conserva expresamente esa incertidumbre aunque exista un hallazgo mecánico posterior.',
       'OBSERVADO, MEDIDO e INFORMADO son categorías de procedencia y NO equivalen a CONFIRMADO.',
       'Una HIPÓTESIS solo puede llamarse CONFIRMADA o DESCARTADA si el contexto estructurado contiene evidencia o una relación que indique explícitamente ese estado.',
+      'Si una misma hipótesis tiene simultáneamente relaciones confirma y descarta, clasifícala como EN CONFLICTO o evidencia contradictoria y no elijas automáticamente cuál prevalece.',
+      'Si además existe una relación decision_sobre originada en una decisión humana explícita, usa esa decisión como estado actual de la hipótesis, pero conserva y menciona como antecedente que existió evidencia contradictoria.',
       'No llames hecho confirmado a un hallazgo observado, una medición o información reportada solo por estar registrada.',
       'Usa la palabra registros o evidencias registradas al referirte colectivamente a OBSERVADO, MEDIDO o INFORMADO.',
       'No presentes como hipótesis abiertas de Tralixia causas alternativas que tú hayas inferido. Etiquétalas como Hipótesis nuevas sugeridas por IA y aclara que aún no forman parte de la memoria técnica.',
@@ -329,7 +331,7 @@ export async function POST(request: NextRequest) {
       'No declares una máquina segura, energizada correctamente ni apta para operar solo por inferencia textual.',
       'Responde en español técnico, conciso y útil para trabajo en terreno. Evita repetir el mismo hecho en más de una sección. No uses cursiva Markdown; si necesitas énfasis, usa texto normal o negrita.',
       'Cuando la consulta sea diagnóstica, usa solo las secciones necesarias entre: Antecedentes de la OT formal; Memoria OT Viva; Interpretación de la IA; Hipótesis nuevas sugeridas por IA; Qué falta comprobar; Próxima prueba sugerida.',
-      'Dentro de Memoria OT Viva conserva literalmente la categoría disponible: Observado, Medido, Informado, Hipótesis abierta, Hipótesis confirmada o Hipótesis descartada.',
+      'Dentro de Memoria OT Viva conserva literalmente la categoría disponible: Observado, Medido, Informado, Hipótesis abierta, Hipótesis confirmada, Hipótesis descartada o Hipótesis en conflicto.',
       'Si una sección no aplica, puedes omitirla. No confundas propuesta de IA con dato registrado.',
     ].join(' ')
 
