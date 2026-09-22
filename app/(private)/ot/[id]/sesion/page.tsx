@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import ProtectedModuleRoute from '@/components/ProtectedModuleRoute'
+import { cargarOTVivaRemota } from '@/lib/asistente/ot-viva-remote'
 import { supabase } from '@/lib/supabase/client'
 
 type TipoEvento =
@@ -20,7 +21,7 @@ type TipoEvento =
 
 type NivelCerteza = 'informado' | 'observado' | 'medido' | 'hipotesis' | 'confirmado' | 'descartado'
 type Prioridad = 'baja' | 'media' | 'alta' | 'critica'
-type EstadoSesion = 'en_curso' | 'pausada' | 'finalizada'
+type EstadoSesion = 'en_curso' | 'pausada' | 'interrumpida' | 'finalizada'
 type EstadoSync = 'local' | 'pendiente_sync' | 'sincronizada' | 'error'
 
 type EventoLocal = {
@@ -382,11 +383,59 @@ export default function OTVivaSesionPage() {
         }
 
         const localStore = migrarStoreLocal(ot.empresa_id, ot.id, user.id)
+        let storeInicial = localStore
+
+        if (navigator.onLine) {
+          try {
+            const remoto = await cargarOTVivaRemota(supabase, ot.empresa_id, ot.id)
+            const sesionesMap = new Map<string, SesionLocal>()
+            for (const sesion of remoto.sesiones) {
+              sesionesMap.set(sesion.id, normalizarSesion(sesion as SesionLocal))
+            }
+            for (const sesion of localStore.sesiones) {
+              sesionesMap.set(sesion.id, normalizarSesion(sesion))
+            }
+
+            const relacionesMap = new Map<string, RelacionLocal>()
+            for (const relacion of remoto.relaciones) {
+              relacionesMap.set(relacion.id, relacion as RelacionLocal)
+            }
+            for (const relacion of localStore.relaciones ?? []) {
+              relacionesMap.set(relacion.id, relacion)
+            }
+
+            const sesiones = Array.from(sesionesMap.values()).sort(
+              (a, b) => new Date(a.iniciado_at).getTime() - new Date(b.iniciado_at).getTime(),
+            )
+            const relaciones = Array.from(relacionesMap.values()).sort(
+              (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+            )
+
+            storeInicial = {
+              ...localStore,
+              sesiones,
+              relaciones,
+              sesion_activa_id: localStore.sesion_activa_id,
+              sesion_seleccionada_id:
+                localStore.sesion_seleccionada_id ??
+                sesiones.at(-1)?.id ??
+                null,
+              updated_at: new Date().toISOString(),
+            }
+
+            const key = storageKeyV2(ot.empresa_id, ot.id, user.id)
+            window.localStorage.setItem(key, JSON.stringify(storeInicial))
+            window.dispatchEvent(new Event('tralixia:ot-viva-local-updated'))
+          } catch {
+            // Si la recuperación remota falla, conservar el historial local sin bloquear terreno.
+          }
+        }
+
         if (!mounted) return
         setCurrentUserId(user.id)
         setDetalle(ot)
         setResumen(resumenResp.data as OTResumen)
-        setStore(localStore)
+        setStore(storeInicial)
       } catch (err) {
         if (!mounted) return
         setError(err instanceof Error ? err.message : 'No se pudo abrir la sesión de terreno.')
