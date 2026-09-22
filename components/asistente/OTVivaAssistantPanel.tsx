@@ -105,8 +105,8 @@ function normalizarTextoHipotesis(value: string) {
   return value
     .replace(/^[-*]\s+/, '')
     .replace(/^\d+[.)]\s+/, '')
-    .replace(/^\*\*/, '')
-    .replace(/\*\*$/, '')
+    .replace(/\*\*/g, '')
+    .replace(/__/g, '')
     .trim()
 }
 
