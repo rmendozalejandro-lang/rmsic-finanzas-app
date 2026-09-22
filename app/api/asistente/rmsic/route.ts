@@ -242,7 +242,26 @@ export async function POST(request: NextRequest) {
         ocurrido_at: evento.ocurrido_at,
       })
     }
-    const eventos = Array.from(eventosMap.values()).slice(-40)
+    const eventosTodos = Array.from(eventosMap.values())
+
+    const textoTecnicoIrrelevante = [
+      /sincronizaci[oó]n/i,
+      /p[eé]rdida de conexi[oó]n/i,
+      /operaci[oó]n offline/i,
+      /prueba offline/i,
+      /reintento/i,
+    ]
+
+    const textoSinContenidoTecnico = (texto: string) => {
+      const limpio = texto.trim()
+      if (!limpio) return true
+      if (textoTecnicoIrrelevante.some((patron) => patron.test(limpio))) return true
+      const soloRuido = limpio.replace(/[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑ]/g, '')
+      return soloRuido.length < 5
+    }
+
+    const eventosTecnicos = eventosTodos.filter((evento) => !textoSinContenidoTecnico(evento.texto_original || ''))
+    const eventos = (eventosTecnicos.length ? eventosTecnicos : eventosTodos).slice(-40)
 
     const claveRelacion = (relacion: RelacionEntrada) =>
       [
@@ -255,7 +274,14 @@ export async function POST(request: NextRequest) {
     for (const relacion of [...relacionesSincronizadas, ...relacionesLocales]) {
       relacionesMap.set(claveRelacion(relacion), relacion)
     }
-    const relaciones = Array.from(relacionesMap.values()).slice(-30)
+    const textosIncluidos = new Set(eventos.map((evento) => evento.texto_original.trim().toLowerCase()))
+    const relaciones = Array.from(relacionesMap.values())
+      .filter((relacion) => {
+        const origen = relacion.origen_texto?.trim().toLowerCase() || ''
+        const destino = relacion.destino_texto?.trim().toLowerCase() || ''
+        return (origen && textosIncluidos.has(origen)) || (destino && textosIncluidos.has(destino))
+      })
+      .slice(-30)
 
     supabaseFinishedAt = Date.now()
 
