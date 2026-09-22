@@ -396,12 +396,20 @@ export default function OTVivaSesionPage() {
               sesionesMap.set(sesion.id, normalizarSesion(sesion))
             }
 
+            const claveRelacion = (relacion: RelacionLocal) =>
+              [
+                relacion.evento_origen_id,
+                relacion.evento_destino_id,
+                relacion.tipo_relacion,
+              ].join('|')
+
             const relacionesMap = new Map<string, RelacionLocal>()
             for (const relacion of remoto.relaciones) {
-              relacionesMap.set(relacion.id, relacion as RelacionLocal)
+              const normalizada = relacion as RelacionLocal
+              relacionesMap.set(claveRelacion(normalizada), normalizada)
             }
             for (const relacion of localStore.relaciones ?? []) {
-              relacionesMap.set(relacion.id, relacion)
+              relacionesMap.set(claveRelacion(relacion), relacion)
             }
 
             const sesiones = Array.from(sesionesMap.values()).sort(
