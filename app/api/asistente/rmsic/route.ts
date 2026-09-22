@@ -59,6 +59,12 @@ function extraerTextoRespuesta(payload: any) {
 }
 
 export async function POST(request: NextRequest) {
+  const startedAt = Date.now()
+  let supabaseStartedAt = startedAt
+  let supabaseFinishedAt = startedAt
+  let openaiStartedAt = 0
+  let openaiFinishedAt = 0
+
   try {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
     const supabaseAnonKey =
@@ -74,6 +80,8 @@ export async function POST(request: NextRequest) {
     if (!openaiApiKey || !openaiModel) {
       return jsonError('El Asistente RMSIC todavía no tiene configuradas OPENAI_API_KEY y OPENAI_MODEL en Vercel.', 503)
     }
+
+    supabaseStartedAt = Date.now()
 
     const authHeader = request.headers.get('authorization') || ''
     const token = authHeader.startsWith('Bearer ')
@@ -249,6 +257,8 @@ export async function POST(request: NextRequest) {
     }
     const relaciones = Array.from(relacionesMap.values()).slice(-30)
 
+    supabaseFinishedAt = Date.now()
+
     const contexto = {
       ot: {
         id: otId,
@@ -295,6 +305,7 @@ export async function POST(request: NextRequest) {
       },
     ]
 
+    openaiStartedAt = Date.now()
     const openaiResp = await fetch('https://api.openai.com/v1/responses', {
       method: 'POST',
       headers: {
@@ -311,6 +322,7 @@ export async function POST(request: NextRequest) {
     })
 
     const payload = await openaiResp.json().catch(() => null)
+    openaiFinishedAt = Date.now()
 
     if (!openaiResp.ok) {
       const message = payload?.error?.message || payload?.message || 'No se pudo obtener respuesta del Asistente RMSIC.'
@@ -320,10 +332,21 @@ export async function POST(request: NextRequest) {
     const respuesta = extraerTextoRespuesta(payload)
     if (!respuesta) return jsonError('El modelo no devolvió texto utilizable.', 502)
 
+    const finishedAt = Date.now()
+
     return jsonResponse({
       respuesta,
       model: payload?.model || openaiModel,
       response_id: payload?.id || null,
+      timing_ms: {
+        supabase: Math.max(0, supabaseFinishedAt - supabaseStartedAt),
+        openai: openaiStartedAt > 0 ? Math.max(0, openaiFinishedAt - openaiStartedAt) : 0,
+        total: Math.max(0, finishedAt - startedAt),
+      },
+      context_counts: {
+        eventos: eventos.length,
+        relaciones: relaciones.length,
+      },
     })
   } catch (error) {
     return jsonError(error instanceof Error ? error.message : 'Error inesperado en el Asistente RMSIC.', 500)
