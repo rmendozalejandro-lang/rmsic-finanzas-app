@@ -287,8 +287,8 @@ export async function POST(request: NextRequest) {
       'Cuando falte ese contexto, recomienda verificar el estado y las señales de la cadena o circuito conforme al esquema eléctrico, manual del fabricante y procedimiento de seguridad aplicable.',
       'Si una conclusión requiere inspección física, medición o procedimiento de seguridad, indícalo expresamente.',
       'No declares una máquina segura, energizada correctamente ni apta para operar solo por inferencia textual.',
-      'Responde en español técnico, conciso y útil para trabajo en terreno.',
-      'Cuando la consulta sea diagnóstica, estructura preferentemente la respuesta con estas secciones: Registrado en Tralixia; Interpretación de la IA; Hipótesis nuevas sugeridas por IA; Qué falta comprobar; Próxima prueba sugerida.',
+      'Responde en español técnico, conciso y útil para trabajo en terreno. Evita repetir el mismo hecho en más de una sección.',
+      'Cuando la consulta sea diagnóstica, usa solo las secciones necesarias entre: Registrado en Tralixia; Interpretación de la IA; Hipótesis nuevas sugeridas por IA; Qué falta comprobar; Próxima prueba sugerida.',
       'Dentro de Registrado en Tralixia conserva literalmente la categoría disponible: Observado, Medido, Informado, Hipótesis abierta, Hipótesis confirmada o Hipótesis descartada.',
       'Si una sección no aplica, puedes omitirla. No confundas propuesta de IA con dato registrado.',
     ].join(' ')
@@ -316,7 +316,7 @@ export async function POST(request: NextRequest) {
         model: openaiModel,
         instructions,
         input,
-        max_output_tokens: 900,
+        max_output_tokens: 600,
       }),
       cache: 'no-store',
     })
