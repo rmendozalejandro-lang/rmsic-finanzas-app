@@ -45,11 +45,22 @@ type SesionLocal = {
   eventos: EventoLocal[]
 }
 
+type RelacionLocal = {
+  id: string
+  evento_origen_id: string
+  evento_destino_id: string
+  tipo_relacion: string
+  observacion?: string | null
+  created_at: string
+  estado_sync?: EstadoSync
+}
+
 type OTLocalStoreV2 = {
   version: 2
   sesiones: SesionLocal[]
   sesion_activa_id: string | null
   sesion_seleccionada_id: string | null
+  relaciones?: RelacionLocal[]
   updated_at: string
 }
 
@@ -157,6 +168,7 @@ function crearStoreVacio(): OTLocalStoreV2 {
     sesiones: [],
     sesion_activa_id: null,
     sesion_seleccionada_id: null,
+    relaciones: [],
     updated_at: new Date().toISOString(),
   }
 }
@@ -177,6 +189,7 @@ function migrarStoreLocal(empresaId: string, otId: string, userId: string): OTLo
         sesiones,
         sesion_activa_id: activa?.id ?? null,
         sesion_seleccionada_id: seleccionada?.id ?? null,
+        relaciones: Array.isArray(parsed.relaciones) ? parsed.relaciones : [],
         updated_at: new Date().toISOString(),
       }
       window.localStorage.setItem(keyV2, JSON.stringify(next))
@@ -195,6 +208,7 @@ function migrarStoreLocal(empresaId: string, otId: string, userId: string): OTLo
         sesiones: [antigua],
         sesion_activa_id: antigua.estado === 'finalizada' ? null : antigua.id,
         sesion_seleccionada_id: antigua.id,
+        relaciones: [],
         updated_at: new Date().toISOString(),
       }
       window.localStorage.setItem(keyV2, JSON.stringify(next))
@@ -386,10 +400,62 @@ export default function OTVivaSesionPage() {
 
   const persistStore = (next: OTLocalStoreV2) => {
     if (!detalle || !currentUserId) return
-    const normalized = { ...next, version: 2 as const, updated_at: new Date().toISOString() }
-    window.localStorage.setItem(storageKeyV2(detalle.empresa_id, detalle.id, currentUserId), JSON.stringify(normalized))
+    const key = storageKeyV2(detalle.empresa_id, detalle.id, currentUserId)
+    let relacionesActuales: RelacionLocal[] = []
+    try {
+      const rawActual = window.localStorage.getItem(key)
+      if (rawActual) {
+        const actual = JSON.parse(rawActual) as OTLocalStoreV2
+        relacionesActuales = Array.isArray(actual.relaciones) ? actual.relaciones : []
+      }
+    } catch {
+      relacionesActuales = []
+    }
+
+    const normalized = {
+      ...next,
+      relaciones: Array.isArray(next.relaciones) && next.relaciones.length > 0
+        ? next.relaciones
+        : relacionesActuales,
+      version: 2 as const,
+      updated_at: new Date().toISOString(),
+    }
+    window.localStorage.setItem(key, JSON.stringify(normalized))
     setStore(normalized)
+    window.dispatchEvent(new Event('tralixia:ot-viva-local-updated'))
   }
+
+  useEffect(() => {
+    if (!detalle || !currentUserId) return
+    const key = storageKeyV2(detalle.empresa_id, detalle.id, currentUserId)
+
+    const recargarStore = () => {
+      const raw = window.localStorage.getItem(key)
+      if (!raw) return
+      try {
+        const parsed = JSON.parse(raw) as OTLocalStoreV2
+        if (parsed.version !== 2 || !Array.isArray(parsed.sesiones)) return
+        setStore({
+          ...parsed,
+          sesiones: parsed.sesiones.map(normalizarSesion),
+          relaciones: Array.isArray(parsed.relaciones) ? parsed.relaciones : [],
+        })
+      } catch {
+        // Mantener el estado actual si el respaldo local no puede leerse.
+      }
+    }
+
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === key) recargarStore()
+    }
+
+    window.addEventListener('storage', onStorage)
+    window.addEventListener('tralixia:ot-viva-local-updated', recargarStore)
+    return () => {
+      window.removeEventListener('storage', onStorage)
+      window.removeEventListener('tralixia:ot-viva-local-updated', recargarStore)
+    }
+  }, [detalle, currentUserId])
 
   const actualizarSesion = (sesionId: string, updater: (actual: SesionLocal) => SesionLocal) => {
     persistStore({
