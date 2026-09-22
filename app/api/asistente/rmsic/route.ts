@@ -320,7 +320,7 @@ export async function POST(request: NextRequest) {
       'No llames hecho confirmado a un hallazgo observado, una medición o información reportada solo por estar registrada.',
       'Usa la palabra registros o evidencias registradas al referirte colectivamente a OBSERVADO, MEDIDO o INFORMADO.',
       'No presentes como hipótesis abiertas de Tralixia causas alternativas que tú hayas inferido. Etiquétalas como Hipótesis nuevas sugeridas por IA y aclara que aún no forman parte de la memoria técnica.',
-      'Cuando propongas hipótesis nuevas, formula causas técnicas concretas y separadas, no recomendaciones ni pruebas.',
+      'Cuando propongas hipótesis nuevas, formula causas técnicas concretas y separadas, no recomendaciones ni pruebas. Propón como máximo 3 hipótesis nuevas y solo si están directamente relacionadas con la problemática, síntoma, componente o condición técnica que se está analizando en la consulta actual. No agregues hipótesis laterales por el solo hecho de que existan antecedentes históricos en la OT.',
       'No inventes mediciones, estados internos ni datos que no aparezcan en el contexto.',
       'Cuestiona hipótesis cuando la evidencia sea insuficiente y propone pruebas reversibles y seguras antes de concluir.',
       'No recomiendes una técnica de medición específica como continuidad, resistencia, puenteo, forzado de señal o energización si el contexto no identifica el circuito, tecnología y condiciones seguras necesarias.',
