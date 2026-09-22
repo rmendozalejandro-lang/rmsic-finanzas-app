@@ -10,6 +10,11 @@ type EventoLocal = {
   tipo_evento: string
   nivel_certeza: string
   texto_original: string
+  descripcion_tecnica?: string
+  componente?: string
+  prioridad?: 'baja' | 'media' | 'alta' | 'critica' | null
+  visible_cliente?: boolean
+  incluir_ot?: boolean
   ocurrido_at: string
 }
 
@@ -137,10 +142,34 @@ export default function OTVivaHypothesisQuickActions() {
 
   const estadoHipotesis = (id: string) => {
     const vinculadas = relaciones.filter((relacion) => relacion.evento_destino_id === id)
-    if (vinculadas.some((relacion) => relacion.tipo_relacion === 'confirma')) return 'confirmada'
-    if (vinculadas.some((relacion) => relacion.tipo_relacion === 'descarta')) return 'descartada'
+    const tieneConfirma = vinculadas.some((relacion) => relacion.tipo_relacion === 'confirma')
+    const tieneDescarta = vinculadas.some((relacion) => relacion.tipo_relacion === 'descarta')
+
+    const decisionesHumanas = vinculadas
+      .filter((relacion) => relacion.tipo_relacion === 'decision_sobre')
+      .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+
+    const ultimaDecision = decisionesHumanas.at(-1)
+    if (ultimaDecision) {
+      const eventoDecision = eventos.find((evento) => evento.id === ultimaDecision.evento_origen_id)
+      if (eventoDecision?.nivel_certeza === 'confirmado') return 'confirmada'
+      if (eventoDecision?.nivel_certeza === 'descartado') return 'descartada'
+    }
+
+    if (tieneConfirma && tieneDescarta) return 'conflicto'
+    if (tieneConfirma) return 'confirmada'
+    if (tieneDescarta) return 'descartada'
     return 'abierta'
   }
+
+  const tieneConflictoHistorico = (id: string) => {
+    const vinculadas = relaciones.filter((relacion) => relacion.evento_destino_id === id)
+    return vinculadas.some((relacion) => relacion.tipo_relacion === 'confirma')
+      && vinculadas.some((relacion) => relacion.tipo_relacion === 'descarta')
+  }
+
+  const tieneResolucionHumana = (id: string) =>
+    relaciones.some((relacion) => relacion.evento_destino_id === id && relacion.tipo_relacion === 'decision_sobre')
 
   const persistir = async (next: StoreV2) => {
     if (!key) return
@@ -179,9 +208,64 @@ export default function OTVivaHypothesisQuickActions() {
     setMensaje(tipoRelacion === 'confirma' ? 'Hipótesis confirmada localmente. Queda pendiente de sincronización.' : 'Hipótesis descartada localmente. Queda pendiente de sincronización.')
   }
 
+  const resolverConflicto = async (hipotesisId: string, decision: 'confirmado' | 'descartado') => {
+    if (!store) return
+    const sesionActivaId = store.sesion_activa_id
+    const sesionActiva = store.sesiones.find((sesion) => sesion.id === sesionActivaId && sesion.estado === 'en_curso')
+    if (!sesionActiva) {
+      setMensaje('Inicia o reanuda una sesión de terreno para registrar la decisión humana que resuelve el conflicto.')
+      return
+    }
+
+    const hipotesisObjetivo = hipotesis.find((item) => item.id === hipotesisId)
+    const ahora = new Date().toISOString()
+    const eventoDecision: EventoLocal = {
+      id: crypto.randomUUID(),
+      tipo_evento: 'resultado',
+      nivel_certeza: decision,
+      texto_original: decision === 'confirmado'
+        ? 'Decisión humana: se confirma la hipótesis después de revisar la evidencia contradictoria.'
+        : 'Decisión humana: se descarta la hipótesis después de revisar la evidencia contradictoria.',
+      descripcion_tecnica: hipotesisObjetivo
+        ? `Resolución humana explícita del conflicto sobre la hipótesis: ${hipotesisObjetivo.texto_original}`
+        : 'Resolución humana explícita de conflicto de hipótesis.',
+      componente: '',
+      prioridad: null,
+      visible_cliente: false,
+      incluir_ot: true,
+      ocurrido_at: ahora,
+    }
+
+    const relacionDecision: RelacionLocal = {
+      id: crypto.randomUUID(),
+      evento_origen_id: eventoDecision.id,
+      evento_destino_id: hipotesisId,
+      tipo_relacion: 'decision_sobre',
+      observacion: decision === 'confirmado'
+        ? 'Resolución humana explícita: prevalece la confirmación sin eliminar la evidencia contradictoria.'
+        : 'Resolución humana explícita: prevalece el descarte sin eliminar la evidencia contradictoria.',
+      created_at: ahora,
+      estado_sync: 'local',
+    }
+
+    const sesiones = store.sesiones.map((sesion) =>
+      sesion.id === sesionActiva.id
+        ? { ...sesion, estado_sync: 'local' as const, eventos: [...sesion.eventos, eventoDecision] }
+        : sesion
+    )
+
+    await persistir({ ...store, sesiones, relaciones: [...relaciones, relacionDecision] })
+    setMensaje(
+      decision === 'confirmado'
+        ? 'Conflicto resuelto por decisión humana como CONFIRMADA. Las evidencias previas se conservan.'
+        : 'Conflicto resuelto por decisión humana como DESCARTADA. Las evidencias previas se conservan.'
+    )
+  }
+
   if (pathname.endsWith('/relaciones') || !store || hipotesis.length === 0) return null
 
   const abiertas = hipotesis.filter((h) => estadoHipotesis(h.id) === 'abierta').length
+  const conflictos = hipotesis.filter((h) => estadoHipotesis(h.id) === 'conflicto').length
 
   return (
     <section className="mx-auto max-w-6xl rounded-2xl border border-violet-200 bg-violet-50 p-5 shadow-sm">
@@ -191,20 +275,23 @@ export default function OTVivaHypothesisQuickActions() {
           <h2 className="mt-1 text-lg font-black text-slate-900">Validación rápida desde terreno</h2>
           <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-600">Selecciona la evidencia que sustenta tu decisión y confirma o descarta la hipótesis sin salir del registro de terreno.</p>
         </div>
-        <span className="rounded-full border border-violet-200 bg-white px-3 py-1 text-xs font-black text-violet-700">{abiertas} ABIERTAS · {hipotesis.length} TOTAL</span>
+        <span className="rounded-full border border-violet-200 bg-white px-3 py-1 text-xs font-black text-violet-700">{abiertas} ABIERTAS · {conflictos} EN CONFLICTO · {hipotesis.length} TOTAL</span>
       </div>
 
       <div className="mt-4 space-y-3">
         {[...hipotesis].reverse().map((hipotesis) => {
           const estado = estadoHipotesis(hipotesis.id)
           const abierta = estado === 'abierta'
+          const conflicto = estado === 'conflicto'
+          const conflictoHistorico = tieneConflictoHistorico(hipotesis.id)
+          const resolucionHumana = tieneResolucionHumana(hipotesis.id)
           return (
             <article key={hipotesis.id} className="rounded-xl border border-violet-200 bg-white p-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-xs font-black uppercase tracking-wide text-slate-500">Hipótesis</span>
-                    <span className={`rounded-full px-2 py-1 text-[10px] font-black uppercase ${estado === 'confirmada' ? 'bg-emerald-50 text-emerald-700' : estado === 'descartada' ? 'bg-slate-100 text-slate-600' : 'bg-amber-50 text-amber-700'}`}>{estado}</span>
+                    <span className={`rounded-full px-2 py-1 text-[10px] font-black uppercase ${estado === 'confirmada' ? 'bg-emerald-50 text-emerald-700' : estado === 'descartada' ? 'bg-slate-100 text-slate-600' : estado === 'conflicto' ? 'bg-rose-50 text-rose-700' : 'bg-amber-50 text-amber-700'}`}>{estado === 'conflicto' ? 'EN CONFLICTO' : estado}</span>
                   </div>
                   <p className="mt-2 text-sm font-semibold text-slate-900">{hipotesis.texto_original}</p>
                 </div>
@@ -229,6 +316,24 @@ export default function OTVivaHypothesisQuickActions() {
                     <button type="button" onClick={() => void resolver(hipotesis.id, 'confirma')} className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm font-black text-emerald-700 hover:bg-emerald-100">Confirmar</button>
                     <button type="button" onClick={() => void resolver(hipotesis.id, 'descarta')} className="rounded-xl border border-slate-300 bg-slate-100 px-4 py-2.5 text-sm font-black text-slate-700 hover:bg-slate-200">Descartar</button>
                   </div>
+                </div>
+              ) : null}
+
+              {conflicto ? (
+                <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 p-4">
+                  <p className="text-xs font-black uppercase tracking-wide text-rose-700">Evidencia contradictoria · requiere revisión humana</p>
+                  <p className="mt-1 text-sm leading-6 text-rose-800">Existen relaciones que confirman y descartan esta misma hipótesis. Tralixia conserva ambas y no decide automáticamente cuál prevalece.</p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button type="button" onClick={() => void resolverConflicto(hipotesis.id, 'confirmado')} className="rounded-xl border border-emerald-200 bg-white px-4 py-2.5 text-sm font-black text-emerald-700 hover:bg-emerald-50">Resolver como confirmada</button>
+                    <button type="button" onClick={() => void resolverConflicto(hipotesis.id, 'descartado')} className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-black text-slate-700 hover:bg-slate-100">Resolver como descartada</button>
+                  </div>
+                  <p className="mt-2 text-xs text-rose-700">La resolución crea una decisión humana trazable. Las evidencias anteriores no se eliminan.</p>
+                </div>
+              ) : null}
+
+              {!conflicto && conflictoHistorico && resolucionHumana ? (
+                <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs font-semibold text-slate-600">
+                  Antecedente: existió evidencia contradictoria. El estado actual fue resuelto mediante una decisión humana explícita.
                 </div>
               ) : null}
             </article>
