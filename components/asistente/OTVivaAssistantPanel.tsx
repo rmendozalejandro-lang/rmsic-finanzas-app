@@ -59,7 +59,8 @@ function renderInline(texto: string): ReactNode[] {
     if (parte.startsWith('**') && parte.endsWith('**')) {
       return <strong key={index} className="font-black text-slate-900">{parte.slice(2, -2)}</strong>
     }
-    return <Fragment key={index}>{parte}</Fragment>
+    const limpia = parte.replace(/\*\*/g, '').replace(/__/g, '')
+    return <Fragment key={index}>{limpia}</Fragment>
   })
 }
 
