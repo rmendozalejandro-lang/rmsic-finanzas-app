@@ -111,7 +111,7 @@ export async function POST(request: NextRequest) {
 
     const { data: ot, error: otError } = await authClient
       .from('ot_ordenes_trabajo')
-      .select('id, empresa_id, folio, titulo, cliente_id, tecnico_responsable_id')
+      .select('id, empresa_id, folio, titulo, cliente_id, tecnico_responsable_id, fecha_ot, fecha_cierre, tipo_servicio, area_trabajo, descripcion_solicitud, problema_reportado, diagnostico, causa_probable, trabajo_realizado, hallazgos, conclusiones_tecnicas, recomendaciones, resultado_servicio, observaciones_cierre')
       .eq('id', otId)
       .eq('activo', true)
       .is('deleted_at', null)
@@ -242,26 +242,9 @@ export async function POST(request: NextRequest) {
         ocurrido_at: evento.ocurrido_at,
       })
     }
-    const eventosTodos = Array.from(eventosMap.values())
-
-    const textoTecnicoIrrelevante = [
-      /sincronizaci[oó]n/i,
-      /p[eé]rdida de conexi[oó]n/i,
-      /operaci[oó]n offline/i,
-      /prueba offline/i,
-      /reintento/i,
-    ]
-
-    const textoSinContenidoTecnico = (texto: string) => {
-      const limpio = texto.trim()
-      if (!limpio) return true
-      if (textoTecnicoIrrelevante.some((patron) => patron.test(limpio))) return true
-      const soloRuido = limpio.replace(/[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑ]/g, '')
-      return soloRuido.length < 5
-    }
-
-    const eventosTecnicos = eventosTodos.filter((evento) => !textoSinContenidoTecnico(evento.texto_original || ''))
-    const eventos = (eventosTecnicos.length ? eventosTecnicos : eventosTodos).slice(-40)
+    // No se excluyen eventos por palabras clave: términos como "pérdida de conexión"
+    // pueden ser ruido de prueba o evidencia técnica según el contexto de la OT.
+    const eventos = Array.from(eventosMap.values()).slice(-40)
 
     const claveRelacion = (relacion: RelacionEntrada) =>
       [
@@ -285,6 +268,29 @@ export async function POST(request: NextRequest) {
 
     supabaseFinishedAt = Date.now()
 
+    const camposAntecedentes = {
+      fecha_ot: (ot as any).fecha_ot ?? null,
+      fecha_cierre: (ot as any).fecha_cierre ?? null,
+      tipo_servicio: (ot as any).tipo_servicio ?? null,
+      area_trabajo: (ot as any).area_trabajo ?? null,
+      descripcion_solicitud: (ot as any).descripcion_solicitud ?? null,
+      problema_reportado: (ot as any).problema_reportado ?? null,
+      diagnostico: (ot as any).diagnostico ?? null,
+      causa_probable: (ot as any).causa_probable ?? null,
+      trabajo_realizado: (ot as any).trabajo_realizado ?? null,
+      hallazgos: (ot as any).hallazgos ?? null,
+      conclusiones_tecnicas: (ot as any).conclusiones_tecnicas ?? null,
+      recomendaciones: (ot as any).recomendaciones ?? null,
+      resultado_servicio: (ot as any).resultado_servicio ?? null,
+      observaciones_cierre: (ot as any).observaciones_cierre ?? null,
+    }
+
+    const antecedentesOtFormal = Object.fromEntries(
+      Object.entries(camposAntecedentes).filter(([, valor]) =>
+        valor !== null && valor !== undefined && String(valor).trim() !== ''
+      ),
+    )
+
     const contexto = {
       ot: {
         id: otId,
@@ -293,14 +299,22 @@ export async function POST(request: NextRequest) {
         cliente: body.ot?.cliente ?? null,
         equipo: body.ot?.equipo ?? null,
       },
-      eventos,
-      relaciones,
+      antecedentes_ot_formal: antecedentesOtFormal,
+      memoria_ot_viva: {
+        eventos,
+        relaciones,
+      },
     }
 
     const instructions = [
       'Eres el Asistente Técnico RMSIC dentro de Tralixia.',
       'Actúas como segundo profesional técnico, no como autoridad automática.',
       'La memoria técnica registrada en Tralixia y tu razonamiento deben permanecer separados de forma inequívoca.',
+      'El contexto puede contener dos fuentes distintas: antecedentes_ot_formal y memoria_ot_viva. Mantén esa separación explícita.',
+      'antecedentes_ot_formal contiene documentación histórica de la OT formal y es de solo lectura para esta consulta. No la conviertas automáticamente en eventos OT Viva ni en hipótesis confirmadas.',
+      'memoria_ot_viva contiene eventos y relaciones estructuradas del asistente. Solo esas relaciones explícitas pueden confirmar o descartar hipótesis OT Viva.',
+      'Cuando uses información de antecedentes_ot_formal, identifícala como Antecedentes de la OT formal o Registro histórico de la OT, sin reclasificarla automáticamente como Observado, Medido o Informado.',
+      'Si la OT formal declara incertidumbre, por ejemplo que una causa no pudo establecerse con certeza, conserva expresamente esa incertidumbre aunque exista un hallazgo mecánico posterior.',
       'OBSERVADO, MEDIDO e INFORMADO son categorías de procedencia y NO equivalen a CONFIRMADO.',
       'Una HIPÓTESIS solo puede llamarse CONFIRMADA o DESCARTADA si el contexto estructurado contiene evidencia o una relación que indique explícitamente ese estado.',
       'No llames hecho confirmado a un hallazgo observado, una medición o información reportada solo por estar registrada.',
@@ -314,8 +328,8 @@ export async function POST(request: NextRequest) {
       'Si una conclusión requiere inspección física, medición o procedimiento de seguridad, indícalo expresamente.',
       'No declares una máquina segura, energizada correctamente ni apta para operar solo por inferencia textual.',
       'Responde en español técnico, conciso y útil para trabajo en terreno. Evita repetir el mismo hecho en más de una sección.',
-      'Cuando la consulta sea diagnóstica, usa solo las secciones necesarias entre: Registrado en Tralixia; Interpretación de la IA; Hipótesis nuevas sugeridas por IA; Qué falta comprobar; Próxima prueba sugerida.',
-      'Dentro de Registrado en Tralixia conserva literalmente la categoría disponible: Observado, Medido, Informado, Hipótesis abierta, Hipótesis confirmada o Hipótesis descartada.',
+      'Cuando la consulta sea diagnóstica, usa solo las secciones necesarias entre: Antecedentes de la OT formal; Memoria OT Viva; Interpretación de la IA; Hipótesis nuevas sugeridas por IA; Qué falta comprobar; Próxima prueba sugerida.',
+      'Dentro de Memoria OT Viva conserva literalmente la categoría disponible: Observado, Medido, Informado, Hipótesis abierta, Hipótesis confirmada o Hipótesis descartada.',
       'Si una sección no aplica, puedes omitirla. No confundas propuesta de IA con dato registrado.',
     ].join(' ')
 
