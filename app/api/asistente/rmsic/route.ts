@@ -152,8 +152,102 @@ export async function POST(request: NextRequest) {
       return jsonError('No tienes permisos para consultar el Asistente sobre esta OT.', 403)
     }
 
-    const eventos = Array.isArray(body.eventos) ? body.eventos.slice(-40) : []
-    const relaciones = Array.isArray(body.relaciones) ? body.relaciones.slice(-30) : []
+    const eventosLocales = Array.isArray(body.eventos) ? body.eventos.slice(-40) : []
+    const relacionesLocales = Array.isArray(body.relaciones) ? body.relaciones.slice(-30) : []
+
+    // La IA debe poder razonar sobre la memoria técnica ya sincronizada aunque el
+    // Preview cambie de origen y el localStorage del navegador esté vacío.
+    const { data: vinculoCaso, error: vinculoError } = await authClient
+      .from('asistente_caso_ots')
+      .select('caso_id')
+      .eq('ot_id', otId)
+      .eq('empresa_id', (ot as any).empresa_id)
+      .maybeSingle()
+
+    if (vinculoError) {
+      return jsonError(`No se pudo cargar la memoria técnica de la OT: ${vinculoError.message}`, 500)
+    }
+
+    let eventosSincronizados: Array<EventoEntrada & { id?: string }> = []
+    let relacionesSincronizadas: RelacionEntrada[] = []
+
+    if (vinculoCaso?.caso_id) {
+      const { data: eventosDb, error: eventosDbError } = await authClient
+        .from('asistente_eventos')
+        .select('id, tipo_evento, nivel_certeza, texto_original, ocurrido_at')
+        .eq('caso_id', vinculoCaso.caso_id)
+        .eq('estado', 'activo')
+        .order('ocurrido_at', { ascending: true })
+        .limit(80)
+
+      if (eventosDbError) {
+        return jsonError(`No se pudieron cargar los eventos sincronizados: ${eventosDbError.message}`, 500)
+      }
+
+      eventosSincronizados = (eventosDb ?? []).map((evento: any) => ({
+        id: evento.id,
+        tipo_evento: String(evento.tipo_evento || ''),
+        nivel_certeza: String(evento.nivel_certeza || ''),
+        texto_original: String(evento.texto_original || ''),
+        ocurrido_at: evento.ocurrido_at || undefined,
+      }))
+
+      const eventoTexto = new Map(
+        eventosSincronizados
+          .filter((evento) => evento.id)
+          .map((evento) => [evento.id as string, evento.texto_original]),
+      )
+
+      const { data: relacionesDb, error: relacionesDbError } = await authClient
+        .from('asistente_evento_relaciones')
+        .select('tipo_relacion, evento_origen_id, evento_destino_id')
+        .eq('caso_id', vinculoCaso.caso_id)
+        .order('created_at', { ascending: true })
+        .limit(60)
+
+      if (relacionesDbError) {
+        return jsonError(`No se pudieron cargar las relaciones sincronizadas: ${relacionesDbError.message}`, 500)
+      }
+
+      relacionesSincronizadas = (relacionesDb ?? []).map((relacion: any) => ({
+        tipo_relacion: String(relacion.tipo_relacion || ''),
+        origen_texto: eventoTexto.get(relacion.evento_origen_id),
+        destino_texto: eventoTexto.get(relacion.evento_destino_id),
+      }))
+    }
+
+    const claveEvento = (evento: EventoEntrada) =>
+      [
+        evento.tipo_evento?.trim().toLowerCase(),
+        evento.nivel_certeza?.trim().toLowerCase(),
+        evento.texto_original?.trim().toLowerCase(),
+        evento.ocurrido_at || '',
+      ].join('|')
+
+    const eventosMap = new Map<string, EventoEntrada>()
+    for (const evento of [...eventosSincronizados, ...eventosLocales]) {
+      if (!evento.texto_original?.trim()) continue
+      eventosMap.set(claveEvento(evento), {
+        tipo_evento: evento.tipo_evento,
+        nivel_certeza: evento.nivel_certeza,
+        texto_original: evento.texto_original,
+        ocurrido_at: evento.ocurrido_at,
+      })
+    }
+    const eventos = Array.from(eventosMap.values()).slice(-40)
+
+    const claveRelacion = (relacion: RelacionEntrada) =>
+      [
+        relacion.tipo_relacion?.trim().toLowerCase(),
+        relacion.origen_texto?.trim().toLowerCase() || '',
+        relacion.destino_texto?.trim().toLowerCase() || '',
+      ].join('|')
+
+    const relacionesMap = new Map<string, RelacionEntrada>()
+    for (const relacion of [...relacionesSincronizadas, ...relacionesLocales]) {
+      relacionesMap.set(claveRelacion(relacion), relacion)
+    }
+    const relaciones = Array.from(relacionesMap.values()).slice(-30)
 
     const contexto = {
       ot: {
