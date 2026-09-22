@@ -148,6 +148,7 @@ export default function OTVivaAssistantPanel() {
   const [userId, setUserId] = useState('')
   const [storageKey, setStorageKey] = useState('')
   const [descartadas, setDescartadas] = useState<string[]>([])
+  const [timing, setTiming] = useState<{ supabase: number; openai: number; total: number } | null>(null)
 
   useEffect(() => {
     let mounted = true
@@ -227,6 +228,7 @@ export default function OTVivaAssistantPanel() {
     setMensaje('')
     setRespuesta('')
     setDescartadas([])
+    setTiming(null)
 
     try {
       const { data: sessionData } = await supabase.auth.getSession()
@@ -253,6 +255,13 @@ export default function OTVivaAssistantPanel() {
       const data = await response.json().catch(() => null)
       if (!response.ok) throw new Error(data?.error || 'No se pudo consultar al Asistente RMSIC.')
       setRespuesta(String(data?.respuesta || ''))
+      if (data?.timing_ms && typeof data.timing_ms === 'object') {
+        setTiming({
+          supabase: Number(data.timing_ms.supabase || 0),
+          openai: Number(data.timing_ms.openai || 0),
+          total: Number(data.timing_ms.total || 0),
+        })
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error inesperado al consultar al asistente.')
     } finally {
@@ -335,7 +344,14 @@ export default function OTVivaAssistantPanel() {
       {error ? <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700">{error}</div> : null}
       {respuesta ? (
         <div className="mt-4 rounded-xl border border-violet-200 bg-violet-50 p-4">
-          <p className="text-xs font-black uppercase tracking-wide text-violet-600">Respuesta del asistente</p>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs font-black uppercase tracking-wide text-violet-600">Respuesta del asistente</p>
+            {timing ? (
+              <span className="rounded-full border border-violet-200 bg-white px-2.5 py-1 text-[10px] font-black text-violet-700">
+                TOTAL {(timing.total / 1000).toFixed(1)} s · IA {(timing.openai / 1000).toFixed(1)} s · DATOS {(timing.supabase / 1000).toFixed(1)} s
+              </span>
+            ) : null}
+          </div>
           <div className="mt-2"><RespuestaFormateada texto={respuesta} /></div>
         </div>
       ) : null}
