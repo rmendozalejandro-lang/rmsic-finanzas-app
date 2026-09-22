@@ -264,6 +264,10 @@ export default function OTVivaHypothesisQuickActions() {
 
   if (pathname.endsWith('/relaciones') || !store || hipotesis.length === 0) return null
 
+  const sesionActivaDisponible = Boolean(
+    store.sesion_activa_id &&
+    store.sesiones.some((sesion) => sesion.id === store.sesion_activa_id && sesion.estado === 'en_curso')
+  )
   const abiertas = hipotesis.filter((h) => estadoHipotesis(h.id) === 'abierta').length
   const conflictos = hipotesis.filter((h) => estadoHipotesis(h.id) === 'conflicto').length
 
@@ -323,9 +327,28 @@ export default function OTVivaHypothesisQuickActions() {
                 <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 p-4">
                   <p className="text-xs font-black uppercase tracking-wide text-rose-700">Evidencia contradictoria · requiere revisión humana</p>
                   <p className="mt-1 text-sm leading-6 text-rose-800">Existen relaciones que confirman y descartan esta misma hipótesis. Tralixia conserva ambas y no decide automáticamente cuál prevalece.</p>
+                  {!sesionActivaDisponible ? (
+                    <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">
+                      Para registrar una resolución humana trazable, inicia o reanuda una sesión de terreno en esta OT.
+                    </div>
+                  ) : null}
                   <div className="mt-3 flex flex-wrap gap-2">
-                    <button type="button" onClick={() => void resolverConflicto(hipotesis.id, 'confirmado')} className="rounded-xl border border-emerald-200 bg-white px-4 py-2.5 text-sm font-black text-emerald-700 hover:bg-emerald-50">Resolver como confirmada</button>
-                    <button type="button" onClick={() => void resolverConflicto(hipotesis.id, 'descartado')} className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-black text-slate-700 hover:bg-slate-100">Resolver como descartada</button>
+                    <button
+                      type="button"
+                      disabled={!sesionActivaDisponible}
+                      onClick={() => void resolverConflicto(hipotesis.id, 'confirmado')}
+                      className="rounded-xl border border-emerald-200 bg-white px-4 py-2.5 text-sm font-black text-emerald-700 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Resolver como confirmada
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!sesionActivaDisponible}
+                      onClick={() => void resolverConflicto(hipotesis.id, 'descartado')}
+                      className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-black text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Resolver como descartada
+                    </button>
                   </div>
                   <p className="mt-2 text-xs text-rose-700">La resolución crea una decisión humana trazable. Las evidencias anteriores no se eliminan.</p>
                 </div>
