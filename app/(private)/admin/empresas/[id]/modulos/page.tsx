@@ -23,6 +23,14 @@ type EmpresaModulo = {
   habilitado: boolean
 }
 
+type EmpresaCapacidad = {
+  id?: string
+  empresa_id: string
+  capacidad: string
+  habilitado: boolean
+  configuracion?: Record<string, unknown> | null
+}
+
 const MODULO_DESCRIPCIONES: Record<ModuloPrincipal, string> = {
   comercial: 'Clientes, cotizaciones, ingresos/ventas y cobranzas.',
   financiero: 'Bancos, egresos, proveedores, transferencias y flujo de caja.',
@@ -48,6 +56,8 @@ export default function EmpresaModulosPage() {
   const [isSuperAdmin, setIsSuperAdmin] = useState(false)
   const [empresa, setEmpresa] = useState<Empresa | null>(null)
   const [modulos, setModulos] = useState<EmpresaModulo[]>([])
+  const [capacidadIA, setCapacidadIA] = useState<EmpresaCapacidad | null>(null)
+  const [savingCapacidadIA, setSavingCapacidadIA] = useState(false)
   const [error, setError] = useState('')
 
   const modulosOrdenados = useMemo(() => {
@@ -105,6 +115,20 @@ export default function EmpresaModulosPage() {
       }
 
       setEmpresa(empresaResp.data as Empresa)
+
+      const capacidadResp = await supabase
+        .from('empresa_capacidades')
+        .select('id, empresa_id, capacidad, habilitado, configuracion')
+        .eq('empresa_id', empresaId)
+        .eq('capacidad', 'asistente_ia')
+        .maybeSingle()
+
+      if (capacidadResp.error) {
+        setError(capacidadResp.error.message)
+        return
+      }
+
+      setCapacidadIA((capacidadResp.data as EmpresaCapacidad | null) ?? null)
 
       const modulosResp = await supabase
         .from('empresa_modulos')
@@ -207,6 +231,42 @@ export default function EmpresaModulosPage() {
 
     window.dispatchEvent(new Event('empresa-activa-cambiada'))
     setSavingModulo(null)
+  }
+
+  const cambiarCapacidadIA = async () => {
+    if (!empresaId) return
+
+    setSavingCapacidadIA(true)
+    setError('')
+
+    const nuevoEstado = !capacidadIA?.habilitado
+    const resp = await supabase
+      .from('empresa_capacidades')
+      .upsert(
+        {
+          empresa_id: empresaId,
+          capacidad: 'asistente_ia',
+          habilitado: nuevoEstado,
+          configuracion: {
+            alcance: 'ot_viva',
+            modo: 'piloto',
+          },
+        },
+        {
+          onConflict: 'empresa_id,capacidad',
+        }
+      )
+      .select('id, empresa_id, capacidad, habilitado, configuracion')
+      .single()
+
+    if (resp.error) {
+      setError(resp.error.message)
+      setSavingCapacidadIA(false)
+      return
+    }
+
+    setCapacidadIA(resp.data as EmpresaCapacidad)
+    setSavingCapacidadIA(false)
   }
 
   useEffect(() => {
@@ -316,11 +376,52 @@ export default function EmpresaModulosPage() {
         })}
       </div>
 
+      <section className="rounded-[28px] border border-indigo-200 bg-indigo-50/40 p-6 shadow-sm">
+        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-indigo-700">
+              Capacidades avanzadas
+            </p>
+            <h2 className="mt-1 text-xl font-semibold text-slate-900">Asistente IA Tralixia</h2>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
+              Autoriza a esta empresa a utilizar funciones de inteligencia artificial.
+              Si está desactivado, los usuarios de la empresa no tienen acceso al
+              asistente aunque conozcan la ruta o intenten llamar la API directamente.
+            </p>
+          </div>
+          <span
+            className={`w-fit rounded-full px-3 py-1 text-xs font-semibold ${
+              capacidadIA?.habilitado
+                ? 'bg-emerald-100 text-emerald-800'
+                : 'bg-slate-200 text-slate-600'
+            }`}
+          >
+            {capacidadIA?.habilitado ? 'IA habilitada' : 'IA bloqueada'}
+          </span>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => void cambiarCapacidadIA()}
+          disabled={savingCapacidadIA}
+          className={`mt-5 rounded-2xl px-5 py-3 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-60 ${
+            capacidadIA?.habilitado
+              ? 'bg-slate-700 hover:bg-slate-800'
+              : 'bg-indigo-700 hover:bg-indigo-800'
+          }`}
+        >
+          {savingCapacidadIA
+            ? 'Guardando...'
+            : capacidadIA?.habilitado
+              ? 'Deshabilitar IA para esta empresa'
+              : 'Habilitar IA para esta empresa'}
+        </button>
+      </section>
+
       <div className="rounded-[24px] border border-amber-200 bg-amber-50 p-5 text-sm leading-6 text-amber-800">
-        <strong>Importante:</strong> si desactivas un módulo para una empresa, sus
-        submódulos dejan de aparecer en el menú aunque el usuario tenga rol con
-        permiso. El acceso final queda definido por módulo habilitado de empresa
-        más permiso del rol.
+        <strong>Importante:</strong> los módulos y las capacidades avanzadas son controles
+        independientes. La IA requiere que la empresa tenga el módulo correspondiente
+        habilitado, permisos de usuario y además la capacidad IA activa.
       </div>
     </div>
   )
