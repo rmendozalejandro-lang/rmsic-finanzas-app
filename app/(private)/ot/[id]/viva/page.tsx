@@ -60,6 +60,28 @@ type RelacionEvidenciaRow = {
   tipo_uso: string
 }
 
+type RelacionEventoRow = {
+  id: string
+  evento_origen_id: string
+  evento_destino_id: string
+  tipo_relacion: string
+  observacion: string | null
+  created_at: string
+}
+
+type DecisionRow = {
+  id: string
+  sesion_id: string | null
+  evento_id: string | null
+  actor_tipo: string
+  actor_nombre_snapshot: string | null
+  actor_cargo_snapshot: string | null
+  decision: string
+  motivo: string | null
+  decidido_at: string
+  created_by: string | null
+}
+
 const BUCKET = 'ot-viva-evidencias'
 
 function safeName(value: string) {
@@ -119,6 +141,10 @@ function OTVivaContent() {
   const [eventos, setEventos] = useState<EventoRow[]>([])
   const [evidencias, setEvidencias] = useState<EvidenciaRow[]>([])
   const [relaciones, setRelaciones] = useState<RelacionEvidenciaRow[]>([])
+  const [relacionesEventos, setRelacionesEventos] = useState<RelacionEventoRow[]>([])
+  const [decisiones, setDecisiones] = useState<DecisionRow[]>([])
+  const [userName, setUserName] = useState('')
+  const [userRole, setUserRole] = useState('')
 
   const [tipoEvento, setTipoEvento] = useState('hallazgo')
   const [textoEvento, setTextoEvento] = useState('')
@@ -127,9 +153,26 @@ function OTVivaContent() {
   const [descripcionEvidencia, setDescripcionEvidencia] = useState('')
   const [archivo, setArchivo] = useState<File | null>(null)
 
+  const [hipotesisDestino, setHipotesisDestino] = useState('')
+  const [eventoOrigenRelacion, setEventoOrigenRelacion] = useState('')
+  const [tipoRelacion, setTipoRelacion] = useState('sustenta')
+  const [observacionRelacion, setObservacionRelacion] = useState('')
+  const [hipotesisDecision, setHipotesisDecision] = useState('')
+  const [motivoDecision, setMotivoDecision] = useState('')
+
   const sesionActiva = useMemo(
     () => sesiones.find((item) => item.estado === 'en_curso') ?? null,
     [sesiones]
+  )
+
+  const hipotesis = useMemo(
+    () => eventos.filter((item) => item.tipo_evento === 'hipotesis'),
+    [eventos]
+  )
+
+  const eventosById = useMemo(
+    () => new Map(eventos.map((item) => [item.id, item])),
+    [eventos]
   )
 
   const loadAll = useCallback(async () => {
@@ -141,6 +184,15 @@ function OTVivaContent() {
       const { data: authData, error: authError } = await supabase.auth.getUser()
       if (authError || !authData.user) throw new Error('No se pudo validar la sesión.')
       setUserId(authData.user.id)
+
+      const { data: perfilData } = await supabase
+        .from('perfiles')
+        .select('nombre_completo,rol')
+        .eq('id', authData.user.id)
+        .maybeSingle()
+
+      setUserName(perfilData?.nombre_completo || authData.user.email || 'Usuario')
+      setUserRole(perfilData?.rol || '')
 
       const { data: otData, error: otError } = await supabase
         .from('ot_ordenes_trabajo')
@@ -183,10 +235,19 @@ function OTVivaContent() {
         setEventos([])
         setEvidencias([])
         setRelaciones([])
+        setRelacionesEventos([])
+        setDecisiones([])
         return
       }
 
-      const [sesionesResp, eventosResp, evidenciasResp, relacionesResp] = await Promise.all([
+      const [
+        sesionesResp,
+        eventosResp,
+        evidenciasResp,
+        relacionesResp,
+        relacionesEventosResp,
+        decisionesResp,
+      ] = await Promise.all([
         supabase
           .from('asistente_sesiones')
           .select('id,estado,iniciado_at,finalizado_at')
@@ -211,12 +272,26 @@ function OTVivaContent() {
           .select('evento_id,evidencia_id,tipo_uso')
           .eq('caso_id', currentCaso.id)
           .eq('empresa_id', currentOt.empresa_id),
+        supabase
+          .from('asistente_evento_relaciones')
+          .select('id,evento_origen_id,evento_destino_id,tipo_relacion,observacion,created_at')
+          .eq('caso_id', currentCaso.id)
+          .eq('empresa_id', currentOt.empresa_id)
+          .order('created_at', { ascending: true }),
+        supabase
+          .from('asistente_decisiones')
+          .select('id,sesion_id,evento_id,actor_tipo,actor_nombre_snapshot,actor_cargo_snapshot,decision,motivo,decidido_at,created_by')
+          .eq('caso_id', currentCaso.id)
+          .eq('empresa_id', currentOt.empresa_id)
+          .order('decidido_at', { ascending: true }),
       ])
 
       if (sesionesResp.error) throw new Error(sesionesResp.error.message)
       if (eventosResp.error) throw new Error(eventosResp.error.message)
       if (evidenciasResp.error) throw new Error(evidenciasResp.error.message)
       if (relacionesResp.error) throw new Error(relacionesResp.error.message)
+      if (relacionesEventosResp.error) throw new Error(relacionesEventosResp.error.message)
+      if (decisionesResp.error) throw new Error(decisionesResp.error.message)
 
       setSesiones((sesionesResp.data || []) as SesionRow[])
       const loadedEventos = (eventosResp.data || []) as EventoRow[]
@@ -235,6 +310,16 @@ function OTVivaContent() {
       )
       setEvidencias(withUrls)
       setRelaciones((relacionesResp.data || []) as RelacionEvidenciaRow[])
+      setRelacionesEventos((relacionesEventosResp.data || []) as RelacionEventoRow[])
+      setDecisiones((decisionesResp.data || []) as DecisionRow[])
+
+      const firstHypothesis = loadedEventos.find((item) => item.tipo_evento === 'hipotesis')
+      if (!hipotesisDestino && firstHypothesis?.id) setHipotesisDestino(firstHypothesis.id)
+      if (!hipotesisDecision && firstHypothesis?.id) setHipotesisDecision(firstHypothesis.id)
+      if (!eventoOrigenRelacion) {
+        const firstSource = loadedEventos.find((item) => item.id !== firstHypothesis?.id)
+        if (firstSource?.id) setEventoOrigenRelacion(firstSource.id)
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo cargar OT Viva.')
     } finally {
@@ -401,6 +486,88 @@ function OTVivaContent() {
 
   function onFileChange(event: ChangeEvent<HTMLInputElement>) {
     setArchivo(event.target.files?.[0] || null)
+  }
+
+  async function crearRelacionHipotesis() {
+    if (!ot || !caso || !userId || !hipotesisDestino || !eventoOrigenRelacion) return
+    if (hipotesisDestino === eventoOrigenRelacion) {
+      setError('El evento de origen y la hipótesis de destino deben ser distintos.')
+      return
+    }
+
+    setBusy(true)
+    setError('')
+    setSuccess('')
+
+    try {
+      const { error: relationError } = await supabase
+        .from('asistente_evento_relaciones')
+        .insert({
+          empresa_id: ot.empresa_id,
+          caso_id: caso.id,
+          evento_origen_id: eventoOrigenRelacion,
+          evento_destino_id: hipotesisDestino,
+          tipo_relacion: tipoRelacion,
+          observacion: observacionRelacion.trim() || null,
+          created_by: userId,
+        })
+
+      if (relationError) throw new Error(relationError.message)
+
+      setObservacionRelacion('')
+      setSuccess('Relación técnica registrada sobre la hipótesis.')
+      await loadAll()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudo registrar la relación.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function decidirHipotesis(decision: 'confirmada' | 'descartada') {
+    if (!ot || !caso || !sesionActiva || !userId || !hipotesisDecision) return
+    if (!motivoDecision.trim()) {
+      setError('Debes indicar el fundamento de la decisión humana.')
+      return
+    }
+
+    setBusy(true)
+    setError('')
+    setSuccess('')
+
+    try {
+      const { error: decisionError } = await supabase
+        .from('asistente_decisiones')
+        .insert({
+          empresa_id: ot.empresa_id,
+          caso_id: caso.id,
+          sesion_id: sesionActiva.id,
+          evento_id: hipotesisDecision,
+          recomendacion_id: null,
+          actor_tipo: 'tecnico',
+          actor_nombre_snapshot: userName || null,
+          actor_cargo_snapshot: userRole || null,
+          decision,
+          motivo: motivoDecision.trim(),
+          visible_externo: false,
+          datos: {
+            ot_id: ot.id,
+            origen_modulo: 'ot_viva',
+            tipo_resolucion: 'hipotesis',
+          },
+          created_by: userId,
+        })
+
+      if (decisionError) throw new Error(decisionError.message)
+
+      setMotivoDecision('')
+      setSuccess(`Hipótesis ${decision === 'confirmada' ? 'confirmada' : 'descartada'} con decisión humana trazable.`)
+      await loadAll()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudo registrar la decisión.')
+    } finally {
+      setBusy(false)
+    }
   }
 
   async function subirEvidencia() {
@@ -638,6 +805,265 @@ function OTVivaContent() {
                 </div>
               </div>
             </div>
+          </section>
+
+          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h2 className="text-lg font-semibold text-slate-900">Análisis de hipótesis</h2>
+            <p className="mt-1 text-sm text-slate-600">
+              Relaciona hechos con hipótesis y deja la confirmación o descarte como una decisión humana explícita.
+            </p>
+
+            {hipotesis.length === 0 ? (
+              <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                Registra al menos un evento de tipo Hipótesis para habilitar este análisis.
+              </div>
+            ) : (
+              <>
+                <div className="mt-4 grid gap-4 xl:grid-cols-2">
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <h3 className="text-sm font-semibold text-slate-900">Relacionar evidencia técnica</h3>
+                    <p className="mt-1 text-xs text-slate-500">
+                      El evento de origen puede apoyar, confirmar, contradecir o descartar una hipótesis.
+                    </p>
+
+                    <div className="mt-3 space-y-3">
+                      <select
+                        value={hipotesisDestino}
+                        onChange={(e) => setHipotesisDestino(e.target.value)}
+                        disabled={busy}
+                        className="w-full rounded-xl border border-slate-300 bg-white px-3 py-3 text-sm"
+                      >
+                        <option value="">Hipótesis destino</option>
+                        {hipotesis.map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {item.texto_original.slice(0, 110)}
+                          </option>
+                        ))}
+                      </select>
+
+                      <select
+                        value={eventoOrigenRelacion}
+                        onChange={(e) => setEventoOrigenRelacion(e.target.value)}
+                        disabled={busy}
+                        className="w-full rounded-xl border border-slate-300 bg-white px-3 py-3 text-sm"
+                      >
+                        <option value="">Evento que aporta información</option>
+                        {eventos
+                          .filter((item) => item.id !== hipotesisDestino)
+                          .map((item) => (
+                            <option key={item.id} value={item.id}>
+                              {item.tipo_evento} · {item.texto_original.slice(0, 100)}
+                            </option>
+                          ))}
+                      </select>
+
+                      <select
+                        value={tipoRelacion}
+                        onChange={(e) => setTipoRelacion(e.target.value)}
+                        disabled={busy}
+                        className="w-full rounded-xl border border-slate-300 bg-white px-3 py-3 text-sm"
+                      >
+                        <option value="sustenta">A favor · sustenta</option>
+                        <option value="confirma">A favor · confirma</option>
+                        <option value="contradice">En contra · contradice</option>
+                        <option value="descarta">En contra · descarta</option>
+                      </select>
+
+                      <textarea
+                        value={observacionRelacion}
+                        onChange={(e) => setObservacionRelacion(e.target.value)}
+                        disabled={busy}
+                        rows={2}
+                        placeholder="Observación opcional sobre esta relación..."
+                        className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm"
+                      />
+
+                      <button
+                        type="button"
+                        onClick={() => void crearRelacionHipotesis()}
+                        disabled={busy || !hipotesisDestino || !eventoOrigenRelacion}
+                        className="rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white disabled:opacity-50"
+                      >
+                        Registrar relación
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <h3 className="text-sm font-semibold text-slate-900">Resolución humana</h3>
+                    <p className="mt-1 text-xs text-slate-500">
+                      La IA o la evidencia pueden orientar el análisis, pero la confirmación o descarte queda atribuida a una persona.
+                    </p>
+
+                    <div className="mt-3 space-y-3">
+                      <select
+                        value={hipotesisDecision}
+                        onChange={(e) => setHipotesisDecision(e.target.value)}
+                        disabled={!sesionActiva || busy}
+                        className="w-full rounded-xl border border-slate-300 bg-white px-3 py-3 text-sm"
+                      >
+                        <option value="">Selecciona una hipótesis</option>
+                        {hipotesis.map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {item.texto_original.slice(0, 110)}
+                          </option>
+                        ))}
+                      </select>
+
+                      <textarea
+                        value={motivoDecision}
+                        onChange={(e) => setMotivoDecision(e.target.value)}
+                        disabled={!sesionActiva || busy}
+                        rows={3}
+                        placeholder="Fundamento técnico obligatorio de la decisión..."
+                        className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm"
+                      />
+
+                      <div className="flex flex-col gap-2 sm:flex-row">
+                        <button
+                          type="button"
+                          onClick={() => void decidirHipotesis('confirmada')}
+                          disabled={!sesionActiva || busy || !hipotesisDecision || !motivoDecision.trim()}
+                          className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white disabled:opacity-50"
+                        >
+                          Confirmar hipótesis
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void decidirHipotesis('descartada')}
+                          disabled={!sesionActiva || busy || !hipotesisDecision || !motivoDecision.trim()}
+                          className="rounded-xl bg-rose-700 px-5 py-3 text-sm font-semibold text-white disabled:opacity-50"
+                        >
+                          Descartar hipótesis
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-5 space-y-3">
+                  {hipotesis.map((item) => {
+                    const incoming = relacionesEventos.filter((rel) => rel.evento_destino_id === item.id)
+                    const favor = incoming.filter((rel) => ['sustenta', 'confirma'].includes(rel.tipo_relacion))
+                    const contra = incoming.filter((rel) => ['contradice', 'descarta'].includes(rel.tipo_relacion))
+                    const conflicts = relacionesEventos.filter(
+                      (rel) =>
+                        rel.tipo_relacion === 'contradice' &&
+                        ((rel.evento_destino_id === item.id &&
+                          eventosById.get(rel.evento_origen_id)?.tipo_evento === 'hipotesis') ||
+                          (rel.evento_origen_id === item.id &&
+                            eventosById.get(rel.evento_destino_id)?.tipo_evento === 'hipotesis'))
+                    )
+                    const historialDecision = decisiones
+                      .filter((decision) => decision.evento_id === item.id)
+                      .sort(
+                        (a, b) =>
+                          new Date(a.decidido_at).getTime() - new Date(b.decidido_at).getTime()
+                      )
+                    const latestDecision = historialDecision[historialDecision.length - 1]
+
+                    return (
+                      <div key={item.id} className="rounded-xl border border-slate-200 p-4">
+                        <div className="flex flex-wrap items-start gap-2">
+                          <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-800">
+                            Hipótesis
+                          </span>
+                          {latestDecision ? (
+                            <span
+                              className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                                latestDecision.decision === 'confirmada'
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : 'bg-rose-100 text-rose-800'
+                              }`}
+                            >
+                              {latestDecision.decision === 'confirmada'
+                                ? 'Confirmada por técnico'
+                                : 'Descartada por técnico'}
+                            </span>
+                          ) : (
+                            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
+                              En evaluación
+                            </span>
+                          )}
+                          {conflicts.length > 0 ? (
+                            <span className="rounded-full bg-orange-100 px-2.5 py-1 text-xs font-semibold text-orange-800">
+                              Conflicto de hipótesis
+                            </span>
+                          ) : null}
+                        </div>
+
+                        <p className="mt-3 text-sm font-medium text-slate-900">{item.texto_original}</p>
+
+                        <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                          <div className="rounded-lg bg-emerald-50 px-3 py-2">
+                            <p className="text-xs font-semibold text-emerald-800">A favor</p>
+                            <p className="mt-0.5 text-lg font-bold text-emerald-900">{favor.length}</p>
+                          </div>
+                          <div className="rounded-lg bg-rose-50 px-3 py-2">
+                            <p className="text-xs font-semibold text-rose-800">En contra</p>
+                            <p className="mt-0.5 text-lg font-bold text-rose-900">{contra.length}</p>
+                          </div>
+                          <div className="rounded-lg bg-orange-50 px-3 py-2">
+                            <p className="text-xs font-semibold text-orange-800">Conflictos</p>
+                            <p className="mt-0.5 text-lg font-bold text-orange-900">{conflicts.length}</p>
+                          </div>
+                        </div>
+
+                        {incoming.length > 0 ? (
+                          <div className="mt-3 space-y-2">
+                            {incoming.map((rel) => {
+                              const source = eventosById.get(rel.evento_origen_id)
+                              const isPositive = ['sustenta', 'confirma'].includes(rel.tipo_relacion)
+                              return (
+                                <div key={rel.id} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <span
+                                      className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                                        isPositive
+                                          ? 'bg-emerald-100 text-emerald-800'
+                                          : 'bg-rose-100 text-rose-800'
+                                      }`}
+                                    >
+                                      {rel.tipo_relacion}
+                                    </span>
+                                    <span className="text-xs text-slate-500">{source?.tipo_evento || 'evento'}</span>
+                                  </div>
+                                  <p className="mt-1 text-xs text-slate-700">
+                                    {source?.texto_original || 'Evento relacionado'}
+                                  </p>
+                                  {rel.observacion ? (
+                                    <p className="mt-1 text-xs italic text-slate-500">{rel.observacion}</p>
+                                  ) : null}
+                                </div>
+                              )
+                            })}
+                          </div>
+                        ) : null}
+
+                        {latestDecision ? (
+                          <div className="mt-3 rounded-lg border border-slate-200 bg-white px-3 py-2">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                              Última decisión humana
+                            </p>
+                            <p className="mt-1 text-sm font-semibold text-slate-900">
+                              {latestDecision.actor_nombre_snapshot || 'Usuario'} · {formatDateTime(latestDecision.decidido_at)}
+                            </p>
+                            {latestDecision.motivo ? (
+                              <p className="mt-1 text-sm text-slate-700">{latestDecision.motivo}</p>
+                            ) : null}
+                            {historialDecision.length > 1 ? (
+                              <p className="mt-1 text-xs text-slate-500">
+                                Historial: {historialDecision.length} decisiones registradas. Se conserva la trazabilidad completa.
+                              </p>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </div>
+                    )
+                  })}
+                </div>
+              </>
+            )}
           </section>
 
           <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
