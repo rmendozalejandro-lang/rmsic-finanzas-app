@@ -39,6 +39,7 @@ type EventoRow = {
   ocurrido_at: string
   autor_tipo: string
   origen_captura: string
+  estado_validacion: string
 }
 
 type EvidenciaRow = {
@@ -148,6 +149,10 @@ function OTVivaContent() {
   const [decisiones, setDecisiones] = useState<DecisionRow[]>([])
   const [userName, setUserName] = useState('')
   const [userRole, setUserRole] = useState('')
+  const [asistenteIAHabilitado, setAsistenteIAHabilitado] = useState(false)
+  const [preguntaIA, setPreguntaIA] = useState('')
+  const [respuestaIA, setRespuestaIA] = useState('')
+  const [consultandoIA, setConsultandoIA] = useState(false)
 
   const [tipoEvento, setTipoEvento] = useState('hallazgo')
   const [textoEvento, setTextoEvento] = useState('')
@@ -222,6 +227,16 @@ function OTVivaContent() {
       const currentOt = otData as OtRow
       setOt(currentOt)
 
+      const { data: capacidadIA, error: capacidadIAError } = await supabase
+        .from('empresa_capacidades')
+        .select('habilitado')
+        .eq('empresa_id', currentOt.empresa_id)
+        .eq('capacidad', 'asistente_ia')
+        .maybeSingle()
+
+      if (capacidadIAError) throw new Error(capacidadIAError.message)
+      setAsistenteIAHabilitado(Boolean(capacidadIA?.habilitado))
+
       const { data: linkData, error: linkError } = await supabase
         .from('asistente_caso_ots')
         .select('caso_id')
@@ -274,7 +289,7 @@ function OTVivaContent() {
           .order('iniciado_at', { ascending: false }),
         supabase
           .from('asistente_eventos')
-          .select('id,sesion_id,tipo_evento,nivel_certeza,texto_original,ocurrido_at,autor_tipo,origen_captura')
+          .select('id,sesion_id,tipo_evento,nivel_certeza,texto_original,ocurrido_at,autor_tipo,origen_captura,estado_validacion')
           .eq('caso_id', currentCaso.id)
           .eq('empresa_id', currentOt.empresa_id)
           .eq('estado', 'activo')
@@ -348,6 +363,46 @@ function OTVivaContent() {
   useEffect(() => {
     void loadAll()
   }, [loadAll])
+
+  async function consultarAsistenteIA() {
+    if (!ot || !caso || !preguntaIA.trim() || !asistenteIAHabilitado) return
+
+    setConsultandoIA(true)
+    setError('')
+    setSuccess('')
+    setRespuestaIA('')
+
+    try {
+      const { data: sessionData } = await supabase.auth.getSession()
+      const token = sessionData.session?.access_token
+
+      if (!token) throw new Error('No se pudo validar la sesión para consultar la IA.')
+
+      const response = await fetch(`/api/ot/${ot.id}/viva/asistente`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ pregunta: preguntaIA.trim() }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data?.error || 'No fue posible consultar el asistente.')
+      }
+
+      setRespuestaIA(data.respuesta || '')
+      setPreguntaIA('')
+      setSuccess('Respuesta IA registrada como propuesta pendiente de validación humana.')
+      await loadAll()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No fue posible consultar el asistente.')
+    } finally {
+      setConsultandoIA(false)
+    }
+  }
 
   async function crearCaso() {
     if (!ot || !userId) return
@@ -866,6 +921,64 @@ function OTVivaContent() {
             </div>
           </section>
 
+          {asistenteIAHabilitado ? (
+            <section className="rounded-2xl border border-indigo-200 bg-indigo-50/30 p-5 shadow-sm">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-indigo-700">
+                    Capacidad habilitada por empresa
+                  </p>
+                  <h2 className="mt-1 text-lg font-semibold text-slate-900">Asistente Técnico IA</h2>
+                  <p className="mt-1 text-sm text-slate-600">
+                    Consulta únicamente el contexto autorizado de esta empresa, esta OT y este caso.
+                    Sus respuestas se registran como propuestas pendientes de validación humana.
+                  </p>
+                </div>
+                <span className="rounded-full bg-indigo-100 px-3 py-1 text-xs font-semibold text-indigo-800">
+                  IA activa
+                </span>
+              </div>
+
+              {!caso ? (
+                <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                  Primero habilita OT Viva para esta orden antes de usar el asistente.
+                </div>
+              ) : (
+                <div className="mt-4 space-y-3">
+                  <textarea
+                    value={preguntaIA}
+                    onChange={(e) => setPreguntaIA(e.target.value)}
+                    disabled={consultandoIA}
+                    rows={3}
+                    maxLength={4000}
+                    placeholder="Ej.: Según lo registrado en esta OT, ¿qué debería verificar a continuación?"
+                    className="w-full rounded-xl border border-indigo-200 bg-white px-4 py-3 text-sm"
+                  />
+
+                  <button
+                    type="button"
+                    onClick={() => void consultarAsistenteIA()}
+                    disabled={consultandoIA || !preguntaIA.trim()}
+                    className="rounded-xl bg-indigo-700 px-5 py-3 text-sm font-semibold text-white disabled:opacity-50"
+                  >
+                    {consultandoIA ? 'Consultando...' : 'Consultar asistente'}
+                  </button>
+
+                  {respuestaIA ? (
+                    <div className="rounded-xl border border-indigo-200 bg-white p-4">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-indigo-700">
+                        Respuesta IA · pendiente de validación
+                      </p>
+                      <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-800">
+                        {respuestaIA}
+                      </p>
+                    </div>
+                  ) : null}
+                </div>
+              )}
+            </section>
+          ) : null}
+
           <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <h2 className="text-lg font-semibold text-slate-900">Análisis de hipótesis</h2>
             <p className="mt-1 text-sm text-slate-600">
@@ -1193,6 +1306,11 @@ function OTVivaContent() {
                     <div className="flex flex-wrap items-center gap-2">
                       <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${badgeForTipo(evento.tipo_evento)}`}>{evento.tipo_evento}</span>
                       <span className="text-xs text-slate-500">{evento.nivel_certeza}</span>
+                      {evento.autor_tipo === 'asistente' ? (
+                        <span className="rounded-full bg-indigo-100 px-2.5 py-1 text-xs font-semibold text-indigo-800">
+                          IA · {evento.estado_validacion === 'pendiente' ? 'pendiente de validación' : evento.estado_validacion}
+                        </span>
+                      ) : null}
                       <span className="ml-auto text-xs text-slate-500">{formatDateTime(evento.ocurrido_at)}</span>
                     </div>
                     <p className="mt-2 text-sm text-slate-800">{evento.texto_original}</p>
