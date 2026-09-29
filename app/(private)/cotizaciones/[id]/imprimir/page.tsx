@@ -650,6 +650,31 @@ export default function CotizacionImprimirPage() {
               border-radius: 6px !important;
             }
 
+            /* En cotizaciones breves (pocos ítems), evita que el pie quede
+               solo en una segunda hoja por unos pocos milímetros. */
+            .print-document-short {
+              zoom: 0.93;
+            }
+
+            .print-document-short header {
+              padding-bottom: 1mm !important;
+            }
+
+            .print-document-short section {
+              margin-top: 1.2mm !important;
+            }
+
+            .print-document-short footer {
+              margin-top: 1mm !important;
+              padding-top: 1mm !important;
+            }
+
+            .print-document-short th,
+            .print-document-short td {
+              padding-top: 0.8mm !important;
+              padding-bottom: 0.8mm !important;
+            }
+
             @page {
               size: A4;
               margin: 5mm;
@@ -693,7 +718,7 @@ export default function CotizacionImprimirPage() {
               </div>
             </div>
 
-            <article className="print-document rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+            <article className={`print-document ${items.length <= 3 ? 'print-document-short' : ''} rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm`}>
               <header className="border-b border-slate-200 pb-2.5">
                 <div className="flex flex-col items-center text-center">
                   {empresaLogoSrc ? (
