@@ -604,9 +604,55 @@ export default function CotizacionImprimirPage() {
               padding: 0 !important;
             }
 
+            /* Compacta la cotización para aprovechar mejor una hoja A4 sin
+               alterar la vista normal de pantalla. */
+            .print-document {
+              border-radius: 0 !important;
+              padding: 2.5mm 3.5mm !important;
+            }
+
+            .print-document header {
+              padding-bottom: 1.5mm !important;
+            }
+
+            .print-document section {
+              margin-top: 1.6mm !important;
+            }
+
+            .print-document footer {
+              margin-top: 1.8mm !important;
+              padding-top: 1.6mm !important;
+              break-inside: avoid;
+              page-break-inside: avoid;
+            }
+
+            .print-document table {
+              font-size: 10px !important;
+            }
+
+            .print-document th,
+            .print-document td {
+              padding-top: 1mm !important;
+              padding-bottom: 1mm !important;
+            }
+
+            .print-document tr,
+            .print-document .print-keep-together {
+              break-inside: avoid;
+              page-break-inside: avoid;
+            }
+
+            .print-document img {
+              max-height: 17mm !important;
+            }
+
+            .print-document .rounded-xl {
+              border-radius: 6px !important;
+            }
+
             @page {
               size: A4;
-              margin: 6mm 6mm 6mm 6mm;
+              margin: 5mm;
             }
           }
         `}</style>
@@ -647,7 +693,7 @@ export default function CotizacionImprimirPage() {
               </div>
             </div>
 
-            <article className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+            <article className="print-document rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
               <header className="border-b border-slate-200 pb-2.5">
                 <div className="flex flex-col items-center text-center">
                   {empresaLogoSrc ? (
@@ -872,7 +918,7 @@ export default function CotizacionImprimirPage() {
                 </div>
               </section>
 
-              <section className="mt-2.5">
+              <section className="print-keep-together mt-2.5">
                 <div className="ml-auto w-full max-w-[280px] rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5">
                   <h3 className="text-[9.5px] font-semibold uppercase tracking-[0.12em] text-slate-500">
                     Resumen económico
@@ -936,7 +982,7 @@ export default function CotizacionImprimirPage() {
                 </div>
               </section>
 
-              <section className="mt-2.5 grid gap-2 md:grid-cols-2">
+              <section className="print-keep-together mt-2.5 grid gap-2 md:grid-cols-2">
                 <div>
                   <h3 className="text-[9.5px] font-semibold uppercase tracking-[0.12em] text-slate-500">
                     Observaciones
