@@ -4413,6 +4413,13 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
                     {ejecucionTecnicaActionLabel}
                   </Link>
                 ) : null}
+
+                <Link
+                  href={`/ot/${otId}/viva`}
+                  className="inline-flex w-full items-center justify-center rounded-xl border border-cyan-300 bg-cyan-50 px-4 py-3 text-sm font-semibold text-cyan-800 hover:bg-cyan-100 sm:w-auto sm:py-2"
+                >
+                  OT Viva
+                </Link>
               </>
             )}
 
