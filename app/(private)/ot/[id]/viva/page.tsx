@@ -67,6 +67,9 @@ type RelacionEventoRow = {
   tipo_relacion: string
   observacion: string | null
   created_at: string
+  activo: boolean
+  anulado_at: string | null
+  motivo_anulacion: string | null
 }
 
 type DecisionRow = {
@@ -175,6 +178,21 @@ function OTVivaContent() {
     [eventos]
   )
 
+  const relacionesEventosActivas = useMemo(
+    () => relacionesEventos.filter((item) => item.activo !== false),
+    [relacionesEventos]
+  )
+
+  const eventoOrigenSeleccionado = useMemo(
+    () => eventosById.get(eventoOrigenRelacion) ?? null,
+    [eventosById, eventoOrigenRelacion]
+  )
+
+  const hipotesisDestinoSeleccionada = useMemo(
+    () => eventosById.get(hipotesisDestino) ?? null,
+    [eventosById, hipotesisDestino]
+  )
+
   const loadAll = useCallback(async () => {
     if (!otId) return
     setLoading(true)
@@ -274,7 +292,7 @@ function OTVivaContent() {
           .eq('empresa_id', currentOt.empresa_id),
         supabase
           .from('asistente_evento_relaciones')
-          .select('id,evento_origen_id,evento_destino_id,tipo_relacion,observacion,created_at')
+          .select('id,evento_origen_id,evento_destino_id,tipo_relacion,observacion,created_at,activo,anulado_at,motivo_anulacion')
           .eq('caso_id', currentCaso.id)
           .eq('empresa_id', currentOt.empresa_id)
           .order('created_at', { ascending: true }),
@@ -519,6 +537,47 @@ function OTVivaContent() {
       await loadAll()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo registrar la relación.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function anularRelacion(relacion: RelacionEventoRow) {
+    if (!userId || !relacion.activo) return
+
+    const motivo = window.prompt(
+      'Indica brevemente por qué corriges esta relación. La relación no se eliminará; quedará en el historial.'
+    )
+    if (motivo === null) return
+    if (!motivo.trim()) {
+      setError('Debes indicar el motivo de la corrección.')
+      return
+    }
+
+    setBusy(true)
+    setError('')
+    setSuccess('')
+
+    try {
+      const now = new Date().toISOString()
+      const { error: updateError } = await supabase
+        .from('asistente_evento_relaciones')
+        .update({
+          activo: false,
+          anulado_at: now,
+          anulado_by: userId,
+          motivo_anulacion: motivo.trim(),
+          updated_at: now,
+          updated_by: userId,
+        })
+        .eq('id', relacion.id)
+
+      if (updateError) throw new Error(updateError.message)
+
+      setSuccess('Relación corregida. Se conserva en el historial y ya no afecta el análisis activo.')
+      await loadAll()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudo corregir la relación.')
     } finally {
       setBusy(false)
     }
@@ -869,6 +928,23 @@ function OTVivaContent() {
                         <option value="descarta">En contra · descarta</option>
                       </select>
 
+                      {eventoOrigenSeleccionado && hipotesisDestinoSeleccionada ? (
+                        <div className="rounded-xl border border-cyan-200 bg-cyan-50 px-3 py-3">
+                          <p className="text-[11px] font-semibold uppercase tracking-wide text-cyan-700">
+                            Revisa antes de registrar
+                          </p>
+                          <p className="mt-2 text-xs font-semibold text-slate-700">Evento de origen</p>
+                          <p className="mt-1 text-sm text-slate-900">
+                            {eventoOrigenSeleccionado.tipo_evento} · {eventoOrigenSeleccionado.texto_original}
+                          </p>
+                          <p className="mt-2 text-xs font-semibold text-slate-700">Hipótesis destino</p>
+                          <p className="mt-1 text-sm text-slate-900">{hipotesisDestinoSeleccionada.texto_original}</p>
+                          <p className="mt-2 text-xs font-semibold text-cyan-800">
+                            Relación: {tipoRelacion}
+                          </p>
+                        </div>
+                      ) : null}
+
                       <textarea
                         value={observacionRelacion}
                         onChange={(e) => setObservacionRelacion(e.target.value)}
@@ -943,10 +1019,13 @@ function OTVivaContent() {
 
                 <div className="mt-5 space-y-3">
                   {hipotesis.map((item) => {
-                    const incoming = relacionesEventos.filter((rel) => rel.evento_destino_id === item.id)
+                    const incoming = relacionesEventosActivas.filter((rel) => rel.evento_destino_id === item.id)
+                    const anuladas = relacionesEventos.filter(
+                      (rel) => rel.evento_destino_id === item.id && rel.activo === false
+                    )
                     const favor = incoming.filter((rel) => ['sustenta', 'confirma'].includes(rel.tipo_relacion))
                     const contra = incoming.filter((rel) => ['contradice', 'descarta'].includes(rel.tipo_relacion))
-                    const conflicts = relacionesEventos.filter(
+                    const conflicts = relacionesEventosActivas.filter(
                       (rel) =>
                         rel.tipo_relacion === 'contradice' &&
                         ((rel.evento_destino_id === item.id &&
@@ -1034,10 +1113,46 @@ function OTVivaContent() {
                                   {rel.observacion ? (
                                     <p className="mt-1 text-xs italic text-slate-500">{rel.observacion}</p>
                                   ) : null}
+                                  <button
+                                    type="button"
+                                    onClick={() => void anularRelacion(rel)}
+                                    disabled={busy}
+                                    className="mt-2 text-xs font-semibold text-rose-700 hover:underline disabled:opacity-50"
+                                  >
+                                    Corregir relación
+                                  </button>
                                 </div>
                               )
                             })}
                           </div>
+                        ) : null}
+
+                        {anuladas.length > 0 ? (
+                          <details className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                            <summary className="cursor-pointer text-xs font-semibold text-slate-600">
+                              Historial de correcciones ({anuladas.length})
+                            </summary>
+                            <div className="mt-2 space-y-2">
+                              {anuladas.map((rel) => {
+                                const source = eventosById.get(rel.evento_origen_id)
+                                return (
+                                  <div key={rel.id} className="rounded-md bg-white px-3 py-2 text-xs text-slate-500">
+                                    <p className="line-through">
+                                      {rel.tipo_relacion} · {source?.texto_original || 'Evento relacionado'}
+                                    </p>
+                                    {rel.motivo_anulacion ? (
+                                      <p className="mt-1 font-medium text-slate-600">
+                                        Motivo: {rel.motivo_anulacion}
+                                      </p>
+                                    ) : null}
+                                    {rel.anulado_at ? (
+                                      <p className="mt-1">Corregida: {formatDateTime(rel.anulado_at)}</p>
+                                    ) : null}
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          </details>
                         ) : null}
 
                         {latestDecision ? (
