@@ -710,10 +710,31 @@ export default function CotizacionForm({
                 );
               }
 
-              const response = await fetch(
-                `/api/indicadores/uf?fecha=${encodeURIComponent(fechaUfEnvio)}`,
-                { cache: "no-store" }
-              );
+              const controller = new AbortController();
+              const timeoutId = window.setTimeout(() => controller.abort(), 12000);
+
+              let response: Response;
+
+              try {
+                response = await fetch(
+                  `/api/indicadores/uf?fecha=${encodeURIComponent(fechaUfEnvio)}`,
+                  { cache: "no-store", signal: controller.signal }
+                );
+              } catch (fetchError) {
+                if (
+                  fetchError instanceof DOMException &&
+                  fetchError.name === "AbortError"
+                ) {
+                  throw new Error(
+                    "La consulta de UF está tardando demasiado. Intenta enviar nuevamente."
+                  );
+                }
+
+                throw fetchError;
+              } finally {
+                window.clearTimeout(timeoutId);
+              }
+
               const data = await response.json();
 
               if (!response.ok) {
@@ -1370,7 +1391,9 @@ export default function CotizacionForm({
             className="inline-flex items-center justify-center rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {saving
-              ? isEdit
+              ? initialValues.estado === "borrador" && form.estado === "enviada"
+                ? "Actualizando UF y enviando cotización..."
+                : isEdit
                 ? "Guardando cambios..."
                 : "Guardando..."
               : isEdit
