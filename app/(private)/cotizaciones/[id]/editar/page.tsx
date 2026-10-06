@@ -250,6 +250,10 @@ export default function EditarCotizacionPage() {
                 typeof item.fuente_valor_uf === 'string'
                   ? item.fuente_valor_uf
                   : '',
+              uf_congelada_at:
+                typeof item.uf_congelada_at === 'string'
+                  ? item.uf_congelada_at
+                  : '',
               descuento_tipo:
                 item.descuento_tipo === 'porcentaje' || item.descuento_tipo === 'monto'
                   ? item.descuento_tipo
@@ -297,6 +301,10 @@ export default function EditarCotizacionPage() {
             typeof cotizacionRow.fecha_vencimiento === 'string'
               ? cotizacionRow.fecha_vencimiento
               : '',
+          fecha_envio:
+            typeof cotizacionRow.fecha_envio === 'string'
+              ? cotizacionRow.fecha_envio
+              : null,
           moneda:
             typeof cotizacionRow.moneda === 'string' ? cotizacionRow.moneda : 'CLP',
           porcentaje_iva: String(toNumber(cotizacionRow.porcentaje_iva) || 19),
