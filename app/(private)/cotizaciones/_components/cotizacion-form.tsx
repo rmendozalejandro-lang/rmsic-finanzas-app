@@ -62,6 +62,11 @@ export type CotizacionFormItem = {
   unidad: string;
   cantidad: string;
   precio_unitario: string;
+  moneda_item: "CLP" | "UF";
+  precio_uf: string;
+  fecha_valor_uf: string;
+  valor_uf_clp: string;
+  fuente_valor_uf: string;
   descuento_tipo: "" | "porcentaje" | "monto";
   descuento_valor: string;
   afecto_iva: boolean;
@@ -125,6 +130,11 @@ function createEmptyItem(): CotizacionFormItem {
     unidad: "",
     cantidad: "1",
     precio_unitario: "0",
+    moneda_item: "CLP",
+    precio_uf: "0",
+    fecha_valor_uf: "",
+    valor_uf_clp: "0",
+    fuente_valor_uf: "",
     descuento_tipo: "",
     descuento_valor: "0",
     afecto_iva: true,
@@ -360,6 +370,7 @@ export default function CotizacionForm({
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loadingUfUid, setLoadingUfUid] = useState<string | null>(null);
   const [cotizacionPersistidaId, setCotizacionPersistidaId] =
     useState<string | null>(null);
   const [falloPosteriorPersistencia, setFalloPosteriorPersistencia] = useState<
@@ -528,6 +539,50 @@ export default function CotizacionForm({
     );
   }
 
+  async function consultarValorUf(uid: string, fecha: string) {
+    if (!fecha) {
+      setError("Selecciona una fecha para consultar la UF.");
+      return;
+    }
+
+    setError(null);
+    setLoadingUfUid(uid);
+
+    try {
+      const response = await fetch(
+        `/api/indicadores/uf?fecha=${encodeURIComponent(fecha)}`,
+        { cache: "no-store" }
+      );
+      const data = await response.json();
+
+      if (!response.ok) {
+        setError(data?.error || "No se pudo consultar el valor UF.");
+        return;
+      }
+
+      setItems((prev) =>
+        prev.map((item) => {
+          if (item.uid !== uid) return item;
+
+          const valorUf = Math.max(0, Number(data.valor) || 0);
+          const precioUf = Math.max(0, toNumber(item.precio_uf));
+          const equivalenteClp = round2(precioUf * valorUf);
+
+          return {
+            ...item,
+            valor_uf_clp: String(valorUf),
+            fuente_valor_uf: String(data.fuente || "mindicador.cl"),
+            precio_unitario: String(equivalenteClp),
+          };
+        })
+      );
+    } catch {
+      setError("No fue posible consultar el valor UF. Intenta nuevamente.");
+    } finally {
+      setLoadingUfUid(null);
+    }
+  }
+
   function addItem() {
     setItems((prev) => [...prev, createEmptyItem()]);
   }
@@ -623,6 +678,21 @@ export default function CotizacionForm({
           unidad: item.unidad.trim() || null,
           cantidad: Math.max(0, toNumber(item.cantidad)) || 1,
           precio_unitario: Math.max(0, toNumber(item.precio_unitario)),
+          moneda_item: item.moneda_item === "UF" ? "UF" : "CLP",
+          precio_uf:
+            item.moneda_item === "UF"
+              ? Math.max(0, toNumber(item.precio_uf))
+              : null,
+          fecha_valor_uf:
+            item.moneda_item === "UF" ? item.fecha_valor_uf || null : null,
+          valor_uf_clp:
+            item.moneda_item === "UF"
+              ? Math.max(0, toNumber(item.valor_uf_clp))
+              : null,
+          fuente_valor_uf:
+            item.moneda_item === "UF"
+              ? item.fuente_valor_uf.trim() || null
+              : null,
           descuento_tipo: normalizeDiscountType(item.descuento_tipo),
           descuento_valor: Math.max(0, toNumber(item.descuento_valor)),
           afecto_iva: item.afecto_iva,
@@ -658,6 +728,23 @@ export default function CotizacionForm({
 
       if (validItems.length === 0) {
         setError("Debes agregar al menos un ítem con descripción.");
+        setSaving(false);
+        return;
+      }
+
+      const itemUfIncompleto = validItems.find(
+        (item) =>
+          item.moneda_item === "UF" &&
+          (!item.fecha_valor_uf ||
+            !item.precio_uf ||
+            !item.valor_uf_clp ||
+            item.precio_unitario <= 0)
+      );
+
+      if (itemUfIncompleto) {
+        setError(
+          "Hay un ítem en UF sin conversión completa. Ingresa las UF, selecciona la fecha y usa “Consultar UF y calcular”."
+        );
         setSaving(false);
         return;
       }
@@ -913,6 +1000,19 @@ export default function CotizacionForm({
         unidad: item.unidad,
         cantidad: round2(item.cantidad),
         precio_unitario: round2(item.precio_unitario),
+        moneda_item: item.moneda_item,
+        precio_uf:
+          item.moneda_item === "UF" && item.precio_uf != null
+            ? round2(item.precio_uf)
+            : null,
+        fecha_valor_uf:
+          item.moneda_item === "UF" ? item.fecha_valor_uf : null,
+        valor_uf_clp:
+          item.moneda_item === "UF" && item.valor_uf_clp != null
+            ? round2(item.valor_uf_clp)
+            : null,
+        fuente_valor_uf:
+          item.moneda_item === "UF" ? item.fuente_valor_uf : null,
         descuento_tipo: item.descuento_tipo,
         descuento_valor:
           item.descuento_tipo === "porcentaje"
@@ -1726,22 +1826,135 @@ export default function CotizacionForm({
 
                       <div>
                         <label className="mb-2 block text-sm font-medium text-slate-700">
-                          Precio unitario
+                          Moneda ítem
                         </label>
-                        <input
-                          type="text"
-                          inputMode="decimal"
-                          value={item.precio_unitario}
-                          onChange={(e) =>
-                            updateItem(
-                              item.uid,
-                              "precio_unitario",
-                              sanitizeDecimalInput(e.target.value)
-                            )
-                          }
+                        <select
+                          value={item.moneda_item}
+                          onChange={(e) => {
+                            const moneda = e.target.value === "UF" ? "UF" : "CLP";
+                            setItems((prev) =>
+                              prev.map((current) =>
+                                current.uid === item.uid
+                                  ? {
+                                      ...current,
+                                      moneda_item: moneda,
+                                      ...(moneda === "CLP"
+                                        ? {
+                                            precio_uf: "0",
+                                            fecha_valor_uf: "",
+                                            valor_uf_clp: "0",
+                                            fuente_valor_uf: "",
+                                          }
+                                        : {
+                                            fecha_valor_uf:
+                                              current.fecha_valor_uf ||
+                                              form.fecha_emision,
+                                          }),
+                                    }
+                                  : current
+                              )
+                            );
+                          }}
                           className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
-                        />
+                        >
+                          <option value="CLP">CLP</option>
+                          <option value="UF">UF</option>
+                        </select>
                       </div>
+
+                      {item.moneda_item === "UF" ? (
+                        <>
+                          <div>
+                            <label className="mb-2 block text-sm font-medium text-slate-700">
+                              Precio unitario UF
+                            </label>
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              value={item.precio_uf}
+                              onChange={(e) =>
+                                updateItem(
+                                  item.uid,
+                                  "precio_uf",
+                                  sanitizeDecimalInput(e.target.value)
+                                )
+                              }
+                              placeholder="Ejemplo: 3.5"
+                              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="mb-2 block text-sm font-medium text-slate-700">
+                              Fecha valor UF
+                            </label>
+                            <input
+                              type="date"
+                              value={item.fecha_valor_uf}
+                              onChange={(e) =>
+                                updateItem(item.uid, "fecha_valor_uf", e.target.value)
+                              }
+                              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                            />
+                          </div>
+
+                          <div className="md:col-span-2 xl:col-span-2">
+                            <label className="mb-2 block text-sm font-medium text-slate-700">
+                              Conversión UF
+                            </label>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                consultarValorUf(item.uid, item.fecha_valor_uf)
+                              }
+                              disabled={loadingUfUid === item.uid}
+                              className="w-full rounded-xl border border-blue-300 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-800 hover:bg-blue-100 disabled:opacity-60"
+                            >
+                              {loadingUfUid === item.uid
+                                ? "Consultando UF..."
+                                : "Consultar UF y calcular"}
+                            </button>
+                            {toNumber(item.valor_uf_clp) > 0 ? (
+                              <p className="mt-2 text-xs text-slate-600">
+                                {item.precio_uf || "0"} UF ×{" "}
+                                {formatCurrency(
+                                  toNumber(item.valor_uf_clp),
+                                  "CLP"
+                                )}{" "}
+                                ={" "}
+                                <span className="font-semibold text-slate-900">
+                                  {formatCurrency(
+                                    toNumber(item.precio_unitario),
+                                    "CLP"
+                                  )}
+                                </span>
+                                {item.fuente_valor_uf
+                                  ? ` · Fuente: ${item.fuente_valor_uf}`
+                                  : ""}
+                              </p>
+                            ) : null}
+                          </div>
+                        </>
+                      ) : (
+                        <div>
+                          <label className="mb-2 block text-sm font-medium text-slate-700">
+                            Precio unitario
+                          </label>
+                          <input
+                            type="text"
+                            inputMode="decimal"
+                            value={item.precio_unitario}
+                            onChange={(e) =>
+                              updateItem(
+                                item.uid,
+                                "precio_unitario",
+                                sanitizeDecimalInput(e.target.value)
+                              )
+                            }
+                            className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                          />
+                        </div>
+                      )}
 
                       <div>
                         <label className="mb-2 block text-sm font-medium text-slate-700">
