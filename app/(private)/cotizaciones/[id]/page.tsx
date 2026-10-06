@@ -79,6 +79,11 @@ type CotizacionItem = {
   unidad: string | null
   cantidad: number | null
   precio_unitario: number | null
+  moneda_item: 'CLP' | 'UF' | null
+  precio_uf: number | null
+  fecha_valor_uf: string | null
+  valor_uf_clp: number | null
+  fuente_valor_uf: string | null
   descuento_tipo: 'porcentaje' | 'monto' | null
   descuento_valor: number | null
   afecto_iva: boolean
@@ -923,6 +928,18 @@ export default function CotizacionDetallePage() {
                             <div className="mt-1 whitespace-pre-wrap text-xs text-slate-500">
                               {item.detalle || 'Sin detalle'}
                             </div>
+                            {item.moneda_item === 'UF' ? (
+                              <div className="mt-2 rounded-lg border border-blue-100 bg-blue-50 px-2 py-1.5 text-xs text-blue-800">
+                                {formatNumber(item.precio_uf)} UF ×{' '}
+                                {formatCurrency(item.valor_uf_clp, 'CLP')} ={' '}
+                                <span className="font-semibold">
+                                  {formatCurrency(item.precio_unitario, 'CLP')}
+                                </span>
+                                {item.fecha_valor_uf
+                                  ? ` · UF al ${formatDate(item.fecha_valor_uf)}`
+                                  : ''}
+                              </div>
+                            ) : null}
                             <div className="mt-2">
                               <span
                                 className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-medium ${
