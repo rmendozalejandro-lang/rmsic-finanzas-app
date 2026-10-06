@@ -241,6 +241,15 @@ export default function EditarCotizacionPage() {
               unidad: typeof item.unidad === 'string' ? item.unidad : '',
               cantidad: String(toNumber(item.cantidad) || 1),
               precio_unitario: String(toNumber(item.precio_unitario)),
+              moneda_item: item.moneda_item === 'UF' ? 'UF' : 'CLP',
+              precio_uf: String(toNumber(item.precio_uf)),
+              fecha_valor_uf:
+                typeof item.fecha_valor_uf === 'string' ? item.fecha_valor_uf : '',
+              valor_uf_clp: String(toNumber(item.valor_uf_clp)),
+              fuente_valor_uf:
+                typeof item.fuente_valor_uf === 'string'
+                  ? item.fuente_valor_uf
+                  : '',
               descuento_tipo:
                 item.descuento_tipo === 'porcentaje' || item.descuento_tipo === 'monto'
                   ? item.descuento_tipo
