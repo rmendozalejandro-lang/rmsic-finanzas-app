@@ -1520,10 +1520,15 @@ export default function CotizacionForm({
                 </select>
                 {initialValues.estado === "borrador" &&
                 form.estado === "enviada" ? (
-                  <p className="mt-2 text-xs text-blue-700">
-                    El estado cambiará a Enviada al guardar. En ese momento se
-                    actualizará la UF y quedará congelada.
-                  </p>
+                  <div className="mt-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2">
+                    <p className="text-xs font-semibold text-blue-800">
+                      Estado seleccionado: Enviada · pendiente de guardar
+                    </p>
+                    <p className="mt-1 text-xs text-blue-700">
+                      Al presionar Guardar cambios se actualizará la UF del día,
+                      se recalcularán los ítems en UF y el valor quedará congelado.
+                    </p>
+                  </div>
                 ) : null}
               </div>
 
