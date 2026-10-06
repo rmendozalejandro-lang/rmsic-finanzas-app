@@ -1518,6 +1518,13 @@ export default function CotizacionForm({
                   <option value="rechazada">Rechazada</option>
                   <option value="vencida">Vencida</option>
                 </select>
+                {initialValues.estado === "borrador" &&
+                form.estado === "enviada" ? (
+                  <p className="mt-2 text-xs text-blue-700">
+                    El estado cambiará a Enviada al guardar. En ese momento se
+                    actualizará la UF y quedará congelada.
+                  </p>
+                ) : null}
               </div>
 
               {mostrarAprobacionFinanciera ? (
@@ -1965,7 +1972,7 @@ export default function CotizacionForm({
                         </label>
                         <select
                           value={item.moneda_item}
-                          disabled={form.estado !== "borrador"}
+                          disabled={initialValues.estado !== "borrador"}
                           onChange={(e) => {
                             const moneda = e.target.value === "UF" ? "UF" : "CLP";
                             setItems((prev) =>
@@ -2008,7 +2015,7 @@ export default function CotizacionForm({
                               type="text"
                               inputMode="decimal"
                               value={item.precio_uf}
-                              disabled={form.estado !== "borrador"}
+                              disabled={initialValues.estado !== "borrador"}
                               onChange={(e) =>
                                 updateItem(
                                   item.uid,
@@ -2028,7 +2035,7 @@ export default function CotizacionForm({
                             <input
                               type="date"
                               value={item.fecha_valor_uf}
-                              disabled={form.estado !== "borrador"}
+                              disabled={initialValues.estado !== "borrador"}
                               onChange={(e) =>
                                 updateItem(item.uid, "fecha_valor_uf", e.target.value)
                               }
@@ -2071,7 +2078,7 @@ export default function CotizacionForm({
                                     )}
                                   </span>
                                 </p>
-                                {form.estado !== "borrador" &&
+                                {initialValues.estado !== "borrador" &&
                                 item.uf_congelada_at ? (
                                   <p className="mt-1 text-xs font-medium text-emerald-700">
                                     UF congelada al enviar la cotización.
