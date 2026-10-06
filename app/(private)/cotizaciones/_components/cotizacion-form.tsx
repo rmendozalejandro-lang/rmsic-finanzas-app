@@ -53,6 +53,7 @@ export type CotizacionFormValues = {
   tipo_respaldo_aprobacion?: string | null;
   referencia_aprobacion?: string | null;
   ingreso_generado_id?: string | null;
+  fecha_envio?: string | null;
 };
 
 export type CotizacionFormItem = {
@@ -62,6 +63,12 @@ export type CotizacionFormItem = {
   unidad: string;
   cantidad: string;
   precio_unitario: string;
+  moneda_item: "CLP" | "UF";
+  precio_uf: string;
+  fecha_valor_uf: string;
+  valor_uf_clp: string;
+  fuente_valor_uf: string;
+  uf_congelada_at: string;
   descuento_tipo: "" | "porcentaje" | "monto";
   descuento_valor: string;
   afecto_iva: boolean;
@@ -125,6 +132,12 @@ function createEmptyItem(): CotizacionFormItem {
     unidad: "",
     cantidad: "1",
     precio_unitario: "0",
+    moneda_item: "CLP",
+    precio_uf: "0",
+    fecha_valor_uf: "",
+    valor_uf_clp: "0",
+    fuente_valor_uf: "",
+    uf_congelada_at: "",
     descuento_tipo: "",
     descuento_valor: "0",
     afecto_iva: true,
@@ -146,8 +159,70 @@ function toNumber(value: string) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function isHourUnit(unit?: string | null) {
+  const normalized = (unit || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+
+  return ["h", "hr", "hrs", "hora", "horas"].includes(normalized);
+}
+
+function sanitizeHourQuantityInput(value: string) {
+  const normalized = value.replace(/,/g, ".").replace(/[^\d:.]/g, "");
+
+  if (!normalized.includes(":")) {
+    return sanitizeDecimalInput(normalized);
+  }
+
+  const [hours = "", ...minuteParts] = normalized.split(":");
+  const minutes = minuteParts.join("").replace(/\./g, "").slice(0, 2);
+
+  return `${hours.replace(/\./g, "")}:${minutes}`;
+}
+
+function parseHourQuantity(value: string) {
+  const trimmed = value.trim();
+
+  if (!trimmed.includes(":")) {
+    const decimal = toNumber(trimmed);
+    return Number.isFinite(decimal) && decimal >= 0 ? decimal : null;
+  }
+
+  const match = trimmed.match(/^(\d+):([0-5]?\d)$/);
+  if (!match) return null;
+
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+
+  return hours + minutes / 60;
+}
+
+function quantityToNumber(value: string, unit?: string | null) {
+  if (!isHourUnit(unit)) return toNumber(value);
+  return parseHourQuantity(value) ?? 0;
+}
+
+function decimalHoursToTime(value: number) {
+  const totalMinutes = Math.max(0, Math.round(value * 60));
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+
+  return `${hours}:${String(minutes).padStart(2, "0")}`;
+}
+
 function round2(value: number) {
   return Math.round(value * 100) / 100;
+}
+
+function getChileDateString(date = new Date()) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Santiago",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
 }
 
 function formatCurrency(value: number, currency = "CLP") {
@@ -191,7 +266,7 @@ function withDefaultEmpresaLogo(
 }
 
 function calculateItem(item: CotizacionFormItem) {
-  const cantidad = Math.max(0, toNumber(item.cantidad));
+  const cantidad = Math.max(0, quantityToNumber(item.cantidad, item.unidad));
   const precioUnitario = Math.max(0, toNumber(item.precio_unitario));
   const bruto = round2(cantidad * precioUnitario);
 
@@ -308,7 +383,11 @@ function itemSignature(item: {
     item.descripcion.trim().toLowerCase(),
     (item.detalle ?? "").trim().toLowerCase(),
     (item.unidad ?? "").trim().toLowerCase(),
-    round2(typeof item.cantidad === "number" ? item.cantidad : toNumber(item.cantidad)),
+    round2(
+      typeof item.cantidad === "number"
+        ? item.cantidad
+        : quantityToNumber(item.cantidad, item.unidad)
+    ),
     round2(
       typeof item.precio_unitario === "number"
         ? item.precio_unitario
@@ -356,10 +435,20 @@ export default function CotizacionForm({
       ? deduplicateFormItems(initialItems)
       : [];
 
-    return initial.length > 0 ? initial : [createEmptyItem()];
+    return initial.length > 0
+      ? initial.map((item) =>
+          isHourUnit(item.unidad)
+            ? {
+                ...item,
+                cantidad: decimalHoursToTime(toNumber(item.cantidad)),
+              }
+            : item
+        )
+      : [createEmptyItem()];
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loadingUfUid, setLoadingUfUid] = useState<string | null>(null);
   const [cotizacionPersistidaId, setCotizacionPersistidaId] =
     useState<string | null>(null);
   const [falloPosteriorPersistencia, setFalloPosteriorPersistencia] = useState<
@@ -528,6 +617,51 @@ export default function CotizacionForm({
     );
   }
 
+  async function consultarValorUf(uid: string, fecha: string) {
+    if (!fecha) {
+      setError("Selecciona una fecha para consultar la UF.");
+      return;
+    }
+
+    setError(null);
+    setLoadingUfUid(uid);
+
+    try {
+      const response = await fetch(
+        `/api/indicadores/uf?fecha=${encodeURIComponent(fecha)}`,
+        { cache: "no-store" }
+      );
+      const data = await response.json();
+
+      if (!response.ok) {
+        setError(data?.error || "No se pudo consultar el valor UF.");
+        return;
+      }
+
+      setItems((prev) =>
+        prev.map((item) => {
+          if (item.uid !== uid) return item;
+
+          const valorUf = Math.max(0, Number(data.valor) || 0);
+          const precioUf = Math.max(0, toNumber(item.precio_uf));
+          const equivalenteClp = round2(precioUf * valorUf);
+
+          return {
+            ...item,
+            valor_uf_clp: String(valorUf),
+            fuente_valor_uf: String(data.fuente || "mindicador.cl"),
+            uf_congelada_at: "",
+            precio_unitario: String(equivalenteClp),
+          };
+        })
+      );
+    } catch {
+      setError("No fue posible consultar el valor UF. Intenta nuevamente.");
+    } finally {
+      setLoadingUfUid(null);
+    }
+  }
+
   function addItem() {
     setItems((prev) => [...prev, createEmptyItem()]);
   }
@@ -615,14 +749,148 @@ export default function CotizacionForm({
         }
       }
 
-      const sanitizedItems = items
+      const debeCongelarUfAlEnviar =
+        initialValues.estado === "borrador" && form.estado === "enviada";
+
+      const fechaEnvioActual = debeCongelarUfAlEnviar
+        ? new Date().toISOString()
+        : form.estado === "borrador"
+        ? null
+        : initialValues.fecha_envio ?? null;
+
+      let itemsParaGuardar = items;
+
+      if (debeCongelarUfAlEnviar) {
+        const fechaUfEnvio = getChileDateString();
+
+        try {
+          const itemsUf = items.filter((item) => item.moneda_item === "UF");
+
+          if (itemsUf.length > 0) {
+            const itemSinPrecioUfValido = itemsUf.find(
+              (item) => Math.max(0, toNumber(item.precio_uf)) <= 0
+            );
+
+            if (itemSinPrecioUfValido) {
+              throw new Error(
+                "Hay un ítem en UF sin precio UF válido antes de enviar."
+              );
+            }
+
+            const controller = new AbortController();
+            const timeoutId = window.setTimeout(() => controller.abort(), 12000);
+
+            let response: Response;
+
+            try {
+              response = await fetch(
+                `/api/indicadores/uf?fecha=${encodeURIComponent(fechaUfEnvio)}`,
+                { cache: "no-store", signal: controller.signal }
+              );
+            } catch (fetchError) {
+              if (
+                fetchError instanceof DOMException &&
+                fetchError.name === "AbortError"
+              ) {
+                throw new Error(
+                  "La consulta de UF está tardando demasiado. Intenta enviar nuevamente."
+                );
+              }
+
+              throw fetchError;
+            } finally {
+              window.clearTimeout(timeoutId);
+            }
+
+            const data = await response.json();
+
+            if (!response.ok) {
+              throw new Error(
+                data?.error ||
+                  "No se pudo obtener la UF vigente para enviar la cotización."
+              );
+            }
+
+            const valorUf = Math.max(0, Number(data.valor) || 0);
+
+            if (valorUf <= 0) {
+              throw new Error(
+                "El valor UF obtenido para la fecha de envío no es válido."
+              );
+            }
+
+            const fuenteUf = String(data.fuente || "sii.cl");
+
+            itemsParaGuardar = items.map((item) => {
+              if (item.moneda_item !== "UF") return item;
+
+              const precioUf = Math.max(0, toNumber(item.precio_uf));
+
+              return {
+                ...item,
+                fecha_valor_uf: fechaUfEnvio,
+                valor_uf_clp: String(valorUf),
+                fuente_valor_uf: fuenteUf,
+                uf_congelada_at: fechaEnvioActual || new Date().toISOString(),
+                precio_unitario: String(round2(precioUf * valorUf)),
+              };
+            });
+          }
+
+          setItems(itemsParaGuardar);
+        } catch (ufError) {
+          setError(
+            ufError instanceof Error
+              ? ufError.message
+              : "No se pudo actualizar la UF antes de enviar la cotización."
+          );
+          setSaving(false);
+          return;
+        }
+      }
+
+      const itemHoraInvalido = itemsParaGuardar.find(
+        (item) =>
+          isHourUnit(item.unidad) &&
+          parseHourQuantity(item.cantidad) == null
+      );
+
+      if (itemHoraInvalido) {
+        setError(
+          "Cantidad de horas inválida. Usa formato H:MM, por ejemplo 2:12."
+        );
+        setSaving(false);
+        return;
+      }
+
+      const sanitizedItems = itemsParaGuardar
         .map((item, index) => ({
           orden: index + 1,
           descripcion: item.descripcion.trim(),
           detalle: item.detalle.trim() || null,
           unidad: item.unidad.trim() || null,
-          cantidad: Math.max(0, toNumber(item.cantidad)) || 1,
+          cantidad:
+            Math.max(0, quantityToNumber(item.cantidad, item.unidad)) || 1,
           precio_unitario: Math.max(0, toNumber(item.precio_unitario)),
+          moneda_item: item.moneda_item === "UF" ? "UF" : "CLP",
+          precio_uf:
+            item.moneda_item === "UF"
+              ? Math.max(0, toNumber(item.precio_uf))
+              : null,
+          fecha_valor_uf:
+            item.moneda_item === "UF" ? item.fecha_valor_uf || null : null,
+          valor_uf_clp:
+            item.moneda_item === "UF"
+              ? Math.max(0, toNumber(item.valor_uf_clp))
+              : null,
+          fuente_valor_uf:
+            item.moneda_item === "UF"
+              ? item.fuente_valor_uf.trim() || null
+              : null,
+          uf_congelada_at:
+            item.moneda_item === "UF" && form.estado !== "borrador"
+              ? item.uf_congelada_at || fechaEnvioActual
+              : null,
           descuento_tipo: normalizeDiscountType(item.descuento_tipo),
           descuento_valor: Math.max(0, toNumber(item.descuento_valor)),
           afecto_iva: item.afecto_iva,
@@ -658,6 +926,44 @@ export default function CotizacionForm({
 
       if (validItems.length === 0) {
         setError("Debes agregar al menos un ítem con descripción.");
+        setSaving(false);
+        return;
+      }
+
+      const itemUfIncompleto = validItems.find(
+        (item) =>
+          item.moneda_item === "UF" &&
+          (!item.fecha_valor_uf ||
+            !item.precio_uf ||
+            !item.valor_uf_clp ||
+            item.precio_unitario <= 0)
+      );
+
+      if (itemUfIncompleto) {
+        setError(
+          "Hay un ítem en UF sin conversión completa. Ingresa las UF, selecciona la fecha y usa “Consultar UF y calcular”."
+        );
+        setSaving(false);
+        return;
+      }
+
+      const itemUfDesactualizado = validItems.find((item) => {
+        if (
+          item.moneda_item !== "UF" ||
+          item.precio_uf == null ||
+          item.valor_uf_clp == null
+        ) {
+          return false;
+        }
+
+        const esperado = round2(item.precio_uf * item.valor_uf_clp);
+        return Math.abs(esperado - item.precio_unitario) > 1;
+      });
+
+      if (itemUfDesactualizado) {
+        setError(
+          "Cambiaste el valor en UF después de calcular. Vuelve a usar “Consultar UF y calcular” antes de guardar."
+        );
         setSaving(false);
         return;
       }
@@ -765,6 +1071,7 @@ export default function CotizacionForm({
         condiciones_comerciales: form.condiciones_comerciales.trim() || null,
         fecha_emision: form.fecha_emision,
         fecha_vencimiento: form.fecha_vencimiento || null,
+        fecha_envio: fechaEnvioActual,
         moneda: form.moneda.trim() || "CLP",
         porcentaje_iva: round2(porcentajeIva),
         descuento_global_tipo:
@@ -913,6 +1220,21 @@ export default function CotizacionForm({
         unidad: item.unidad,
         cantidad: round2(item.cantidad),
         precio_unitario: round2(item.precio_unitario),
+        moneda_item: item.moneda_item,
+        precio_uf:
+          item.moneda_item === "UF" && item.precio_uf != null
+            ? round2(item.precio_uf)
+            : null,
+        fecha_valor_uf:
+          item.moneda_item === "UF" ? item.fecha_valor_uf : null,
+        valor_uf_clp:
+          item.moneda_item === "UF" && item.valor_uf_clp != null
+            ? round2(item.valor_uf_clp)
+            : null,
+        fuente_valor_uf:
+          item.moneda_item === "UF" ? item.fuente_valor_uf : null,
+        uf_congelada_at:
+          item.moneda_item === "UF" ? item.uf_congelada_at : null,
         descuento_tipo: item.descuento_tipo,
         descuento_valor:
           item.descuento_tipo === "porcentaje"
@@ -1158,7 +1480,9 @@ export default function CotizacionForm({
             className="inline-flex items-center justify-center rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {saving
-              ? isEdit
+              ? initialValues.estado === "borrador" && form.estado === "enviada"
+                ? "Actualizando UF y enviando cotización..."
+                : isEdit
                 ? "Guardando cambios..."
                 : "Guardando..."
               : isEdit
@@ -1283,6 +1607,18 @@ export default function CotizacionForm({
                   <option value="rechazada">Rechazada</option>
                   <option value="vencida">Vencida</option>
                 </select>
+                {initialValues.estado === "borrador" &&
+                form.estado === "enviada" ? (
+                  <div className="mt-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2">
+                    <p className="text-xs font-semibold text-blue-800">
+                      Estado seleccionado: Enviada · pendiente de guardar
+                    </p>
+                    <p className="mt-1 text-xs text-blue-700">
+                      Al presionar Guardar cambios se actualizará la UF del día,
+                      se recalcularán los ítems en UF y el valor quedará congelado.
+                    </p>
+                  </div>
+                ) : null}
               </div>
 
               {mostrarAprobacionFinanciera ? (
@@ -1697,12 +2033,59 @@ export default function CotizacionForm({
                           Unidad
                         </label>
                         <input
+                          list="cotizacion-unidades"
                           value={item.unidad}
-                          onChange={(e) =>
-                            updateItem(item.uid, "unidad", e.target.value)
-                          }
+                          onChange={(e) => {
+                            const nuevaUnidad = e.target.value;
+                            setItems((prev) =>
+                              prev.map((current) => {
+                                if (current.uid !== item.uid) return current;
+
+                                const eraHora = isHourUnit(current.unidad);
+                                const seraHora = isHourUnit(nuevaUnidad);
+                                let cantidad = current.cantidad;
+
+                                if (!eraHora && seraHora) {
+                                  cantidad = decimalHoursToTime(
+                                    Math.max(0, toNumber(current.cantidad))
+                                  );
+                                } else if (eraHora && !seraHora) {
+                                  cantidad = String(
+                                    round2(
+                                      Math.max(
+                                        0,
+                                        quantityToNumber(
+                                          current.cantidad,
+                                          current.unidad
+                                        )
+                                      )
+                                    )
+                                  );
+                                }
+
+                                return {
+                                  ...current,
+                                  unidad: nuevaUnidad,
+                                  cantidad,
+                                };
+                              })
+                            );
+                          }}
+                          placeholder="Seleccionar o escribir"
                           className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
                         />
+                        <datalist id="cotizacion-unidades">
+                          <option value="Unidad" />
+                          <option value="Hora" />
+                          <option value="Día" />
+                          <option value="Servicio" />
+                          <option value="Kg" />
+                          <option value="Metro" />
+                          <option value="m²" />
+                          <option value="Litro" />
+                          <option value="Lote" />
+                          <option value="Global" />
+                        </datalist>
                       </div>
 
                       <div>
@@ -1711,37 +2094,179 @@ export default function CotizacionForm({
                         </label>
                         <input
                           type="text"
-                          inputMode="decimal"
+                          inputMode={isHourUnit(item.unidad) ? "text" : "decimal"}
                           value={item.cantidad}
+                          placeholder={
+                            isHourUnit(item.unidad) ? "Ejemplo: 2:12" : undefined
+                          }
                           onChange={(e) =>
                             updateItem(
                               item.uid,
                               "cantidad",
-                              sanitizeDecimalInput(e.target.value)
+                              isHourUnit(item.unidad)
+                                ? sanitizeHourQuantityInput(e.target.value)
+                                : sanitizeDecimalInput(e.target.value)
                             )
                           }
                           className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
                         />
+                        {isHourUnit(item.unidad) &&
+                        parseHourQuantity(item.cantidad) != null ? (
+                          <p className="mt-1 text-xs text-slate-600">
+                            {item.cantidad || "0:00"} h ={" "}
+                            {new Intl.NumberFormat("es-CL", {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            }).format(
+                              parseHourQuantity(item.cantidad) ?? 0
+                            )}{" "}
+                            horas facturables
+                          </p>
+                        ) : null}
                       </div>
 
                       <div>
                         <label className="mb-2 block text-sm font-medium text-slate-700">
-                          Precio unitario
+                          Moneda ítem
                         </label>
-                        <input
-                          type="text"
-                          inputMode="decimal"
-                          value={item.precio_unitario}
-                          onChange={(e) =>
-                            updateItem(
-                              item.uid,
-                              "precio_unitario",
-                              sanitizeDecimalInput(e.target.value)
-                            )
-                          }
+                        <select
+                          value={item.moneda_item}
+                          disabled={initialValues.estado !== "borrador"}
+                          onChange={(e) => {
+                            const moneda = e.target.value === "UF" ? "UF" : "CLP";
+                            setItems((prev) =>
+                              prev.map((current) =>
+                                current.uid === item.uid
+                                  ? {
+                                      ...current,
+                                      moneda_item: moneda,
+                                      ...(moneda === "CLP"
+                                        ? {
+                                            precio_uf: "0",
+                                            fecha_valor_uf: "",
+                                            valor_uf_clp: "0",
+                                            fuente_valor_uf: "",
+                                          }
+                                        : {
+                                            fecha_valor_uf:
+                                              current.fecha_valor_uf ||
+                                              form.fecha_emision,
+                                          }),
+                                    }
+                                  : current
+                              )
+                            );
+                          }}
                           className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
-                        />
+                        >
+                          <option value="CLP">CLP</option>
+                          <option value="UF">UF</option>
+                        </select>
                       </div>
+
+                      {item.moneda_item === "UF" ? (
+                        <>
+                          <div>
+                            <label className="mb-2 block text-sm font-medium text-slate-700">
+                              Precio unitario UF
+                            </label>
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              value={item.precio_uf}
+                              disabled={initialValues.estado !== "borrador"}
+                              onChange={(e) =>
+                                updateItem(
+                                  item.uid,
+                                  "precio_uf",
+                                  sanitizeDecimalInput(e.target.value)
+                                )
+                              }
+                              placeholder="Ejemplo: 3.5"
+                              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="mb-2 block text-sm font-medium text-slate-700">
+                              Fecha valor UF
+                            </label>
+                            <input
+                              type="date"
+                              value={item.fecha_valor_uf}
+                              disabled={initialValues.estado !== "borrador"}
+                              onChange={(e) =>
+                                updateItem(item.uid, "fecha_valor_uf", e.target.value)
+                              }
+                              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                            />
+                          </div>
+
+                          <div className="md:col-span-2 xl:col-span-2">
+                            <label className="mb-2 block text-sm font-medium text-slate-700">
+                              Conversión UF
+                            </label>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                consultarValorUf(item.uid, item.fecha_valor_uf)
+                              }
+                              disabled={
+                                loadingUfUid === item.uid ||
+                                form.estado !== "borrador"
+                              }
+                              className="w-full rounded-xl border border-blue-300 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-800 hover:bg-blue-100 disabled:opacity-60"
+                            >
+                              {loadingUfUid === item.uid
+                                ? "Consultando UF..."
+                                : "Consultar UF y calcular"}
+                            </button>
+                            {toNumber(item.valor_uf_clp) > 0 ? (
+                              <>
+                                <p className="mt-2 text-xs text-slate-600">
+                                  {item.precio_uf || "0"} UF ×{" "}
+                                  {formatCurrency(
+                                    toNumber(item.valor_uf_clp),
+                                    "CLP"
+                                  )}{" "}
+                                  ={" "}
+                                  <span className="font-semibold text-slate-900">
+                                    {formatCurrency(
+                                      toNumber(item.precio_unitario),
+                                      "CLP"
+                                    )}
+                                  </span>
+                                </p>
+                                {initialValues.estado !== "borrador" &&
+                                item.uf_congelada_at ? (
+                                  <p className="mt-1 text-xs font-medium text-emerald-700">
+                                    UF congelada al enviar la cotización.
+                                  </p>
+                                ) : null}
+                              </>
+                            ) : null}
+                          </div>
+                        </>
+                      ) : (
+                        <div>
+                          <label className="mb-2 block text-sm font-medium text-slate-700">
+                            Precio unitario
+                          </label>
+                          <input
+                            type="text"
+                            inputMode="decimal"
+                            value={item.precio_unitario}
+                            onChange={(e) =>
+                              updateItem(
+                                item.uid,
+                                "precio_unitario",
+                                sanitizeDecimalInput(e.target.value)
+                              )
+                            }
+                            className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                          />
+                        </div>
+                      )}
 
                       <div>
                         <label className="mb-2 block text-sm font-medium text-slate-700">

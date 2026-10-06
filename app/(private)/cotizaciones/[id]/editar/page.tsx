@@ -241,6 +241,19 @@ export default function EditarCotizacionPage() {
               unidad: typeof item.unidad === 'string' ? item.unidad : '',
               cantidad: String(toNumber(item.cantidad) || 1),
               precio_unitario: String(toNumber(item.precio_unitario)),
+              moneda_item: item.moneda_item === 'UF' ? 'UF' : 'CLP',
+              precio_uf: String(toNumber(item.precio_uf)),
+              fecha_valor_uf:
+                typeof item.fecha_valor_uf === 'string' ? item.fecha_valor_uf : '',
+              valor_uf_clp: String(toNumber(item.valor_uf_clp)),
+              fuente_valor_uf:
+                typeof item.fuente_valor_uf === 'string'
+                  ? item.fuente_valor_uf
+                  : '',
+              uf_congelada_at:
+                typeof item.uf_congelada_at === 'string'
+                  ? item.uf_congelada_at
+                  : '',
               descuento_tipo:
                 item.descuento_tipo === 'porcentaje' || item.descuento_tipo === 'monto'
                   ? item.descuento_tipo
@@ -288,6 +301,10 @@ export default function EditarCotizacionPage() {
             typeof cotizacionRow.fecha_vencimiento === 'string'
               ? cotizacionRow.fecha_vencimiento
               : '',
+          fecha_envio:
+            typeof cotizacionRow.fecha_envio === 'string'
+              ? cotizacionRow.fecha_envio
+              : null,
           moneda:
             typeof cotizacionRow.moneda === 'string' ? cotizacionRow.moneda : 'CLP',
           porcentaje_iva: String(toNumber(cotizacionRow.porcentaje_iva) || 19),

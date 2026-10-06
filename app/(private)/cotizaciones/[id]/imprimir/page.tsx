@@ -76,6 +76,11 @@ type CotizacionItem = {
   unidad: string | null
   cantidad: number | null
   precio_unitario: number | null
+  moneda_item: 'CLP' | 'UF' | null
+  precio_uf: number | null
+  fecha_valor_uf: string | null
+  valor_uf_clp: number | null
+  fuente_valor_uf: string | null
   descuento_tipo: 'porcentaje' | 'monto' | null
   descuento_valor: number | null
   afecto_iva: boolean
@@ -104,6 +109,33 @@ function toNumber(value: number | string | null | undefined) {
     return Number.isFinite(parsed) ? parsed : 0
   }
   return 0
+}
+
+function isHourUnit(unit?: string | null) {
+  const normalized = (unit || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+
+  return ['h', 'hr', 'hrs', 'hora', 'horas'].includes(normalized)
+}
+
+function formatItemQuantity(
+  quantity: number | string | null | undefined,
+  unit?: string | null
+) {
+  const value = Math.max(0, toNumber(quantity))
+
+  if (!isHourUnit(unit)) {
+    return formatNumber(value)
+  }
+
+  const totalMinutes = Math.round(value * 60)
+  const hours = Math.floor(totalMinutes / 60)
+  const minutes = totalMinutes % 60
+
+  return `${hours}:${String(minutes).padStart(2, '0')} h`
 }
 
 function formatCurrency(
@@ -907,12 +939,22 @@ export default function CotizacionImprimirPage() {
                                 {item.detalle}
                               </div>
                             ) : null}
+                            {item.moneda_item === 'UF' ? (
+                              <div className="mt-0.5 text-[9px] leading-4 text-blue-700">
+                                {formatNumber(item.precio_uf)} UF ×{' '}
+                                {formatCurrency(item.valor_uf_clp, 'CLP')} ={' '}
+                                {formatCurrency(item.precio_unitario, 'CLP')}
+                                {item.fecha_valor_uf
+                                  ? ` · UF al ${formatDate(item.fecha_valor_uf)}`
+                                  : ''}
+                              </div>
+                            ) : null}
                           </td>
                           <td className="px-2 py-1.5 text-center text-slate-700">
                             {item.unidad || '-'}
                           </td>
                           <td className="px-2 py-1.5 text-right text-slate-700">
-                            {formatNumber(item.cantidad)}
+                            {formatItemQuantity(item.cantidad, item.unidad)}
                           </td>
                           <td className="px-2 py-1.5 text-right text-slate-700">
                             {formatCurrency(

@@ -79,6 +79,11 @@ type CotizacionItem = {
   unidad: string | null
   cantidad: number | null
   precio_unitario: number | null
+  moneda_item: 'CLP' | 'UF' | null
+  precio_uf: number | null
+  fecha_valor_uf: string | null
+  valor_uf_clp: number | null
+  fuente_valor_uf: string | null
   descuento_tipo: 'porcentaje' | 'monto' | null
   descuento_valor: number | null
   afecto_iva: boolean
@@ -108,6 +113,33 @@ function toNumber(value: number | string | null | undefined) {
     return Number.isFinite(parsed) ? parsed : 0
   }
   return 0
+}
+
+function isHourUnit(unit?: string | null) {
+  const normalized = (unit || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+
+  return ['h', 'hr', 'hrs', 'hora', 'horas'].includes(normalized)
+}
+
+function formatItemQuantity(
+  quantity: number | string | null | undefined,
+  unit?: string | null
+) {
+  const value = Math.max(0, toNumber(quantity))
+
+  if (!isHourUnit(unit)) {
+    return formatNumber(value)
+  }
+
+  const totalMinutes = Math.round(value * 60)
+  const hours = Math.floor(totalMinutes / 60)
+  const minutes = totalMinutes % 60
+
+  return `${hours}:${String(minutes).padStart(2, '0')} h`
 }
 
 function formatCurrency(
@@ -923,6 +955,18 @@ export default function CotizacionDetallePage() {
                             <div className="mt-1 whitespace-pre-wrap text-xs text-slate-500">
                               {item.detalle || 'Sin detalle'}
                             </div>
+                            {item.moneda_item === 'UF' ? (
+                              <div className="mt-2 rounded-lg border border-blue-100 bg-blue-50 px-2 py-1.5 text-xs text-blue-800">
+                                {formatNumber(item.precio_uf)} UF ×{' '}
+                                {formatCurrency(item.valor_uf_clp, 'CLP')} ={' '}
+                                <span className="font-semibold">
+                                  {formatCurrency(item.precio_unitario, 'CLP')}
+                                </span>
+                                {item.fecha_valor_uf
+                                  ? ` · UF al ${formatDate(item.fecha_valor_uf)}`
+                                  : ''}
+                              </div>
+                            ) : null}
                             <div className="mt-2">
                               <span
                                 className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-medium ${
@@ -939,7 +983,7 @@ export default function CotizacionDetallePage() {
                             {item.unidad || '—'}
                           </td>
                           <td className="px-4 py-4 text-right text-slate-700">
-                            {formatNumber(item.cantidad)}
+                            {formatItemQuantity(item.cantidad, item.unidad)}
                           </td>
                           <td className="px-4 py-4 text-right text-slate-700">
                             {formatCurrency(
