@@ -2033,26 +2033,28 @@ export default function CotizacionForm({
                                 : "Consultar UF y calcular"}
                             </button>
                             {toNumber(item.valor_uf_clp) > 0 ? (
-                              <p className="mt-2 text-xs text-slate-600">
-                                {item.precio_uf || "0"} UF ×{" "}
-                                {formatCurrency(
-                                  toNumber(item.valor_uf_clp),
-                                  "CLP"
-                                )}{" "}
-                                ={" "}
-                                <span className="font-semibold text-slate-900">
+                              <>
+                                <p className="mt-2 text-xs text-slate-600">
+                                  {item.precio_uf || "0"} UF ×{" "}
                                   {formatCurrency(
-                                    toNumber(item.precio_unitario),
+                                    toNumber(item.valor_uf_clp),
                                     "CLP"
-                                  )}
-                                </span>
-                              </p>
-                              {form.estado !== "borrador" &&
-                              item.uf_congelada_at ? (
-                                <p className="mt-1 text-xs font-medium text-emerald-700">
-                                  UF congelada al enviar la cotización.
+                                  )}{" "}
+                                  ={" "}
+                                  <span className="font-semibold text-slate-900">
+                                    {formatCurrency(
+                                      toNumber(item.precio_unitario),
+                                      "CLP"
+                                    )}
+                                  </span>
                                 </p>
-                              ) : null}
+                                {form.estado !== "borrador" &&
+                                item.uf_congelada_at ? (
+                                  <p className="mt-1 text-xs font-medium text-emerald-700">
+                                    UF congelada al enviar la cotización.
+                                  </p>
+                                ) : null}
+                              </>
                             ) : null}
                           </div>
                         </>
