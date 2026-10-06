@@ -764,70 +764,78 @@ export default function CotizacionForm({
         const fechaUfEnvio = getChileDateString();
 
         try {
-          itemsParaGuardar = await Promise.all(
-            items.map(async (item) => {
+          const itemsUf = items.filter((item) => item.moneda_item === "UF");
+
+          if (itemsUf.length > 0) {
+            const itemSinPrecioUfValido = itemsUf.find(
+              (item) => Math.max(0, toNumber(item.precio_uf)) <= 0
+            );
+
+            if (itemSinPrecioUfValido) {
+              throw new Error(
+                "Hay un ítem en UF sin precio UF válido antes de enviar."
+              );
+            }
+
+            const controller = new AbortController();
+            const timeoutId = window.setTimeout(() => controller.abort(), 12000);
+
+            let response: Response;
+
+            try {
+              response = await fetch(
+                `/api/indicadores/uf?fecha=${encodeURIComponent(fechaUfEnvio)}`,
+                { cache: "no-store", signal: controller.signal }
+              );
+            } catch (fetchError) {
+              if (
+                fetchError instanceof DOMException &&
+                fetchError.name === "AbortError"
+              ) {
+                throw new Error(
+                  "La consulta de UF está tardando demasiado. Intenta enviar nuevamente."
+                );
+              }
+
+              throw fetchError;
+            } finally {
+              window.clearTimeout(timeoutId);
+            }
+
+            const data = await response.json();
+
+            if (!response.ok) {
+              throw new Error(
+                data?.error ||
+                  "No se pudo obtener la UF vigente para enviar la cotización."
+              );
+            }
+
+            const valorUf = Math.max(0, Number(data.valor) || 0);
+
+            if (valorUf <= 0) {
+              throw new Error(
+                "El valor UF obtenido para la fecha de envío no es válido."
+              );
+            }
+
+            const fuenteUf = String(data.fuente || "sii.cl");
+
+            itemsParaGuardar = items.map((item) => {
               if (item.moneda_item !== "UF") return item;
 
               const precioUf = Math.max(0, toNumber(item.precio_uf));
-
-              if (precioUf <= 0) {
-                throw new Error(
-                  "Hay un ítem en UF sin precio UF válido antes de enviar."
-                );
-              }
-
-              const controller = new AbortController();
-              const timeoutId = window.setTimeout(() => controller.abort(), 12000);
-
-              let response: Response;
-
-              try {
-                response = await fetch(
-                  `/api/indicadores/uf?fecha=${encodeURIComponent(fechaUfEnvio)}`,
-                  { cache: "no-store", signal: controller.signal }
-                );
-              } catch (fetchError) {
-                if (
-                  fetchError instanceof DOMException &&
-                  fetchError.name === "AbortError"
-                ) {
-                  throw new Error(
-                    "La consulta de UF está tardando demasiado. Intenta enviar nuevamente."
-                  );
-                }
-
-                throw fetchError;
-              } finally {
-                window.clearTimeout(timeoutId);
-              }
-
-              const data = await response.json();
-
-              if (!response.ok) {
-                throw new Error(
-                  data?.error ||
-                    "No se pudo obtener la UF vigente para enviar la cotización."
-                );
-              }
-
-              const valorUf = Math.max(0, Number(data.valor) || 0);
-
-              if (valorUf <= 0) {
-                throw new Error(
-                  "El valor UF obtenido para la fecha de envío no es válido."
-                );
-              }
 
               return {
                 ...item,
                 fecha_valor_uf: fechaUfEnvio,
                 valor_uf_clp: String(valorUf),
-                fuente_valor_uf: String(data.fuente || "mindicador.cl"),
+                fuente_valor_uf: fuenteUf,
                 uf_congelada_at: fechaEnvioActual || new Date().toISOString(),
                 precio_unitario: String(round2(precioUf * valorUf)),
               };
-            })
-          );
+            });
+          }
 
           setItems(itemsParaGuardar);
         } catch (ufError) {
