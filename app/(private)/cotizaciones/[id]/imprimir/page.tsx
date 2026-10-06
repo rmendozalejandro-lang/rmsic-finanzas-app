@@ -76,6 +76,11 @@ type CotizacionItem = {
   unidad: string | null
   cantidad: number | null
   precio_unitario: number | null
+  moneda_item: 'CLP' | 'UF' | null
+  precio_uf: number | null
+  fecha_valor_uf: string | null
+  valor_uf_clp: number | null
+  fuente_valor_uf: string | null
   descuento_tipo: 'porcentaje' | 'monto' | null
   descuento_valor: number | null
   afecto_iva: boolean
@@ -905,6 +910,16 @@ export default function CotizacionImprimirPage() {
                             {item.detalle ? (
                               <div className="mt-0.5 whitespace-pre-wrap text-[9.8px] leading-4 text-slate-500">
                                 {item.detalle}
+                              </div>
+                            ) : null}
+                            {item.moneda_item === 'UF' ? (
+                              <div className="mt-0.5 text-[9px] leading-4 text-blue-700">
+                                {formatNumber(item.precio_uf)} UF ×{' '}
+                                {formatCurrency(item.valor_uf_clp, 'CLP')} ={' '}
+                                {formatCurrency(item.precio_unitario, 'CLP')}
+                                {item.fecha_valor_uf
+                                  ? ` · UF al ${formatDate(item.fecha_valor_uf)}`
+                                  : ''}
                               </div>
                             ) : null}
                           </td>
