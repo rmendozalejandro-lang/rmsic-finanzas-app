@@ -53,6 +53,7 @@ export type CotizacionFormValues = {
   tipo_respaldo_aprobacion?: string | null;
   referencia_aprobacion?: string | null;
   ingreso_generado_id?: string | null;
+  fecha_envio?: string | null;
 };
 
 export type CotizacionFormItem = {
@@ -67,6 +68,7 @@ export type CotizacionFormItem = {
   fecha_valor_uf: string;
   valor_uf_clp: string;
   fuente_valor_uf: string;
+  uf_congelada_at: string;
   descuento_tipo: "" | "porcentaje" | "monto";
   descuento_valor: string;
   afecto_iva: boolean;
@@ -135,6 +137,7 @@ function createEmptyItem(): CotizacionFormItem {
     fecha_valor_uf: "",
     valor_uf_clp: "0",
     fuente_valor_uf: "",
+    uf_congelada_at: "",
     descuento_tipo: "",
     descuento_valor: "0",
     afecto_iva: true,
@@ -158,6 +161,15 @@ function toNumber(value: string) {
 
 function round2(value: number) {
   return Math.round(value * 100) / 100;
+}
+
+function getChileDateString(date = new Date()) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Santiago",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
 }
 
 function formatCurrency(value: number, currency = "CLP") {
@@ -572,6 +584,7 @@ export default function CotizacionForm({
             ...item,
             valor_uf_clp: String(valorUf),
             fuente_valor_uf: String(data.fuente || "mindicador.cl"),
+            uf_congelada_at: "",
             precio_unitario: String(equivalenteClp),
           };
         })
@@ -670,7 +683,78 @@ export default function CotizacionForm({
         }
       }
 
-      const sanitizedItems = items
+      const debeCongelarUfAlEnviar =
+        initialValues.estado === "borrador" && form.estado === "enviada";
+
+      const fechaEnvioActual = debeCongelarUfAlEnviar
+        ? new Date().toISOString()
+        : form.estado === "borrador"
+        ? null
+        : initialValues.fecha_envio ?? null;
+
+      let itemsParaGuardar = items;
+
+      if (debeCongelarUfAlEnviar) {
+        const fechaUfEnvio = getChileDateString();
+
+        try {
+          itemsParaGuardar = await Promise.all(
+            items.map(async (item) => {
+              if (item.moneda_item !== "UF") return item;
+
+              const precioUf = Math.max(0, toNumber(item.precio_uf));
+
+              if (precioUf <= 0) {
+                throw new Error(
+                  "Hay un ítem en UF sin precio UF válido antes de enviar."
+                );
+              }
+
+              const response = await fetch(
+                `/api/indicadores/uf?fecha=${encodeURIComponent(fechaUfEnvio)}`,
+                { cache: "no-store" }
+              );
+              const data = await response.json();
+
+              if (!response.ok) {
+                throw new Error(
+                  data?.error ||
+                    "No se pudo obtener la UF vigente para enviar la cotización."
+                );
+              }
+
+              const valorUf = Math.max(0, Number(data.valor) || 0);
+
+              if (valorUf <= 0) {
+                throw new Error(
+                  "El valor UF obtenido para la fecha de envío no es válido."
+                );
+              }
+
+              return {
+                ...item,
+                fecha_valor_uf: fechaUfEnvio,
+                valor_uf_clp: String(valorUf),
+                fuente_valor_uf: String(data.fuente || "mindicador.cl"),
+                uf_congelada_at: fechaEnvioActual || new Date().toISOString(),
+                precio_unitario: String(round2(precioUf * valorUf)),
+              };
+            })
+          );
+
+          setItems(itemsParaGuardar);
+        } catch (ufError) {
+          setError(
+            ufError instanceof Error
+              ? ufError.message
+              : "No se pudo actualizar la UF antes de enviar la cotización."
+          );
+          setSaving(false);
+          return;
+        }
+      }
+
+      const sanitizedItems = itemsParaGuardar
         .map((item, index) => ({
           orden: index + 1,
           descripcion: item.descripcion.trim(),
@@ -692,6 +776,10 @@ export default function CotizacionForm({
           fuente_valor_uf:
             item.moneda_item === "UF"
               ? item.fuente_valor_uf.trim() || null
+              : null,
+          uf_congelada_at:
+            item.moneda_item === "UF" && form.estado !== "borrador"
+              ? item.uf_congelada_at || fechaEnvioActual
               : null,
           descuento_tipo: normalizeDiscountType(item.descuento_tipo),
           descuento_valor: Math.max(0, toNumber(item.descuento_valor)),
@@ -873,6 +961,7 @@ export default function CotizacionForm({
         condiciones_comerciales: form.condiciones_comerciales.trim() || null,
         fecha_emision: form.fecha_emision,
         fecha_vencimiento: form.fecha_vencimiento || null,
+        fecha_envio: fechaEnvioActual,
         moneda: form.moneda.trim() || "CLP",
         porcentaje_iva: round2(porcentajeIva),
         descuento_global_tipo:
@@ -1034,6 +1123,8 @@ export default function CotizacionForm({
             : null,
         fuente_valor_uf:
           item.moneda_item === "UF" ? item.fuente_valor_uf : null,
+        uf_congelada_at:
+          item.moneda_item === "UF" ? item.uf_congelada_at : null,
         descuento_tipo: item.descuento_tipo,
         descuento_valor:
           item.descuento_tipo === "porcentaje"
@@ -1851,6 +1942,7 @@ export default function CotizacionForm({
                         </label>
                         <select
                           value={item.moneda_item}
+                          disabled={form.estado !== "borrador"}
                           onChange={(e) => {
                             const moneda = e.target.value === "UF" ? "UF" : "CLP";
                             setItems((prev) =>
@@ -1893,6 +1985,7 @@ export default function CotizacionForm({
                               type="text"
                               inputMode="decimal"
                               value={item.precio_uf}
+                              disabled={form.estado !== "borrador"}
                               onChange={(e) =>
                                 updateItem(
                                   item.uid,
@@ -1912,6 +2005,7 @@ export default function CotizacionForm({
                             <input
                               type="date"
                               value={item.fecha_valor_uf}
+                              disabled={form.estado !== "borrador"}
                               onChange={(e) =>
                                 updateItem(item.uid, "fecha_valor_uf", e.target.value)
                               }
@@ -1928,7 +2022,10 @@ export default function CotizacionForm({
                               onClick={() =>
                                 consultarValorUf(item.uid, item.fecha_valor_uf)
                               }
-                              disabled={loadingUfUid === item.uid}
+                              disabled={
+                                loadingUfUid === item.uid ||
+                                form.estado !== "borrador"
+                              }
                               className="w-full rounded-xl border border-blue-300 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-800 hover:bg-blue-100 disabled:opacity-60"
                             >
                               {loadingUfUid === item.uid
@@ -1949,10 +2046,13 @@ export default function CotizacionForm({
                                     "CLP"
                                   )}
                                 </span>
-                                {item.fuente_valor_uf
-                                  ? ` · Fuente: ${item.fuente_valor_uf}`
-                                  : ""}
                               </p>
+                              {form.estado !== "borrador" &&
+                              item.uf_congelada_at ? (
+                                <p className="mt-1 text-xs font-medium text-emerald-700">
+                                  UF congelada al enviar la cotización.
+                                </p>
+                              ) : null}
                             ) : null}
                           </div>
                         </>
