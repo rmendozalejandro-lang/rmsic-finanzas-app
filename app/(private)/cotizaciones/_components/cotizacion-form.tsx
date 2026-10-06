@@ -749,6 +749,27 @@ export default function CotizacionForm({
         return;
       }
 
+      const itemUfDesactualizado = validItems.find((item) => {
+        if (
+          item.moneda_item !== "UF" ||
+          item.precio_uf == null ||
+          item.valor_uf_clp == null
+        ) {
+          return false;
+        }
+
+        const esperado = round2(item.precio_uf * item.valor_uf_clp);
+        return Math.abs(esperado - item.precio_unitario) > 1;
+      });
+
+      if (itemUfDesactualizado) {
+        setError(
+          "Cambiaste el valor en UF después de calcular. Vuelve a usar “Consultar UF y calcular” antes de guardar."
+        );
+        setSaving(false);
+        return;
+      }
+
       if (
         form.estado === "aprobada" &&
         aprobacionFinanciera.generar_ingreso_financiero &&
