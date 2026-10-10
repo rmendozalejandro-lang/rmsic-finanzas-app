@@ -3169,7 +3169,13 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
   )
   const tecnicoBloqueado = isClosed || trabajoFinalizadoPorTecnico
   const canManageEquipoTrabajo = Boolean(!tecnicoBloqueado && !isClosed && (canManageOt || isAssignedTechnician))
-  const mostrarEquipoTrabajoDyF = Boolean(esFlujoDyfSoftys || usaTecnicosParticipantes || detalle.empresa_id === DYF_EMPRESA_ID)
+  const mostrarEquipoTrabajoDyF = Boolean(
+    esFlujoDyfSoftys || detalle.empresa_id === DYF_EMPRESA_ID
+  )
+  const mostrarEquipoTrabajoGeneral = Boolean(
+    !mostrarEquipoTrabajoDyF &&
+      (usaTecnicosParticipantes || detalle.empresa_id === RMSIC_EMPRESA_ID)
+  )
   const mostrarSeguridadSoftys = Boolean(esFlujoDyfSoftys || detalle.empresa_id === DYF_EMPRESA_ID)
 
   const renderSeguridadSoftysChecklist = () => (
@@ -4122,7 +4128,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
           />
         ) : null}
 
-        {!mostrarEquipoTrabajoDyF ? (
+        {mostrarEquipoTrabajoGeneral ? (
           <OTEquipoTrabajoPanel
             otId={otId}
             empresaId={detalle.empresa_id}
@@ -5690,7 +5696,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
         />
       ) : null}
 
-      {!mostrarEquipoTrabajoDyF ? (
+      {mostrarEquipoTrabajoGeneral ? (
         <OTEquipoTrabajoPanel
           otId={otId}
           empresaId={detalle.empresa_id}
