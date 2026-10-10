@@ -77,6 +77,14 @@ type Firma = {
   created_at: string
 }
 
+type ParticipanteTrabajo = {
+  id: string
+  nombre: string | null
+  rol_en_trabajo: string | null
+  especialidad: string | null
+  activo: boolean | null
+}
+
 type TiempoTrabajo = {
   id: string
   ot_id: string
@@ -368,6 +376,7 @@ function PrintOTPageContent() {
   const [tiempos, setTiempos] = useState<TiempoTrabajo[]>([])
   const [evidencias, setEvidencias] = useState<Evidencia[]>([])
   const [firmas, setFirmas] = useState<Firma[]>([])
+  const [participantes, setParticipantes] = useState<ParticipanteTrabajo[]>([])
   const [perfilesMap, setPerfilesMap] = useState<Record<string, string>>({})
   const [tiposServicio, setTiposServicio] = useState<TipoServicioOption[]>([])
 
@@ -390,6 +399,7 @@ function PrintOTPageContent() {
           evidenciasResp,
           firmasResp,
           perfilesResp,
+          participantesResp,
           tiposResp,
         ] = await Promise.all([
           supabase.from('ot_vw_resumen').select('*').eq('id', otId).single(),
@@ -497,6 +507,12 @@ function PrintOTPageContent() {
             .eq('ot_id', otId)
             .order('fecha_firma', { ascending: false }),
           supabase.from('perfiles').select('id, email').order('email', { ascending: true }),
+          supabase
+            .from('ot_orden_equipo_trabajo')
+            .select('id,nombre,rol_en_trabajo,especialidad,activo')
+            .eq('ot_id', otId)
+            .eq('activo', true)
+            .order('created_at', { ascending: true }),
           supabase.from('ot_tipos_servicio').select('id, codigo, nombre').eq('activo', true),
         ])
 
@@ -518,6 +534,9 @@ function PrintOTPageContent() {
         if (perfilesResp.error) {
           throw new Error(`No se pudieron cargar los perfiles: ${perfilesResp.error.message}`)
         }
+        if (participantesResp.error) {
+          throw new Error(`No se pudo cargar el equipo de trabajo: ${participantesResp.error.message}`)
+        }
         if (tiposResp.error) {
           throw new Error(`No se pudieron cargar los tipos de servicio: ${tiposResp.error.message}`)
         }
@@ -536,6 +555,7 @@ function PrintOTPageContent() {
         setTiempos((tiemposResp.data ?? []) as TiempoTrabajo[])
         setEvidencias((evidenciasResp.data ?? []) as Evidencia[])
         setFirmas((firmasResp.data ?? []) as Firma[])
+        setParticipantes((participantesResp.data ?? []) as ParticipanteTrabajo[])
         setTiposServicio((tiposResp.data ?? []) as TipoServicioOption[])
       } catch (err) {
         if (!active) return
@@ -622,6 +642,18 @@ function PrintOTPageContent() {
 
     return humanizePerson(raw)
   }, [detalle, perfilesMap, resumen])
+
+  const equipoTrabajoTexto = useMemo(() => {
+    const otros = participantes
+      .filter((item) => item.activo !== false)
+      .map((item) => {
+        const rol = item.rol_en_trabajo || 'Técnico participante'
+        const especialidad = item.especialidad ? ` · ${item.especialidad}` : ''
+        return `${item.nombre || 'Sin nombre'} — ${rol}${especialidad}`
+      })
+
+    return [`${nombreTecnico} — Técnico responsable`, ...otros].join('\n')
+  }, [participantes, nombreTecnico])
 
   const nombreRecepcion = useMemo(() => {
     return humanizePerson(
@@ -841,7 +873,7 @@ function PrintOTPageContent() {
           <CompactField label="Fecha visita" value={formatDate(detalle.fecha_ot)} />
           <CompactField label="Hora inicio" value={formatTime(horaLlegada)} />
           <CompactField label="Hora término" value={formatTime(horaSalida)} />
-          <CompactField label="Técnico ejecutante" value={nombreTecnico} />
+          <CompactField label="Equipo de trabajo" value={equipoTrabajoTexto} />
           <CompactField label="Área / sector" value={areaTrabajo} />
         </div>
       </Section>

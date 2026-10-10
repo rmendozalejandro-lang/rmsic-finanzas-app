@@ -256,6 +256,10 @@ Reglas obligatorias:
 - Puedes proponer verificaciones, pruebas o hipótesis, pero debes identificarlas como propuestas.
 - Prioriza seguridad industrial y no sugieras intervenir equipos energizados o protegidos sin procedimientos adecuados.
 - Responde en español de Chile, de forma técnica y clara.
+- Por defecto usa MODO OPERACIONAL: respuesta breve, directa y accionable para terreno.
+- En modo operacional entrega como máximo 3 a 5 verificaciones prioritarias y evita explicaciones largas.
+- Si el técnico pide "más detalle", "explícamelo técnicamente", "explícalo para el cliente" o una variante equivalente, adapta la profundidad de la respuesta.
+- No uses Markdown con encabezados, negritas ni separadores; devuelve texto plano limpio y fácil de leer en celular.
 `.trim()
 
     const userInput = `

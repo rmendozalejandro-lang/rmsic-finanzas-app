@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
-import { ChangeEvent, useCallback, useEffect, useMemo, useState } from 'react'
+import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ProtectedModuleRoute from '../../../../../components/ProtectedModuleRoute'
 import { supabase } from '../../../../../lib/supabase/client'
 
@@ -13,6 +13,8 @@ type OtRow = {
   folio: string | null
   titulo: string | null
   descripcion_solicitud: string | null
+  hora_inicio: string | null
+  hora_termino: string | null
 }
 
 type CasoRow = {
@@ -86,6 +88,30 @@ type DecisionRow = {
   created_by: string | null
 }
 
+type CierreDraft = {
+  diagnostico: string
+  causa_probable: string
+  trabajo_realizado: string
+  hallazgos: string
+  resultado_servicio: string
+  conclusiones_tecnicas: string
+  recomendaciones: string
+  observaciones_cierre: string
+  pendientes: string
+}
+
+const CIERRE_VACIO: CierreDraft = {
+  diagnostico: '',
+  causa_probable: '',
+  trabajo_realizado: '',
+  hallazgos: '',
+  resultado_servicio: '',
+  conclusiones_tecnicas: '',
+  recomendaciones: '',
+  observaciones_cierre: '',
+  pendientes: '',
+}
+
 const BUCKET = 'ot-viva-evidencias'
 
 function safeName(value: string) {
@@ -153,6 +179,16 @@ function OTVivaContent() {
   const [preguntaIA, setPreguntaIA] = useState('')
   const [respuestaIA, setRespuestaIA] = useState('')
   const [consultandoIA, setConsultandoIA] = useState(false)
+  const [grabandoVoz, setGrabandoVoz] = useState<'evento' | 'ia' | null>(null)
+  const [transcribiendoVoz, setTranscribiendoVoz] = useState(false)
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const mediaStreamRef = useRef<MediaStream | null>(null)
+  const audioChunksRef = useRef<Blob[]>([])
+  const [preparandoCierre, setPreparandoCierre] = useState(false)
+  const [aplicandoCierre, setAplicandoCierre] = useState(false)
+  const [cierreAplicado, setCierreAplicado] = useState(false)
+  const [borradorCierre, setBorradorCierre] = useState<CierreDraft | null>(null)
+  const [evidenciasCierre, setEvidenciasCierre] = useState<string[]>([])
 
   const [tipoEvento, setTipoEvento] = useState('hallazgo')
   const [textoEvento, setTextoEvento] = useState('')
@@ -219,7 +255,7 @@ function OTVivaContent() {
 
       const { data: otData, error: otError } = await supabase
         .from('ot_ordenes_trabajo')
-        .select('id,empresa_id,cliente_id,folio,titulo,descripcion_solicitud')
+        .select('id,empresa_id,cliente_id,folio,titulo,descripcion_solicitud,hora_inicio,hora_termino')
         .eq('id', otId)
         .single()
 
@@ -404,6 +440,224 @@ function OTVivaContent() {
     }
   }
 
+  function detenerGrabacionVoz() {
+    const recorder = mediaRecorderRef.current
+    if (recorder && recorder.state !== 'inactive') recorder.stop()
+  }
+
+  async function transcribirAudio(blob: Blob, destino: 'evento' | 'ia') {
+    if (!ot) return
+
+    setTranscribiendoVoz(true)
+    setError('')
+    setSuccess('')
+
+    try {
+      const { data: sessionData } = await supabase.auth.getSession()
+      const token = sessionData.session?.access_token
+      if (!token) throw new Error('No se pudo validar la sesión para transcribir audio.')
+
+      const extension = blob.type.includes('mp4') ? 'm4a' : blob.type.includes('ogg') ? 'ogg' : 'webm'
+      const formData = new FormData()
+      formData.append('audio', blob, `ot-viva-voz.${extension}`)
+
+      const response = await fetch(`/api/ot/${ot.id}/viva/transcribir`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      })
+
+      const data = await response.json()
+      if (!response.ok) throw new Error(data?.error || 'No fue posible transcribir el audio.')
+
+      const texto = String(data?.texto || '').trim()
+      if (!texto) throw new Error('No se detectó contenido de voz.')
+
+      if (destino === 'evento') {
+        setTextoEvento((actual) => [actual.trim(), texto].filter(Boolean).join(' '))
+        setSuccess('Voz transcrita. Revisa el texto y guarda el evento cuando esté correcto.')
+      } else {
+        setPreguntaIA((actual) => [actual.trim(), texto].filter(Boolean).join(' '))
+        setSuccess('Voz transcrita. Revisa la consulta antes de enviarla a Tralixia.')
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No fue posible transcribir el audio.')
+    } finally {
+      setTranscribiendoVoz(false)
+    }
+  }
+
+  async function alternarGrabacionVoz(destino: 'evento' | 'ia') {
+    if (grabandoVoz) {
+      detenerGrabacionVoz()
+      return
+    }
+
+    setError('')
+    setSuccess('')
+
+    try {
+      if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+        throw new Error('Este navegador no permite grabación de voz para OT Viva.')
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      })
+
+      mediaStreamRef.current = stream
+      audioChunksRef.current = []
+
+      const mimeCandidates = [
+        'audio/webm;codecs=opus',
+        'audio/mp4',
+        'audio/webm',
+        'audio/ogg;codecs=opus',
+      ]
+      const mimeType = mimeCandidates.find((candidate) => MediaRecorder.isTypeSupported(candidate))
+      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream)
+
+      mediaRecorderRef.current = recorder
+
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) audioChunksRef.current.push(event.data)
+      }
+
+      recorder.onerror = () => {
+        setError('Se produjo un problema durante la grabación de voz.')
+      }
+
+      recorder.onstop = () => {
+        const chunks = audioChunksRef.current
+        const type = recorder.mimeType || chunks[0]?.type || 'audio/webm'
+        const blob = new Blob(chunks, { type })
+
+        mediaStreamRef.current?.getTracks().forEach((track) => track.stop())
+        mediaStreamRef.current = null
+        mediaRecorderRef.current = null
+        audioChunksRef.current = []
+        setGrabandoVoz(null)
+
+        if (blob.size < 1000) {
+          setError('La grabación fue demasiado corta. Intenta nuevamente.')
+          return
+        }
+
+        void transcribirAudio(blob, destino)
+      }
+
+      recorder.start()
+      setGrabandoVoz(destino)
+      setSuccess('Escuchando... habla normalmente y presiona Detener cuando termines.')
+    } catch (err) {
+      mediaStreamRef.current?.getTracks().forEach((track) => track.stop())
+      mediaStreamRef.current = null
+      mediaRecorderRef.current = null
+      setGrabandoVoz(null)
+      setError(err instanceof Error ? err.message : 'No se pudo acceder al micrófono.')
+    }
+  }
+
+  async function prepararCierreOt() {
+    if (!ot || !caso) return
+
+    setPreparandoCierre(true)
+    setError('')
+    setSuccess('')
+    setCierreAplicado(false)
+
+    try {
+      const { data: sessionData } = await supabase.auth.getSession()
+      const token = sessionData.session?.access_token
+      if (!token) throw new Error('No se pudo validar la sesión para preparar el cierre.')
+
+      const response = await fetch(`/api/ot/${ot.id}/viva/cierre`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ accion: 'generar' }),
+      })
+
+      const data = await response.json()
+      if (!response.ok) throw new Error(data?.error || 'No fue posible preparar el cierre de la OT.')
+
+      setBorradorCierre({ ...CIERRE_VACIO, ...(data?.borrador || {}) })
+      setEvidenciasCierre([])
+      setSuccess('Borrador preparado. Revísalo antes de pasarlo a la OT principal.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No fue posible preparar el cierre de la OT.')
+    } finally {
+      setPreparandoCierre(false)
+    }
+  }
+
+  function actualizarCampoCierre(campo: keyof CierreDraft, valor: string) {
+    setBorradorCierre((actual) => ({
+      ...(actual || CIERRE_VACIO),
+      [campo]: valor,
+    }))
+    setCierreAplicado(false)
+  }
+
+  function toggleEvidenciaCierre(id: string) {
+    setEvidenciasCierre((actual) =>
+      actual.includes(id)
+        ? actual.filter((item) => item !== id)
+        : [...actual, id]
+    )
+    setCierreAplicado(false)
+  }
+
+  async function aplicarCierreOt() {
+    if (!ot || !borradorCierre) return
+
+    const confirmar = window.confirm(
+      'Se copiará este borrador a la OT principal. Podrás revisarlo nuevamente antes de la firma del cliente. ¿Continuar?'
+    )
+    if (!confirmar) return
+
+    setAplicandoCierre(true)
+    setError('')
+    setSuccess('')
+
+    try {
+      const { data: sessionData } = await supabase.auth.getSession()
+      const token = sessionData.session?.access_token
+      if (!token) throw new Error('No se pudo validar la sesión para aplicar el cierre.')
+
+      const response = await fetch(`/api/ot/${ot.id}/viva/cierre`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          accion: 'aplicar',
+          borrador: borradorCierre,
+          evidenciasSeleccionadas: evidenciasCierre,
+        }),
+      })
+
+      const data = await response.json()
+      if (!response.ok) throw new Error(data?.error || 'No fue posible aplicar el cierre a la OT principal.')
+
+      setCierreAplicado(true)
+      setSuccess(
+        `Borrador aplicado a la OT principal${data?.evidenciasCopiadas ? ` y ${data.evidenciasCopiadas} evidencia(s) seleccionada(s)` : ''}. Revísala antes de solicitar la firma.`
+      )
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No fue posible aplicar el cierre a la OT principal.')
+    } finally {
+      setAplicandoCierre(false)
+    }
+  }
+
   async function crearCaso() {
     if (!ot || !userId) return
     setBusy(true)
@@ -476,7 +730,19 @@ function OTVivaContent() {
         })
 
       if (sesionError) throw new Error(sesionError.message)
-      setSuccess('Sesión técnica iniciada.')
+
+      if (!ot.hora_inicio) {
+        const horaInicio = new Date().toISOString()
+        const { error: horaError } = await supabase
+          .from('ot_ordenes_trabajo')
+          .update({ hora_inicio: horaInicio })
+          .eq('id', ot.id)
+          .eq('empresa_id', ot.empresa_id)
+
+        if (horaError) throw new Error(`Sesión iniciada, pero no se pudo registrar la hora de inicio en la OT: ${horaError.message}`)
+      }
+
+      setSuccess('Sesión Viva iniciada. La hora de disponibilidad en planta quedó registrada como inicio de la OT.')
       await loadAll()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo iniciar la sesión.')
@@ -493,6 +759,22 @@ function OTVivaContent() {
 
     try {
       const now = new Date().toISOString()
+
+      // La OT usa timestamptz para hora_inicio/hora_termino.
+      // Registramos primero la hora oficial de retiro y solo después cerramos la sesión Viva,
+      // evitando dejar la sesión finalizada si falla el registro horario de la OT.
+      if (ot) {
+        const { error: horaError } = await supabase
+          .from('ot_ordenes_trabajo')
+          .update({ hora_termino: now })
+          .eq('id', ot.id)
+          .eq('empresa_id', ot.empresa_id)
+
+        if (horaError) {
+          throw new Error(`No se pudo registrar la hora de término en la OT: ${horaError.message}`)
+        }
+      }
+
       const { error: finishError } = await supabase
         .from('asistente_sesiones')
         .update({
@@ -503,11 +785,18 @@ function OTVivaContent() {
         })
         .eq('id', sesionActiva.id)
 
-      if (finishError) throw new Error(finishError.message)
-      setSuccess('Sesión técnica finalizada.')
+      if (finishError) {
+        // Mantener trazabilidad: si falla el cierre de sesión, informamos el estado real.
+        throw new Error(
+          `La hora de término quedó registrada en la OT, pero no se pudo finalizar la sesión Viva: ${finishError.message}`
+        )
+      }
+
+      setSuccess('Sesión Viva finalizada. La hora de retiro de planta quedó registrada como término de la OT.')
       await loadAll()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo finalizar la sesión.')
+      await loadAll()
     } finally {
       setBusy(false)
     }
@@ -841,10 +1130,30 @@ function OTVivaContent() {
                 <option value="resultado">Resultado</option>
                 <option value="medicion">Medición</option>
               </select>
-              <textarea value={textoEvento} onChange={(e) => setTextoEvento(e.target.value)} disabled={!sesionActiva || busy} rows={3} placeholder="Ej.: Se detecta ruido anormal en el rodamiento lado transmisión..." className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm" />
+              <textarea value={textoEvento} onChange={(e) => setTextoEvento(e.target.value)} disabled={!sesionActiva || busy || transcribiendoVoz} rows={3} placeholder="Ej.: Se detecta ruido anormal en el rodamiento lado transmisión..." className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm" />
             </div>
 
-            <button type="button" onClick={() => void crearEvento()} disabled={!sesionActiva || busy || !textoEvento.trim()} className="mt-3 rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white disabled:opacity-50">
+            <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+              <button
+                type="button"
+                onClick={() => void alternarGrabacionVoz('evento')}
+                disabled={!sesionActiva || busy || transcribiendoVoz || Boolean(grabandoVoz && grabandoVoz !== 'evento')}
+                className={`rounded-xl px-5 py-3 text-sm font-semibold text-white disabled:opacity-50 ${
+                  grabandoVoz === 'evento' ? 'bg-rose-700' : 'bg-cyan-800'
+                }`}
+              >
+                {transcribiendoVoz
+                  ? 'Transcribiendo...'
+                  : grabandoVoz === 'evento'
+                    ? 'Detener grabación'
+                    : 'Hablar evento'}
+              </button>
+              <p className="text-xs text-slate-500">
+                Habla en lenguaje natural. Tralixia transcribe y tú revisas antes de guardar.
+              </p>
+            </div>
+
+            <button type="button" onClick={() => void crearEvento()} disabled={!sesionActiva || busy || transcribiendoVoz || Boolean(grabandoVoz) || !textoEvento.trim()} className="mt-3 rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white disabled:opacity-50">
               Guardar evento
             </button>
           </section>
@@ -948,17 +1257,37 @@ function OTVivaContent() {
                   <textarea
                     value={preguntaIA}
                     onChange={(e) => setPreguntaIA(e.target.value)}
-                    disabled={consultandoIA}
+                    disabled={consultandoIA || transcribiendoVoz}
                     rows={3}
                     maxLength={4000}
                     placeholder="Ej.: Según lo registrado en esta OT, ¿qué debería verificar a continuación?"
                     className="w-full rounded-xl border border-indigo-200 bg-white px-4 py-3 text-sm"
                   />
 
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                    <button
+                      type="button"
+                      onClick={() => void alternarGrabacionVoz('ia')}
+                      disabled={consultandoIA || transcribiendoVoz || Boolean(grabandoVoz && grabandoVoz !== 'ia')}
+                      className={`rounded-xl px-5 py-3 text-sm font-semibold text-white disabled:opacity-50 ${
+                        grabandoVoz === 'ia' ? 'bg-rose-700' : 'bg-indigo-600'
+                      }`}
+                    >
+                      {transcribiendoVoz
+                        ? 'Transcribiendo...'
+                        : grabandoVoz === 'ia'
+                          ? 'Detener grabación'
+                          : 'Hablar con Tralixia'}
+                    </button>
+                    <p className="text-xs text-slate-500">
+                      Dicta tu consulta y revisa la transcripción antes de enviarla.
+                    </p>
+                  </div>
+
                   <button
                     type="button"
                     onClick={() => void consultarAsistenteIA()}
-                    disabled={consultandoIA || !preguntaIA.trim()}
+                    disabled={consultandoIA || transcribiendoVoz || Boolean(grabandoVoz) || !preguntaIA.trim()}
                     className="rounded-xl bg-indigo-700 px-5 py-3 text-sm font-semibold text-white disabled:opacity-50"
                   >
                     {consultandoIA ? 'Consultando...' : 'Consultar asistente'}
@@ -978,6 +1307,123 @@ function OTVivaContent() {
               )}
             </section>
           ) : null}
+
+          <section className="rounded-2xl border border-emerald-200 bg-emerald-50/30 p-5 shadow-sm">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
+                  Cierre asistido
+                </p>
+                <h2 className="mt-1 text-lg font-semibold text-slate-900">Preparar cierre de OT</h2>
+                <p className="mt-1 max-w-3xl text-sm text-slate-600">
+                  Tralixia prepara un borrador con lo registrado en OT Viva. Tú lo revisas y decides qué pasa a la OT principal antes de la firma del cliente.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => void prepararCierreOt()}
+                disabled={preparandoCierre || aplicandoCierre || eventos.length === 0}
+                className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white disabled:opacity-50"
+              >
+                {preparandoCierre ? 'Preparando...' : borradorCierre ? 'Regenerar borrador' : 'Preparar cierre OT'}
+              </button>
+            </div>
+
+            {borradorCierre ? (
+              <div className="mt-5 space-y-5">
+                <div className="grid gap-4 lg:grid-cols-2">
+                  {([
+                    ['trabajo_realizado', 'Trabajo realizado'],
+                    ['hallazgos', 'Hallazgos relevantes'],
+                    ['diagnostico', 'Diagnóstico'],
+                    ['causa_probable', 'Causa probable'],
+                    ['resultado_servicio', 'Resultado del servicio'],
+                    ['conclusiones_tecnicas', 'Conclusiones técnicas'],
+                    ['recomendaciones', 'Recomendaciones'],
+                    ['pendientes', 'Pendientes'],
+                    ['observaciones_cierre', 'Observaciones de cierre'],
+                  ] as Array<[keyof CierreDraft, string]>).map(([campo, label]) => (
+                    <div key={campo} className={campo === 'trabajo_realizado' || campo === 'observaciones_cierre' ? 'lg:col-span-2' : ''}>
+                      <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        {label}
+                      </label>
+                      <textarea
+                        value={borradorCierre[campo]}
+                        onChange={(e) => actualizarCampoCierre(campo, e.target.value)}
+                        rows={campo === 'trabajo_realizado' ? 5 : 3}
+                        className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm"
+                      />
+                    </div>
+                  ))}
+                </div>
+
+                <div className="rounded-xl border border-slate-200 bg-white p-4">
+                  <h3 className="text-sm font-semibold text-slate-900">Fotos para la OT principal</h3>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Capturar una foto no significa publicarla. Selecciona solo las evidencias que quieras llevar al documento del cliente.
+                  </p>
+
+                  {evidencias.length === 0 ? (
+                    <p className="mt-3 text-sm text-slate-500">No hay evidencias registradas.</p>
+                  ) : (
+                    <div className="mt-3 grid gap-3 md:grid-cols-2">
+                      {evidencias.map((ev) => (
+                        <label key={ev.id} className="flex cursor-pointer gap-3 rounded-xl border border-slate-200 p-3">
+                          <input
+                            type="checkbox"
+                            checked={evidenciasCierre.includes(ev.id)}
+                            onChange={() => toggleEvidenciaCierre(ev.id)}
+                            className="mt-1 h-4 w-4"
+                          />
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-slate-900">
+                              {ev.descripcion || ev.archivo_nombre || ev.tipo_evidencia}
+                            </p>
+                            <p className="mt-1 text-xs text-slate-500">
+                              {ev.tipo_evidencia} · {formatDateTime(ev.capturado_at)}
+                            </p>
+                            {ev.signedUrl && ev.tipo_evidencia === 'foto' ? (
+                              <img
+                                src={ev.signedUrl}
+                                alt={ev.descripcion || 'Evidencia OT Viva'}
+                                className="mt-2 h-28 w-full rounded-lg object-cover"
+                              />
+                            ) : null}
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex flex-col gap-3 sm:flex-row">
+                  <button
+                    type="button"
+                    onClick={() => void aplicarCierreOt()}
+                    disabled={aplicandoCierre}
+                    className="rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white disabled:opacity-50"
+                  >
+                    {aplicandoCierre ? 'Aplicando...' : 'Pasar a OT principal'}
+                  </button>
+
+                  {cierreAplicado ? (
+                    <Link
+                      href={`/ot/${ot.id}?recepcion=viva`}
+                      className="inline-flex items-center justify-center rounded-xl border border-emerald-300 bg-white px-5 py-3 text-sm font-semibold text-emerald-800"
+                    >
+                      Revisar OT principal y firma
+                    </Link>
+                  ) : null}
+                </div>
+
+                {cierreAplicado ? (
+                  <div className="rounded-xl border border-emerald-200 bg-emerald-100/60 px-4 py-3 text-sm text-emerald-900">
+                    El borrador ya fue aplicado. Revisa la OT principal con el cliente y solicita su firma. Finaliza la sesión Viva recién cuando te retires de planta.
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+          </section>
 
           <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <h2 className="text-lg font-semibold text-slate-900">Análisis de hipótesis</h2>
