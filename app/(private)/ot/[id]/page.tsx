@@ -3132,6 +3132,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
     searchParams.get('vista') === 'tecnica' ||
     searchParams.get('vista') === 'tecnico' ||
     searchParams.get('modo') === 'tecnico'
+  const recepcionVivaSolicitada = searchParams.get('recepcion') === 'viva'
   const mostrarVistaTecnica = hasTechnicalExecutionFlow && (isTechnicianOnly || vistaTecnicaSolicitada)
   const mostrarBloquesTecnicosEnDetalle = !hasTechnicalExecutionFlow
   const ejecucionTecnicaActionLabel = isAssignedTechnician
@@ -6008,7 +6009,48 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
         </>
       )}
 
-      {(esFlujoDyfSoftys || trabajoFinalizadoPorTecnico || isClosed) ? (
+      {recepcionVivaSolicitada && !isClosed ? (
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-6 shadow-sm">
+          <SectionTitle
+            title="Recepción del cliente"
+            subtitle="El borrador de OT Viva ya fue aplicado. Revisa el contenido con el cliente y registra su firma antes del cierre final."
+          />
+
+          <div className="mt-5">
+            <OTFirmasPanel
+              otId={otId}
+              empresaId={detalle.empresa_id}
+              currentUserId={currentUserId}
+              showTechnicianSignature={false}
+              showClientSignature
+              defaultClientName={form.contacto_cliente_nombre}
+              defaultClientRole={form.contacto_cliente_cargo}
+            />
+          </div>
+
+          {!form.hora_termino ? (
+            <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              La firma puede registrarse ahora. La hora de término todavía no está registrada porque debe corresponder al momento real de retiro de planta.
+              Cuando te retires, vuelve a OT Viva y finaliza la sesión; después regresa aquí para cerrar la OT.
+            </div>
+          ) : (
+            <div className="mt-5 rounded-xl border border-emerald-200 bg-white px-4 py-3 text-sm text-emerald-900">
+              Hora de término registrada: {form.hora_termino}. Ya puedes completar el cierre oficial de la OT.
+            </div>
+          )}
+
+          <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+            <Link
+              href={`/ot/${otId}/viva`}
+              className="inline-flex items-center justify-center rounded-xl border border-emerald-300 bg-white px-5 py-3 text-sm font-semibold text-emerald-800 hover:bg-emerald-100"
+            >
+              Volver a OT Viva
+            </Link>
+          </div>
+        </div>
+      ) : null}
+
+      {(esFlujoDyfSoftys || trabajoFinalizadoPorTecnico || isClosed || recepcionVivaSolicitada) ? (
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <SectionTitle
           title={`Cierre / entrega de ${documentoTrabajoLabel}`}
