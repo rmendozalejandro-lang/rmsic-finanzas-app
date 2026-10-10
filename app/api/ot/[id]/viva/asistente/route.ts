@@ -144,7 +144,7 @@ export async function POST(
 
     const casoId = casoLinkResp.data.caso_id
 
-    const [casoResp, sesionResp, eventosResp] = await Promise.all([
+    const [casoResp, sesionResp, eventosResp, decisionesResp, relacionesResp] = await Promise.all([
       admin
         .from('asistente_casos')
         .select('id,titulo,descripcion_inicial,estado')
@@ -168,6 +168,19 @@ export async function POST(
         .eq('estado', 'activo')
         .order('ocurrido_at', { ascending: false })
         .limit(30),
+      admin
+        .from('asistente_decisiones')
+        .select('id,evento_id,actor_tipo,actor_nombre_snapshot,decision,motivo,decidido_at')
+        .eq('caso_id', casoId)
+        .eq('empresa_id', ot.empresa_id)
+        .order('decidido_at', { ascending: true }),
+      admin
+        .from('asistente_evento_relaciones')
+        .select('id,evento_origen_id,evento_destino_id,tipo_relacion,observacion,created_at,activo')
+        .eq('caso_id', casoId)
+        .eq('empresa_id', ot.empresa_id)
+        .eq('activo', true)
+        .order('created_at', { ascending: true }),
     ])
 
     if (casoResp.error || !casoResp.data) {
@@ -175,15 +188,56 @@ export async function POST(
     }
     if (sesionResp.error) return jsonError(sesionResp.error.message, 500)
     if (eventosResp.error) return jsonError(eventosResp.error.message, 500)
+    if (decisionesResp.error) return jsonError(decisionesResp.error.message, 500)
+    if (relacionesResp.error) return jsonError(relacionesResp.error.message, 500)
 
     const eventos = eventosResp.data || []
+    const decisiones = decisionesResp.data || []
+    const relaciones = relacionesResp.data || []
+
+    const decisionesVigentesPorEvento = new Map<
+      string,
+      (typeof decisiones)[number]
+    >()
+
+    for (const decision of decisiones) {
+      if (!decision.evento_id) continue
+      decisionesVigentesPorEvento.set(decision.evento_id, decision)
+    }
 
     const contextoEventos = eventos
-      .map(
-        (item, index) =>
-          `${index + 1}. [${item.tipo_evento} | ${item.nivel_certeza} | ${item.autor_tipo}] ${item.texto_original}`
-      )
+      .map((item, index) => {
+        const decisionVigente = decisionesVigentesPorEvento.get(item.id)
+        const sufijoDecision = decisionVigente
+          ? ` | DECISIÓN HUMANA VIGENTE: ${decisionVigente.decision}`
+          : ''
+
+        return `${index + 1}. [ID ${item.id} | ${item.tipo_evento} | ${item.nivel_certeza} | ${item.autor_tipo}${sufijoDecision}] ${item.texto_original}`
+      })
       .join('\n')
+
+    const contextoDecisiones = decisiones.length
+      ? Array.from(decisionesVigentesPorEvento.values())
+          .sort(
+            (a, b) =>
+              new Date(b.decidido_at).getTime() -
+              new Date(a.decidido_at).getTime()
+          )
+          .map(
+            (item, index) =>
+              `${index + 1}. Evento ${item.evento_id}: ${item.decision.toUpperCase()} por ${item.actor_nombre_snapshot || item.actor_tipo || 'persona'} el ${item.decidido_at}. Fundamento: ${item.motivo || 'Sin fundamento registrado.'}`
+          )
+          .join('\n')
+      : 'No hay decisiones humanas estructuradas registradas.'
+
+    const contextoRelaciones = relaciones.length
+      ? relaciones
+          .map(
+            (item, index) =>
+              `${index + 1}. Evento ${item.evento_origen_id} ${item.tipo_relacion} evento ${item.evento_destino_id}${item.observacion ? `: ${item.observacion}` : ''}`
+          )
+          .join('\n')
+      : 'No hay relaciones técnicas activas registradas.'
 
     const developerInstructions = `
 Eres el Asistente Técnico de Tralixia para una orden de trabajo industrial.
@@ -194,7 +248,11 @@ Reglas obligatorias:
 - No asumas datos de otras empresas, clientes, OT o conversaciones.
 - Si falta información, dilo explícitamente.
 - Distingue entre hechos registrados, hipótesis y sugerencias.
-- No confirmes ni descartes una hipótesis como decisión final: eso corresponde a una persona.
+- Las DECISIONES HUMANAS ESTRUCTURADAS entregadas en el contexto son la fuente de verdad para el estado actual de una hipótesis.
+- Si un texto histórico, una respuesta anterior de IA o un evento previo contradice una decisión humana estructurada posterior, considera ese texto como antecedente histórico y NO como estado vigente.
+- Cuando existan varias decisiones estructuradas para la misma hipótesis, manda exclusivamente la más reciente por decidido_at; conserva las anteriores solo como trazabilidad.
+- Nunca deduzcas una confirmación o descarte vigente leyendo frases como "decisión humana", "se confirma" o "se descarta" dentro del texto libre de un evento. El estado vigente solo proviene de la sección "Decisiones humanas vigentes".
+- No confirmes ni descartes por cuenta propia una hipótesis que no tenga decisión humana estructurada vigente: eso corresponde a una persona.
 - Puedes proponer verificaciones, pruebas o hipótesis, pero debes identificarlas como propuestas.
 - Prioriza seguridad industrial y no sugieras intervenir equipos energizados o protegidos sin procedimientos adecuados.
 - Responde en español de Chile, de forma técnica y clara.
@@ -211,6 +269,12 @@ Estado caso: ${casoResp.data.estado}
 
 Eventos registrados en este caso:
 ${contextoEventos || 'No hay eventos registrados.'}
+
+Decisiones humanas vigentes (fuente de verdad):
+${contextoDecisiones}
+
+Relaciones técnicas activas:
+${contextoRelaciones}
 
 Consulta del técnico:
 ${pregunta}
