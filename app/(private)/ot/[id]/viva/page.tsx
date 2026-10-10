@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
-import { ChangeEvent, useCallback, useEffect, useMemo, useState } from 'react'
+import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ProtectedModuleRoute from '../../../../../components/ProtectedModuleRoute'
 import { supabase } from '../../../../../lib/supabase/client'
 
@@ -153,6 +153,12 @@ function OTVivaContent() {
   const [preguntaIA, setPreguntaIA] = useState('')
   const [respuestaIA, setRespuestaIA] = useState('')
   const [consultandoIA, setConsultandoIA] = useState(false)
+  const [grabandoVoz, setGrabandoVoz] = useState<'evento' | 'ia' | null>(null)
+  const [transcribiendoVoz, setTranscribiendoVoz] = useState(false)
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const mediaStreamRef = useRef<MediaStream | null>(null)
+  const audioChunksRef = useRef<Blob[]>([])
+
 
   const [tipoEvento, setTipoEvento] = useState('hallazgo')
   const [textoEvento, setTextoEvento] = useState('')
@@ -401,6 +407,128 @@ function OTVivaContent() {
       setError(err instanceof Error ? err.message : 'No fue posible consultar el asistente.')
     } finally {
       setConsultandoIA(false)
+    }
+  }
+
+  function detenerGrabacionVoz() {
+    const recorder = mediaRecorderRef.current
+    if (recorder && recorder.state !== 'inactive') recorder.stop()
+  }
+
+  async function transcribirAudio(blob: Blob, destino: 'evento' | 'ia') {
+    if (!ot) return
+
+    setTranscribiendoVoz(true)
+    setError('')
+    setSuccess('')
+
+    try {
+      const { data: sessionData } = await supabase.auth.getSession()
+      const token = sessionData.session?.access_token
+      if (!token) throw new Error('No se pudo validar la sesión para transcribir audio.')
+
+      const extension = blob.type.includes('mp4') ? 'm4a' : blob.type.includes('ogg') ? 'ogg' : 'webm'
+      const formData = new FormData()
+      formData.append('audio', blob, `ot-viva-voz.${extension}`)
+
+      const response = await fetch(`/api/ot/${ot.id}/viva/transcribir`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      })
+
+      const data = await response.json()
+      if (!response.ok) throw new Error(data?.error || 'No fue posible transcribir el audio.')
+
+      const texto = String(data?.texto || '').trim()
+      if (!texto) throw new Error('No se detectó contenido de voz.')
+
+      if (destino === 'evento') {
+        setTextoEvento((actual) => [actual.trim(), texto].filter(Boolean).join(' '))
+        setSuccess('Voz transcrita. Revisa el texto y guarda el evento cuando esté correcto.')
+      } else {
+        setPreguntaIA((actual) => [actual.trim(), texto].filter(Boolean).join(' '))
+        setSuccess('Voz transcrita. Revisa la consulta antes de enviarla a Tralixia.')
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No fue posible transcribir el audio.')
+    } finally {
+      setTranscribiendoVoz(false)
+    }
+  }
+
+  async function alternarGrabacionVoz(destino: 'evento' | 'ia') {
+    if (grabandoVoz) {
+      detenerGrabacionVoz()
+      return
+    }
+
+    setError('')
+    setSuccess('')
+
+    try {
+      if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+        throw new Error('Este navegador no permite grabación de voz para OT Viva.')
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      })
+
+      mediaStreamRef.current = stream
+      audioChunksRef.current = []
+
+      const mimeCandidates = [
+        'audio/webm;codecs=opus',
+        'audio/mp4',
+        'audio/webm',
+        'audio/ogg;codecs=opus',
+      ]
+      const mimeType = mimeCandidates.find((candidate) => MediaRecorder.isTypeSupported(candidate))
+      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream)
+
+      mediaRecorderRef.current = recorder
+
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) audioChunksRef.current.push(event.data)
+      }
+
+      recorder.onerror = () => {
+        setError('Se produjo un problema durante la grabación de voz.')
+      }
+
+      recorder.onstop = () => {
+        const chunks = audioChunksRef.current
+        const type = recorder.mimeType || chunks[0]?.type || 'audio/webm'
+        const blob = new Blob(chunks, { type })
+
+        mediaStreamRef.current?.getTracks().forEach((track) => track.stop())
+        mediaStreamRef.current = null
+        mediaRecorderRef.current = null
+        audioChunksRef.current = []
+        setGrabandoVoz(null)
+
+        if (blob.size < 1000) {
+          setError('La grabación fue demasiado corta. Intenta nuevamente.')
+          return
+        }
+
+        void transcribirAudio(blob, destino)
+      }
+
+      recorder.start()
+      setGrabandoVoz(destino)
+      setSuccess('Escuchando... habla normalmente y presiona Detener cuando termines.')
+    } catch (err) {
+      mediaStreamRef.current?.getTracks().forEach((track) => track.stop())
+      mediaStreamRef.current = null
+      mediaRecorderRef.current = null
+      setGrabandoVoz(null)
+      setError(err instanceof Error ? err.message : 'No se pudo acceder al micrófono.')
     }
   }
 
@@ -841,10 +969,30 @@ function OTVivaContent() {
                 <option value="resultado">Resultado</option>
                 <option value="medicion">Medición</option>
               </select>
-              <textarea value={textoEvento} onChange={(e) => setTextoEvento(e.target.value)} disabled={!sesionActiva || busy} rows={3} placeholder="Ej.: Se detecta ruido anormal en el rodamiento lado transmisión..." className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm" />
+              <textarea value={textoEvento} onChange={(e) => setTextoEvento(e.target.value)} disabled={!sesionActiva || busy || transcribiendoVoz} rows={3} placeholder="Ej.: Se detecta ruido anormal en el rodamiento lado transmisión..." className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm" />
             </div>
 
-            <button type="button" onClick={() => void crearEvento()} disabled={!sesionActiva || busy || !textoEvento.trim()} className="mt-3 rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white disabled:opacity-50">
+            <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+              <button
+                type="button"
+                onClick={() => void alternarGrabacionVoz('evento')}
+                disabled={!sesionActiva || busy || transcribiendoVoz || Boolean(grabandoVoz && grabandoVoz !== 'evento')}
+                className={`rounded-xl px-5 py-3 text-sm font-semibold text-white disabled:opacity-50 ${
+                  grabandoVoz === 'evento' ? 'bg-rose-700' : 'bg-cyan-800'
+                }`}
+              >
+                {transcribiendoVoz
+                  ? 'Transcribiendo...'
+                  : grabandoVoz === 'evento'
+                    ? 'Detener grabación'
+                    : 'Hablar evento'}
+              </button>
+              <p className="text-xs text-slate-500">
+                Habla en lenguaje natural. Tralixia transcribe y tú revisas antes de guardar.
+              </p>
+            </div>
+
+            <button type="button" onClick={() => void crearEvento()} disabled={!sesionActiva || busy || transcribiendoVoz || Boolean(grabandoVoz) || !textoEvento.trim()} className="mt-3 rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white disabled:opacity-50">
               Guardar evento
             </button>
           </section>
@@ -948,17 +1096,37 @@ function OTVivaContent() {
                   <textarea
                     value={preguntaIA}
                     onChange={(e) => setPreguntaIA(e.target.value)}
-                    disabled={consultandoIA}
+                    disabled={consultandoIA || transcribiendoVoz}
                     rows={3}
                     maxLength={4000}
                     placeholder="Ej.: Según lo registrado en esta OT, ¿qué debería verificar a continuación?"
                     className="w-full rounded-xl border border-indigo-200 bg-white px-4 py-3 text-sm"
                   />
 
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                    <button
+                      type="button"
+                      onClick={() => void alternarGrabacionVoz('ia')}
+                      disabled={consultandoIA || transcribiendoVoz || Boolean(grabandoVoz && grabandoVoz !== 'ia')}
+                      className={`rounded-xl px-5 py-3 text-sm font-semibold text-white disabled:opacity-50 ${
+                        grabandoVoz === 'ia' ? 'bg-rose-700' : 'bg-indigo-600'
+                      }`}
+                    >
+                      {transcribiendoVoz
+                        ? 'Transcribiendo...'
+                        : grabandoVoz === 'ia'
+                          ? 'Detener grabación'
+                          : 'Hablar con Tralixia'}
+                    </button>
+                    <p className="text-xs text-slate-500">
+                      Dicta tu consulta y revisa la transcripción antes de enviarla.
+                    </p>
+                  </div>
+
                   <button
                     type="button"
                     onClick={() => void consultarAsistenteIA()}
-                    disabled={consultandoIA || !preguntaIA.trim()}
+                    disabled={consultandoIA || transcribiendoVoz || Boolean(grabandoVoz) || !preguntaIA.trim()}
                     className="rounded-xl bg-indigo-700 px-5 py-3 text-sm font-semibold text-white disabled:opacity-50"
                   >
                     {consultandoIA ? 'Consultando...' : 'Consultar asistente'}
