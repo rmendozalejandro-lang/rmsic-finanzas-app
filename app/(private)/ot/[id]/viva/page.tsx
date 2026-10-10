@@ -140,15 +140,6 @@ function formatDateTime(value: string) {
   }).format(d)
 }
 
-function chileTimeHHMM(date = new Date()) {
-  return new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'America/Santiago',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).format(date)
-}
-
 function nivelParaTipo(tipo: string) {
   if (tipo === 'hipotesis') return 'hipotesis'
   if (tipo === 'medicion') return 'medido'
@@ -741,7 +732,7 @@ function OTVivaContent() {
       if (sesionError) throw new Error(sesionError.message)
 
       if (!ot.hora_inicio) {
-        const horaInicio = chileTimeHHMM()
+        const horaInicio = new Date().toISOString()
         const { error: horaError } = await supabase
           .from('ot_ordenes_trabajo')
           .update({ hora_inicio: horaInicio })
@@ -768,6 +759,22 @@ function OTVivaContent() {
 
     try {
       const now = new Date().toISOString()
+
+      // La OT usa timestamptz para hora_inicio/hora_termino.
+      // Registramos primero la hora oficial de retiro y solo después cerramos la sesión Viva,
+      // evitando dejar la sesión finalizada si falla el registro horario de la OT.
+      if (ot) {
+        const { error: horaError } = await supabase
+          .from('ot_ordenes_trabajo')
+          .update({ hora_termino: now })
+          .eq('id', ot.id)
+          .eq('empresa_id', ot.empresa_id)
+
+        if (horaError) {
+          throw new Error(`No se pudo registrar la hora de término en la OT: ${horaError.message}`)
+        }
+      }
+
       const { error: finishError } = await supabase
         .from('asistente_sesiones')
         .update({
@@ -778,23 +785,18 @@ function OTVivaContent() {
         })
         .eq('id', sesionActiva.id)
 
-      if (finishError) throw new Error(finishError.message)
-
-      if (ot) {
-        const horaTermino = chileTimeHHMM()
-        const { error: horaError } = await supabase
-          .from('ot_ordenes_trabajo')
-          .update({ hora_termino: horaTermino })
-          .eq('id', ot.id)
-          .eq('empresa_id', ot.empresa_id)
-
-        if (horaError) throw new Error(`Sesión finalizada, pero no se pudo registrar la hora de término en la OT: ${horaError.message}`)
+      if (finishError) {
+        // Mantener trazabilidad: si falla el cierre de sesión, informamos el estado real.
+        throw new Error(
+          `La hora de término quedó registrada en la OT, pero no se pudo finalizar la sesión Viva: ${finishError.message}`
+        )
       }
 
       setSuccess('Sesión Viva finalizada. La hora de retiro de planta quedó registrada como término de la OT.')
       await loadAll()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo finalizar la sesión.')
+      await loadAll()
     } finally {
       setBusy(false)
     }
