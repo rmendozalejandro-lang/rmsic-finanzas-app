@@ -1406,7 +1406,7 @@ function OTVivaContent() {
 
                   {cierreAplicado ? (
                     <Link
-                      href={`/ot/${ot.id}`}
+                      href={`/ot/${ot.id}?recepcion=viva`}
                       className="inline-flex items-center justify-center rounded-xl border border-emerald-300 bg-white px-5 py-3 text-sm font-semibold text-emerald-800"
                     >
                       Revisar OT principal y firma
