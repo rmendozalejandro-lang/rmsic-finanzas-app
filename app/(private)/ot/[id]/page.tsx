@@ -11,6 +11,7 @@ import { OTFirmasPanel } from '../../../../components/ot/ot-firmas-panel'
 import { OTChecklistPanel } from '../../../../components/ot/ot-checklist-panel'
 import { OTEquipoChecklistPanel } from '../../../../components/ot/ot-equipo-checklist-panel'
 import { OTEquipoTrabajoDyFPanel } from '../../../../components/ot/ot-equipo-trabajo-dyf-panel'
+import { OTEquipoTrabajoPanel } from '../../../../components/ot/ot-equipo-trabajo-panel'
 import CotizacionOtRelacionesPanel from '../../../../components/comercial/CotizacionOtRelacionesPanel'
 import { supabase } from '../../../../lib/supabase/client'
 import type { OTResumen } from '../../../../lib/ot/types'
@@ -4121,6 +4122,16 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
           />
         ) : null}
 
+        {!mostrarEquipoTrabajoDyF ? (
+          <OTEquipoTrabajoPanel
+            otId={otId}
+            empresaId={detalle.empresa_id}
+            responsableNombre={tecnicoResponsableLabel}
+            canManage={canManageEquipoTrabajo}
+            onChanged={() => void loadData(false)}
+          />
+        ) : null}
+
         {esFlujoDyfSoftys ? (
           <section id="recepcion-softys" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <SectionTitle
@@ -5674,6 +5685,16 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
         <OTEquipoTrabajoDyFPanel
           otId={otId}
           empresaId={detalle.empresa_id}
+          canManage={canManageEquipoTrabajo}
+          onChanged={() => void loadData(false)}
+        />
+      ) : null}
+
+      {!mostrarEquipoTrabajoDyF ? (
+        <OTEquipoTrabajoPanel
+          otId={otId}
+          empresaId={detalle.empresa_id}
+          responsableNombre={tecnicoResponsableLabel}
           canManage={canManageEquipoTrabajo}
           onChanged={() => void loadData(false)}
         />
