@@ -176,8 +176,20 @@ function OTVivaContent() {
   const [userName, setUserName] = useState('')
   const [userRole, setUserRole] = useState('')
   const [asistenteIAHabilitado, setAsistenteIAHabilitado] = useState(false)
+  const [vozRespuestaHabilitada, setVozRespuestaHabilitada] = useState(false)
   const [preguntaIA, setPreguntaIA] = useState('')
   const [respuestaIA, setRespuestaIA] = useState('')
+  const [reproduciendoRespuesta, setReproduciendoRespuesta] = useState(false)
+  const [preparandoAudioRespuesta, setPreparandoAudioRespuesta] = useState(false)
+  const [avanceAudioRespuesta, setAvanceAudioRespuesta] = useState('')
+  const [textoTramoVoz, setTextoTramoVoz] = useState('')
+  const [ultimoTramoVoz, setUltimoTramoVoz] = useState('')
+  const audioRespuestaRef = useRef<HTMLAudioElement | null>(null)
+  const audioUrlRef = useRef<string | null>(null)
+  const audioUrlsRef = useRef<string[]>([])
+  // Caché efímera en memoria de esta pestaña: nunca se guarda en Supabase ni en disco.
+  const audioFragmentosCacheRef = useRef<Map<string, Blob>>(new Map())
+  const audioAbortRef = useRef<AbortController | null>(null)
   const [consultandoIA, setConsultandoIA] = useState(false)
   const [grabandoVoz, setGrabandoVoz] = useState<'evento' | 'ia' | null>(null)
   const [transcribiendoVoz, setTranscribiendoVoz] = useState(false)
@@ -265,13 +277,15 @@ function OTVivaContent() {
 
       const { data: capacidadIA, error: capacidadIAError } = await supabase
         .from('empresa_capacidades')
-        .select('habilitado')
+        .select('habilitado,configuracion')
         .eq('empresa_id', currentOt.empresa_id)
         .eq('capacidad', 'asistente_ia')
         .maybeSingle()
 
       if (capacidadIAError) throw new Error(capacidadIAError.message)
       setAsistenteIAHabilitado(Boolean(capacidadIA?.habilitado))
+      const configVoz = capacidadIA?.configuracion as { voz_respuesta_habilitada?: boolean; voz_respuesta_usuarios?: unknown } | null
+      setVozRespuestaHabilitada(Boolean(capacidadIA?.habilitado && configVoz?.voz_respuesta_habilitada === true && Array.isArray(configVoz.voz_respuesta_usuarios) && configVoz.voz_respuesta_usuarios.includes(authData.user.id)))
 
       const { data: linkData, error: linkError } = await supabase
         .from('asistente_caso_ots')
@@ -400,9 +414,284 @@ function OTVivaContent() {
     void loadAll()
   }, [loadAll])
 
+  useEffect(() => {
+    // La instancia de la página puede reutilizarse al navegar entre OT.
+    // No conservar la respuesta de una orden anterior mientras carga la nueva.
+    setRespuestaIA('')
+    setVozRespuestaHabilitada(false)
+    setTextoTramoVoz('')
+    setUltimoTramoVoz('')
+    setAvanceAudioRespuesta('')
+    setReproduciendoRespuesta(false)
+    setPreparandoAudioRespuesta(false)
+    return () => {
+      audioAbortRef.current?.abort()
+      audioAbortRef.current = null
+      audioRespuestaRef.current?.pause()
+      audioRespuestaRef.current = null
+      audioUrlsRef.current.forEach((url) => URL.revokeObjectURL(url))
+      audioUrlsRef.current = []
+      audioFragmentosCacheRef.current.clear()
+    }
+  }, [otId])
+
+  function detenerRespuestaHablada() {
+    audioAbortRef.current?.abort()
+    audioAbortRef.current = null
+    if (audioRespuestaRef.current) {
+      audioRespuestaRef.current.pause()
+      audioRespuestaRef.current = null
+    }
+    audioUrlsRef.current.forEach((url) => URL.revokeObjectURL(url))
+    audioUrlsRef.current = []
+    audioUrlRef.current = null
+    setPreparandoAudioRespuesta(false)
+    setReproduciendoRespuesta(false)
+  }
+
+  // Cada párrafo es una unidad independiente; las advertencias finales no
+  // quedan fusionadas con la explicación anterior. Segmentos breves limitan
+  // posibles omisiones de palabras en la síntesis.
+  function dividirRespuestaEnTramos(texto: string, limite = 300) {
+    const parrafos = texto.trim().split(/\n\s*\n|\n(?=\s*(?:\d+[.)]|Sugerencia|No meter|No intervenir|Precaución|Advertencia))/i)
+      .map((p) => p.trim()).filter(Boolean)
+    const tramos: string[] = []
+    for (const parrafo of parrafos) {
+      const oraciones = parrafo.split(/(?<=[.!?])\s+/).filter(Boolean)
+      let actual = ''
+      for (const oracion of oraciones) {
+        if (actual && actual.length + oracion.length + 1 > limite) {
+          tramos.push(actual)
+          actual = ''
+        }
+        if (oracion.length > limite) {
+          const palabras = oracion.split(/\s+/)
+          for (const palabra of palabras) {
+            if (actual && actual.length + palabra.length + 1 > limite) {
+              tramos.push(actual)
+              actual = ''
+            }
+            actual = actual ? `${actual} ${palabra}` : palabra
+          }
+        } else {
+          actual = actual ? `${actual} ${oracion}` : oracion
+        }
+      }
+      if (actual) tramos.push(actual)
+    }
+    return tramos
+  }
+
+  async function alternarRespuestaHablada(soloAdvertencia = false, textoEspecifico?: string) {
+    if (reproduciendoRespuesta || preparandoAudioRespuesta) {
+      detenerRespuestaHablada()
+      return
+    }
+    if (!ot || !respuestaIA.trim() || !vozRespuestaHabilitada) return
+
+    detenerRespuestaHablada()
+    setError('')
+    setAvanceAudioRespuesta('Preparando audio...')
+    setTextoTramoVoz('')
+    setUltimoTramoVoz('')
+    setPreparandoAudioRespuesta(true)
+    const controller = new AbortController()
+    audioAbortRef.current = controller
+    const inicioPreparacionVoz = performance.now()
+    let inicioSolicitudPrimerAudio = 0
+    let demoraPrimerAudioMs = 0
+    let ultimaPausaFragmento = ''
+    const parrafos = respuestaIA.trim().split(/\n\s*\n|\n(?=\s*(?:No meter|No intervenir|Advertencia|Precaución))/i)
+      .map((p) => p.trim()).filter(Boolean)
+    const advertencia = [...parrafos].reverse().find((p) => /(?:no meter|no intervenir|bloqueo|procedimiento seguro|máquina energizada|advertencia|precaución)/i.test(p))
+    if (soloAdvertencia && !advertencia) {
+      setPreparandoAudioRespuesta(false)
+      setAvanceAudioRespuesta('No se identificó una advertencia independiente en este texto.')
+      return
+    }
+    const tramos = dividirRespuestaEnTramos(textoEspecifico || (soloAdvertencia ? advertencia! : respuestaIA))
+    // La advertencia se procesa de forma aislada en la reproducción normal.
+    // De otro modo, un párrafo final sin salto doble podría fusionarse con la sugerencia.
+    if (!textoEspecifico && !soloAdvertencia && advertencia) {
+      const advertenciaNormalizada = advertencia.trim()
+      const ultimoTramo = tramos[tramos.length - 1]
+      if (ultimoTramo && ultimoTramo.includes(advertenciaNormalizada) && ultimoTramo !== advertenciaNormalizada) {
+        const prefijo = ultimoTramo.slice(0, ultimoTramo.indexOf(advertenciaNormalizada)).trim()
+        tramos.pop()
+        if (prefijo) tramos.push(prefijo)
+        tramos.push(advertenciaNormalizada)
+      }
+    }
+    let indice = 0
+    let fragmentosReutilizados = 0
+
+    try {
+      const { data: sessionData } = await supabase.auth.getSession()
+      const token = sessionData.session?.access_token
+      if (!token) throw new Error('No se pudo validar la sesión para generar la voz.')
+      if (controller.signal.aborted) return
+
+      const generarTramo = async (texto: string): Promise<string> => {
+        // Asociar caché a OT y contenido exacto del fragmento.
+        const clave = `${sessionData.session?.user.id || ''}:${ot.empresa_id}:${ot.id}:\u0000${texto}`
+        let blob = audioFragmentosCacheRef.current.get(clave)
+        if (blob) {
+          fragmentosReutilizados += 1
+        } else {
+          const response = await fetch(`/api/ot/${ot.id}/viva/voz-respuesta`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ texto }),
+            signal: controller.signal,
+          })
+          if (!response.ok) {
+            const data = await response.json().catch(() => null)
+            throw new Error(data?.error || 'No fue posible generar una parte de la respuesta hablada.')
+          }
+          blob = await response.blob()
+          if (!blob.size || !blob.type.startsWith('audio/')) {
+            throw new Error('El servicio devolvió una parte de audio no válida.')
+          }
+          if (controller.signal.aborted) throw new Error('Reproducción cancelada.')
+          // Máximo 24 clips: evitar acumular audio en memoria durante una sesión larga.
+          const cache = audioFragmentosCacheRef.current
+          if (cache.size >= 24) cache.delete(cache.keys().next().value as string)
+          cache.set(clave, blob)
+        }
+        if (controller.signal.aborted) throw new Error('Reproducción cancelada.')
+        const url = URL.createObjectURL(blob)
+        audioUrlsRef.current.push(url)
+        return url
+      }
+
+      // Empieza con el primer fragmento; prepara los siguientes en dos canales
+      // concurrentes y conserva su orden de reproducción por índice.
+      inicioSolicitudPrimerAudio = performance.now()
+      const primerUrl = await generarTramo(tramos[0])
+      demoraPrimerAudioMs = performance.now() - inicioSolicitudPrimerAudio
+      if (controller.signal.aborted) return
+      type ResultadoTramo = { url: string; error?: never } | { url?: never; error: string }
+      const pendientes: Promise<ResultadoTramo>[] = [
+        Promise.resolve({ url: primerUrl } as ResultadoTramo),
+      ]
+
+      const prepararTramo = async (tramo: string): Promise<ResultadoTramo> => {
+        let ultimoError = 'Error al generar un segmento.'
+        for (let intento = 1; intento <= 3; intento++) {
+          if (controller.signal.aborted) return { error: 'Reproducción cancelada.' }
+          try { return { url: await generarTramo(tramo) } }
+          catch (err) {
+            ultimoError = err instanceof Error ? err.message : 'Error al generar un segmento.'
+            if (intento < 3 && !controller.signal.aborted) {
+              await new Promise<void>((resolve) => {
+                const timer = window.setTimeout(resolve, intento * 1200)
+                controller.signal.addEventListener('abort', () => {
+                  window.clearTimeout(timer)
+                  resolve()
+                }, { once: true })
+              })
+            }
+          }
+        }
+        return { error: `No se pudo generar el segmento tras 3 intentos. ${ultimoError}` }
+      }
+
+      // Máximo dos solicitudes simultáneas: evita saturar el servicio TTS,
+      // pero permite generar el siguiente archivo antes de terminar el actual.
+      for (let pos = 1; pos < tramos.length; pos++) {
+        const anterior = pos > 2 ? pendientes[pos - 2] : Promise.resolve({ url: primerUrl } as ResultadoTramo)
+        pendientes.push(anterior.then(() => prepararTramo(tramos[pos])))
+      }
+
+      // Reutilizar un único elemento Audio: crear uno nuevo por segmento puede
+      // perder la autorización de reproducción del navegador tras el primer archivo.
+      const audio = new Audio()
+      audioRespuestaRef.current = audio
+
+      const reproducirTramo = async (url: string) => {
+        if (controller.signal.aborted) return
+        audio.src = url
+        audioUrlRef.current = url
+        setTextoTramoVoz(tramos[indice])
+        setAvanceAudioRespuesta(`Reproduciendo fragmento ${indice + 1} de ${tramos.length}${ultimaPausaFragmento ? `. ${ultimaPausaFragmento}` : ''} (contenido no validado palabra por palabra)`)
+        try {
+          await audio.play()
+          if (controller.signal.aborted) return
+          setPreparandoAudioRespuesta(false)
+          setReproduciendoRespuesta(true)
+          if (indice === 0) {
+            const demoraTotal = Math.round((performance.now() - inicioPreparacionVoz) / 1000)
+            const demoraAudio = Math.round(demoraPrimerAudioMs / 1000)
+            setAvanceAudioRespuesta(`Reproduciendo fragmento 1 de ${tramos.length}. Inicio: ${demoraTotal} s (primer audio: ${demoraAudio} s; sesión y reproducción: ${Math.max(0, demoraTotal - demoraAudio)} s). ${fragmentosReutilizados ? 'Audio reutilizado de esta sesión.' : 'Audio recién generado.'}`)
+          }
+        } catch (err) {
+          if (controller.signal.aborted) return
+          const faltantes = tramos.length - indice
+          detenerRespuestaHablada()
+          setAvanceAudioRespuesta(`Audio detenido: faltan ${faltantes} fragmentos. El navegador no pudo continuar la reproducción.`)
+          setError('No se pudo continuar automáticamente el audio. Revisa los permisos de reproducción del navegador.')
+        }
+      }
+
+      audio.onerror = () => {
+        if (controller.signal.aborted) return
+        const faltantes = tramos.length - indice
+        detenerRespuestaHablada()
+        setAvanceAudioRespuesta(`Audio interrumpido: faltan ${faltantes} fragmentos.`)
+        setError('Ocurrió un error al cargar un fragmento de audio.')
+      }
+
+      audio.onended = () => {
+        if (controller.signal.aborted) return
+        setUltimoTramoVoz(tramos[indice])
+        indice += 1
+        if (indice >= tramos.length) {
+          detenerRespuestaHablada()
+          setAvanceAudioRespuesta(soloAdvertencia
+            ? 'El audio de advertencia terminó; verifica que se haya pronunciado íntegramente.'
+            : `Finalizaron ${tramos.length} archivos de audio. El contenido hablado no se valida palabra por palabra.`)
+          return
+        }
+        setPreparandoAudioRespuesta(true)
+        setAvanceAudioRespuesta(`Preparando el siguiente fragmento de voz (${indice + 1} de ${tramos.length})…`)
+        // pendientes[0] corresponde al primer audio ya reproducido.
+        // Tras incrementar el índice seleccionamos el archivo de igual posición.
+        const inicioEsperaFragmento = performance.now()
+        void pendientes[indice].then((resultado) => {
+          ultimaPausaFragmento = `Espera antes de este fragmento: ${((performance.now() - inicioEsperaFragmento) / 1000).toFixed(1)} s`
+          if (controller.signal.aborted) return
+          if (resultado.error || !resultado.url) {
+            const faltantes = tramos.length - indice
+            detenerRespuestaHablada()
+            setAvanceAudioRespuesta(`Lectura incompleta: faltan ${faltantes} fragmentos.`)
+            setError(resultado.error || 'No se generó un fragmento de audio.')
+            return
+          }
+          return reproducirTramo(resultado.url)
+        }).catch((err) => {
+          if (controller.signal.aborted) return
+          detenerRespuestaHablada()
+          setAvanceAudioRespuesta('Lectura interrumpida antes de completar los fragmentos.')
+          setError(err instanceof Error ? err.message : 'No se pudo continuar el audio.')
+        })
+      }
+
+      await reproducirTramo(primerUrl)
+    } catch (err) {
+      if (!controller.signal.aborted) {
+        detenerRespuestaHablada()
+        setAvanceAudioRespuesta('No se completó la lectura.')
+        setError(err instanceof Error ? err.message : 'No se pudo reproducir la respuesta.')
+      }
+    }
+  }
+
   async function consultarAsistenteIA() {
     if (!ot || !caso || !preguntaIA.trim() || !asistenteIAHabilitado) return
 
+    detenerRespuestaHablada()
+    // Nueva respuesta: descartar fragmentos de una contestación anterior.
+    audioFragmentosCacheRef.current.clear()
     setConsultandoIA(true)
     setError('')
     setSuccess('')
@@ -1301,6 +1590,35 @@ function OTVivaContent() {
                       <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-800">
                         {respuestaIA}
                       </p>
+                      <div className="mt-3 flex flex-wrap items-center gap-3">
+                        {!vozRespuestaHabilitada ? <p className="text-xs font-medium text-slate-600">Respuesta hablada no habilitada para este usuario. La respuesta escrita permanece disponible.</p> : null}
+                        {vozRespuestaHabilitada ? <button
+                          type="button"
+                          onClick={() => void alternarRespuestaHablada()}
+                          className="rounded-xl bg-indigo-700 px-4 py-2 text-sm font-semibold text-white"
+                        >
+                          {reproduciendoRespuesta || preparandoAudioRespuesta ? 'Detener voz' : 'Escuchar respuesta natural'}
+                        </button> : null}
+                        {/**** Reproducción aislada para precauciones críticas omitidas por TTS. ****/}
+                        {vozRespuestaHabilitada && /(?:no meter|no intervenir|bloqueo|procedimiento seguro|máquina energizada)/i.test(respuestaIA) ? (
+                          <button
+                            type="button"
+                            onClick={() => void alternarRespuestaHablada(true)}
+                            className="rounded-xl border border-amber-600 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-900"
+                          >
+                            Escuchar advertencia final
+                          </button>
+                        ) : null}
+                        <span className="text-xs text-slate-500">
+                          Voz sintética generada bajo demanda. La respuesta se envía al proveedor de audio; no se reproduce automáticamente.
+                          {avanceAudioRespuesta ? <span className="mt-1 block font-medium text-indigo-700">{avanceAudioRespuesta}</span> : null}
+                          {textoTramoVoz ? <span className="mt-1 block rounded-lg bg-indigo-50 p-2 text-slate-700">Texto del fragmento: {textoTramoVoz}</span> : null}
+                          {vozRespuestaHabilitada && ultimoTramoVoz && !reproduciendoRespuesta && !preparandoAudioRespuesta ? (
+                            <button type="button" onClick={() => void alternarRespuestaHablada(false, ultimoTramoVoz)} className="mt-2 rounded-lg border border-indigo-300 px-3 py-1 text-indigo-800">Volver a escuchar el último fragmento</button>
+                          ) : null}
+                          <span className="mt-1 block">Compara siempre el audio con el texto escrito, especialmente las precauciones de seguridad.</span>
+                        </span>
+                      </div>
                     </div>
                   ) : null}
                 </div>
