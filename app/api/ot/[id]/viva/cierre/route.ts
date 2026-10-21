@@ -376,6 +376,13 @@ Reglas obligatorias:
 - Si no existe causa confirmada por evidencia o decisión humana, deja causa_probable vacía.
 - Conserva pendientes, restricciones y labores que no pudieron realizarse.
 - Redacta para una OT profesional que verá el cliente: claro, técnico, breve y verificable.
+- Antes de redactar, identifica la máquina, zona, sistema o componente al que pertenece cada evento; relaciona eventos aunque hayan sido registrados en momentos distintos.
+- Agrupa la información por sistema intervenido y organiza cada grupo con la secuencia lógica aplicable: antecedente o condición inicial, intervención, hallazgo, medición o prueba, resultado y pendiente o recomendación. Omite etapas sin respaldo.
+- Convierte registros fragmentados, repetidos o coloquiales en una narrativa técnica integrada y natural. No te limites a copiar eventos ni a enumerarlos cronológicamente.
+- En trabajo_realizado describe solo acciones efectivamente ejecutadas, ordenadas por sistema. Reserva hallazgos para condiciones observadas, resultado_servicio para comprobaciones finales y recomendaciones o pendientes para acciones futuras o no realizadas.
+- Mantén separadas las observaciones reportadas por producción o cliente de las verificaciones efectuadas por los técnicos; identifica la fuente cuando influya en la certeza.
+- Si una falla es intermitente, una prueba no reproduce la condición o una verificación carece de parámetros de referencia, declara expresamente la limitación y no concluyas que la causa quedó resuelta.
+- Evita duplicar el mismo hecho entre campos, excepto si es indispensable para comprender el resultado. Mantén terminología técnica precisa y coherente.
 - No incluyas UUID, razonamiento interno, consultas de IA ni hipótesis descartadas salvo que sean necesarias para explicar una limitación relevante.
 - No afirmes que se ejecutó una pauta/checklist si el contexto no lo demuestra.
 - Devuelve EXCLUSIVAMENTE un objeto JSON válido, sin markdown, con estas claves exactas:
