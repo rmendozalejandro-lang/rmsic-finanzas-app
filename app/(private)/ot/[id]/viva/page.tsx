@@ -483,6 +483,7 @@ function OTVivaContent() {
     const inicioPreparacionVoz = performance.now()
     let inicioSolicitudPrimerAudio = 0
     let demoraPrimerAudioMs = 0
+    let ultimaPausaFragmento = ''
     const parrafos = respuestaIA.trim().split(/\n\s*\n|\n(?=\s*(?:No meter|No intervenir|Advertencia|Precaución))/i)
       .map((p) => p.trim()).filter(Boolean)
     const advertencia = [...parrafos].reverse().find((p) => /(?:no meter|no intervenir|bloqueo|procedimiento seguro|máquina energizada|advertencia|precaución)/i.test(p))
@@ -583,7 +584,7 @@ function OTVivaContent() {
         audio.src = url
         audioUrlRef.current = url
         setTextoTramoVoz(tramos[indice])
-        setAvanceAudioRespuesta(`Reproduciendo fragmento ${indice + 1} de ${tramos.length} (contenido no validado palabra por palabra)`)
+        setAvanceAudioRespuesta(`Reproduciendo fragmento ${indice + 1} de ${tramos.length}${ultimaPausaFragmento ? `. ${ultimaPausaFragmento}` : ''} (contenido no validado palabra por palabra)`)
         try {
           await audio.play()
           if (controller.signal.aborted) return
@@ -626,7 +627,9 @@ function OTVivaContent() {
         setAvanceAudioRespuesta(`Preparando el siguiente fragmento de voz (${indice + 1} de ${tramos.length})…`)
         // pendientes[0] corresponde al primer audio ya reproducido.
         // Tras incrementar el índice seleccionamos el archivo de igual posición.
+        const inicioEsperaFragmento = performance.now()
         void pendientes[indice].then((resultado) => {
+          ultimaPausaFragmento = `Espera antes de este fragmento: ${((performance.now() - inicioEsperaFragmento) / 1000).toFixed(1)} s`
           if (controller.signal.aborted) return
           if (resultado.error || !resultado.url) {
             const faltantes = tramos.length - indice
