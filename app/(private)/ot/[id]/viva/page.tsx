@@ -480,6 +480,9 @@ function OTVivaContent() {
     setPreparandoAudioRespuesta(true)
     const controller = new AbortController()
     audioAbortRef.current = controller
+    const inicioPreparacionVoz = performance.now()
+    let inicioSolicitudPrimerAudio = 0
+    let demoraPrimerAudioMs = 0
     const parrafos = respuestaIA.trim().split(/\n\s*\n|\n(?=\s*(?:No meter|No intervenir|Advertencia|Precaución))/i)
       .map((p) => p.trim()).filter(Boolean)
     const advertencia = [...parrafos].reverse().find((p) => /(?:no meter|no intervenir|bloqueo|procedimiento seguro|máquina energizada|advertencia|precaución)/i.test(p))
@@ -533,7 +536,9 @@ function OTVivaContent() {
 
       // Empieza con el primer fragmento; prepara los siguientes en dos canales
       // concurrentes y conserva su orden de reproducción por índice.
+      inicioSolicitudPrimerAudio = performance.now()
       const primerUrl = await generarTramo(tramos[0])
+      demoraPrimerAudioMs = performance.now() - inicioSolicitudPrimerAudio
       if (controller.signal.aborted) return
       type ResultadoTramo = { url: string; error?: never } | { url?: never; error: string }
       const pendientes: Promise<ResultadoTramo>[] = [
@@ -584,6 +589,11 @@ function OTVivaContent() {
           if (controller.signal.aborted) return
           setPreparandoAudioRespuesta(false)
           setReproduciendoRespuesta(true)
+          if (indice === 0) {
+            const demoraTotal = Math.round((performance.now() - inicioPreparacionVoz) / 1000)
+            const demoraAudio = Math.round(demoraPrimerAudioMs / 1000)
+            setAvanceAudioRespuesta(`Reproduciendo fragmento 1 de ${tramos.length}. Inicio: ${demoraTotal} s (primer audio: ${demoraAudio} s; sesión y reproducción: ${Math.max(0, demoraTotal - demoraAudio)} s).`)
+          }
         } catch (err) {
           if (controller.signal.aborted) return
           const faltantes = tramos.length - indice
