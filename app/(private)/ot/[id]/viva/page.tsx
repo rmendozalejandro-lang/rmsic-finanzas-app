@@ -598,7 +598,9 @@ function OTVivaContent() {
           return
         }
         setPreparandoAudioRespuesta(true)
-        void pendientes[indice - 1].then((resultado) => {
+        // pendientes[0] corresponde al primer audio, ya reproducido.
+        // Tras incrementar indice debemos seleccionar pendientes[indice].
+        void pendientes[indice].then((resultado) => {
           if (controller.signal.aborted) return
           if (resultado.error || !resultado.url) {
             const faltantes = tramos.length - indice
