@@ -531,44 +531,42 @@ function OTVivaContent() {
         return url
       }
 
-      // Comienza al estar listo el primer tramo, sin esperar por toda la respuesta.
-      // Los tramos posteriores se generan anticipadamente, de forma secuencial.
+      // Empieza con el primer fragmento; prepara los siguientes en dos canales
+      // concurrentes y conserva su orden de reproducción por índice.
       const primerUrl = await generarTramo(tramos[0])
       if (controller.signal.aborted) return
-      // Convertir fallos de segmentos pendientes a resultados controlados:
-      // evita rechazos desatendidos mientras se reproduce el segmento anterior.
       type ResultadoTramo = { url: string; error?: never } | { url?: never; error: string }
-      const pendientes = tramos.slice(1).reduce<Promise<ResultadoTramo>[]>(
-        (promesas, tramo) => {
-          const anterior = promesas[promesas.length - 1]
-          promesas.push(anterior.then(async (resultado) => {
-            if (resultado.error || controller.signal.aborted) {
-              return { error: resultado.error || 'Reproducción cancelada.' }
+      const pendientes: Promise<ResultadoTramo>[] = [
+        Promise.resolve({ url: primerUrl } as ResultadoTramo),
+      ]
+
+      const prepararTramo = async (tramo: string): Promise<ResultadoTramo> => {
+        let ultimoError = 'Error al generar un segmento.'
+        for (let intento = 1; intento <= 3; intento++) {
+          if (controller.signal.aborted) return { error: 'Reproducción cancelada.' }
+          try { return { url: await generarTramo(tramo) } }
+          catch (err) {
+            ultimoError = err instanceof Error ? err.message : 'Error al generar un segmento.'
+            if (intento < 3 && !controller.signal.aborted) {
+              await new Promise<void>((resolve) => {
+                const timer = window.setTimeout(resolve, intento * 1200)
+                controller.signal.addEventListener('abort', () => {
+                  window.clearTimeout(timer)
+                  resolve()
+                }, { once: true })
+              })
             }
-            // A transient network/TTS error should not immediately discard the remaining reading.
-            let ultimoError = 'Error al generar un segmento.'
-            for (let intento = 1; intento <= 3; intento++) {
-              if (controller.signal.aborted) return { error: 'Reproducción cancelada.' }
-              try { return { url: await generarTramo(tramo) } }
-              catch (err) {
-                ultimoError = err instanceof Error ? err.message : 'Error al generar un segmento.'
-                if (intento < 3) {
-                  await new Promise<void>((resolve) => {
-                    const timer = window.setTimeout(resolve, intento * 1200)
-                    controller.signal.addEventListener('abort', () => {
-                      window.clearTimeout(timer)
-                      resolve()
-                    }, { once: true })
-                  })
-                }
-              }
-            }
-            return { error: `No se pudo generar el segmento tras 3 intentos. ${ultimoError}` }
-          }))
-          return promesas
-        },
-        [Promise.resolve({ url: primerUrl } as ResultadoTramo)]
-      )
+          }
+        }
+        return { error: `No se pudo generar el segmento tras 3 intentos. ${ultimoError}` }
+      }
+
+      // Máximo dos solicitudes simultáneas: evita saturar el servicio TTS,
+      // pero permite generar el siguiente archivo antes de terminar el actual.
+      for (let pos = 1; pos < tramos.length; pos++) {
+        const anterior = pos > 2 ? pendientes[pos - 2] : Promise.resolve({ url: primerUrl } as ResultadoTramo)
+        pendientes.push(anterior.then(() => prepararTramo(tramos[pos])))
+      }
 
       // Reutilizar un único elemento Audio: crear uno nuevo por segmento puede
       // perder la autorización de reproducción del navegador tras el primer archivo.
@@ -615,6 +613,7 @@ function OTVivaContent() {
           return
         }
         setPreparandoAudioRespuesta(true)
+        setAvanceAudioRespuesta(`Preparando el siguiente fragmento de voz (${indice + 1} de ${tramos.length})…`)
         // pendientes[0] corresponde al primer audio ya reproducido.
         // Tras incrementar el índice seleccionamos el archivo de igual posición.
         void pendientes[indice].then((resultado) => {
