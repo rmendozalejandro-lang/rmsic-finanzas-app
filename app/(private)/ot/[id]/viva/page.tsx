@@ -430,33 +430,36 @@ function OTVivaContent() {
     setReproduciendoRespuesta(false)
   }
 
-  // Cortes en límites de frases: no separar arbitrariamente una advertencia técnica.
-  function dividirRespuestaEnTramos(texto: string, limite = 550) {
-    const frases = texto.trim().split(/(?<=[.!?])\s+|\n+/).map((v) => v.trim()).filter(Boolean)
+  // Cada párrafo es una unidad independiente; las advertencias finales no
+  // quedan fusionadas con la explicación anterior. Segmentos breves limitan
+  // posibles omisiones de palabras en la síntesis.
+  function dividirRespuestaEnTramos(texto: string, limite = 300) {
+    const parrafos = texto.trim().split(/\n\s*\n|\n(?=\s*(?:\d+[.)]|Sugerencia|No intervenir|Precaución|Advertencia))/i)
+      .map((p) => p.trim()).filter(Boolean)
     const tramos: string[] = []
-    let actual = ''
-    for (const frase of frases) {
-      if (frase.length > limite) {
-        if (actual) { tramos.push(actual); actual = '' }
-        const palabras = frase.split(/\s+/)
-        let parcial = ''
-        for (const palabra of palabras) {
-          if (parcial && parcial.length + palabra.length + 1 > limite) {
-            tramos.push(parcial)
-            parcial = palabra
-          } else {
-            parcial = parcial ? `${parcial} ${palabra}` : palabra
-          }
+    for (const parrafo of parrafos) {
+      const oraciones = parrafo.split(/(?<=[.!?])\s+/).filter(Boolean)
+      let actual = ''
+      for (const oracion of oraciones) {
+        if (actual && actual.length + oracion.length + 1 > limite) {
+          tramos.push(actual)
+          actual = ''
         }
-        if (parcial) actual = parcial
-      } else if (actual && actual.length + frase.length + 1 > limite) {
-        tramos.push(actual)
-        actual = frase
-      } else {
-        actual = actual ? `${actual} ${frase}` : frase
+        if (oracion.length > limite) {
+          const palabras = oracion.split(/\s+/)
+          for (const palabra of palabras) {
+            if (actual && actual.length + palabra.length + 1 > limite) {
+              tramos.push(actual)
+              actual = ''
+            }
+            actual = actual ? `${actual} ${palabra}` : palabra
+          }
+        } else {
+          actual = actual ? `${actual} ${oracion}` : oracion
+        }
       }
+      if (actual) tramos.push(actual)
     }
-    if (actual) tramos.push(actual)
     return tramos
   }
 
@@ -542,7 +545,7 @@ function OTVivaContent() {
           indice += 1
           if (indice >= tramos.length) {
             detenerRespuestaHablada()
-            setAvanceAudioRespuesta(`Lectura completada: ${tramos.length} de ${tramos.length} partes.`)
+            setAvanceAudioRespuesta(`Se reprodujeron ${tramos.length} de ${tramos.length} archivos. Verifica que la voz haya leído el texto completo; el sistema aún no comprueba palabra por palabra.`)
             return
           }
           setPreparandoAudioRespuesta(true)
@@ -566,7 +569,7 @@ function OTVivaContent() {
         }
         await audio.play()
         if (controller.signal.aborted) return
-        setAvanceAudioRespuesta(`Leyendo parte ${indice + 1} de ${tramos.length}`)
+        setAvanceAudioRespuesta(`Reproduciendo archivo ${indice + 1} de ${tramos.length} (el contenido hablado aún no se valida automáticamente)`)
         setPreparandoAudioRespuesta(false)
         setReproduciendoRespuesta(true)
       }
@@ -1494,6 +1497,7 @@ function OTVivaContent() {
                         <span className="text-xs text-slate-500">
                           Voz sintética generada bajo demanda. La respuesta se envía al proveedor de audio; no se reproduce automáticamente.
                           {avanceAudioRespuesta ? <span className="mt-1 block font-medium text-indigo-700">{avanceAudioRespuesta}</span> : null}
+                          <span className="mt-1 block">Compara siempre el audio con el texto escrito, especialmente las precauciones de seguridad.</span>
                         </span>
                       </div>
                     </div>
