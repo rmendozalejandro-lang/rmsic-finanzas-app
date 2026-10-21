@@ -412,9 +412,19 @@ function OTVivaContent() {
   }, [loadAll])
 
   useEffect(() => {
+    // La instancia de la página puede reutilizarse al navegar entre OT.
+    // No conservar la respuesta de una orden anterior mientras carga la nueva.
+    setRespuestaIA('')
+    setTextoTramoVoz('')
+    setUltimoTramoVoz('')
+    setAvanceAudioRespuesta('')
+    setReproduciendoRespuesta(false)
+    setPreparandoAudioRespuesta(false)
     return () => {
       audioAbortRef.current?.abort()
+      audioAbortRef.current = null
       audioRespuestaRef.current?.pause()
+      audioRespuestaRef.current = null
       audioUrlsRef.current.forEach((url) => URL.revokeObjectURL(url))
       audioUrlsRef.current = []
       audioFragmentosCacheRef.current.clear()
