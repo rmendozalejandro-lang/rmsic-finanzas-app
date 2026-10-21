@@ -178,6 +178,7 @@ function OTVivaContent() {
   const [asistenteIAHabilitado, setAsistenteIAHabilitado] = useState(false)
   const [preguntaIA, setPreguntaIA] = useState('')
   const [respuestaIA, setRespuestaIA] = useState('')
+  const [reproduciendoRespuesta, setReproduciendoRespuesta] = useState(false)
   const [consultandoIA, setConsultandoIA] = useState(false)
   const [grabandoVoz, setGrabandoVoz] = useState<'evento' | 'ia' | null>(null)
   const [transcribiendoVoz, setTranscribiendoVoz] = useState(false)
@@ -400,9 +401,53 @@ function OTVivaContent() {
     void loadAll()
   }, [loadAll])
 
+  // Primera etapa: lectura opcional con la voz disponible en el dispositivo.
+  // No se envía audio a terceros ni se almacenan grabaciones de respuesta.
+  useEffect(() => {
+    return () => {
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        window.speechSynthesis.cancel()
+      }
+    }
+  }, [])
+
+  function detenerRespuestaHablada() {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel()
+    }
+    setReproduciendoRespuesta(false)
+  }
+
+  function alternarRespuestaHablada() {
+    if (reproduciendoRespuesta) {
+      detenerRespuestaHablada()
+      return
+    }
+
+    if (!respuestaIA.trim() || typeof window === 'undefined' || !('speechSynthesis' in window)) {
+      setError('Este navegador no dispone de lectura de voz. Puedes consultar la respuesta escrita.')
+      return
+    }
+
+    window.speechSynthesis.cancel()
+    const utterance = new SpeechSynthesisUtterance(respuestaIA)
+    utterance.lang = 'es-CL'
+    utterance.rate = 1
+    const voices = window.speechSynthesis.getVoices()
+    utterance.voice = voices.find((voice) => voice.lang.toLowerCase() === 'es-cl')
+      || voices.find((voice) => voice.lang.toLowerCase().startsWith('es'))
+      || null
+    utterance.onend = () => setReproduciendoRespuesta(false)
+    utterance.onerror = () => setReproduciendoRespuesta(false)
+    setError('')
+    setReproduciendoRespuesta(true)
+    window.speechSynthesis.speak(utterance)
+  }
+
   async function consultarAsistenteIA() {
     if (!ot || !caso || !preguntaIA.trim() || !asistenteIAHabilitado) return
 
+    detenerRespuestaHablada()
     setConsultandoIA(true)
     setError('')
     setSuccess('')
@@ -1301,6 +1346,18 @@ function OTVivaContent() {
                       <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-800">
                         {respuestaIA}
                       </p>
+                      <div className="mt-3 flex flex-wrap items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={alternarRespuestaHablada}
+                          className="rounded-xl bg-indigo-700 px-4 py-2 text-sm font-semibold text-white"
+                        >
+                          {reproduciendoRespuesta ? 'Detener voz' : 'Escuchar respuesta'}
+                        </button>
+                        <span className="text-xs text-slate-500">
+                          Lectura opcional mediante la voz del dispositivo. No se reproduce automáticamente.
+                        </span>
+                      </div>
                     </div>
                   ) : null}
                 </div>
