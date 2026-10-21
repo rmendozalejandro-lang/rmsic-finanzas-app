@@ -180,6 +180,7 @@ function OTVivaContent() {
   const [respuestaIA, setRespuestaIA] = useState('')
   const [reproduciendoRespuesta, setReproduciendoRespuesta] = useState(false)
   const [preparandoAudioRespuesta, setPreparandoAudioRespuesta] = useState(false)
+  const [avanceAudioRespuesta, setAvanceAudioRespuesta] = useState('')
   const audioRespuestaRef = useRef<HTMLAudioElement | null>(null)
   const audioUrlRef = useRef<string | null>(null)
   const audioUrlsRef = useRef<string[]>([])
@@ -429,18 +430,30 @@ function OTVivaContent() {
     setReproduciendoRespuesta(false)
   }
 
-  // Segmentos cortos reducen el riesgo de perder el final en una síntesis larga.
-  // Separar en palabras conserva íntegro el texto sin cortar términos técnicos.
-  function dividirRespuestaEnTramos(texto: string, limite = 850) {
-    const palabras = texto.trim().split(/\s+/).filter(Boolean)
+  // Cortes en límites de frases: no separar arbitrariamente una advertencia técnica.
+  function dividirRespuestaEnTramos(texto: string, limite = 550) {
+    const frases = texto.trim().split(/(?<=[.!?])\s+|\n+/).map((v) => v.trim()).filter(Boolean)
     const tramos: string[] = []
     let actual = ''
-    for (const palabra of palabras) {
-      if (actual && actual.length + palabra.length + 1 > limite) {
+    for (const frase of frases) {
+      if (frase.length > limite) {
+        if (actual) { tramos.push(actual); actual = '' }
+        const palabras = frase.split(/\s+/)
+        let parcial = ''
+        for (const palabra of palabras) {
+          if (parcial && parcial.length + palabra.length + 1 > limite) {
+            tramos.push(parcial)
+            parcial = palabra
+          } else {
+            parcial = parcial ? `${parcial} ${palabra}` : palabra
+          }
+        }
+        if (parcial) actual = parcial
+      } else if (actual && actual.length + frase.length + 1 > limite) {
         tramos.push(actual)
-        actual = palabra
+        actual = frase
       } else {
-        actual = actual ? `${actual} ${palabra}` : palabra
+        actual = actual ? `${actual} ${frase}` : frase
       }
     }
     if (actual) tramos.push(actual)
@@ -456,6 +469,7 @@ function OTVivaContent() {
 
     detenerRespuestaHablada()
     setError('')
+    setAvanceAudioRespuesta('Preparando audio...')
     setPreparandoAudioRespuesta(true)
     const controller = new AbortController()
     audioAbortRef.current = controller
@@ -494,13 +508,22 @@ function OTVivaContent() {
       // Los tramos posteriores se generan anticipadamente, de forma secuencial.
       const primerUrl = await generarTramo(tramos[0])
       if (controller.signal.aborted) return
-      const pendientes = tramos.slice(1).reduce<Promise<string>[]>(
+      // Convertir fallos de segmentos pendientes a resultados controlados:
+      // evita rechazos desatendidos mientras se reproduce el segmento anterior.
+      type ResultadoTramo = { url: string; error?: never } | { url?: never; error: string }
+      const pendientes = tramos.slice(1).reduce<Promise<ResultadoTramo>[]>(
         (promesas, tramo) => {
           const anterior = promesas[promesas.length - 1]
-          promesas.push(anterior.then(() => generarTramo(tramo)))
+          promesas.push(anterior.then(async (resultado) => {
+            if (resultado.error || controller.signal.aborted) {
+              return { error: resultado.error || 'Reproducción cancelada.' }
+            }
+            try { return { url: await generarTramo(tramo) } }
+            catch (err) { return { error: err instanceof Error ? err.message : 'Error al generar un segmento.' } }
+          }))
           return promesas
         },
-        [Promise.resolve(primerUrl)]
+        [Promise.resolve({ url: primerUrl } as ResultadoTramo)]
       )
 
       const reproducirTramo = async (url: string) => {
@@ -519,20 +542,31 @@ function OTVivaContent() {
           indice += 1
           if (indice >= tramos.length) {
             detenerRespuestaHablada()
+            setAvanceAudioRespuesta(`Lectura completada: ${tramos.length} de ${tramos.length} partes.`)
             return
           }
           setPreparandoAudioRespuesta(true)
-          void pendientes[indice - 1].then((proximoUrl) => {
-            if (!controller.signal.aborted) return reproducirTramo(proximoUrl)
+          void pendientes[indice - 1].then((resultado) => {
+            if (controller.signal.aborted) return
+            if (resultado.error || !resultado.url) {
+              const faltantes = tramos.length - indice
+              detenerRespuestaHablada()
+              setAvanceAudioRespuesta(`Lectura incompleta: faltan ${faltantes} partes.`)
+              setError(resultado.error || 'No se generó un segmento de audio.')
+              return
+            }
+            return reproducirTramo(resultado.url)
           }).catch((err) => {
             if (!controller.signal.aborted) {
               detenerRespuestaHablada()
+              setAvanceAudioRespuesta('Lectura interrumpida antes de completar la respuesta.')
               setError(err instanceof Error ? err.message : 'Falló una parte del audio.')
             }
           })
         }
         await audio.play()
         if (controller.signal.aborted) return
+        setAvanceAudioRespuesta(`Leyendo parte ${indice + 1} de ${tramos.length}`)
         setPreparandoAudioRespuesta(false)
         setReproduciendoRespuesta(true)
       }
@@ -541,6 +575,7 @@ function OTVivaContent() {
     } catch (err) {
       if (!controller.signal.aborted) {
         detenerRespuestaHablada()
+        setAvanceAudioRespuesta('No se completó la lectura.')
         setError(err instanceof Error ? err.message : 'No se pudo reproducir la respuesta.')
       }
     }
@@ -1458,6 +1493,7 @@ function OTVivaContent() {
                         </button>
                         <span className="text-xs text-slate-500">
                           Voz sintética generada bajo demanda. La respuesta se envía al proveedor de audio; no se reproduce automáticamente.
+                          {avanceAudioRespuesta ? <span className="mt-1 block font-medium text-indigo-700">{avanceAudioRespuesta}</span> : null}
                         </span>
                       </div>
                     </div>
