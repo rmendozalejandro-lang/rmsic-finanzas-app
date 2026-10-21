@@ -181,6 +181,8 @@ function OTVivaContent() {
   const [reproduciendoRespuesta, setReproduciendoRespuesta] = useState(false)
   const [preparandoAudioRespuesta, setPreparandoAudioRespuesta] = useState(false)
   const [avanceAudioRespuesta, setAvanceAudioRespuesta] = useState('')
+  const [textoTramoVoz, setTextoTramoVoz] = useState('')
+  const [ultimoTramoVoz, setUltimoTramoVoz] = useState('')
   const audioRespuestaRef = useRef<HTMLAudioElement | null>(null)
   const audioUrlRef = useRef<string | null>(null)
   const audioUrlsRef = useRef<string[]>([])
@@ -463,7 +465,7 @@ function OTVivaContent() {
     return tramos
   }
 
-  async function alternarRespuestaHablada(soloAdvertencia = false) {
+  async function alternarRespuestaHablada(soloAdvertencia = false, textoEspecifico?: string) {
     if (reproduciendoRespuesta || preparandoAudioRespuesta) {
       detenerRespuestaHablada()
       return
@@ -473,6 +475,8 @@ function OTVivaContent() {
     detenerRespuestaHablada()
     setError('')
     setAvanceAudioRespuesta('Preparando audio...')
+    setTextoTramoVoz('')
+    setUltimoTramoVoz('')
     setPreparandoAudioRespuesta(true)
     const controller = new AbortController()
     audioAbortRef.current = controller
@@ -484,7 +488,7 @@ function OTVivaContent() {
       setAvanceAudioRespuesta('No se identificó una advertencia independiente en este texto.')
       return
     }
-    const tramos = dividirRespuestaEnTramos(soloAdvertencia ? advertencia! : respuestaIA)
+    const tramos = dividirRespuestaEnTramos(textoEspecifico || (soloAdvertencia ? advertencia! : respuestaIA))
     const urls: string[] = []
     let indice = 0
 
@@ -550,6 +554,7 @@ function OTVivaContent() {
         }
         audio.onended = () => {
           if (controller.signal.aborted) return
+          setUltimoTramoVoz(tramos[indice])
           indice += 1
           if (indice >= tramos.length) {
             detenerRespuestaHablada()
@@ -579,7 +584,8 @@ function OTVivaContent() {
         }
         await audio.play()
         if (controller.signal.aborted) return
-        setAvanceAudioRespuesta(`Reproduciendo archivo ${indice + 1} de ${tramos.length} (el contenido hablado aún no se valida automáticamente)`)
+        setTextoTramoVoz(tramos[indice])
+        setAvanceAudioRespuesta(`Reproduciendo fragmento ${indice + 1} de ${tramos.length} (el texto hablado aún no se valida automáticamente)`)
         setPreparandoAudioRespuesta(false)
         setReproduciendoRespuesta(true)
       }
@@ -1517,6 +1523,10 @@ function OTVivaContent() {
                         <span className="text-xs text-slate-500">
                           Voz sintética generada bajo demanda. La respuesta se envía al proveedor de audio; no se reproduce automáticamente.
                           {avanceAudioRespuesta ? <span className="mt-1 block font-medium text-indigo-700">{avanceAudioRespuesta}</span> : null}
+                          {textoTramoVoz ? <span className="mt-1 block rounded-lg bg-indigo-50 p-2 text-slate-700">Texto del fragmento: {textoTramoVoz}</span> : null}
+                          {ultimoTramoVoz && !reproduciendoRespuesta && !preparandoAudioRespuesta ? (
+                            <button type="button" onClick={() => void alternarRespuestaHablada(false, ultimoTramoVoz)} className="mt-2 rounded-lg border border-indigo-300 px-3 py-1 text-indigo-800">Volver a escuchar el último fragmento</button>
+                          ) : null}
                           <span className="mt-1 block">Compara siempre el audio con el texto escrito, especialmente las precauciones de seguridad.</span>
                         </span>
                       </div>
