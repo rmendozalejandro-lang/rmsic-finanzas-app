@@ -182,6 +182,7 @@ function OTVivaContent() {
   const [preparandoAudioRespuesta, setPreparandoAudioRespuesta] = useState(false)
   const audioRespuestaRef = useRef<HTMLAudioElement | null>(null)
   const audioUrlRef = useRef<string | null>(null)
+  const audioUrlsRef = useRef<string[]>([])
   const audioAbortRef = useRef<AbortController | null>(null)
   const [consultandoIA, setConsultandoIA] = useState(false)
   const [grabandoVoz, setGrabandoVoz] = useState<'evento' | 'ia' | null>(null)
@@ -409,7 +410,8 @@ function OTVivaContent() {
     return () => {
       audioAbortRef.current?.abort()
       audioRespuestaRef.current?.pause()
-      if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current)
+      audioUrlsRef.current.forEach((url) => URL.revokeObjectURL(url))
+      audioUrlsRef.current = []
     }
   }, [])
 
@@ -420,7 +422,8 @@ function OTVivaContent() {
       audioRespuestaRef.current.pause()
       audioRespuestaRef.current = null
     }
-    if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current)
+    audioUrlsRef.current.forEach((url) => URL.revokeObjectURL(url))
+    audioUrlsRef.current = []
     audioUrlRef.current = null
     setPreparandoAudioRespuesta(false)
     setReproduciendoRespuesta(false)
@@ -483,6 +486,7 @@ function OTVivaContent() {
         }
         const url = URL.createObjectURL(blob)
         urls.push(url)
+        audioUrlsRef.current.push(url)
         return url
       }
 
@@ -528,6 +532,7 @@ function OTVivaContent() {
           })
         }
         await audio.play()
+        if (controller.signal.aborted) return
         setPreparandoAudioRespuesta(false)
         setReproduciendoRespuesta(true)
       }
