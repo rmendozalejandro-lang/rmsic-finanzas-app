@@ -186,6 +186,8 @@ function OTVivaContent() {
   const audioRespuestaRef = useRef<HTMLAudioElement | null>(null)
   const audioUrlRef = useRef<string | null>(null)
   const audioUrlsRef = useRef<string[]>([])
+  // Caché efímera en memoria de esta pestaña: nunca se guarda en Supabase ni en disco.
+  const audioFragmentosCacheRef = useRef<Map<string, Blob>>(new Map())
   const audioAbortRef = useRef<AbortController | null>(null)
   const [consultandoIA, setConsultandoIA] = useState(false)
   const [grabandoVoz, setGrabandoVoz] = useState<'evento' | 'ia' | null>(null)
@@ -415,6 +417,7 @@ function OTVivaContent() {
       audioRespuestaRef.current?.pause()
       audioUrlsRef.current.forEach((url) => URL.revokeObjectURL(url))
       audioUrlsRef.current = []
+      audioFragmentosCacheRef.current.clear()
     }
   }, [])
 
@@ -505,8 +508,8 @@ function OTVivaContent() {
         tramos.push(advertenciaNormalizada)
       }
     }
-    const urls: string[] = []
     let indice = 0
+    let fragmentosReutilizados = 0
 
     try {
       const { data: sessionData } = await supabase.auth.getSession()
@@ -515,22 +518,34 @@ function OTVivaContent() {
       if (controller.signal.aborted) return
 
       const generarTramo = async (texto: string): Promise<string> => {
-        const response = await fetch(`/api/ot/${ot.id}/viva/voz-respuesta`, {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ texto }),
-          signal: controller.signal,
-        })
-        if (!response.ok) {
-          const data = await response.json().catch(() => null)
-          throw new Error(data?.error || 'No fue posible generar una parte de la respuesta hablada.')
+        // Asociar caché a OT y contenido exacto del fragmento.
+        const clave = `${ot.id}:\u0000${texto}`
+        let blob = audioFragmentosCacheRef.current.get(clave)
+        if (blob) {
+          fragmentosReutilizados += 1
+        } else {
+          const response = await fetch(`/api/ot/${ot.id}/viva/voz-respuesta`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ texto }),
+            signal: controller.signal,
+          })
+          if (!response.ok) {
+            const data = await response.json().catch(() => null)
+            throw new Error(data?.error || 'No fue posible generar una parte de la respuesta hablada.')
+          }
+          blob = await response.blob()
+          if (!blob.size || !blob.type.startsWith('audio/')) {
+            throw new Error('El servicio devolvió una parte de audio no válida.')
+          }
+          if (controller.signal.aborted) throw new Error('Reproducción cancelada.')
+          // Máximo 24 clips: evitar acumular audio en memoria durante una sesión larga.
+          const cache = audioFragmentosCacheRef.current
+          if (cache.size >= 24) cache.delete(cache.keys().next().value as string)
+          cache.set(clave, blob)
         }
-        const blob = await response.blob()
-        if (!blob.size || !blob.type.startsWith('audio/')) {
-          throw new Error('El servicio devolvió una parte de audio no válida.')
-        }
+        if (controller.signal.aborted) throw new Error('Reproducción cancelada.')
         const url = URL.createObjectURL(blob)
-        urls.push(url)
         audioUrlsRef.current.push(url)
         return url
       }
@@ -593,7 +608,7 @@ function OTVivaContent() {
           if (indice === 0) {
             const demoraTotal = Math.round((performance.now() - inicioPreparacionVoz) / 1000)
             const demoraAudio = Math.round(demoraPrimerAudioMs / 1000)
-            setAvanceAudioRespuesta(`Reproduciendo fragmento 1 de ${tramos.length}. Inicio: ${demoraTotal} s (primer audio: ${demoraAudio} s; sesión y reproducción: ${Math.max(0, demoraTotal - demoraAudio)} s).`)
+            setAvanceAudioRespuesta(`Reproduciendo fragmento 1 de ${tramos.length}. Inicio: ${demoraTotal} s (primer audio: ${demoraAudio} s; sesión y reproducción: ${Math.max(0, demoraTotal - demoraAudio)} s). ${fragmentosReutilizados ? 'Audio reutilizado de esta sesión.' : 'Audio recién generado.'}`)
           }
         } catch (err) {
           if (controller.signal.aborted) return
