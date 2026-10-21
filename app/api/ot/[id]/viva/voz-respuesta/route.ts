@@ -57,9 +57,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       body: JSON.stringify({
         model: 'gpt-4o-mini-tts',
         voice: 'marin',
+        speed: 0.97,
         response_format: 'mp3',
         input: texto,
-        instructions: 'Habla en español latinoamericano de Chile, con voz natural, profesional y cercana, como un especialista técnico explicando verbalmente a otro técnico de mantenimiento industrial. Haz pausas perceptibles entre párrafos y cambios de tema; usa ritmo moderado, entonación conversacional y pronunciación clara de unidades técnicas. No agregues ni cambies información.'
+        instructions: 'Habla en español latinoamericano, con un tono cálido, suave y conversacional de una especialista técnica que explica con calma a un colega. Desde la primera frase, entra con naturalidad, sin una introducción rígida ni un tono de locución. Mantén una melodía vocal continua y relajada: en cada coma haz una inflexión breve sin cortar bruscamente la voz; en cada punto cierra la idea suavemente, con una pausa breve y fluida antes de seguir. Haz una pausa algo más amplia solamente cuando cambie el tema o comience un párrafo nuevo. Evita el ritmo entrecortado, las terminaciones secas y la lectura monótona de un informe. Habla con claridad, velocidad ligeramente pausada y pronunciación precisa de los términos industriales, cifras y unidades. Respeta íntegramente el contenido técnico: no inventes datos ni agregues palabras.'
       }),
       signal: AbortSignal.timeout(25000),
     })
