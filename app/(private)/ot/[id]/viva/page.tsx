@@ -179,6 +179,10 @@ function OTVivaContent() {
   const [preguntaIA, setPreguntaIA] = useState('')
   const [respuestaIA, setRespuestaIA] = useState('')
   const [reproduciendoRespuesta, setReproduciendoRespuesta] = useState(false)
+  const [preparandoAudioRespuesta, setPreparandoAudioRespuesta] = useState(false)
+  const audioRespuestaRef = useRef<HTMLAudioElement | null>(null)
+  const audioUrlRef = useRef<string | null>(null)
+  const audioAbortRef = useRef<AbortController | null>(null)
   const [consultandoIA, setConsultandoIA] = useState(false)
   const [grabandoVoz, setGrabandoVoz] = useState<'evento' | 'ia' | null>(null)
   const [transcribiendoVoz, setTranscribiendoVoz] = useState(false)
@@ -401,47 +405,74 @@ function OTVivaContent() {
     void loadAll()
   }, [loadAll])
 
-  // Primera etapa: lectura opcional con la voz disponible en el dispositivo.
-  // No se envía audio a terceros ni se almacenan grabaciones de respuesta.
   useEffect(() => {
     return () => {
-      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-        window.speechSynthesis.cancel()
-      }
+      audioAbortRef.current?.abort()
+      audioRespuestaRef.current?.pause()
+      if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current)
     }
   }, [])
 
   function detenerRespuestaHablada() {
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      window.speechSynthesis.cancel()
+    audioAbortRef.current?.abort()
+    audioAbortRef.current = null
+    if (audioRespuestaRef.current) {
+      audioRespuestaRef.current.pause()
+      audioRespuestaRef.current = null
     }
+    if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current)
+    audioUrlRef.current = null
+    setPreparandoAudioRespuesta(false)
     setReproduciendoRespuesta(false)
   }
 
-  function alternarRespuestaHablada() {
-    if (reproduciendoRespuesta) {
+  async function alternarRespuestaHablada() {
+    if (reproduciendoRespuesta || preparandoAudioRespuesta) {
       detenerRespuestaHablada()
       return
     }
+    if (!ot || !respuestaIA.trim()) return
 
-    if (!respuestaIA.trim() || typeof window === 'undefined' || !('speechSynthesis' in window)) {
-      setError('Este navegador no dispone de lectura de voz. Puedes consultar la respuesta escrita.')
-      return
-    }
-
-    window.speechSynthesis.cancel()
-    const utterance = new SpeechSynthesisUtterance(respuestaIA)
-    utterance.lang = 'es-CL'
-    utterance.rate = 1
-    const voices = window.speechSynthesis.getVoices()
-    utterance.voice = voices.find((voice) => voice.lang.toLowerCase() === 'es-cl')
-      || voices.find((voice) => voice.lang.toLowerCase().startsWith('es'))
-      || null
-    utterance.onend = () => setReproduciendoRespuesta(false)
-    utterance.onerror = () => setReproduciendoRespuesta(false)
     setError('')
-    setReproduciendoRespuesta(true)
-    window.speechSynthesis.speak(utterance)
+    setPreparandoAudioRespuesta(true)
+    const controller = new AbortController()
+    audioAbortRef.current = controller
+    try {
+      const { data: sessionData } = await supabase.auth.getSession()
+      const token = sessionData.session?.access_token
+      if (!token) throw new Error('No se pudo validar la sesión para generar la voz.')
+
+      const response = await fetch(`/api/ot/${ot.id}/viva/voz-respuesta`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ texto: respuestaIA }),
+        signal: controller.signal,
+      })
+      if (!response.ok) {
+        const data = await response.json().catch(() => null)
+        throw new Error(data?.error || 'No fue posible generar la respuesta hablada.')
+      }
+      const blob = await response.blob()
+      if (controller.signal.aborted) return
+      const url = URL.createObjectURL(blob)
+      audioUrlRef.current = url
+      const audio = new Audio(url)
+      audioRespuestaRef.current = audio
+      audio.onended = () => detenerRespuestaHablada()
+      audio.onerror = () => {
+        detenerRespuestaHablada()
+        setError('No se pudo reproducir el audio en este dispositivo.')
+      }
+      await audio.play()
+      if (controller.signal.aborted) return
+      setPreparandoAudioRespuesta(false)
+      setReproduciendoRespuesta(true)
+    } catch (err) {
+      if (!controller.signal.aborted) {
+        detenerRespuestaHablada()
+        setError(err instanceof Error ? err.message : 'No se pudo reproducir la respuesta.')
+      }
+    }
   }
 
   async function consultarAsistenteIA() {
@@ -1352,10 +1383,10 @@ function OTVivaContent() {
                           onClick={alternarRespuestaHablada}
                           className="rounded-xl bg-indigo-700 px-4 py-2 text-sm font-semibold text-white"
                         >
-                          {reproduciendoRespuesta ? 'Detener voz' : 'Escuchar respuesta'}
+                          {reproduciendoRespuesta || preparandoAudioRespuesta ? 'Detener voz' : 'Escuchar respuesta natural'}
                         </button>
                         <span className="text-xs text-slate-500">
-                          Lectura opcional mediante la voz del dispositivo. No se reproduce automáticamente.
+                          Voz sintética generada bajo demanda. La respuesta se envía al proveedor de audio; no se reproduce automáticamente.
                         </span>
                       </div>
                     </div>
