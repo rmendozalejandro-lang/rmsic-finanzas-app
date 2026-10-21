@@ -426,6 +426,24 @@ function OTVivaContent() {
     setReproduciendoRespuesta(false)
   }
 
+  // Segmentos cortos reducen el riesgo de perder el final en una síntesis larga.
+  // Separar en palabras conserva íntegro el texto sin cortar términos técnicos.
+  function dividirRespuestaEnTramos(texto: string, limite = 850) {
+    const palabras = texto.trim().split(/\s+/).filter(Boolean)
+    const tramos: string[] = []
+    let actual = ''
+    for (const palabra of palabras) {
+      if (actual && actual.length + palabra.length + 1 > limite) {
+        tramos.push(actual)
+        actual = palabra
+      } else {
+        actual = actual ? `${actual} ${palabra}` : palabra
+      }
+    }
+    if (actual) tramos.push(actual)
+    return tramos
+  }
+
   async function alternarRespuestaHablada() {
     if (reproduciendoRespuesta || preparandoAudioRespuesta) {
       detenerRespuestaHablada()
@@ -433,40 +451,88 @@ function OTVivaContent() {
     }
     if (!ot || !respuestaIA.trim()) return
 
+    detenerRespuestaHablada()
     setError('')
     setPreparandoAudioRespuesta(true)
     const controller = new AbortController()
     audioAbortRef.current = controller
+    const tramos = dividirRespuestaEnTramos(respuestaIA)
+    const urls: string[] = []
+    let indice = 0
+
     try {
       const { data: sessionData } = await supabase.auth.getSession()
       const token = sessionData.session?.access_token
       if (!token) throw new Error('No se pudo validar la sesión para generar la voz.')
+      if (controller.signal.aborted) return
 
-      const response = await fetch(`/api/ot/${ot.id}/viva/voz-respuesta`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ texto: respuestaIA }),
-        signal: controller.signal,
-      })
-      if (!response.ok) {
-        const data = await response.json().catch(() => null)
-        throw new Error(data?.error || 'No fue posible generar la respuesta hablada.')
+      const generarTramo = async (texto: string): Promise<string> => {
+        const response = await fetch(`/api/ot/${ot.id}/viva/voz-respuesta`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ texto }),
+          signal: controller.signal,
+        })
+        if (!response.ok) {
+          const data = await response.json().catch(() => null)
+          throw new Error(data?.error || 'No fue posible generar una parte de la respuesta hablada.')
+        }
+        const blob = await response.blob()
+        if (!blob.size || !blob.type.startsWith('audio/')) {
+          throw new Error('El servicio devolvió una parte de audio no válida.')
+        }
+        const url = URL.createObjectURL(blob)
+        urls.push(url)
+        return url
       }
-      const blob = await response.blob()
+
+      // Comienza al estar listo el primer tramo, sin esperar por toda la respuesta.
+      // Los tramos posteriores se generan anticipadamente, de forma secuencial.
+      const primerUrl = await generarTramo(tramos[0])
       if (controller.signal.aborted) return
-      const url = URL.createObjectURL(blob)
-      audioUrlRef.current = url
-      const audio = new Audio(url)
-      audioRespuestaRef.current = audio
-      audio.onended = () => detenerRespuestaHablada()
-      audio.onerror = () => {
-        detenerRespuestaHablada()
-        setError('No se pudo reproducir el audio en este dispositivo.')
+      const pendientes = tramos.slice(1).reduce<Promise<string>[]>(
+        (promesas, tramo) => {
+          const anterior = promesas[promesas.length - 1]
+          promesas.push(anterior.then(() => generarTramo(tramo)))
+          return promesas
+        },
+        [Promise.resolve(primerUrl)]
+      )
+
+      const reproducirTramo = async (url: string) => {
+        if (controller.signal.aborted) return
+        const audio = new Audio(url)
+        audioRespuestaRef.current = audio
+        audioUrlRef.current = url
+        audio.onerror = () => {
+          if (!controller.signal.aborted) {
+            detenerRespuestaHablada()
+            setError('Se produjo un error al reproducir una parte del audio.')
+          }
+        }
+        audio.onended = () => {
+          if (controller.signal.aborted) return
+          indice += 1
+          if (indice >= tramos.length) {
+            detenerRespuestaHablada()
+            return
+          }
+          setPreparandoAudioRespuesta(true)
+          void pendientes[indice - 1].then((proximoUrl) => {
+            if (!controller.signal.aborted) return reproducirTramo(proximoUrl)
+          }).catch((err) => {
+            if (!controller.signal.aborted) {
+              detenerRespuestaHablada()
+              setError(err instanceof Error ? err.message : 'Falló una parte del audio.')
+            }
+          })
+        }
+        await audio.play()
+        setPreparandoAudioRespuesta(false)
+        setReproduciendoRespuesta(true)
       }
-      await audio.play()
-      if (controller.signal.aborted) return
-      setPreparandoAudioRespuesta(false)
-      setReproduciendoRespuesta(true)
+
+      await reproducirTramo(primerUrl)
     } catch (err) {
       if (!controller.signal.aborted) {
         detenerRespuestaHablada()
