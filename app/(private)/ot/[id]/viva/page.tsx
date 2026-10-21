@@ -541,53 +541,67 @@ function OTVivaContent() {
         [Promise.resolve({ url: primerUrl } as ResultadoTramo)]
       )
 
+      // Reutilizar un único elemento Audio: crear uno nuevo por segmento puede
+      // perder la autorización de reproducción del navegador tras el primer archivo.
+      const audio = new Audio()
+      audioRespuestaRef.current = audio
+
       const reproducirTramo = async (url: string) => {
         if (controller.signal.aborted) return
-        const audio = new Audio(url)
-        audioRespuestaRef.current = audio
+        audio.src = url
         audioUrlRef.current = url
-        audio.onerror = () => {
-          if (!controller.signal.aborted) {
-            detenerRespuestaHablada()
-            setError('Se produjo un error al reproducir una parte del audio.')
-          }
-        }
-        audio.onended = () => {
+        setTextoTramoVoz(tramos[indice])
+        setAvanceAudioRespuesta(`Reproduciendo fragmento ${indice + 1} de ${tramos.length} (contenido no validado palabra por palabra)`)
+        try {
+          await audio.play()
           if (controller.signal.aborted) return
-          setUltimoTramoVoz(tramos[indice])
-          indice += 1
-          if (indice >= tramos.length) {
+          setPreparandoAudioRespuesta(false)
+          setReproduciendoRespuesta(true)
+        } catch (err) {
+          if (controller.signal.aborted) return
+          const faltantes = tramos.length - indice
+          detenerRespuestaHablada()
+          setAvanceAudioRespuesta(`Audio detenido: faltan ${faltantes} fragmentos. El navegador no pudo continuar la reproducción.`)
+          setError('No se pudo continuar automáticamente el audio. Revisa los permisos de reproducción del navegador.')
+        }
+      }
+
+      audio.onerror = () => {
+        if (controller.signal.aborted) return
+        const faltantes = tramos.length - indice
+        detenerRespuestaHablada()
+        setAvanceAudioRespuesta(`Audio interrumpido: faltan ${faltantes} fragmentos.`)
+        setError('Ocurrió un error al cargar un fragmento de audio.')
+      }
+
+      audio.onended = () => {
+        if (controller.signal.aborted) return
+        setUltimoTramoVoz(tramos[indice])
+        indice += 1
+        if (indice >= tramos.length) {
+          detenerRespuestaHablada()
+          setAvanceAudioRespuesta(soloAdvertencia
+            ? 'El audio de advertencia terminó; verifica que se haya pronunciado íntegramente.'
+            : `Finalizaron ${tramos.length} archivos de audio. El contenido hablado no se valida palabra por palabra.`)
+          return
+        }
+        setPreparandoAudioRespuesta(true)
+        void pendientes[indice - 1].then((resultado) => {
+          if (controller.signal.aborted) return
+          if (resultado.error || !resultado.url) {
+            const faltantes = tramos.length - indice
             detenerRespuestaHablada()
-            setAvanceAudioRespuesta(soloAdvertencia
-              ? 'Se reprodujo el archivo de la advertencia. Comprueba que la voz haya pronunciado todo su contenido.'
-              : `Se reprodujeron ${tramos.length} de ${tramos.length} archivos. Verifica que la voz haya leído el texto completo; el sistema aún no comprueba palabra por palabra.`)
+            setAvanceAudioRespuesta(`Lectura incompleta: faltan ${faltantes} fragmentos.`)
+            setError(resultado.error || 'No se generó un fragmento de audio.')
             return
           }
-          setPreparandoAudioRespuesta(true)
-          void pendientes[indice - 1].then((resultado) => {
-            if (controller.signal.aborted) return
-            if (resultado.error || !resultado.url) {
-              const faltantes = tramos.length - indice
-              detenerRespuestaHablada()
-              setAvanceAudioRespuesta(`Lectura incompleta: faltan ${faltantes} partes.`)
-              setError(resultado.error || 'No se generó un segmento de audio.')
-              return
-            }
-            return reproducirTramo(resultado.url)
-          }).catch((err) => {
-            if (!controller.signal.aborted) {
-              detenerRespuestaHablada()
-              setAvanceAudioRespuesta('Lectura interrumpida antes de completar la respuesta.')
-              setError(err instanceof Error ? err.message : 'Falló una parte del audio.')
-            }
-          })
-        }
-        await audio.play()
-        if (controller.signal.aborted) return
-        setTextoTramoVoz(tramos[indice])
-        setAvanceAudioRespuesta(`Reproduciendo fragmento ${indice + 1} de ${tramos.length} (el texto hablado aún no se valida automáticamente)`)
-        setPreparandoAudioRespuesta(false)
-        setReproduciendoRespuesta(true)
+          return reproducirTramo(resultado.url)
+        }).catch((err) => {
+          if (controller.signal.aborted) return
+          detenerRespuestaHablada()
+          setAvanceAudioRespuesta('Lectura interrumpida antes de completar los fragmentos.')
+          setError(err instanceof Error ? err.message : 'No se pudo continuar el audio.')
+        })
       }
 
       await reproducirTramo(primerUrl)
