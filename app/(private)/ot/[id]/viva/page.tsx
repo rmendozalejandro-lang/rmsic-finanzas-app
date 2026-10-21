@@ -545,8 +545,25 @@ function OTVivaContent() {
             if (resultado.error || controller.signal.aborted) {
               return { error: resultado.error || 'Reproducción cancelada.' }
             }
-            try { return { url: await generarTramo(tramo) } }
-            catch (err) { return { error: err instanceof Error ? err.message : 'Error al generar un segmento.' } }
+            // A transient network/TTS error should not immediately discard the remaining reading.
+            let ultimoError = 'Error al generar un segmento.'
+            for (let intento = 1; intento <= 3; intento++) {
+              if (controller.signal.aborted) return { error: 'Reproducción cancelada.' }
+              try { return { url: await generarTramo(tramo) } }
+              catch (err) {
+                ultimoError = err instanceof Error ? err.message : 'Error al generar un segmento.'
+                if (intento < 3) {
+                  await new Promise<void>((resolve) => {
+                    const timer = window.setTimeout(resolve, intento * 1200)
+                    controller.signal.addEventListener('abort', () => {
+                      window.clearTimeout(timer)
+                      resolve()
+                    }, { once: true })
+                  })
+                }
+              }
+            }
+            return { error: `No se pudo generar el segmento tras 3 intentos. ${ultimoError}` }
           }))
           return promesas
         },
@@ -598,8 +615,8 @@ function OTVivaContent() {
           return
         }
         setPreparandoAudioRespuesta(true)
-        // pendientes[0] corresponde al primer audio, ya reproducido.
-        // Tras incrementar indice debemos seleccionar pendientes[indice].
+        // pendientes[0] corresponde al primer audio ya reproducido.
+        // Tras incrementar el índice seleccionamos el archivo de igual posición.
         void pendientes[indice].then((resultado) => {
           if (controller.signal.aborted) return
           if (resultado.error || !resultado.url) {
