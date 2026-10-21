@@ -60,7 +60,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         speed: 0.97,
         response_format: 'mp3',
         input: texto,
-        instructions: 'Habla en español latinoamericano, con una voz femenina de timbre ligeramente aterciopelado, cálida, suave, cercana y sutilmente seductora por su musicalidad natural, nunca exagerada ni teatral; como una especialista técnica que conversa con calma y confianza con un colega. Desde la primera frase, entra con naturalidad, sin una introducción rígida ni un tono de locución. Mantén una melodía vocal continua y relajada: en cada coma haz una inflexión breve sin cortar bruscamente la voz; en cada punto cierra la idea suavemente, con una pausa breve y fluida antes de seguir. Haz una pausa algo más amplia solamente cuando cambie el tema o comience un párrafo nuevo. Evita el ritmo entrecortado, las terminaciones secas y la lectura monótona de un informe. Habla con claridad, velocidad ligeramente pausada y pronunciación precisa de los términos industriales, cifras y unidades. Respeta íntegramente el contenido técnico: no inventes datos ni agregues palabras.'
+        instructions: 'Lee literalmente el texto de entrada una sola vez y en su orden original. No repitas el principio, no reinicies oraciones, no reformules, no resumas y no omitas la última frase. No agregues palabras. Mantén una voz femenina en español latinoamericano, cálida, suave, natural y técnicamente clara, con pausas breves entre oraciones. La fidelidad íntegra al texto prevalece sobre la expresividad.'
       }),
       signal: AbortSignal.timeout(25000),
     })
