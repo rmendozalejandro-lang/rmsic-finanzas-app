@@ -35,9 +35,19 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       .select('id').eq('usuario_id', user.id).eq('empresa_id', ot.empresa_id).eq('activo', true).maybeSingle()
     if (!access) return errorResponse('Sin acceso a esta empresa.', 403)
 
-    const { data: capacity } = await admin.from('empresa_capacidades')
-      .select('habilitado').eq('empresa_id', ot.empresa_id).eq('capacidad', 'asistente_ia').maybeSingle()
+    const { data: capacity, error: capacityError } = await admin.from('empresa_capacidades')
+      .select('habilitado,configuracion').eq('empresa_id', ot.empresa_id).eq('capacidad', 'asistente_ia').maybeSingle()
+    if (capacityError) return errorResponse('No se pudo verificar el permiso de voz.', 500)
     if (!capacity?.habilitado) return errorResponse('Asistente no habilitado para esta empresa.', 403)
+    // Interruptor independiente de la IA escrita: cerrado por defecto.
+    // Usuarios habilitados expresamente por empresa para el piloto de voz.
+    const voiceConfig = capacity.configuracion as { voz_respuesta_habilitada?: boolean; voz_respuesta_usuarios?: unknown } | null
+    const usuariosPermitidos = voiceConfig?.voz_respuesta_usuarios
+    if (voiceConfig?.voz_respuesta_habilitada !== true ||
+        !Array.isArray(usuariosPermitidos) ||
+        !usuariosPermitidos.includes(user.id)) {
+      return errorResponse('La respuesta hablada no está habilitada para este usuario y empresa.', 403)
+    }
 
     const { data: linked } = await admin.from('asistente_caso_ots')
       .select('caso_id').eq('empresa_id', ot.empresa_id).eq('ot_id', ot.id).limit(1).maybeSingle()
