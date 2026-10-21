@@ -436,7 +436,7 @@ function OTVivaContent() {
   // quedan fusionadas con la explicación anterior. Segmentos breves limitan
   // posibles omisiones de palabras en la síntesis.
   function dividirRespuestaEnTramos(texto: string, limite = 300) {
-    const parrafos = texto.trim().split(/\n\s*\n|\n(?=\s*(?:\d+[.)]|Sugerencia|No intervenir|Precaución|Advertencia))/i)
+    const parrafos = texto.trim().split(/\n\s*\n|\n(?=\s*(?:\d+[.)]|Sugerencia|No meter|No intervenir|Precaución|Advertencia))/i)
       .map((p) => p.trim()).filter(Boolean)
     const tramos: string[] = []
     for (const parrafo of parrafos) {
@@ -489,6 +489,18 @@ function OTVivaContent() {
       return
     }
     const tramos = dividirRespuestaEnTramos(textoEspecifico || (soloAdvertencia ? advertencia! : respuestaIA))
+    // La advertencia se procesa de forma aislada en la reproducción normal.
+    // De otro modo, un párrafo final sin salto doble podría fusionarse con la sugerencia.
+    if (!textoEspecifico && !soloAdvertencia && advertencia) {
+      const advertenciaNormalizada = advertencia.trim()
+      const ultimoTramo = tramos[tramos.length - 1]
+      if (ultimoTramo && ultimoTramo.includes(advertenciaNormalizada) && ultimoTramo !== advertenciaNormalizada) {
+        const prefijo = ultimoTramo.slice(0, ultimoTramo.indexOf(advertenciaNormalizada)).trim()
+        tramos.pop()
+        if (prefijo) tramos.push(prefijo)
+        tramos.push(advertenciaNormalizada)
+      }
+    }
     const urls: string[] = []
     let indice = 0
 
