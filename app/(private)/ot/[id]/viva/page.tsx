@@ -176,6 +176,7 @@ function OTVivaContent() {
   const [userName, setUserName] = useState('')
   const [userRole, setUserRole] = useState('')
   const [asistenteIAHabilitado, setAsistenteIAHabilitado] = useState(false)
+  const [vozRespuestaHabilitada, setVozRespuestaHabilitada] = useState(false)
   const [preguntaIA, setPreguntaIA] = useState('')
   const [respuestaIA, setRespuestaIA] = useState('')
   const [reproduciendoRespuesta, setReproduciendoRespuesta] = useState(false)
@@ -276,13 +277,15 @@ function OTVivaContent() {
 
       const { data: capacidadIA, error: capacidadIAError } = await supabase
         .from('empresa_capacidades')
-        .select('habilitado')
+        .select('habilitado,configuracion')
         .eq('empresa_id', currentOt.empresa_id)
         .eq('capacidad', 'asistente_ia')
         .maybeSingle()
 
       if (capacidadIAError) throw new Error(capacidadIAError.message)
       setAsistenteIAHabilitado(Boolean(capacidadIA?.habilitado))
+      const configVoz = capacidadIA?.configuracion as { voz_respuesta_habilitada?: boolean; voz_respuesta_usuarios?: unknown } | null
+      setVozRespuestaHabilitada(Boolean(capacidadIA?.habilitado && configVoz?.voz_respuesta_habilitada === true && Array.isArray(configVoz.voz_respuesta_usuarios) && configVoz.voz_respuesta_usuarios.includes(authData.user.id)))
 
       const { data: linkData, error: linkError } = await supabase
         .from('asistente_caso_ots')
@@ -415,6 +418,7 @@ function OTVivaContent() {
     // La instancia de la página puede reutilizarse al navegar entre OT.
     // No conservar la respuesta de una orden anterior mientras carga la nueva.
     setRespuestaIA('')
+    setVozRespuestaHabilitada(false)
     setTextoTramoVoz('')
     setUltimoTramoVoz('')
     setAvanceAudioRespuesta('')
@@ -483,7 +487,7 @@ function OTVivaContent() {
       detenerRespuestaHablada()
       return
     }
-    if (!ot || !respuestaIA.trim()) return
+    if (!ot || !respuestaIA.trim() || !vozRespuestaHabilitada) return
 
     detenerRespuestaHablada()
     setError('')
@@ -1587,15 +1591,16 @@ function OTVivaContent() {
                         {respuestaIA}
                       </p>
                       <div className="mt-3 flex flex-wrap items-center gap-3">
-                        <button
+                        {!vozRespuestaHabilitada ? <p className="text-xs font-medium text-slate-600">Respuesta hablada no habilitada para este usuario. La respuesta escrita permanece disponible.</p> : null}
+                        {vozRespuestaHabilitada ? <button
                           type="button"
                           onClick={() => void alternarRespuestaHablada()}
                           className="rounded-xl bg-indigo-700 px-4 py-2 text-sm font-semibold text-white"
                         >
                           {reproduciendoRespuesta || preparandoAudioRespuesta ? 'Detener voz' : 'Escuchar respuesta natural'}
-                        </button>
+                        </button> : null}
                         {/**** Reproducción aislada para precauciones críticas omitidas por TTS. ****/}
-                        {/(?:no meter|no intervenir|bloqueo|procedimiento seguro|máquina energizada)/i.test(respuestaIA) ? (
+                        {vozRespuestaHabilitada && /(?:no meter|no intervenir|bloqueo|procedimiento seguro|máquina energizada)/i.test(respuestaIA) ? (
                           <button
                             type="button"
                             onClick={() => void alternarRespuestaHablada(true)}
@@ -1608,7 +1613,7 @@ function OTVivaContent() {
                           Voz sintética generada bajo demanda. La respuesta se envía al proveedor de audio; no se reproduce automáticamente.
                           {avanceAudioRespuesta ? <span className="mt-1 block font-medium text-indigo-700">{avanceAudioRespuesta}</span> : null}
                           {textoTramoVoz ? <span className="mt-1 block rounded-lg bg-indigo-50 p-2 text-slate-700">Texto del fragmento: {textoTramoVoz}</span> : null}
-                          {ultimoTramoVoz && !reproduciendoRespuesta && !preparandoAudioRespuesta ? (
+                          {vozRespuestaHabilitada && ultimoTramoVoz && !reproduciendoRespuesta && !preparandoAudioRespuesta ? (
                             <button type="button" onClick={() => void alternarRespuestaHablada(false, ultimoTramoVoz)} className="mt-2 rounded-lg border border-indigo-300 px-3 py-1 text-indigo-800">Volver a escuchar el último fragmento</button>
                           ) : null}
                           <span className="mt-1 block">Compara siempre el audio con el texto escrito, especialmente las precauciones de seguridad.</span>
