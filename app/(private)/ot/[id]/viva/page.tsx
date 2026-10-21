@@ -419,7 +419,7 @@ function OTVivaContent() {
       audioUrlsRef.current = []
       audioFragmentosCacheRef.current.clear()
     }
-  }, [])
+  }, [otId])
 
   function detenerRespuestaHablada() {
     audioAbortRef.current?.abort()
@@ -519,7 +519,7 @@ function OTVivaContent() {
 
       const generarTramo = async (texto: string): Promise<string> => {
         // Asociar caché a OT y contenido exacto del fragmento.
-        const clave = `${ot.id}:\u0000${texto}`
+        const clave = `${sessionData.session?.user.id || ''}:${ot.empresa_id}:${ot.id}:\u0000${texto}`
         let blob = audioFragmentosCacheRef.current.get(clave)
         if (blob) {
           fragmentosReutilizados += 1
@@ -676,6 +676,8 @@ function OTVivaContent() {
     if (!ot || !caso || !preguntaIA.trim() || !asistenteIAHabilitado) return
 
     detenerRespuestaHablada()
+    // Nueva respuesta: descartar fragmentos de una contestación anterior.
+    audioFragmentosCacheRef.current.clear()
     setConsultandoIA(true)
     setError('')
     setSuccess('')
