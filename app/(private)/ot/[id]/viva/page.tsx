@@ -463,7 +463,7 @@ function OTVivaContent() {
     return tramos
   }
 
-  async function alternarRespuestaHablada() {
+  async function alternarRespuestaHablada(soloAdvertencia = false) {
     if (reproduciendoRespuesta || preparandoAudioRespuesta) {
       detenerRespuestaHablada()
       return
@@ -476,7 +476,15 @@ function OTVivaContent() {
     setPreparandoAudioRespuesta(true)
     const controller = new AbortController()
     audioAbortRef.current = controller
-    const tramos = dividirRespuestaEnTramos(respuestaIA)
+    const parrafos = respuestaIA.trim().split(/\n\s*\n|\n(?=\s*(?:No meter|No intervenir|Advertencia|Precaución))/i)
+      .map((p) => p.trim()).filter(Boolean)
+    const advertencia = [...parrafos].reverse().find((p) => /(?:no meter|no intervenir|bloqueo|procedimiento seguro|máquina energizada|advertencia|precaución)/i.test(p))
+    if (soloAdvertencia && !advertencia) {
+      setPreparandoAudioRespuesta(false)
+      setAvanceAudioRespuesta('No se identificó una advertencia independiente en este texto.')
+      return
+    }
+    const tramos = dividirRespuestaEnTramos(soloAdvertencia ? advertencia! : respuestaIA)
     const urls: string[] = []
     let indice = 0
 
@@ -545,7 +553,9 @@ function OTVivaContent() {
           indice += 1
           if (indice >= tramos.length) {
             detenerRespuestaHablada()
-            setAvanceAudioRespuesta(`Se reprodujeron ${tramos.length} de ${tramos.length} archivos. Verifica que la voz haya leído el texto completo; el sistema aún no comprueba palabra por palabra.`)
+            setAvanceAudioRespuesta(soloAdvertencia
+              ? 'Se reprodujo el archivo de la advertencia. Comprueba que la voz haya pronunciado todo su contenido.'
+              : `Se reprodujeron ${tramos.length} de ${tramos.length} archivos. Verifica que la voz haya leído el texto completo; el sistema aún no comprueba palabra por palabra.`)
             return
           }
           setPreparandoAudioRespuesta(true)
@@ -1489,11 +1499,21 @@ function OTVivaContent() {
                       <div className="mt-3 flex flex-wrap items-center gap-3">
                         <button
                           type="button"
-                          onClick={alternarRespuestaHablada}
+                          onClick={() => void alternarRespuestaHablada()}
                           className="rounded-xl bg-indigo-700 px-4 py-2 text-sm font-semibold text-white"
                         >
                           {reproduciendoRespuesta || preparandoAudioRespuesta ? 'Detener voz' : 'Escuchar respuesta natural'}
                         </button>
+                        {/**** Reproducción aislada para precauciones críticas omitidas por TTS. ****/}
+                        {/(?:no meter|no intervenir|bloqueo|procedimiento seguro|máquina energizada)/i.test(respuestaIA) ? (
+                          <button
+                            type="button"
+                            onClick={() => void alternarRespuestaHablada(true)}
+                            className="rounded-xl border border-amber-600 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-900"
+                          >
+                            Escuchar advertencia final
+                          </button>
+                        ) : null}
                         <span className="text-xs text-slate-500">
                           Voz sintética generada bajo demanda. La respuesta se envía al proveedor de audio; no se reproduce automáticamente.
                           {avanceAudioRespuesta ? <span className="mt-1 block font-medium text-indigo-700">{avanceAudioRespuesta}</span> : null}
