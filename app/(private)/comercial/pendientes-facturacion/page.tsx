@@ -33,6 +33,7 @@ function Pantalla() {
   const [seleccion, setSeleccion] = useState<string[]>([])
   const [nombre, setNombre] = useState('')
   const [numeroOC, setNumeroOC] = useState('')
+  const [verificacionTributaria, setVerificacionTributaria] = useState(false)
   const [estadoInicial, setEstadoInicial] = useState<'borrador' | 'esperando_oc'>('borrador')
   const [cargando, setCargando] = useState(true)
   const [guardando, setGuardando] = useState(false)
@@ -70,7 +71,13 @@ function Pantalla() {
 
   useEffect(() => { void cargar() }, [cargar])
   const asociados = useMemo(() => new Set(items.filter(i => i.cotizacion_id).map(i => i.cotizacion_id)), [items])
-  const disponibles = useMemo(() => cotizaciones.filter(c => c.estado === 'aprobada' && c.cliente_id && !c.ingreso_generado_id && !asociados.has(c.id)), [cotizaciones, asociados])
+  // Piloto inicial: no afirmar que una cotización histórica está pendiente solo por no tener vínculo financiero.
+  // Folios anteriores al 31 quedan en revisión histórica, sin posibilidad de selección.
+  const historicas = useMemo(() => cotizaciones.filter(c => c.estado === 'aprobada' && (c.folio === null || c.folio < 31)), [cotizaciones])
+  const disponibles = useMemo(() => cotizaciones.filter(c =>
+    c.estado === 'aprobada' && c.folio !== null && c.folio >= 31 &&
+    c.cliente_id && !c.ingreso_generado_id && !asociados.has(c.id)
+  ), [cotizaciones, asociados])
   const escogidas = useMemo(() => disponibles.filter(c => seleccion.includes(c.id)), [disponibles, seleccion])
   const clienteSeleccionado = escogidas[0]?.cliente_id || null
   const monedaSeleccionada = escogidas[0]?.moneda || 'CLP'
@@ -84,6 +91,10 @@ function Pantalla() {
   async function crearLote() {
     if (guardando) return
     setError(''); setAviso('')
+    if (!verificacionTributaria) {
+      setError('Debes confirmar que verificaste los documentos en el SII y que no están facturados.')
+      return
+    }
     if (escogidas.length < 2 || !clienteSeleccionado) {
       setError('Selecciona al menos dos cotizaciones aprobadas del mismo cliente.')
       return
@@ -102,7 +113,7 @@ function Pantalla() {
     try {
       // Volver a comprobar en el servidor antes de asociar; el historial no se modifica.
       const [verificar, otrosItems] = await Promise.all([
-        supabase.from('cotizaciones').select('id,empresa_id,cliente_id,estado,moneda,ingreso_generado_id')
+        supabase.from('cotizaciones').select('id,empresa_id,cliente_id,folio,estado,moneda,ingreso_generado_id')
           .in('id', escogidas.map(c => c.id)),
         supabase.from('comercial_facturacion_lote_items').select('cotizacion_id')
           .eq('empresa_id', empresaId).eq('activo', true).in('cotizacion_id', escogidas.map(c => c.id)),
@@ -110,7 +121,7 @@ function Pantalla() {
       if (verificar.error || otrosItems.error) throw new Error(verificar.error?.message || otrosItems.error?.message)
       if ((verificar.data || []).length !== escogidas.length || (otrosItems.data || []).length > 0 ||
           !(verificar.data || []).every(c => c.empresa_id === empresaId && c.cliente_id === clienteSeleccionado &&
-            c.estado === 'aprobada' && !c.ingreso_generado_id && (c.moneda || 'CLP') === monedaSeleccionada)) {
+            c.estado === 'aprobada' && c.folio !== null && c.folio >= 31 && !c.ingreso_generado_id && (c.moneda || 'CLP') === monedaSeleccionada)) {
         throw new Error('Los datos cambiaron. Actualiza la lista y revisa las cotizaciones.')
       }
       const { data: user } = await supabase.auth.getUser()
@@ -129,7 +140,7 @@ function Pantalla() {
       if (insertados.error) throw new Error(insertados.error.message)
       nuevoId = null
       setAviso('Agrupación comercial creada. No se emitió factura ni se creó un ingreso.')
-      setNombre(''); setNumeroOC('')
+      setNombre(''); setNumeroOC(''); setVerificacionTributaria(false)
       await cargar()
     } catch (e) {
       // Compensar una inserción parcial. Si falla, se advierte para revisión manual.
@@ -158,7 +169,10 @@ function Pantalla() {
         <>
           <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <h2 className="text-lg font-semibold">1. Seleccionar cotizaciones aprobadas</h2>
-            <p className="mt-1 text-sm text-slate-600">Las cotizaciones enviadas aparecerán aquí cuando cambien a Aprobada. Las que ya tengan un ingreso o estén vinculadas a otro lote se excluyen.</p>
+            <p className="mt-1 text-sm text-slate-600">En este piloto solo se pueden seleccionar cotizaciones desde el folio 31, cuando estén aprobadas y no tengan un ingreso o lote asociado. Antes de agrupar es obligatorio revisar la facturación real en SII.</p>
+            <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+              <strong>Historial protegido:</strong> {historicas.length} cotización(es) aprobada(s) anteriores al folio 31 se excluyen por seguridad. Su condición tributaria aún no está conciliada; una OC o el estado «Aprobada» no demuestran que sigan pendientes.
+            </div>
             <div className="mt-4 overflow-x-auto">
               <table className="w-full min-w-[690px] text-left text-sm">
                 <thead className="border-b bg-slate-50 text-slate-700"><tr><th className="p-3">Elegir</th><th className="p-3">Cotización</th><th className="p-3">Cliente</th><th className="p-3">Trabajo</th><th className="p-3 text-right">Total</th></tr></thead>
@@ -200,7 +214,11 @@ function Pantalla() {
                 <p className="mt-1 font-semibold">Total de referencia: {monedaSeleccionada === 'CLP' ? pesos(total) : total.toLocaleString('es-CL') + ' ' + monedaSeleccionada}</p>
               </div>
             </div>
-            <button type="button" disabled={guardando || escogidas.length < 2 || !nombre.trim()} onClick={() => void crearLote()} className="mt-4 rounded-xl bg-indigo-700 px-5 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">
+            <label className="mt-4 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
+              <input type="checkbox" className="mt-1" checked={verificacionTributaria} onChange={e => setVerificacionTributaria(e.target.checked)} disabled={guardando} />
+              <span>Confirmo que revisé en el SII y en los registros de Tralixia que estas cotizaciones no han sido facturadas ni incluidas en otra factura. La verificación es manual y bajo responsabilidad del usuario.</span>
+            </label>
+            <button type="button" disabled={guardando || escogidas.length < 2 || !nombre.trim() || !verificacionTributaria} onClick={() => void crearLote()} className="mt-4 rounded-xl bg-indigo-700 px-5 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">
               {guardando ? 'Guardando…' : 'Crear agrupación comercial'}
             </button>
             <p className="mt-2 text-xs text-slate-500">La suma es referencial; antes de facturar verifica montos, descuentos, impuestos y condiciones comerciales en el SII.</p>
