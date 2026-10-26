@@ -34,6 +34,17 @@ begin
      or v_mov.cliente_id is distinct from v_lote.cliente_id then
     raise exception 'Empresa o cliente distintos entre lote y factura.';
   end if;
+  -- No vincular una factura ambiguamente duplicada en la misma empresa.
+  if exists (
+    select 1 from public.movimientos m
+    where m.id <> v_mov.id and m.empresa_id = v_mov.empresa_id
+      and m.tipo_movimiento = 'ingreso' and m.activo = true
+      and m.deleted_at is null and m.estado <> 'anulado'
+      and m.tipo_documento = v_mov.tipo_documento
+      and trim(coalesce(m.numero_documento,'')) = trim(v_mov.numero_documento)
+  ) then
+    raise exception 'Hay más de un ingreso activo con el mismo tipo y número de factura. Revisar duplicados antes de vincular.';
+  end if;
   if v_mov.origen_tipo is not null or v_mov.origen_id is not null then
     raise exception 'El ingreso ya tiene otro documento de origen. Revise la trazabilidad antes de vincular.';
   end if;
@@ -175,7 +186,7 @@ begin
   -- Bloquear todas las filas en orden determinista hasta que termine la transacción.
   perform 1 from public.cotizaciones c where c.id=any(p_cotizaciones) order by c.id for update;
   select count(*),count(distinct c.cliente_id),count(distinct coalesce(c.moneda,'CLP')),
-         min(c.cliente_id),min(coalesce(c.moneda,'CLP'))
+         (array_agg(c.cliente_id))[1],min(coalesce(c.moneda,'CLP'))
     into v_validos,v_cliente_distintos,v_moneda_distintos,v_cliente,v_moneda
     from public.cotizaciones c
     where c.id=any(p_cotizaciones)
