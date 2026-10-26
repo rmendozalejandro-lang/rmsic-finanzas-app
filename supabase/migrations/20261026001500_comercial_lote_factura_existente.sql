@@ -92,3 +92,49 @@ with check (
 
 comment on table public.comercial_facturacion_lote_facturas is
   'Vincula una agrupación comercial con un ingreso de factura previamente registrado; no crea efectos financieros.';
+
+-- Validación en BD para no confiar únicamente en comprobaciones del navegador.
+create or replace function public.validar_estado_lote_facturacion()
+returns trigger language plpgsql security invoker set search_path = public as $$
+declare
+  v_count integer;
+  v_valid integer;
+begin
+  if new.estado is not distinct from old.estado then return new; end if;
+  if old.estado = 'facturado' or old.estado = 'anulado' then
+    raise exception 'No se puede reabrir un lote facturado o anulado.';
+  end if;
+  if new.estado = 'listo_facturar' then
+    if old.estado not in ('borrador', 'esperando_oc') then
+      raise exception 'Transición no permitida hacia listo para facturar.';
+    end if;
+    select count(*), count(*) filter (where
+      i.tipo_item = 'cotizacion'
+      and c.estado = 'aprobada'
+      and c.activo = true and c.deleted_at is null
+      and c.ingreso_generado_id is null
+      and c.empresa_id = new.empresa_id and c.cliente_id = new.cliente_id
+      and coalesce(c.moneda,'CLP') = new.moneda
+      and c.folio >= 31)
+      into v_count, v_valid
+      from public.comercial_facturacion_lote_items i
+      left join public.cotizaciones c on c.id = i.cotizacion_id
+      where i.lote_id = new.id and i.activo = true;
+    if v_count < 2 or v_valid <> v_count then
+      raise exception 'El lote necesita al menos dos cotizaciones aprobadas y elegibles.';
+    end if;
+  elsif new.estado = 'facturado' then
+    if old.estado <> 'listo_facturar' or not exists (
+      select 1 from public.comercial_facturacion_lote_facturas where lote_id = new.id
+    ) then
+      raise exception 'Para marcar facturado debe existir vínculo a factura.';
+    end if;
+  elsif new.estado not in ('borrador','esperando_oc') then
+    raise exception 'Transición no permitida para el lote.';
+  end if;
+  return new;
+end $$;
+
+create trigger comercial_facturacion_estado_validar
+before update of estado on public.comercial_facturacion_lotes
+for each row execute function public.validar_estado_lote_facturacion();
