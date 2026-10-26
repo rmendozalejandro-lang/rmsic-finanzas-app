@@ -38,6 +38,8 @@ function Pantalla() {
   const [movimientosElegidos, setMovimientosElegidos] = useState<Record<string,string>>({})
   const [confirmaciones, setConfirmaciones] = useState<Record<string,boolean>>({})
   const [vinculando, setVinculando] = useState(false)
+  const [preparandoLote, setPreparandoLote] = useState<string | null>(null)
+  const [lotesConfirmados, setLotesConfirmados] = useState<Record<string, boolean>>({})
   const [seleccion, setSeleccion] = useState<string[]>([])
   const [nombre, setNombre] = useState('')
   const [numeroOC, setNumeroOC] = useState('')
@@ -104,6 +106,39 @@ function Pantalla() {
   const total = escogidas.reduce((a, c) => a + Number(c.total || 0), 0)
   const clienteNombre = (id: string | null) => clientes.find(c => c.id === id)?.nombre || 'Cliente sin nombre'
   const cantidades = (loteId: string) => items.filter(i => i.lote_id === loteId && i.cotizacion_id)
+
+  async function prepararLote(lote: Lote) {
+    if (preparandoLote || guardando || !lotesConfirmados[lote.id]) return
+    setError(''); setAviso('')
+    if (!['borrador', 'esperando_oc'].includes(lote.estado)) {
+      setError('Solo puedes preparar lotes en borrador o esperando OC.')
+      return
+    }
+    const lineas = cantidades(lote.id)
+    if (lineas.length < 2 || lineas.some(i => !i.cotizacion_id)) {
+      setError('El lote necesita al menos dos cotizaciones vinculadas.')
+      return
+    }
+    const cotizacionesLote = lineas.map(i => cotizaciones.find(c => c.id === i.cotizacion_id))
+    if (cotizacionesLote.some(c => !c || c.estado !== 'aprobada' ||
+      c.cliente_id !== lote.cliente_id || (c.moneda || 'CLP') !== lote.moneda ||
+      c.ingreso_generado_id || (c.folio === null || c.folio < 31))) {
+      setError('Una o más cotizaciones requieren revisión; actualiza antes de preparar el lote.')
+      return
+    }
+    setPreparandoLote(lote.id)
+    try {
+      // La migración valida nuevamente el cambio desde la base de datos.
+      const { data, error: cambioError } = await supabase.from('comercial_facturacion_lotes')
+        .update({ estado: 'listo_facturar' }).eq('id', lote.id).eq('empresa_id', empresaId)
+        .eq('estado', lote.estado).select('id')
+      if (cambioError) throw new Error(cambioError.message)
+      if (!data || data.length !== 1) throw new Error('El lote cambió durante la operación; vuelve a cargar.')
+      await cargar()
+      setAviso('Agrupación marcada como lista para facturar. No se emitió factura ni se creó ingreso.')
+    } catch (e) { setError(e instanceof Error ? e.message : 'No se pudo preparar el lote.') }
+    finally { setPreparandoLote(null) }
+  }
 
   async function vincularFactura(lote: Lote) {
     if (vinculando) return
@@ -274,6 +309,21 @@ function Pantalla() {
                 <p className="mt-1 text-sm text-slate-600">{clienteNombre(l.cliente_id)} · {cantidades(l.id).length} cotización(es) · OC: {l.numero_oc || 'Sin OC'}</p>
                 <p className="mt-1 text-sm text-slate-600">{cantidades(l.id).map(i => cotizaciones.find(c => c.id === i.cotizacion_id)?.codigo || 'Cotización asociada').join(', ') || 'Sin cotizaciones asociadas en la vista'}</p>
                 <p className="mt-1 text-sm font-medium">Monto referencial: {l.moneda === 'CLP' ? pesos(cantidades(l.id).reduce((a, i) => a + Number(i.monto_referencia || 0), 0)) : cantidades(l.id).reduce((a, i) => a + Number(i.monto_referencia || 0), 0).toLocaleString('es-CL') + ' ' + l.moneda}</p>
+                {['borrador', 'esperando_oc'].includes(l.estado) && cantidades(l.id).length >= 2 ? (
+                  <div className="mt-3 space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
+                    <p className="font-semibold">Preparar para facturar</p>
+                    <p>Comprueba las cotizaciones y el respaldo del cliente. Esta acción no genera una factura ni un ingreso.</p>
+                    <label className="flex items-start gap-2">
+                      <input type="checkbox" className="mt-1" checked={Boolean(lotesConfirmados[l.id])}
+                        disabled={Boolean(preparandoLote)} onChange={e => setLotesConfirmados(p => ({...p, [l.id]: e.target.checked}))}/>
+                      <span>Confirmo que revisé que las cotizaciones del lote están aprobadas, no han sido facturadas y corresponden al mismo cliente.</span>
+                    </label>
+                    <button type="button" className="rounded-lg bg-indigo-700 px-3 py-2 font-semibold text-white disabled:opacity-50"
+                      disabled={!lotesConfirmados[l.id] || Boolean(preparandoLote)} onClick={() => void prepararLote(l)}>
+                      {preparandoLote === l.id ? 'Validando…' : 'Marcar listo para facturar'}
+                    </button>
+                  </div>
+                ) : null}
                 {vinculos.some(v => v.lote_id === l.id) ? (
                   <p className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
                     Factura vinculada: {facturas.find(f => f.id === vinculos.find(v => v.lote_id === l.id)?.movimiento_id)?.numero_documento || 'Consultar ingreso'}
