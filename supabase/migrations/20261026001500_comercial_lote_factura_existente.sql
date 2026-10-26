@@ -150,6 +150,12 @@ create trigger comercial_facturacion_estado_validar
 before update of estado on public.comercial_facturacion_lotes
 for each row execute function public.validar_estado_lote_facturacion();
 
+-- Una misma cotización no puede estar en dos lotes activos simultáneamente.
+-- La restricción es global por cotización, no solo dentro de cada lote.
+create unique index comercial_facturacion_lote_items_cotizacion_global_ux
+on public.comercial_facturacion_lote_items(cotizacion_id)
+where activo = true and cotizacion_id is not null;
+
 -- Creación atómica de lote y cotizaciones, sin riesgo de lotes parciales.
 create or replace function public.crear_lote_cotizaciones_piloto(
   p_empresa_id uuid,
