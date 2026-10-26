@@ -138,3 +138,67 @@ end $$;
 create trigger comercial_facturacion_estado_validar
 before update of estado on public.comercial_facturacion_lotes
 for each row execute function public.validar_estado_lote_facturacion();
+
+-- Creación atómica de lote y cotizaciones, sin riesgo de lotes parciales.
+create or replace function public.crear_lote_cotizaciones_piloto(
+  p_empresa_id uuid,
+  p_cotizaciones uuid[],
+  p_nombre text,
+  p_estado text default 'borrador',
+  p_numero_oc text default null,
+  p_revision_tributaria boolean default false
+)
+returns uuid language plpgsql security invoker set search_path=public as $$
+declare
+  v_cliente uuid;
+  v_moneda text;
+  v_lote_id uuid;
+  v_total_ids integer;
+  v_validos integer;
+  v_distintos integer;
+  v_cliente_distintos integer;
+  v_moneda_distintos integer;
+begin
+  if auth.uid() is null or not public.puede_administrar_empresa(p_empresa_id) then
+    raise exception 'Sin permiso para preparar facturación.';
+  end if;
+  if p_revision_tributaria is distinct from true then
+    raise exception 'Debe confirmar la revisión tributaria.';
+  end if;
+  if p_estado not in ('borrador','esperando_oc') or nullif(trim(p_nombre),'') is null then
+    raise exception 'Nombre o estado del lote inválido.';
+  end if;
+  v_total_ids := coalesce(array_length(p_cotizaciones,1),0);
+  if v_total_ids < 2 then raise exception 'Seleccione al menos dos cotizaciones.'; end if;
+  select count(distinct x) into v_distintos from unnest(p_cotizaciones) x;
+  if v_distintos <> v_total_ids then raise exception 'Hay cotizaciones repetidas.'; end if;
+  -- Bloquear todas las filas en orden determinista hasta que termine la transacción.
+  perform 1 from public.cotizaciones c where c.id=any(p_cotizaciones) order by c.id for update;
+  select count(*),count(distinct c.cliente_id),count(distinct coalesce(c.moneda,'CLP')),
+         min(c.cliente_id),min(coalesce(c.moneda,'CLP'))
+    into v_validos,v_cliente_distintos,v_moneda_distintos,v_cliente,v_moneda
+    from public.cotizaciones c
+    where c.id=any(p_cotizaciones)
+      and c.empresa_id=p_empresa_id and c.estado='aprobada'
+      and c.activo=true and c.deleted_at is null
+      and c.folio>=31 and c.cliente_id is not null and c.ingreso_generado_id is null
+      and not exists (
+        select 1 from public.comercial_facturacion_lote_items i
+        where i.cotizacion_id=c.id and i.activo=true
+      );
+  if v_validos <> v_total_ids or v_cliente_distintos <> 1 or v_moneda_distintos <> 1 then
+    raise exception 'Las cotizaciones no son elegibles o pertenecen a distintos clientes/monedas.';
+  end if;
+  insert into public.comercial_facturacion_lotes(empresa_id,cliente_id,nombre,estado,moneda,numero_oc,created_by)
+  values (p_empresa_id,v_cliente,trim(p_nombre),p_estado,v_moneda,nullif(trim(coalesce(p_numero_oc,'')),''),auth.uid())
+  returning id into v_lote_id;
+  insert into public.comercial_facturacion_lote_items(
+    empresa_id,lote_id,tipo_item,cotizacion_id,monto_referencia,created_by
+  )
+  select p_empresa_id,v_lote_id,'cotizacion',c.id,c.total,auth.uid()
+  from public.cotizaciones c where c.id=any(p_cotizaciones);
+  return v_lote_id;
+end $$;
+
+revoke all on function public.crear_lote_cotizaciones_piloto(uuid,uuid[],text,text,text,boolean) from public;
+grant execute on function public.crear_lote_cotizaciones_piloto(uuid,uuid[],text,text,text,boolean) to authenticated;
