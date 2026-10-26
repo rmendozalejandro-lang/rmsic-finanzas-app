@@ -17,6 +17,8 @@ type Lote = {
 }
 type Item = { id: string; lote_id: string; cotizacion_id: string | null; monto_referencia: number | null; activo: boolean }
 type Cliente = { id: string; nombre: string | null }
+type FacturaExistente = { id: string; cliente_id: string | null; empresa_id: string; numero_documento: string | null; monto_total: number; origen_tipo: string | null; origen_id: string | null }
+type Vinculo = { lote_id: string; movimiento_id: string }
 
 const pesos = (n: number) => new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP', maximumFractionDigits: 0 }).format(n)
 const estados: Record<string, string> = {
@@ -30,6 +32,12 @@ function Pantalla() {
   const [lotes, setLotes] = useState<Lote[]>([])
   const [items, setItems] = useState<Item[]>([])
   const [clientes, setClientes] = useState<Cliente[]>([])
+  const [facturas, setFacturas] = useState<FacturaExistente[]>([])
+  const [vinculos, setVinculos] = useState<Vinculo[]>([])
+  const [vinculoDisponible, setVinculoDisponible] = useState(false)
+  const [movimientosElegidos, setMovimientosElegidos] = useState<Record<string,string>>({})
+  const [confirmaciones, setConfirmaciones] = useState<Record<string,boolean>>({})
+  const [vinculando, setVinculando] = useState(false)
   const [seleccion, setSeleccion] = useState<string[]>([])
   const [nombre, setNombre] = useState('')
   const [numeroOC, setNumeroOC] = useState('')
@@ -63,6 +71,15 @@ function Pantalla() {
       setLotes((lot.data || []) as Lote[])
       setClientes((cli.data || []) as Cliente[])
       setItems((it.data || []) as Item[])
+      const [fact, vin] = await Promise.all([
+        supabase.from('movimientos').select('id,cliente_id,empresa_id,numero_documento,monto_total,origen_tipo,origen_id')
+          .eq('empresa_id', empresa).eq('tipo_movimiento', 'ingreso').eq('activo', true).is('deleted_at', null)
+          .in('tipo_documento', ['factura','factura_exenta']).neq('estado', 'anulado').order('fecha', { ascending: false }).limit(400),
+        supabase.from('comercial_facturacion_lote_facturas').select('lote_id,movimiento_id').eq('empresa_id', empresa).limit(200),
+      ])
+      setFacturas((fact.data || []) as FacturaExistente[])
+      setVinculoDisponible(!vin.error)
+      setVinculos((vin.data || []) as Vinculo[])
       setSeleccion([])
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error cargando facturación.')
@@ -87,6 +104,32 @@ function Pantalla() {
   const total = escogidas.reduce((a, c) => a + Number(c.total || 0), 0)
   const clienteNombre = (id: string | null) => clientes.find(c => c.id === id)?.nombre || 'Cliente sin nombre'
   const cantidades = (loteId: string) => items.filter(i => i.lote_id === loteId && i.cotizacion_id)
+
+  async function vincularFactura(lote: Lote) {
+    if (vinculando) return
+    setError(''); setAviso('')
+    const factura = facturas.find(f => f.id === movimientosElegidos[lote.id])
+    const total = cantidades(lote.id).reduce((a, i) => a + Number(i.monto_referencia || 0), 0)
+    if (!vinculoDisponible || !confirmaciones[lote.id] || !factura || lote.estado !== 'listo_facturar' ||
+        factura.empresa_id !== empresaId || factura.cliente_id !== lote.cliente_id ||
+        Number(factura.monto_total) !== total || factura.origen_id || factura.origen_tipo ||
+        cantidades(lote.id).length < 2) {
+      setError('Comprueba el lote, la factura existente y la confirmación de SII.')
+      return
+    }
+    setVinculando(true)
+    try {
+      const { data: user } = await supabase.auth.getUser()
+      if (!user.user) throw new Error('Sesión caducada.')
+      const { error: insertError } = await supabase.from('comercial_facturacion_lote_facturas').insert({
+        empresa_id: empresaId, lote_id: lote.id, movimiento_id: factura.id, created_by: user.user.id,
+      })
+      if (insertError) throw new Error(insertError.message)
+      setAviso('Factura vinculada sin crear otro ingreso ni otra cuenta por cobrar.')
+      await cargar()
+    } catch (e) { setError(e instanceof Error ? e.message : 'No se pudo vincular la factura.') }
+    finally { setVinculando(false) }
+  }
 
   async function crearLote() {
     if (guardando) return
@@ -231,6 +274,35 @@ function Pantalla() {
                 <p className="mt-1 text-sm text-slate-600">{clienteNombre(l.cliente_id)} · {cantidades(l.id).length} cotización(es) · OC: {l.numero_oc || 'Sin OC'}</p>
                 <p className="mt-1 text-sm text-slate-600">{cantidades(l.id).map(i => cotizaciones.find(c => c.id === i.cotizacion_id)?.codigo || 'Cotización asociada').join(', ') || 'Sin cotizaciones asociadas en la vista'}</p>
                 <p className="mt-1 text-sm font-medium">Monto referencial: {l.moneda === 'CLP' ? pesos(cantidades(l.id).reduce((a, i) => a + Number(i.monto_referencia || 0), 0)) : cantidades(l.id).reduce((a, i) => a + Number(i.monto_referencia || 0), 0).toLocaleString('es-CL') + ' ' + l.moneda}</p>
+                {vinculos.some(v => v.lote_id === l.id) ? (
+                  <p className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
+                    Factura vinculada: {facturas.find(f => f.id === vinculos.find(v => v.lote_id === l.id)?.movimiento_id)?.numero_documento || 'Consultar ingreso'}
+                  </p>
+                ) : l.estado === 'listo_facturar' ? (
+                  <div className="mt-3 space-y-3 rounded-lg border bg-slate-50 p-3 text-sm">
+                    <strong>Vincular factura ya registrada en Ingresos</strong>
+                    {!vinculoDisponible && <p className="text-amber-800">Pendiente: activar migración después de aprobar el desarrollo.</p>}
+                    <select aria-label={'Factura para ' + l.nombre} className="block w-full rounded-lg border p-2"
+                      value={movimientosElegidos[l.id] || ''} onChange={e => setMovimientosElegidos(p => ({...p,[l.id]:e.target.value}))}
+                      disabled={!vinculoDisponible || vinculando}>
+                      <option value="">Seleccionar factura existente…</option>
+                      {facturas.filter(f => f.cliente_id === l.cliente_id && f.empresa_id === empresaId &&
+                        !f.origen_tipo && !f.origen_id && !vinculos.some(v => v.movimiento_id === f.id) &&
+                        Number(f.monto_total) === cantidades(l.id).reduce((a, i) => a + Number(i.monto_referencia || 0), 0))
+                        .map(f => <option key={f.id} value={f.id}>Factura {f.numero_documento} · {pesos(Number(f.monto_total))}</option>)}
+                    </select>
+                    <label className="flex items-start gap-2">
+                      <input type="checkbox" className="mt-1" disabled={!vinculoDisponible || vinculando}
+                        checked={Boolean(confirmaciones[l.id])} onChange={e => setConfirmaciones(p => ({...p,[l.id]:e.target.checked}))}/>
+                      <span>Confirmo que revisé en SII que esta factura cubre las cotizaciones del lote y no se ha registrado dos veces.</span>
+                    </label>
+                    <button type="button" onClick={() => void vincularFactura(l)}
+                      disabled={!vinculoDisponible || vinculando || !movimientosElegidos[l.id] || !confirmaciones[l.id]}
+                      className="rounded-lg bg-indigo-700 px-3 py-2 font-semibold text-white disabled:opacity-50">
+                      Vincular factura existente
+                    </button>
+                  </div>
+                ) : null}
               </div>)}
               {!lotes.length && <p className="text-sm text-slate-500">Todavía no hay agrupaciones para esta empresa.</p>}
             </div>
