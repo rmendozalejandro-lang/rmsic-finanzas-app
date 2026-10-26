@@ -169,65 +169,26 @@ function Pantalla() {
   async function crearLote() {
     if (guardando) return
     setError(''); setAviso('')
-    if (!verificacionTributaria) {
-      setError('Debes confirmar que verificaste los documentos en el SII y que no están facturados.')
-      return
-    }
-    if (escogidas.length < 2 || !clienteSeleccionado) {
-      setError('Selecciona al menos dos cotizaciones aprobadas del mismo cliente.')
-      return
-    }
-    if (!escogidas.every(c => c.cliente_id === clienteSeleccionado && (c.moneda || 'CLP') === monedaSeleccionada)) {
-      setError('Todas las cotizaciones deben corresponder al mismo cliente y moneda.')
-      return
-    }
-    if (!nombre.trim()) { setError('Indica un nombre para la agrupación.'); return }
-    if (escogidas.some(c => c.ingreso_generado_id || asociados.has(c.id))) {
-      setError('Una cotización ya tiene ingreso o asociación de facturación.')
+    if (!verificacionTributaria || escogidas.length < 2 || !clienteSeleccionado || !nombre.trim()) {
+      setError('Selecciona al menos dos cotizaciones aprobadas, indica un nombre y confirma la revisión tributaria.')
       return
     }
     setGuardando(true)
-    let nuevoId: string | null = null
     try {
-      // Volver a comprobar en el servidor antes de asociar; el historial no se modifica.
-      const [verificar, otrosItems] = await Promise.all([
-        supabase.from('cotizaciones').select('id,empresa_id,cliente_id,folio,estado,moneda,ingreso_generado_id')
-          .in('id', escogidas.map(c => c.id)),
-        supabase.from('comercial_facturacion_lote_items').select('cotizacion_id')
-          .eq('empresa_id', empresaId).eq('activo', true).in('cotizacion_id', escogidas.map(c => c.id)),
-      ])
-      if (verificar.error || otrosItems.error) throw new Error(verificar.error?.message || otrosItems.error?.message)
-      if ((verificar.data || []).length !== escogidas.length || (otrosItems.data || []).length > 0 ||
-          !(verificar.data || []).every(c => c.empresa_id === empresaId && c.cliente_id === clienteSeleccionado &&
-            c.estado === 'aprobada' && c.folio !== null && c.folio >= 31 && !c.ingreso_generado_id && (c.moneda || 'CLP') === monedaSeleccionada)) {
-        throw new Error('Los datos cambiaron. Actualiza la lista y revisa las cotizaciones.')
-      }
-      const { data: user } = await supabase.auth.getUser()
-      if (!user.user) throw new Error('Sesión caducada.')
-      const crear = await supabase.from('comercial_facturacion_lotes').insert({
-        empresa_id: empresaId, cliente_id: clienteSeleccionado, nombre: nombre.trim(),
-        estado: estadoInicial, numero_oc: numeroOC.trim() || null, moneda: monedaSeleccionada,
-        created_by: user.user.id,
-      }).select('id').single()
-      if (crear.error || !crear.data?.id) throw new Error(crear.error?.message || 'No fue posible crear el lote.')
-      nuevoId = crear.data.id as string
-      const insertados = await supabase.from('comercial_facturacion_lote_items').insert(escogidas.map(c => ({
-        empresa_id: empresaId, lote_id: nuevoId, tipo_item: 'cotizacion', cotizacion_id: c.id,
-        monto_referencia: c.total, created_by: user.user!.id,
-      })))
-      if (insertados.error) throw new Error(insertados.error.message)
-      nuevoId = null
-      setAviso('Agrupación comercial creada. No se emitió factura ni se creó un ingreso.')
+      const { error: crearError } = await supabase.rpc('crear_lote_cotizaciones_piloto', {
+        p_empresa_id: empresaId,
+        p_cotizaciones: escogidas.map(c => c.id),
+        p_nombre: nombre.trim(),
+        p_estado: estadoInicial,
+        p_numero_oc: numeroOC.trim() || null,
+        p_revision_tributaria: true,
+      })
+      if (crearError) throw new Error(crearError.message)
       setNombre(''); setNumeroOC(''); setVerificacionTributaria(false)
       await cargar()
+      setAviso('Agrupación comercial creada. No se emitió factura ni se creó un ingreso.')
     } catch (e) {
-      // Compensar una inserción parcial. Si falla, se advierte para revisión manual.
-      let sufijo = ''
-      if (nuevoId) {
-        const limpieza = await supabase.from('comercial_facturacion_lotes').delete().eq('id', nuevoId).eq('empresa_id', empresaId)
-        if (limpieza.error) sufijo = ' Atención: revisa si quedó un lote borrador sin ítems.'
-      }
-      setError((e instanceof Error ? e.message : 'No se pudo crear el lote.') + sufijo)
+      setError(e instanceof Error ? e.message : 'No se pudo crear la agrupación.')
     } finally { setGuardando(false) }
   }
 
@@ -299,7 +260,7 @@ function Pantalla() {
             <button type="button" disabled={guardando || escogidas.length < 2 || !nombre.trim() || !verificacionTributaria} onClick={() => void crearLote()} className="mt-4 rounded-xl bg-indigo-700 px-5 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">
               {guardando ? 'Guardando…' : 'Crear agrupación comercial'}
             </button>
-            <p className="mt-2 text-xs text-slate-500">La suma es referencial; antes de facturar verifica montos, descuentos, impuestos y condiciones comerciales en el SII.</p>
+            <p className="mt-2 text-xs text-slate-500">Esta función requiere activar una migración revisada en Supabase. La suma es referencial; antes de facturar verifica montos, descuentos, impuestos y condiciones comerciales en el SII.</p>
           </section>
           <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <h2 className="text-lg font-semibold">Agrupaciones existentes</h2>
