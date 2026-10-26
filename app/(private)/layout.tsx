@@ -73,6 +73,7 @@ const menuItems: MenuItem[] = [
   { href: '/clientes', label: 'Clientes', moduleKey: 'clientes' },
   { href: '/contactos', label: 'Contactos', moduleKey: 'contactos' },
   { href: '/cotizaciones', label: 'Cotizaciones', moduleKey: 'cotizaciones' },
+  { href: '/comercial/pendientes-facturacion', label: 'Pendientes de facturación', moduleKey: 'cotizaciones' },
   { href: '/ingresos', label: 'Ingresos / Ventas', moduleKey: 'ingresos' },
   { href: '/cobranza', label: 'Cobranzas', moduleKey: 'cobranza' },
 
