@@ -2791,8 +2791,8 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
     }
 
     try {
-      await saveOtDraft()
-
+      // El envío no debe modificar una OT ya cerrada ni reescribir su estado.
+      // El cierre administrativo guarda la información antes de llamar esta función.
       const response = await fetch(`/api/ot/${otId}/enviar-email`, {
         method: 'POST',
         headers: {
