@@ -890,6 +890,7 @@ function OTDetalleContent() {
   const [tiempos, setTiempos] = useState<TiempoTrabajo[]>([])
   const [firmas, setFirmas] = useState<FirmaMini[]>([])
   const [contactosCliente, setContactosCliente] = useState<ClienteContactoOption[]>([])
+  const [destinatarioInformeId, setDestinatarioInformeId] = useState('')
   const [enviosEmail, setEnviosEmail] = useState<EnvioEmail[]>([])
   const [equiposDisponibles, setEquiposDisponibles] = useState<EquipoDisponible[]>([])
   const [equiposAsociados, setEquiposAsociados] = useState<EquipoAsociado[]>([])
@@ -1148,7 +1149,13 @@ function OTDetalleContent() {
 
     return Date.now() - inicioMs > 24 * 60 * 60 * 1000
   }
-  const sesionActivaAntigua = esSesionTrabajoAntigua(sesionActiva)
+  // OT Viva puede haber registrado la salida oficial sin cerrar la jornada de bitácora.
+  // En ese caso, permitir finalizar recuperando la salida verificada, sin usar la hora actual.
+  const salidaVivaRegistrada = Boolean(
+    sesionActiva?.hora_inicio && detalle?.hora_termino &&
+    new Date(detalle.hora_termino).getTime() >= new Date(sesionActiva.hora_inicio).getTime()
+  )
+  const sesionActivaAntigua = esSesionTrabajoAntigua(sesionActiva) && !salidaVivaRegistrada
   const esOtLegacySinJornadas = Boolean(
     !esFlujoDyfSoftys &&
       sesionesTrabajo.length === 0 &&
@@ -1229,9 +1236,11 @@ function OTDetalleContent() {
     return contactosCliente.find((item) => item.id === form.contacto_cliente_id) ?? null
   }, [contactosCliente, form.contacto_cliente_id])
 
-  const contactoEmailParaEnvio = useMemo(() => {
-    return selectedContactoCliente?.email || form.contacto_cliente_email || ''
-  }, [selectedContactoCliente, form.contacto_cliente_email])
+  const destinatarioInforme = useMemo(
+    () => contactosCliente.find((item) => item.id === destinatarioInformeId) ?? null,
+    [contactosCliente, destinatarioInformeId]
+  )
+  const contactoEmailParaEnvio = destinatarioInforme?.email?.trim() || ''
 
   const equiposAsociadosIds = useMemo(() => {
     return new Set(equiposAsociados.filter((item) => item.activo).map((item) => item.equipo_id))
@@ -2588,18 +2597,28 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
         if (abiertas.length > 1) {
           throw new Error('Existen varias jornadas abiertas. Debes corregir la bitácora antes de finalizar.')
         }
-        if (esSesionTrabajoAntigua(abiertas[0])) {
-          throw new Error('Existe una jornada abierta hace más de 24 horas. Debes corregirla antes de finalizar el trabajo.')
+        const salidaRegistrada = detalle?.hora_termino || null
+        const inicioJornada = abiertas[0]?.hora_inicio || null
+        const cierreDesdeViva = Boolean(
+          salidaRegistrada && inicioJornada &&
+          Number.isFinite(new Date(salidaRegistrada).getTime()) &&
+          new Date(salidaRegistrada).getTime() >= new Date(inicioJornada).getTime()
+        )
+        if (esSesionTrabajoAntigua(abiertas[0]) && !cierreDesdeViva) {
+          throw new Error('La jornada antigua sigue abierta y no hay una salida oficial válida. Corrige la bitácora antes de finalizar.')
         }
 
         const nowIso = new Date().toISOString()
         if (abiertas[0]) {
-          const { error: closeSessionError } = await supabase
+          const horaTerminoBitacora = cierreDesdeViva ? salidaRegistrada! : nowIso
+          const { data: jornadaCerrada, error: closeSessionError } = await supabase
             .from('ot_tiempos_trabajo')
-            .update({ hora_termino: nowIso, updated_by: currentUserId || null, updated_at: nowIso })
+            .update({ hora_termino: horaTerminoBitacora, updated_by: currentUserId || null, updated_at: nowIso })
             .eq('id', abiertas[0].id)
             .is('hora_termino', null)
+            .select('id')
           if (closeSessionError) throw new Error(`No se pudo cerrar la jornada actual: ${closeSessionError.message}`)
+          if (!jornadaCerrada?.length) throw new Error('La jornada cambió. Actualiza la OT antes de continuar.')
         }
 
         sesionesActuales = await getSesionesTrabajoActuales()
@@ -2751,8 +2770,8 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
   }
 
   const enviarInformeEmail = async (showStandaloneMessages = true) => {
-    if (!form.contacto_cliente_id) {
-      throw new Error('Debes seleccionar un contacto de cliente desde la base de datos antes de enviar el informe.')
+    if (!destinatarioInformeId) {
+      throw new Error('Selecciona el destinatario del informe en la sección de cierre.')
     }
 
     if (!contactoEmailParaEnvio.trim()) {
@@ -2772,15 +2791,15 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
     }
 
     try {
-      await saveOtDraft()
-
+      // El envío no debe modificar una OT ya cerrada ni reescribir su estado.
+      // El cierre administrativo guarda la información antes de llamar esta función.
       const response = await fetch(`/api/ot/${otId}/enviar-email`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${sessionData.session.access_token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({}),
+        body: JSON.stringify({ contacto_destinatario_id: destinatarioInformeId }),
       })
 
       const json = await response.json().catch(() => null)
@@ -2792,7 +2811,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
       await loadData(false)
 
       if (showStandaloneMessages) {
-        setEmailSuccess(`Informe enviado a ${json?.contacto || form.contacto_cliente_nombre} <${json?.destinatario || contactoEmailParaEnvio}>.`)
+        setEmailSuccess(`Informe enviado a ${json?.contacto || destinatarioInforme?.nombre} <${json?.destinatario || contactoEmailParaEnvio}>.`)
       }
 
       return true
@@ -2804,6 +2823,11 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
   }
 
   const handleEnviarInformeEmail = async () => {
+    if (!destinatarioInformeId || !contactoEmailParaEnvio) {
+      setEmailError('Selecciona un destinatario con correo válido antes de enviar.')
+      return
+    }
+    if (!window.confirm(`¿Enviar el informe de esta OT a ${destinatarioInforme?.nombre} <${contactoEmailParaEnvio}>?`)) return
     try {
       await enviarInformeEmail(true)
       router.refresh()
@@ -2815,6 +2839,13 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
   }
 
   const handleCerrarOT = async (enviarEmail = false) => {
+    if (enviarEmail) {
+      if (!destinatarioInformeId || !contactoEmailParaEnvio) {
+        setCierreError('Selecciona un destinatario con correo válido antes de cerrar y enviar.')
+        return
+      }
+      if (!window.confirm(`¿Cerrar la OT y enviar el informe a ${destinatarioInforme?.nombre} <${contactoEmailParaEnvio}>?`)) return
+    }
     try {
       setClosingOt(true)
       setCierreError('')
@@ -2829,12 +2860,12 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
         throw new Error(validationError)
       }
 
-      if (enviarEmail && !form.contacto_cliente_id) {
-        throw new Error('Debes seleccionar un contacto de cliente antes de cerrar y enviar el informe.')
+      if (enviarEmail && !destinatarioInformeId) {
+        throw new Error('Selecciona el destinatario del informe antes de cerrar y enviar.')
       }
 
       if (enviarEmail && !contactoEmailParaEnvio.trim()) {
-        throw new Error('El contacto seleccionado no tiene email registrado.')
+        throw new Error('El destinatario seleccionado no tiene email registrado.')
       }
 
       if (!esFlujoDyfSoftys && sesionesTrabajo.length > 0) {
@@ -5049,8 +5080,8 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
               </select>
               <p className="mt-1 text-xs text-slate-500">
                 {contactoEmailParaEnvio
-                  ? `Informe dirigido a: ${contactoEmailParaEnvio}`
-                  : 'Registra contactos desde Clientes para habilitar envío de informe.'}
+                  ? `Destinatario seleccionado para el informe: ${contactoEmailParaEnvio}`
+                  : 'Selecciona el destinatario al final de la OT, en Cierre / entrega.'}
               </p>
             </div>
 
@@ -6074,52 +6105,28 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
           subtitle={`Completa estos datos al entregar el trabajo. La hora término, duración y horas hombre se registran al cierre, no al crear la ${documentoTrabajoLabel}.`}
         />
 
-        <div className="mt-5 rounded-2xl border border-blue-100 bg-blue-50 p-4">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <p className="text-sm font-semibold text-slate-900">Acciones de cierre</p>
-              <p className="mt-1 text-xs text-slate-600">
-                Primero completa los datos de entrega. Luego puedes cerrar sin enviar o cerrar y enviar el informe al contacto seleccionado.
-              </p>
-            </div>
-
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <button
-                type="button"
-                onClick={() => void handleCerrarOT(false)}
-                disabled={closingOt || isClosed}
-                className="inline-flex items-center justify-center rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70"
-              >
-                {isClosed
-                  ? 'OT ya cerrada'
-                  : closingOt
-                    ? 'Guardando y cerrando OT...'
-                    : 'Cerrar sin enviar'}
-              </button>
-
-              {!isClosed ? (
-                <button
-                  type="button"
-                  onClick={() => void handleCerrarOT(true)}
-                  disabled={closingOt || sendingInforme || !form.contacto_cliente_id || !contactoEmailParaEnvio}
-                  className="inline-flex items-center justify-center rounded-xl border border-blue-300 bg-white px-5 py-3 text-sm font-semibold text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-70"
-                >
-                  {closingOt || sendingInforme
-                    ? 'Cerrando y enviando...'
-                    : 'Cerrar y enviar informe'}
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => void handleEnviarInformeEmail()}
-                  disabled={sendingInforme || !form.contacto_cliente_id || !contactoEmailParaEnvio}
-                  className="inline-flex items-center justify-center rounded-xl border border-blue-300 bg-white px-5 py-3 text-sm font-semibold text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-70"
-                >
-                  {sendingInforme ? 'Enviando informe...' : 'Enviar / reenviar informe'}
-                </button>
-              )}
-            </div>
-          </div>
+        <div className="mt-5 rounded-xl border border-blue-100 bg-blue-50 p-4">
+          <label htmlFor="destinatario-informe-ot" className="block text-sm font-semibold text-slate-900">
+            Destinatario del informe por correo (independiente del solicitante y de quien firma)
+          </label>
+          <select
+            id="destinatario-informe-ot"
+            value={destinatarioInformeId}
+            onChange={(e) => setDestinatarioInformeId(e.target.value)}
+            className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900"
+          >
+            <option value="">Selecciona a quién enviar el informe</option>
+            {contactosCliente.filter((contacto) => !!contacto.email?.trim() && contacto.recibe_informes_ot !== false).map((contacto) => (
+              <option key={contacto.id} value={contacto.id}>
+                {contacto.nombre}{contacto.cargo ? ` - ${contacto.cargo}` : ''} - {contacto.email}
+              </option>
+            ))}
+          </select>
+          <p className="mt-2 text-xs text-slate-600">
+            {contactoEmailParaEnvio
+              ? `El informe se enviará únicamente a ${destinatarioInforme?.nombre} <${contactoEmailParaEnvio}>. Se solicitará confirmación antes de enviarlo.`
+              : 'Cerrar sin enviar no requiere destinatario. Para enviar, selecciona primero un contacto registrado con correo.'}
+          </p>
         </div>
 
         <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -6290,12 +6297,12 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
           />
 
           <CierreStatusItem
-            label="Contacto envío informe"
-            ok={!!form.contacto_cliente_id && !!contactoEmailParaEnvio}
+            label="Destinatario envío informe"
+            ok={!!destinatarioInformeId && !!contactoEmailParaEnvio}
             detail={
-              form.contacto_cliente_id && contactoEmailParaEnvio
-                ? `Informe dirigido a ${form.contacto_cliente_nombre || 'contacto seleccionado'} <${contactoEmailParaEnvio}>.`
-                : 'Selecciona un contacto con email para cerrar y enviar informe en el mismo paso.'
+              destinatarioInformeId && contactoEmailParaEnvio
+                ? `Informe dirigido a ${destinatarioInforme?.nombre || 'contacto seleccionado'} <${contactoEmailParaEnvio}>.`
+                : 'Selecciona un destinatario con correo antes de cerrar y enviar el informe.'
             }
           />
 
@@ -6400,7 +6407,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
             <button
               type="button"
               onClick={() => void handleCerrarOT(true)}
-              disabled={closingOt || sendingInforme || !form.contacto_cliente_id || !contactoEmailParaEnvio}
+              disabled={closingOt || sendingInforme || !destinatarioInformeId || !contactoEmailParaEnvio}
               className="inline-flex items-center justify-center rounded-xl border border-blue-300 bg-blue-50 px-5 py-3 text-sm font-semibold text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-70"
             >
               {closingOt || sendingInforme
@@ -6411,7 +6418,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
             <button
               type="button"
               onClick={() => void handleEnviarInformeEmail()}
-              disabled={sendingInforme || !form.contacto_cliente_id || !contactoEmailParaEnvio}
+              disabled={sendingInforme || !destinatarioInformeId || !contactoEmailParaEnvio}
               className="inline-flex items-center justify-center rounded-xl border border-blue-300 bg-blue-50 px-5 py-3 text-sm font-semibold text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-70"
             >
               {sendingInforme ? 'Enviando informe...' : 'Enviar / reenviar informe'}

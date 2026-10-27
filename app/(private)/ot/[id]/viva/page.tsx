@@ -15,6 +15,9 @@ type OtRow = {
   descripcion_solicitud: string | null
   hora_inicio: string | null
   hora_termino: string | null
+  finalizado_tecnico_at: string | null
+  fecha_cierre: string | null
+  estado_id: string | null
 }
 
 type CasoRow = {
@@ -267,7 +270,7 @@ function OTVivaContent() {
 
       const { data: otData, error: otError } = await supabase
         .from('ot_ordenes_trabajo')
-        .select('id,empresa_id,cliente_id,folio,titulo,descripcion_solicitud,hora_inicio,hora_termino')
+        .select('id,empresa_id,cliente_id,folio,titulo,descripcion_solicitud,hora_inicio,hora_termino,finalizado_tecnico_at,fecha_cierre,estado_id')
         .eq('id', otId)
         .single()
 
@@ -1075,14 +1078,25 @@ function OTVivaContent() {
         .eq('id', sesionActiva.id)
 
       if (finishError) {
-        // Mantener trazabilidad: si falla el cierre de sesión, informamos el estado real.
         throw new Error(
-          `La hora de término quedó registrada en la OT, pero no se pudo finalizar la sesión Viva: ${finishError.message}`
+          `La salida quedó registrada, pero no se confirmó el cierre de sesión Viva: ${finishError.message}`
         )
       }
 
-      setSuccess('Sesión Viva finalizada. La hora de retiro de planta quedó registrada como término de la OT.')
+      // Confirmación real desde Supabase antes de indicar éxito al técnico.
+      const [sesionConfirmada, otConfirmada] = await Promise.all([
+        supabase.from('asistente_sesiones').select('estado,finalizado_at')
+          .eq('id', sesionActiva.id).single(),
+        supabase.from('ot_ordenes_trabajo').select('hora_termino')
+          .eq('id', ot!.id).eq('empresa_id', ot!.empresa_id).single(),
+      ])
+      if (sesionConfirmada.error || otConfirmada.error ||
+          sesionConfirmada.data?.estado !== 'finalizada' ||
+          !sesionConfirmada.data?.finalizado_at || !otConfirmada.data?.hora_termino) {
+        throw new Error('No se pudo verificar el guardado. Revisa el estado antes de salir de planta.')
+      }
       await loadAll()
+      setSuccess('Salida registrada y sesión Viva finalizada. Falta finalizar el trabajo técnico y realizar el cierre administrativo de la OT.')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo finalizar la sesión.')
       await loadAll()
@@ -1368,13 +1382,33 @@ function OTVivaContent() {
             </p>
           </div>
           <Link href={`/ot/${ot.id}`} className="inline-flex rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50">
-            Volver a la OT
+            Abrir OT principal
           </Link>
         </div>
       </header>
 
       {error ? <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div> : null}
       {success ? <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{success}</div> : null}
+
+      {ot.fecha_cierre ? (
+        <div role="status" className="rounded-xl border border-emerald-300 bg-emerald-50 p-4 text-sm text-emerald-900">
+          <strong>OT cerrada.</strong> El cierre administrativo consta en Tralixia.
+        </div>
+      ) : ot.finalizado_tecnico_at ? (
+        <div role="status" className="rounded-xl border border-blue-300 bg-blue-50 p-4 text-sm text-blue-900">
+          <strong>Trabajo técnico finalizado.</strong> La OT continúa pendiente de cierre administrativo.
+          <Link href={`/ot/${ot.id}`} className="ml-2 font-semibold underline">Revisar OT</Link>
+        </div>
+      ) : (
+        <div role="status" className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">
+          <strong>OT pendiente de finalización técnica.</strong> Terminar una sesión Viva registra la salida, pero no cierra la OT.
+          {!sesionActiva && ot.hora_termino ? (
+            <Link href={`/ot/${ot.id}?vista=tecnica`} className="mt-2 block w-fit rounded-lg bg-amber-950 px-4 py-2 font-semibold text-white">
+              Ir a finalizar trabajo técnico
+            </Link>
+          ) : null}
+        </div>
+      )}
 
       {!caso ? (
         <section className="rounded-2xl border border-cyan-200 bg-cyan-50 p-5 shadow-sm">
