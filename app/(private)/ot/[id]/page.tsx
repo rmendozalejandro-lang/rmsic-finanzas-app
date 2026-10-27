@@ -1148,7 +1148,13 @@ function OTDetalleContent() {
 
     return Date.now() - inicioMs > 24 * 60 * 60 * 1000
   }
-  const sesionActivaAntigua = esSesionTrabajoAntigua(sesionActiva)
+  // OT Viva puede haber registrado la salida oficial sin cerrar la jornada de bitácora.
+  // En ese caso, permitir finalizar recuperando la salida verificada, sin usar la hora actual.
+  const salidaVivaRegistrada = Boolean(
+    sesionActiva?.hora_inicio && detalle?.hora_termino &&
+    new Date(detalle.hora_termino).getTime() >= new Date(sesionActiva.hora_inicio).getTime()
+  )
+  const sesionActivaAntigua = esSesionTrabajoAntigua(sesionActiva) && !salidaVivaRegistrada
   const esOtLegacySinJornadas = Boolean(
     !esFlujoDyfSoftys &&
       sesionesTrabajo.length === 0 &&
@@ -2588,18 +2594,28 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
         if (abiertas.length > 1) {
           throw new Error('Existen varias jornadas abiertas. Debes corregir la bitácora antes de finalizar.')
         }
-        if (esSesionTrabajoAntigua(abiertas[0])) {
-          throw new Error('Existe una jornada abierta hace más de 24 horas. Debes corregirla antes de finalizar el trabajo.')
+        const salidaRegistrada = detalle?.hora_termino || null
+        const inicioJornada = abiertas[0]?.hora_inicio || null
+        const cierreDesdeViva = Boolean(
+          salidaRegistrada && inicioJornada &&
+          Number.isFinite(new Date(salidaRegistrada).getTime()) &&
+          new Date(salidaRegistrada).getTime() >= new Date(inicioJornada).getTime()
+        )
+        if (esSesionTrabajoAntigua(abiertas[0]) && !cierreDesdeViva) {
+          throw new Error('La jornada antigua sigue abierta y no hay una salida oficial válida. Corrige la bitácora antes de finalizar.')
         }
 
         const nowIso = new Date().toISOString()
         if (abiertas[0]) {
-          const { error: closeSessionError } = await supabase
+          const horaTerminoBitacora = cierreDesdeViva ? salidaRegistrada! : nowIso
+          const { data: jornadaCerrada, error: closeSessionError } = await supabase
             .from('ot_tiempos_trabajo')
-            .update({ hora_termino: nowIso, updated_by: currentUserId || null, updated_at: nowIso })
+            .update({ hora_termino: horaTerminoBitacora, updated_by: currentUserId || null, updated_at: nowIso })
             .eq('id', abiertas[0].id)
             .is('hora_termino', null)
+            .select('id')
           if (closeSessionError) throw new Error(`No se pudo cerrar la jornada actual: ${closeSessionError.message}`)
+          if (!jornadaCerrada?.length) throw new Error('La jornada cambió. Actualiza la OT antes de continuar.')
         }
 
         sesionesActuales = await getSesionesTrabajoActuales()
