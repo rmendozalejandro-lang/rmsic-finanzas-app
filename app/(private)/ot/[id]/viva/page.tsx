@@ -1403,7 +1403,7 @@ function OTVivaContent() {
         <div role="status" className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">
           <strong>OT pendiente de finalización técnica.</strong> Terminar una sesión Viva registra la salida, pero no cierra la OT.
           {!sesionActiva && ot.hora_termino ? (
-            <Link href={`/ot/${ot.id}`} className="mt-2 block w-fit rounded-lg bg-amber-950 px-4 py-2 font-semibold text-white">
+            <Link href={`/ot/${ot.id}?vista=tecnica`} className="mt-2 block w-fit rounded-lg bg-amber-950 px-4 py-2 font-semibold text-white">
               Ir a finalizar trabajo técnico
             </Link>
           ) : null}
