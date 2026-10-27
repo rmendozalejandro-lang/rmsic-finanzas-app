@@ -211,7 +211,12 @@ export async function POST(
       )
     }
 
-    if (!ot.contacto_cliente_id) {
+    const body = await request.json().catch(() => ({})) as { contacto_destinatario_id?: unknown }
+    const destinatarioId = typeof body.contacto_destinatario_id === 'string'
+      ? body.contacto_destinatario_id.trim()
+      : ot.contacto_cliente_id
+
+    if (!destinatarioId) {
       return jsonError(
         'La OM no tiene un contacto de cliente seleccionado desde la base de datos.',
         400
@@ -223,7 +228,7 @@ export async function POST(
       .select(
         'id, cliente_id, nombre, cargo, area, linea, email, telefono, tipo_contacto, recibe_informes_ot, activo'
       )
-      .eq('id', ot.contacto_cliente_id)
+      .eq('id', destinatarioId)
       .eq('empresa_id', ot.empresa_id)
       .eq('cliente_id', ot.cliente_id)
       .maybeSingle()
@@ -246,7 +251,7 @@ export async function POST(
       return jsonError('El contacto seleccionado no está habilitado para recibir informes OM.', 400)
     }
 
-    const destinatarioEmail = (contacto.email || ot.contacto_cliente_email || '').trim()
+    const destinatarioEmail = (contacto.email || '').trim()
 
     if (!destinatarioEmail) {
       return jsonError('El contacto seleccionado no tiene email registrado.', 400)
@@ -418,16 +423,6 @@ export async function POST(
         500
       )
     }
-
-    await adminClient
-      .from('ot_ordenes_trabajo')
-      .update({
-        contacto_cliente_email: destinatarioEmail,
-        contacto_cliente_nombre: contacto.nombre,
-        contacto_cliente_cargo: contacto.cargo || null,
-      })
-      .eq('id', otId)
-      .eq('empresa_id', ot.empresa_id)
 
     return jsonResponse({
       ok: true,
