@@ -6116,7 +6116,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
             className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900"
           >
             <option value="">Selecciona a quién enviar el informe</option>
-            {contactosCliente.filter((contacto) => !!contacto.email?.trim()).map((contacto) => (
+            {contactosCliente.filter((contacto) => !!contacto.email?.trim() && contacto.recibe_informes_ot !== false).map((contacto) => (
               <option key={contacto.id} value={contacto.id}>
                 {contacto.nombre}{contacto.cargo ? ` - ${contacto.cargo}` : ''} - {contacto.email}
               </option>
