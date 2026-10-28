@@ -1119,7 +1119,13 @@ export function OTPdfDocument({
           {(
             detalle.problema_reportado?.trim() ||
             detalle.causa_probable?.trim() ||
-            detalle.trabajo_realizado?.trim()
+            detalle.diagnostico?.trim() ||
+            detalle.trabajo_realizado?.trim() ||
+            detalle.hallazgos?.trim() ||
+            detalle.resultado_servicio?.trim() ||
+            detalle.conclusiones_tecnicas?.trim() ||
+            detalle.recomendaciones?.trim() ||
+            observaciones.trim()
           ) ? (
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>DESARROLLO DE ASISTENCIA TÉCNICA</Text>
@@ -1127,8 +1133,14 @@ export function OTPdfDocument({
                 title="Problema"
                 value={detalle.problema_reportado}
               />
+              <TextBlock title="Diagnóstico técnico" value={detalle.diagnostico} />
               <TextBlock title="Causa" value={detalle.causa_probable} />
               <TextBlock title="Solución" value={detalle.trabajo_realizado} />
+              <TextBlock title="Hallazgos y mediciones" value={detalle.hallazgos} />
+              <TextBlock title="Resultado del servicio" value={detalle.resultado_servicio} />
+              <TextBlock title="Conclusiones técnicas" value={detalle.conclusiones_tecnicas} />
+              <TextBlock title="Recomendaciones" value={detalle.recomendaciones} />
+              <TextBlock title="Observaciones finales" value={observaciones} />
             </View>
           ) : null}
           {detalle.mostrar_nota_valor_hora ? (
@@ -1224,7 +1236,7 @@ export function OTPdfDocument({
         <ChecklistTable rows={checklistRows} />
 
         {evidenciasImagenes.length > 0 ? (
-          <View style={styles.section}>
+          <View style={styles.section} break>
             <Text style={styles.sectionTitle}>REGISTRO FOTOGRÁFICO</Text>
             <PhotoGroup title="Antes" items={fotosAntes} />
             <PhotoGroup title="Durante" items={fotosDurante} />
