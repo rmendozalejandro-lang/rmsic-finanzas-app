@@ -1498,7 +1498,9 @@ ${checklistTextoPdf}`
       ...resumen,
       fecha_ot: detalleHorarioBase.fecha_ot || (resumen as any).fecha_ot,
       fecha_visita:
-        detalleHorarioBase.fecha_ot || (resumen as any).fecha_visita,
+        detalleHorarioBase.fecha_programada ||
+        detalleHorarioBase.fecha_ot ||
+        (resumen as any).fecha_visita,
       hora_inicio:
         detalleHorarioBase.hora_inicio || (resumen as any).hora_inicio,
       hora_termino:
