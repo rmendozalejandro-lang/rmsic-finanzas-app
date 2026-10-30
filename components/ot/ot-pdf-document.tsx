@@ -23,6 +23,7 @@ type OTDetallePdf = {
   folio: string | null
   tipo_servicio_id: string
   fecha_ot: string
+  fecha_programada?: string | null
   titulo: string
   descripcion_solicitud: string | null
   problema_reportado: string | null
@@ -773,12 +774,28 @@ function TextBlock({
 }) {
   if (!value || !value.trim()) return null
 
+  // Keep the heading with the beginning of its content, while allowing long
+  // reports to flow naturally across pages without clipping the body text.
+  const trimmed = value.trim()
+  const firstBreak = trimmed.indexOf('\\n')
+  const firstSentence = trimmed.search(/[.!?](?:\\s|$)/)
+  const splitAt = firstBreak > 0 && (firstSentence < 0 || firstBreak < firstSentence)
+    ? firstBreak
+    : firstSentence >= 0
+      ? firstSentence + 1
+      : Math.min(trimmed.length, 180)
+  const lead = trimmed.slice(0, splitAt).trim()
+  const remainder = trimmed.slice(splitAt).trim()
+
   return (
     <View style={styles.textBlock}>
-      <View style={styles.textBlockTitleWrap}>
-        <Text style={styles.textBlockTitle}>{title}</Text>
+      <View wrap={false}>
+        <View style={styles.textBlockTitleWrap}>
+          <Text style={styles.textBlockTitle}>{title}</Text>
+        </View>
+        <Text style={styles.textBlockBody}>{lead}</Text>
       </View>
-      <Text style={styles.textBlockBody}>{value}</Text>
+      {remainder ? <Text style={styles.textBlockBody}>{remainder}</Text> : null}
     </View>
   )
 }
@@ -1016,7 +1033,7 @@ export function OTPdfDocument({
 
               <View style={styles.headerMetaRight}>
                 <Text style={styles.fieldLabel}>Fecha</Text>
-                <Text style={styles.fieldValue}>{formatDate(detalle.fecha_ot)}</Text>
+                <Text style={styles.fieldValue}>{formatDate(detalle.fecha_programada || detalle.fecha_ot)}</Text>
               </View>
             </View>
 
@@ -1033,7 +1050,7 @@ export function OTPdfDocument({
           <View style={styles.sectionPanel}>
             <View style={styles.infoGrid}>
               <InfoCell label="Razón social" value={resumen.cliente_nombre} />
-              <InfoCell label="Fecha visita" value={formatDate(detalle.fecha_ot)} />
+              <InfoCell label="Fecha visita" value={formatDate(detalle.fecha_programada || detalle.fecha_ot)} />
               <InfoCell label="Hora inicio" value={formatTime(detalle.hora_inicio)} />
               <InfoCell label="Hora término" value={formatTime(detalle.hora_termino)} />
               <InfoCell label="Técnico ejecutante" value={nombreTecnico} />
