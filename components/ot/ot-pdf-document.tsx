@@ -1156,7 +1156,7 @@ export function OTPdfDocument({
               <TextBlock title="Hallazgos y mediciones" value={detalle.hallazgos} />
               <TextBlock title="Resultado del servicio" value={detalle.resultado_servicio} />
               <TextBlock title="Conclusiones técnicas" value={detalle.conclusiones_tecnicas} />
-              <TextBlock title="Recomendaciones" value={[detalle.recomendaciones?.trim(), observaciones.trim() ? `Observación final: ${observaciones.trim()}` : null].filter(Boolean).join("\n\n")} />
+              <TextBlock title="Recomendaciones" value={[detalle.recomendaciones?.trim(), observaciones.replace(/^OBSERVACIONES FINALES\s*[:\-]?\s*/i, "").trim() ? `Observación final: ${observaciones.replace(/^OBSERVACIONES FINALES\s*[:\-]?\s*/i, "").trim()}` : null].filter(Boolean).join("\n\n")} />
             </View>
           ) : null}
           {detalle.mostrar_nota_valor_hora ? (
