@@ -2589,6 +2589,33 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
       setError('')
       setSuccess('')
 
+      // Evitar que la finalizacion tecnica oculte sesiones Viva abiertas.
+      // La bitacora de jornadas y las sesiones del asistente son registros distintos.
+      if (!esFlujoDyfSoftys) {
+        const { data: enlacesViva, error: enlacesVivaError } = await supabase
+          .from('asistente_caso_ots')
+          .select('caso_id')
+          .eq('ot_id', otId)
+        if (enlacesVivaError) {
+          throw new Error(`No se pudo verificar las sesiones OT Viva: ${enlacesVivaError.message}`)
+        }
+        const casoIds = [...new Set((enlacesViva || []).map((item) => item.caso_id).filter(Boolean))]
+        if (casoIds.length > 0) {
+          const { data: sesionesVivaAbiertas, error: sesionesVivaError } = await supabase
+            .from('asistente_sesiones')
+            .select('id')
+            .in('caso_id', casoIds)
+            .eq('estado', 'en_curso')
+            .limit(1)
+          if (sesionesVivaError) {
+            throw new Error(`No se pudo verificar el cierre de OT Viva: ${sesionesVivaError.message}`)
+          }
+          if (sesionesVivaAbiertas?.length) {
+            throw new Error('Existe una sesion OT Viva en curso. Finalizala y verifica su cierre antes de finalizar el trabajo tecnico.')
+          }
+        }
+      }
+
       if (!esFlujoDyfSoftys && sesionesTrabajo.length > 0) {
         await saveOtDraft()
         let sesionesActuales = await getSesionesTrabajoActuales()
