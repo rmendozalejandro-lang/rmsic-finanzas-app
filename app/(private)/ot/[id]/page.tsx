@@ -6399,7 +6399,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
           {usaChecklistRmsicMespack ? (
             <CierreStatusItem
               label="Checklist Mespack RMSIC"
-              ok={esChecklistExcepcionRmsic}
+              ok={esChecklistExcepcionRmsic && Boolean(motivoChecklistNoEjecutado)}
               detail={esChecklistExcepcionRmsic
                 ? motivoChecklistNoEjecutado
                   ? `No ejecutado (justificado): ${motivoChecklistNoEjecutado}`
