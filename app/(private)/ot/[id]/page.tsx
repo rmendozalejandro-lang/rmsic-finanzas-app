@@ -3046,6 +3046,15 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
         payload.hora_termino = payloadBorrador.hora_termino
       }
 
+      if (esChecklistExcepcionRmsic) {
+        // El trigger de tipo de servicio vuelve a imponer requiere_checklist=true
+        // cuando el UPDATE incluye tipo_servicio_id. El tipo ya se guardó en
+        // saveOtDraft: no reenviarlo al cerrar conserva la excepción justificada.
+        delete payload.tipo_servicio_id
+        delete payload.empresa_id
+        payload.requiere_checklist = false
+      }
+
       const { error: updateError } = await supabase
         .from('ot_ordenes_trabajo')
         .update(payload)
