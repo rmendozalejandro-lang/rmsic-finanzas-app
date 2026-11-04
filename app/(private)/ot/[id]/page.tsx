@@ -1049,7 +1049,9 @@ function OTDetalleContent() {
   const esChecklistExcepcionRmsic = usaChecklistRmsicMespack &&
     !form.requiere_checklist && form.observaciones_cierre.startsWith(checklistExcepcionPrefijo)
   const observacionesCierreSinExcepcion = esChecklistExcepcionRmsic
-    ? form.observaciones_cierre.slice(form.observaciones_cierre.indexOf('\n') + 1).trimStart()
+    ? (form.observaciones_cierre.includes('\n')
+        ? form.observaciones_cierre.slice(form.observaciones_cierre.indexOf('\n') + 1).trimStart()
+        : '')
     : form.observaciones_cierre
   const motivoChecklistNoEjecutado = esChecklistExcepcionRmsic
     ? form.observaciones_cierre.slice(checklistExcepcionPrefijo.length).split('\n')[0].trim()
@@ -1932,7 +1934,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
   const actualizarExcepcionChecklist = (noEjecutado: boolean, motivo = '') => {
     const observaciones = observacionesCierreSinExcepcion.trim()
     const nota = noEjecutado
-      ? `${checklistExcepcionPrefijo}${motivo.replace(/[\\r\\n]/g, ' ').slice(0, 500)}${observaciones ? `\\n${observaciones}` : ''}`
+      ? `${checklistExcepcionPrefijo}${motivo.replace(/[\r\n]/g, ' ').slice(0, 500)}${observaciones ? `\n${observaciones}` : ''}`
       : observaciones
     setForm((prev) => ({ ...prev, requiere_checklist: !noEjecutado, observaciones_cierre: nota }))
   }
@@ -6325,7 +6327,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
             <textarea
               value={observacionesCierreSinExcepcion}
               onChange={(e) => handleChange('observaciones_cierre', esChecklistExcepcionRmsic
-                ? `${checklistExcepcionPrefijo}${motivoChecklistNoEjecutado}\\n${e.target.value}`
+                ? `${checklistExcepcionPrefijo}${motivoChecklistNoEjecutado}\n${e.target.value}`
                 : e.target.value)}
               rows={4}
               disabled={isClosed}
