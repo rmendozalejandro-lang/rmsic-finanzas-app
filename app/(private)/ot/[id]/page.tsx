@@ -1049,7 +1049,7 @@ function OTDetalleContent() {
   // No altera ni inventa respuestas del checklist y solo aplica al flujo RMSIC.
   const checklistExcepcionPrefijo = 'CHECKLIST NO EJECUTADO (JUSTIFICADO): '
   const esChecklistExcepcionRmsic = usaChecklistRmsicMespack &&
-    !form.requiere_checklist && form.observaciones_cierre.startsWith(checklistExcepcionPrefijo)
+    form.observaciones_cierre.startsWith(checklistExcepcionPrefijo)
   const observacionesCierreSinExcepcion = esChecklistExcepcionRmsic
     ? (form.observaciones_cierre.includes('\n')
         ? form.observaciones_cierre.slice(form.observaciones_cierre.indexOf('\n') + 1).trimStart()
@@ -2036,7 +2036,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
     tecnico_responsable_id: form.tecnico_responsable_id || null,
     supervisor_id: form.supervisor_id || null,
     prioridad: form.prioridad,
-    requiere_checklist: form.requiere_checklist,
+    requiere_checklist: esChecklistExcepcionRmsic ? false : form.requiere_checklist,
     observaciones_cierre: form.observaciones_cierre.trim() || null,
     contacto_cliente_id: form.contacto_cliente_id || null,
     contacto_cliente_email: form.contacto_cliente_email.trim() || selectedContactoCliente?.email || null,
