@@ -1040,6 +1040,7 @@ function OTDetalleContent() {
   const usaTecnicosParticipantes = Boolean(plantillaOtConfig?.usa_tecnicos_participantes)
   const usaChecklistPorEquipo = esFlujoDyfSoftys && Boolean(plantillaOtConfig?.usa_checklist_por_equipo)
   const usaChecklistRmsicMespack =
+    detalle?.empresa_id === RMSIC_EMPRESA_ID &&
     !esFlujoDyfSoftys &&
     Boolean(plantillaChecklistIdEfectiva) &&
     (isPreventivaMespack || Boolean(plantillaOtConfig?.usa_checklist_por_horas))
