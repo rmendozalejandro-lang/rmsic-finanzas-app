@@ -435,16 +435,9 @@ export default function CotizacionForm({
       ? deduplicateFormItems(initialItems)
       : [];
 
-    return initial.length > 0
-      ? initial.map((item) =>
-          isHourUnit(item.unidad)
-            ? {
-                ...item,
-                cantidad: decimalHoursToTime(toNumber(item.cantidad)),
-              }
-            : item
-        )
-      : [createEmptyItem()];
+    // Conservar la cantidad decimal original de cotizaciones existentes.
+    // Convertir a H:MM aquí perdería precisión al volver a guardar.
+    return initial.length > 0 ? initial : [createEmptyItem()];
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -700,6 +693,129 @@ export default function CotizacionForm({
       if (!apiKey || !baseUrl) {
         setError("Faltan variables públicas de Supabase.");
         setSaving(false);
+        return;
+      }
+
+      // Las cotizaciones emitidas se actualizan administrativamente sin
+      // reconstruir partidas, cantidades, precios, descuentos ni valores UF.
+      if (isEdit && initialValues.estado !== "borrador") {
+        if (!cotizacionId) {
+          setError("No se encontró el identificador de la cotización.");
+          setSaving(false);
+          return;
+        }
+
+        // No descartar silenciosamente cambios económicos o comerciales.
+        const originalForm = withDefaultEmpresaLogo(initialValues);
+        const cambioEnCabecera = (
+          Object.keys(form) as Array<keyof CotizacionFormValues>
+        ).some((key) => key !== "estado" && form[key] !== originalForm[key]);
+        const originales = deduplicateFormItems(initialItems ?? []);
+        const cambioEnPartidas =
+          JSON.stringify(items) !== JSON.stringify(originales);
+
+        if (cambioEnCabecera || cambioEnPartidas) {
+          setError(
+            "Esta cotización ya fue emitida. Para proteger los valores aprobados, " +
+            "solo puedes actualizar su estado y los antecedentes de aprobación/OC. " +
+            "Descarta los cambios en partidas o condiciones comerciales antes de guardar."
+          );
+          setSaving(false);
+          return;
+        }
+
+        const generarIngreso =
+          form.estado === "aprobada" &&
+          aprobacionFinanciera.generar_ingreso_financiero &&
+          !ingresoGeneradoId;
+
+        if (generarIngreso) {
+          const tieneOc = aprobacionFinanciera.numero_oc.trim().length > 0;
+          const tieneRespaldoSinOc =
+            aprobacionFinanciera.aprobacion_sin_oc &&
+            Boolean(aprobacionFinanciera.tipo_respaldo_aprobacion) &&
+            aprobacionFinanciera.referencia_aprobacion.trim().length > 0;
+          if (!tieneOc && !tieneRespaldoSinOc) {
+            setError("Para generar el ingreso financiero debes ingresar una OC o un respaldo válido de aprobación sin OC.");
+            setSaving(false);
+            return;
+          }
+          if (aprobacionFinanciera.factura_emitida &&
+              (!aprobacionFinanciera.numero_factura.trim() || !aprobacionFinanciera.fecha_factura)) {
+            setError("Para registrar una factura debes ingresar número y fecha.");
+            setSaving(false);
+            return;
+          }
+        }
+
+        const administrativos = {
+          estado: form.estado,
+          updated_by: user.id,
+          ...(form.estado === "aprobada" ? {
+            numero_oc: aprobacionFinanciera.numero_oc.trim() || null,
+            fecha_oc: aprobacionFinanciera.fecha_oc || null,
+            aprobacion_sin_oc: aprobacionFinanciera.aprobacion_sin_oc,
+            tipo_respaldo_aprobacion:
+              aprobacionFinanciera.tipo_respaldo_aprobacion || null,
+            referencia_aprobacion:
+              aprobacionFinanciera.referencia_aprobacion.trim() || null,
+            ...(initialValues.estado !== "aprobada"
+              ? { fecha_aceptacion: new Date().toISOString() }
+              : {}),
+          } : {}),
+        };
+
+        const resp = await fetch(
+          `${baseUrl}/rest/v1/cotizaciones?id=eq.${cotizacionId}&empresa_id=eq.${empresaId}`,
+          {
+            method: "PATCH",
+            headers: {
+              apikey: apiKey,
+              Authorization: `Bearer ${accessToken}`,
+              "Content-Type": "application/json",
+              Prefer: "return=representation",
+            },
+            body: JSON.stringify(administrativos),
+          }
+        );
+        const respuesta = await resp.json().catch(() => null);
+        if (!resp.ok || !Array.isArray(respuesta) || respuesta.length !== 1) {
+          setError(respuesta?.message || respuesta?.error ||
+            "No se pudo actualizar administrativamente la cotización.");
+          setSaving(false);
+          return;
+        }
+
+        // Mantener la generación financiera existente, sin recalcular los ítems.
+        if (generarIngreso) {
+          const { error: ingresoError } = await supabase.rpc(
+            "generar_ingreso_financiero_cotizacion",
+            {
+              p_cotizacion_id: cotizacionId,
+              p_numero_oc: aprobacionFinanciera.numero_oc.trim() || null,
+              p_fecha_oc: aprobacionFinanciera.fecha_oc || null,
+              p_aprobacion_sin_oc: aprobacionFinanciera.aprobacion_sin_oc,
+              p_tipo_respaldo_aprobacion:
+                aprobacionFinanciera.tipo_respaldo_aprobacion || null,
+              p_referencia_aprobacion:
+                aprobacionFinanciera.referencia_aprobacion.trim() || null,
+              p_factura_emitida: aprobacionFinanciera.factura_emitida,
+              p_numero_factura: aprobacionFinanciera.factura_emitida
+                ? aprobacionFinanciera.numero_factura.trim() || null : null,
+              p_fecha_factura: aprobacionFinanciera.factura_emitida
+                ? aprobacionFinanciera.fecha_factura || null : null,
+            }
+          );
+          if (ingresoError) {
+            setError("Los datos administrativos se guardaron, pero no se pudo " +
+              "generar el ingreso financiero: " + ingresoError.message);
+            setSaving(false);
+            return;
+          }
+        }
+
+        router.push(`/cotizaciones/${cotizacionId}`);
+        router.refresh();
         return;
       }
 
