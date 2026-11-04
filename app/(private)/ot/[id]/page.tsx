@@ -4731,7 +4731,11 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
             />
           ) : null}
 
-          {form.requiere_checklist ? (
+          {esChecklistExcepcionRmsic ? (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800">
+              Checklist Mespack no ejecutado (justificado). El motivo se conserva en el informe de la OT.
+            </div>
+          ) : form.requiere_checklist ? (
             <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">
               ✓ Esta OT incluye checklist técnico.
             </div>
