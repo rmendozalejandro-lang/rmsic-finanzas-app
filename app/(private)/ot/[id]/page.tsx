@@ -1043,6 +1043,17 @@ function OTDetalleContent() {
     !esFlujoDyfSoftys &&
     Boolean(plantillaChecklistIdEfectiva) &&
     (isPreventivaMespack || Boolean(plantillaOtConfig?.usa_checklist_por_horas))
+  // La excepción Mespack se conserva en observaciones de cierre para que también aparezca en PDF.
+  // No altera ni inventa respuestas del checklist y solo aplica al flujo RMSIC.
+  const checklistExcepcionPrefijo = 'CHECKLIST NO EJECUTADO (JUSTIFICADO): '
+  const esChecklistExcepcionRmsic = usaChecklistRmsicMespack &&
+    !form.requiere_checklist && form.observaciones_cierre.startsWith(checklistExcepcionPrefijo)
+  const observacionesCierreSinExcepcion = esChecklistExcepcionRmsic
+    ? form.observaciones_cierre.slice(form.observaciones_cierre.indexOf('\n') + 1).trimStart()
+    : form.observaciones_cierre
+  const motivoChecklistNoEjecutado = esChecklistExcepcionRmsic
+    ? form.observaciones_cierre.slice(checklistExcepcionPrefijo.length).split('\n')[0].trim()
+    : ''
   const canShowInformeDyf = esFlujoDyfSoftys || detalle?.empresa_id === DYF_EMPRESA_ID
   const documentoTrabajoLabel = canShowInformeDyf ? 'OM' : 'OT'
   const isUrgencia = tipoCodigoNormalizado.includes('urgencia')
@@ -1916,6 +1927,14 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
       ...prev,
       [field]: value,
     }))
+  }
+
+  const actualizarExcepcionChecklist = (noEjecutado: boolean, motivo = '') => {
+    const observaciones = observacionesCierreSinExcepcion.trim()
+    const nota = noEjecutado
+      ? `${checklistExcepcionPrefijo}${motivo.replace(/[\\r\\n]/g, ' ').slice(0, 500)}${observaciones ? `\\n${observaciones}` : ''}`
+      : observaciones
+    setForm((prev) => ({ ...prev, requiere_checklist: !noEjecutado, observaciones_cierre: nota }))
   }
 
   const validateForm = () => {
@@ -2860,6 +2879,10 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
         throw new Error(validationError)
       }
 
+      if (esChecklistExcepcionRmsic && !motivoChecklistNoEjecutado) {
+        throw new Error('Indica por qué no se ejecutó el checklist Mespack antes de cerrar la OT.')
+      }
+
       if (enviarEmail && !destinatarioInformeId) {
         throw new Error('Selecciona el destinatario del informe antes de cerrar y enviar.')
       }
@@ -2918,6 +2941,22 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
         throw new Error(
           'El avance quedó guardado, pero no se pudo cerrar: debes completar "Trabajo realizado".'
         )
+      }
+
+      if (usaChecklistRmsicMespack) {
+        const { count, error: checklistRmsicError } = await supabase
+          .from('ot_respuestas_checklist')
+          .select('id', { count: 'exact', head: true })
+          .eq('ot_id', otId)
+        if (checklistRmsicError) {
+          throw new Error(`No se pudo verificar el checklist Mespack: ${checklistRmsicError.message}`)
+        }
+        if (esChecklistExcepcionRmsic && (count ?? 0) > 0) {
+          throw new Error('Hay respuestas de checklist registradas. No corresponde marcarlo como no ejecutado.')
+        }
+        if (!esChecklistExcepcionRmsic && (count ?? 0) === 0) {
+          throw new Error('Esta OT tiene el checklist Mespack pendiente. Regístralo o indica No ejecutado con una justificación.')
+        }
       }
 
       if (requiresChecklistForClose) {
@@ -3774,7 +3813,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
             empresaId={detalle.empresa_id}
             currentUserId={currentUserId}
             initialPlantillaId={plantillaChecklistIdEfectiva}
-            requiereChecklist={form.requiere_checklist || isPreventivaMespack}
+            requiereChecklist={form.requiere_checklist || (isPreventivaMespack && !esChecklistExcepcionRmsic)}
             onChanged={() => void loadData(false)}
           />
         ) : null}
@@ -3972,7 +4011,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
           empresaId={detalle.empresa_id}
           currentUserId={currentUserId}
           plantillaId={plantillaChecklistIdEfectiva}
-          requiereChecklist={form.requiere_checklist || usaChecklistPorEquipo || isPreventivaMespack}
+          requiereChecklist={form.requiere_checklist || usaChecklistPorEquipo || (isPreventivaMespack && !esChecklistExcepcionRmsic)}
           tipoEquipoPermitido={plantillaOtConfig?.tipo_equipo_permitido}
           tipoEquipoLabel={filtroTipoEquipoLabel}
           equipos={equiposAsociados.map((item, index) => {
@@ -4007,7 +4046,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
             empresaId={detalle.empresa_id}
             currentUserId={currentUserId}
             initialPlantillaId={plantillaChecklistIdEfectiva}
-            requiereChecklist={form.requiere_checklist || usaChecklistPorEquipo || isPreventivaMespack}
+            requiereChecklist={form.requiere_checklist || usaChecklistPorEquipo || (isPreventivaMespack && !esChecklistExcepcionRmsic)}
             onChanged={() => void loadData(false)}
           />
         ) : null}
@@ -5949,7 +5988,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
         empresaId={detalle.empresa_id}
         currentUserId={currentUserId}
         plantillaId={plantillaChecklistIdEfectiva}
-        requiereChecklist={form.requiere_checklist || usaChecklistPorEquipo || isPreventivaMespack}
+        requiereChecklist={form.requiere_checklist || usaChecklistPorEquipo || (isPreventivaMespack && !esChecklistExcepcionRmsic)}
         tipoEquipoPermitido={plantillaOtConfig?.tipo_equipo_permitido}
         tipoEquipoLabel={filtroTipoEquipoLabel}
         equipos={equiposAsociados.map((item, index) => {
@@ -5984,7 +6023,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
           empresaId={detalle.empresa_id}
           currentUserId={currentUserId}
           initialPlantillaId={plantillaChecklistIdEfectiva}
-          requiereChecklist={form.requiere_checklist || usaChecklistPorEquipo || isPreventivaMespack}
+          requiereChecklist={form.requiere_checklist || usaChecklistPorEquipo || (isPreventivaMespack && !esChecklistExcepcionRmsic)}
           onChanged={() => void loadData(false)}
         />
       ) : null}
@@ -6252,13 +6291,42 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
             />
           </div>
 
+          {usaChecklistRmsicMespack && !isClosed ? (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 md:col-span-2">
+              <label className="flex items-start gap-3 text-sm font-medium text-slate-800">
+                <input
+                  type="checkbox"
+                  checked={esChecklistExcepcionRmsic}
+                  onChange={(e) => actualizarExcepcionChecklist(e.target.checked)}
+                  className="mt-1 h-4 w-4 accent-slate-900"
+                />
+                Checklist Mespack no ejecutado (excepción justificada)
+              </label>
+              <p className="mt-2 text-xs text-slate-700">El checklist sigue siendo obligatorio por defecto. Esta excepción no registra tareas como realizadas y queda en el informe de la OT.</p>
+              {esChecklistExcepcionRmsic ? (
+                <div className="mt-3">
+                  <label className="mb-1 block text-sm font-medium text-slate-800">Motivo obligatorio</label>
+                  <textarea
+                    value={motivoChecklistNoEjecutado}
+                    onChange={(e) => actualizarExcepcionChecklist(true, e.target.value)}
+                    rows={2}
+                    placeholder="Indica por qué no se ejecutó la pauta de checklist"
+                    className="w-full rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm text-slate-900"
+                  />
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
           <div>
             <label className="mb-2 block text-sm font-medium text-slate-700">
               Observaciones de cierre
             </label>
             <textarea
-              value={form.observaciones_cierre}
-              onChange={(e) => handleChange('observaciones_cierre', e.target.value)}
+              value={observacionesCierreSinExcepcion}
+              onChange={(e) => handleChange('observaciones_cierre', esChecklistExcepcionRmsic
+                ? `${checklistExcepcionPrefijo}${motivoChecklistNoEjecutado}\\n${e.target.value}`
+                : e.target.value)}
               rows={4}
               disabled={isClosed}
               placeholder="Observaciones finales de entrega, pendientes o comentarios del cierre."
@@ -6325,6 +6393,18 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
                 : 'Opcional: puedes guardar firma del cliente o tecnico, pero no bloquea el cierre rapido.'
             }
           />
+
+          {usaChecklistRmsicMespack ? (
+            <CierreStatusItem
+              label="Checklist Mespack RMSIC"
+              ok={esChecklistExcepcionRmsic}
+              detail={esChecklistExcepcionRmsic
+                ? motivoChecklistNoEjecutado
+                  ? `No ejecutado (justificado): ${motivoChecklistNoEjecutado}`
+                  : 'Debes indicar el motivo de la excepción antes del cierre.'
+                : 'Checklist requerido. Si no se ejecutó, registra la excepción justificada en este cierre.'}
+            />
+          ) : null}
 
           {usaChecklistPorEquipo ? (
           <CierreStatusItem
