@@ -1052,20 +1052,9 @@ function OTVivaContent() {
     try {
       const now = new Date().toISOString()
 
-      // La OT usa timestamptz para hora_inicio/hora_termino.
-      // Registramos primero la hora oficial de retiro y solo después cerramos la sesión Viva,
-      // evitando dejar la sesión finalizada si falla el registro horario de la OT.
-      if (ot) {
-        const { error: horaError } = await supabase
-          .from('ot_ordenes_trabajo')
-          .update({ hora_termino: now })
-          .eq('id', ot.id)
-          .eq('empresa_id', ot.empresa_id)
-
-        if (horaError) {
-          throw new Error(`No se pudo registrar la hora de término en la OT: ${horaError.message}`)
-        }
-      }
+      // Cerrar una sesion Viva no modifica los horarios oficiales de la OT.
+      // El cierre tecnico consolida la jornada por separado; asi evitamos
+      // sobrescribir horas aprobadas y estados parciales si falla una escritura.
 
       const { error: finishError } = await supabase
         .from('asistente_sesiones')
@@ -1079,24 +1068,22 @@ function OTVivaContent() {
 
       if (finishError) {
         throw new Error(
-          `La salida quedó registrada, pero no se confirmó el cierre de sesión Viva: ${finishError.message}`
+          `No se confirmó el cierre de sesión Viva: ${finishError.message}`
         )
       }
 
-      // Confirmación real desde Supabase antes de indicar éxito al técnico.
-      const [sesionConfirmada, otConfirmada] = await Promise.all([
-        supabase.from('asistente_sesiones').select('estado,finalizado_at')
-          .eq('id', sesionActiva.id).single(),
-        supabase.from('ot_ordenes_trabajo').select('hora_termino')
-          .eq('id', ot!.id).eq('empresa_id', ot!.empresa_id).single(),
-      ])
-      if (sesionConfirmada.error || otConfirmada.error ||
-          sesionConfirmada.data?.estado !== 'finalizada' ||
-          !sesionConfirmada.data?.finalizado_at || !otConfirmada.data?.hora_termino) {
-        throw new Error('No se pudo verificar el guardado. Revisa el estado antes de salir de planta.')
+      // Confirmar el cierre de la sesion sin depender del horario de la OT.
+      const { data: sesionConfirmada, error: confirmError } = await supabase
+        .from('asistente_sesiones')
+        .select('estado,finalizado_at')
+        .eq('id', sesionActiva.id)
+        .single()
+      if (confirmError || sesionConfirmada?.estado !== 'finalizada' ||
+          !sesionConfirmada?.finalizado_at) {
+        throw new Error('No se pudo verificar el cierre de la sesion. Revisa el estado antes de salir de planta.')
       }
       await loadAll()
-      setSuccess('Salida registrada y sesión Viva finalizada. Falta finalizar el trabajo técnico y realizar el cierre administrativo de la OT.')
+      setSuccess('Sesión Viva finalizada. Los horarios oficiales de la OT no se modificaron; verifica el cierre técnico y administrativo por separado.')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo finalizar la sesión.')
       await loadAll()
