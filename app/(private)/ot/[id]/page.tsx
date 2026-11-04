@@ -868,6 +868,7 @@ function OTDetalleContent() {
   const [showContinuidad, setShowContinuidad] = useState(false)
   const [observacionContinuidad, setObservacionContinuidad] = useState('')
   const [closingOt, setClosingOt] = useState(false)
+  const [savingChecklistExcepcion, setSavingChecklistExcepcion] = useState(false)
   const [autorizandoEdicionTecnica, setAutorizandoEdicionTecnica] = useState(false)
   const [sendingInforme, setSendingInforme] = useState(false)
   const [deletingOt, setDeletingOt] = useState(false)
@@ -2857,6 +2858,54 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
       setEmailError(err instanceof Error ? err.message : 'No se pudo enviar el informe OM.')
     } finally {
       setSendingInforme(false)
+    }
+  }
+
+  const guardarExcepcionChecklistSinCerrar = async () => {
+    if (!usaChecklistRmsicMespack || !detalle || isClosed) {
+      setCierreError('Esta operación solo está disponible para una OT Mespack de RMSIC abierta.')
+      return
+    }
+    if (!esChecklistExcepcionRmsic || !motivoChecklistNoEjecutado.trim()) {
+      setCierreError('Marca Checklist no ejecutado e indica el motivo antes de guardar.')
+      return
+    }
+    setSavingChecklistExcepcion(true)
+    setCierreError('')
+    setCierreSuccess('')
+    try {
+      const { count, error: checklistError } = await supabase
+        .from('ot_respuestas_checklist')
+        .select('id', { count: 'exact', head: true })
+        .eq('ot_id', otId)
+      if (checklistError) throw new Error(checklistError.message)
+      if ((count ?? 0) > 0) {
+        throw new Error('La OT ya contiene respuestas del checklist. No se puede registrar como no ejecutado.')
+      }
+      const { data: verificacion, error: updateError } = await supabase
+        .from('ot_ordenes_trabajo')
+        .update({
+          requiere_checklist: false,
+          observaciones_cierre: form.observaciones_cierre,
+        })
+        .eq('id', otId)
+        .eq('empresa_id', RMSIC_EMPRESA_ID)
+        .eq('activo', true)
+        .is('deleted_at', null)
+        .is('fecha_cierre', null)
+        .select('id, requiere_checklist, observaciones_cierre')
+        .maybeSingle()
+      if (updateError) throw new Error(updateError.message)
+      if (!verificacion || verificacion.requiere_checklist !== false ||
+          verificacion.observaciones_cierre !== form.observaciones_cierre) {
+        throw new Error('No se pudo confirmar la persistencia de la justificación.')
+      }
+      await loadData(false)
+      setCierreSuccess('Justificación guardada y verificada. La OT permanece abierta.')
+    } catch (err) {
+      setCierreError(err instanceof Error ? err.message : 'No se pudo guardar la justificación.')
+    } finally {
+      setSavingChecklistExcepcion(false)
     }
   }
 
@@ -6465,6 +6514,16 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
         ) : null}
 
         <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+          {usaChecklistRmsicMespack && !isClosed ? (
+            <button
+              type="button"
+              onClick={() => void guardarExcepcionChecklistSinCerrar()}
+              disabled={savingChecklistExcepcion || closingOt || !esChecklistExcepcionRmsic || !motivoChecklistNoEjecutado.trim()}
+              className="inline-flex items-center justify-center rounded-xl border border-amber-400 bg-amber-50 px-5 py-3 text-sm font-semibold text-slate-900 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {savingChecklistExcepcion ? 'Guardando justificación...' : 'Guardar justificación sin cerrar OT'}
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={() => void loadData(false)}
