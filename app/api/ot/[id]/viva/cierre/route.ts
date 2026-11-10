@@ -369,7 +369,7 @@ export async function POST(
     // Los ensayos de conectividad de la aplicación no son evidencia de mantenimiento
     // industrial y no deben aparecer en informes entregables al cliente.
     const esEventoOperativoDeLaApp = (texto: string) =>
-      /sincronizaci[oó]n|prueba offline|modo offline|navegaci[oó]n offline|memoria local pendiente|pendiente de sincronizaci[oó]n|reintento de sincronizaci[oó]n/i.test(texto)
+      /(?:prueba|reintento|pendiente|error|fallo|cola|registro).*?(?:offline|sincronizaci[oó]n|navegaci[oó]n de OT Viva)|(?:prueba offline|modo offline|navegaci[oó]n offline|memoria local pendiente|pendiente de sincronizaci[oó]n|prueba controlada de coexistencia entre memoria local)/i.test(texto)
 
     const eventos = (eventosResp.data || [])
       .filter((evento) =>
