@@ -772,6 +772,7 @@ function OTPageContent() {
     }
 
     setSelectedOfflineOtId(otId)
+    window.sessionStorage.setItem(`tralixia_terrain_selected_ot_${empresaActivaId}_${currentUserId}`, otId)
     setOfflineSelectionNotice('')
 
     try {
@@ -784,18 +785,26 @@ function OTPageContent() {
   }
 
   useEffect(() => {
-    if (!isOffline || !empresaActivaId || !currentUserId) return
+    if (!empresaActivaId || !currentUserId) return
 
-    // Si la navegación llegó desde un detalle sin señal, recuperar directamente
-    // el editor local de esa OT y conservar sus avances pendientes.
-    const otId = new URL(window.location.href).searchParams.get('offline_ot')
+    // Conservar la OT seleccionada aunque el navegador recargue la pantalla
+    // al volver internet. Solo se usa una OT ya preparada para este contexto.
+    const key = `tralixia_terrain_selected_ot_${empresaActivaId}_${currentUserId}`
+    const requested = new URL(window.location.href).searchParams.get('offline_ot')
+    const otId = requested || window.sessionStorage.getItem(key)
     if (!otId) return
 
-    selectOfflineOt(otId)
-    window.history.replaceState(window.history.state, '', '/ot')
-  }, [isOffline, empresaActivaId, currentUserId])
+    const detail = findCachedOTDetail(empresaActivaId, currentUserId, otId)
+    if (detail) {
+      selectOfflineOt(otId)
+    } else {
+      window.sessionStorage.removeItem(key)
+    }
+    if (requested) window.history.replaceState(window.history.state, '', '/ot')
+  }, [empresaActivaId, currentUserId])
 
   const volverAlListadoOffline = () => {
+    window.sessionStorage.removeItem(`tralixia_terrain_selected_ot_${empresaActivaId}_${currentUserId}`)
     setSelectedOfflineOtId('')
     setOfflineDraftSuccess('')
   }
