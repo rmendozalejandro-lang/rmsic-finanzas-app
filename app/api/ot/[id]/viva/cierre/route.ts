@@ -438,7 +438,40 @@ ${(evidenciasResp.data || [])
       body: JSON.stringify({
         model: openAiModel,
         store: false,
-        max_output_tokens: 1800,
+        max_output_tokens: 4000,
+        text: {
+          format: {
+            type: 'json_schema',
+            name: 'ot_viva_cierre',
+            strict: true,
+            schema: {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                diagnostico: { type: 'string' },
+                causa_probable: { type: 'string' },
+                trabajo_realizado: { type: 'string' },
+                hallazgos: { type: 'string' },
+                resultado_servicio: { type: 'string' },
+                conclusiones_tecnicas: { type: 'string' },
+                recomendaciones: { type: 'string' },
+                observaciones_cierre: { type: 'string' },
+                pendientes: { type: 'string' },
+              },
+              required: [
+                'diagnostico',
+                'causa_probable',
+                'trabajo_realizado',
+                'hallazgos',
+                'resultado_servicio',
+                'conclusiones_tecnicas',
+                'recomendaciones',
+                'observaciones_cierre',
+                'pendientes',
+              ],
+            },
+          },
+        },
         input: [
           { role: 'developer', content: developerInstructions },
           { role: 'user', content: userInput },
@@ -455,14 +488,21 @@ ${(evidenciasResp.data || [])
       )
     }
 
+    if (aiData?.status === 'incomplete') {
+      return jsonError('El borrador superó el límite de generación. Los registros originales siguen guardados. Intenta nuevamente.', 502)
+    }
+
     const texto = extraerTextoRespuesta(aiData)
-    if (!texto) return jsonError('Tralixia no devolvió un borrador utilizable.', 500)
+    if (!texto) return jsonError('Tralixia no devolvió un borrador utilizable. Los registros siguen guardados.', 502)
 
     let parsed: Partial<CierreDraft>
     try {
-      parsed = JSON.parse(limpiarJson(texto))
+      parsed = JSON.parse(limpiarJson(texto)) as Partial<CierreDraft>
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        throw new Error('Estructura no válida')
+      }
     } catch {
-      return jsonError('El borrador generado no pudo estructurarse. Intenta nuevamente.', 502)
+      return jsonError('El borrador no pudo estructurarse. Los eventos permanecen guardados; intenta nuevamente.', 502)
     }
 
     const borrador: CierreDraft = {
