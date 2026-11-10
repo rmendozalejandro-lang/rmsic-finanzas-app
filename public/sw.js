@@ -62,7 +62,7 @@ self.addEventListener("fetch", (event) => {
 
           // Los detalles individuales no contienen el editor offline. Redirigir
           // al listado preparado y conservar la OT solicitada para seleccionarla.
-          if (/^\\/ot\\/[^/]+$/.test(url.pathname)) {
+          if (url.pathname.startsWith("/ot/") && url.pathname.split("/").length === 3) {
             const preparedOtRoute = await terrainCache.match("/ot");
             if (preparedOtRoute) {
               const otId = url.pathname.split("/")[2];
