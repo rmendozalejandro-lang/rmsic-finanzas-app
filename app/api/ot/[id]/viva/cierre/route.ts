@@ -366,8 +366,17 @@ export async function POST(
       if (decision.evento_id) decisionesVigentes.set(decision.evento_id, decision)
     }
 
+    // Los ensayos de conectividad de la aplicación no son evidencia de mantenimiento
+    // industrial y no deben aparecer en informes entregables al cliente.
+    const esEventoOperativoDeLaApp = (texto: string) =>
+      /sincronizaci[oó]n|prueba offline|modo offline|navegaci[oó]n offline|memoria local pendiente|pendiente de sincronizaci[oó]n|reintento de sincronizaci[oó]n/i.test(texto)
+
     const eventos = (eventosResp.data || [])
-      .filter((evento) => evento.incluir_resumen !== false && evento.tipo_evento !== 'respuesta_ia')
+      .filter((evento) =>
+        evento.incluir_resumen !== false &&
+        evento.tipo_evento !== 'respuesta_ia' &&
+        !esEventoOperativoDeLaApp(evento.texto_original || '')
+      )
       .map((evento, index) => {
         const decision = decisionesVigentes.get(evento.id)
         const estado = decision
@@ -382,6 +391,8 @@ Eres Tralixia preparando el borrador de cierre de una orden de trabajo técnica 
 
 Reglas obligatorias:
 - Usa únicamente el contexto entregado de esta OT.
+- Ignora los eventos de pruebas de la aplicación (offline, sincronización, cola local, navegación o depuración); no pertenecen a la intervención industrial del cliente.
+- Mantén separadas una decisión humana confirmada de otra decisión posterior que la haya descartado; ante registros contradictorios, describe la incertidumbre y no declares una causa vigente sin respaldo actual.
 - No inventes trabajos, resultados, causas, repuestos, mediciones ni pruebas.
 - La IA propone el borrador; el técnico lo revisará y aprobará antes de aplicarlo.
 - Las decisiones humanas estructuradas son la fuente de verdad para hipótesis confirmadas o descartadas.
