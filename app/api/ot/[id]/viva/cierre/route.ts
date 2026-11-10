@@ -184,6 +184,7 @@ export async function POST(
 
       const seleccionadas = Array.from(new Set(body.evidenciasSeleccionadas || []))
       let evidenciasCopiadas = 0
+      const evidenciasNoCopiadas: string[] = []
 
       if (seleccionadas.length > 0) {
         const evidenciasResp = await admin
@@ -225,7 +226,10 @@ export async function POST(
         )
 
         for (const evidencia of evidenciasResp.data || []) {
-          if (!evidencia.storage_bucket || !evidencia.storage_path) continue
+          if (!evidencia.storage_bucket || !evidencia.storage_path) {
+            evidenciasNoCopiadas.push(evidencia.id)
+            continue
+          }
 
           const dedupeKey = `${evidencia.archivo_nombre || ''}|${evidencia.descripcion || ''}`
           if (existentes.has(dedupeKey)) continue
@@ -234,7 +238,10 @@ export async function POST(
             .from(evidencia.storage_bucket)
             .download(evidencia.storage_path)
 
-          if (download.error || !download.data) continue
+          if (download.error || !download.data) {
+            evidenciasNoCopiadas.push(evidencia.id)
+            continue
+          }
 
           const originalName = evidencia.archivo_nombre || `evidencia-${evidencia.id}`
           const safeName = originalName
@@ -252,7 +259,10 @@ export async function POST(
               upsert: false,
             })
 
-          if (upload.error) continue
+          if (upload.error && !/already exists|duplicate/i.test(upload.error.message || '')) {
+            evidenciasNoCopiadas.push(evidencia.id)
+            continue
+          }
 
           const { data: publicData } = admin.storage
             .from('ot-evidencias')
@@ -280,7 +290,9 @@ export async function POST(
             subido_por: user.id,
           })
 
-          if (!insert.error) {
+          if (insert.error) {
+            evidenciasNoCopiadas.push(evidencia.id)
+          } else {
             evidenciasCopiadas += 1
             existentes.add(dedupeKey)
           }
@@ -290,6 +302,7 @@ export async function POST(
       return jsonResponse({
         ok: true,
         evidenciasCopiadas,
+        evidenciasNoCopiadas,
         mensaje: 'Borrador aplicado a la OT principal. Ya puede revisarse y pasar a firma del cliente.',
       })
     }
