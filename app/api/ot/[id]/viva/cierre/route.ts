@@ -214,31 +214,19 @@ export async function POST(
 
         const existentesResp = await admin
           .from('ot_evidencias')
-          .select('archivo_nombre,descripcion')
+          .select('archivo_url')
           .eq('ot_id', ot.id)
 
         if (existentesResp.error) return jsonError(existentesResp.error.message, 500)
 
+        // La identidad de la evidencia es su ID original en OT Viva, no el
+        // nombre o la descripción: dos fotos distintas pueden compartir ambos.
         const existentes = new Set(
-          (existentesResp.data || []).map(
-            (item) => `${item.archivo_nombre || ''}|${item.descripcion || ''}`
-          )
+          (existentesResp.data || []).map((item) => item.archivo_url || '')
         )
 
         for (const evidencia of evidenciasResp.data || []) {
           if (!evidencia.storage_bucket || !evidencia.storage_path) {
-            evidenciasNoCopiadas.push(evidencia.id)
-            continue
-          }
-
-          const dedupeKey = `${evidencia.archivo_nombre || ''}|${evidencia.descripcion || ''}`
-          if (existentes.has(dedupeKey)) continue
-
-          const download = await admin.storage
-            .from(evidencia.storage_bucket)
-            .download(evidencia.storage_path)
-
-          if (download.error || !download.data) {
             evidenciasNoCopiadas.push(evidencia.id)
             continue
           }
@@ -250,8 +238,22 @@ export async function POST(
             .replace(/[^a-zA-Z0-9._-]+/g, '-')
             .replace(/-+/g, '-')
             .toLowerCase()
-
           const targetPath = `${ot.empresa_id}/${ot.id}/viva-${evidencia.id}-${safeName}`
+          const { data: publicData } = admin.storage
+            .from('ot-evidencias')
+            .getPublicUrl(targetPath)
+
+          if (existentes.has(publicData.publicUrl)) continue
+
+          const download = await admin.storage
+            .from(evidencia.storage_bucket)
+            .download(evidencia.storage_path)
+
+          if (download.error || !download.data) {
+            evidenciasNoCopiadas.push(evidencia.id)
+            continue
+          }
+
           const upload = await admin.storage
             .from('ot-evidencias')
             .upload(targetPath, download.data, {
@@ -263,10 +265,6 @@ export async function POST(
             evidenciasNoCopiadas.push(evidencia.id)
             continue
           }
-
-          const { data: publicData } = admin.storage
-            .from('ot-evidencias')
-            .getPublicUrl(targetPath)
 
           const tipo = tipoOtEvidencia(usoPorEvidencia.get(evidencia.id))
           const ordenResp = await admin
@@ -294,7 +292,7 @@ export async function POST(
             evidenciasNoCopiadas.push(evidencia.id)
           } else {
             evidenciasCopiadas += 1
-            existentes.add(dedupeKey)
+            existentes.add(publicData.publicUrl)
           }
         }
       }
