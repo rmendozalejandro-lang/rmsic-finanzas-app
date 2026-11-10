@@ -809,6 +809,35 @@ function OTPageContent() {
     setOfflineDraftSuccess('')
   }
 
+  const abrirDetalleOficial = () => {
+    if (!selectedOfflineOtId || !empresaActivaId || !currentUserId) return
+    if (!navigator.onLine) {
+      alert('Sin conexión. El cierre, la firma y el PDF oficial requieren internet.')
+      return
+    }
+    if (otHasPendingLocalChanges(empresaActivaId, currentUserId, selectedOfflineOtId)) {
+      alert('Esta OT todavía tiene avances locales pendientes de sincronizar. No se abrirá el cierre oficial hasta confirmar su envío.')
+      setOfflinePendingRefresh((current) => current + 1)
+      return
+    }
+    // No descartar ediciones que el técnico aún no ha guardado.
+    const saved = window.localStorage.getItem(`tralixia_ot_draft_${empresaActivaId}_${currentUserId}_${selectedOfflineOtId}`)
+    if (saved) {
+      try {
+        const savedDraft = JSON.parse(saved) as OTOfflineDraft
+        if (JSON.stringify(savedDraft) !== JSON.stringify(offlineDraft)) {
+          alert('Hay cambios en el formulario local que todavía no se han guardado. Guarda el avance antes de abrir la OT oficial.')
+          return
+        }
+      } catch {
+        alert('No se pudo comprobar el último borrador local. Revísalo antes de abrir la OT oficial.')
+        return
+      }
+    }
+    window.sessionStorage.removeItem(`tralixia_terrain_selected_ot_${empresaActivaId}_${currentUserId}`)
+    window.location.assign(`/ot/${encodeURIComponent(selectedOfflineOtId)}`)
+  }
+
   const guardarAvanceOffline = () => {
     if (!selectedOfflineDetail || !currentUserId) return
     const offlineStructure = getOfflineStructure(selectedOfflineDetail)
@@ -1584,7 +1613,7 @@ function OTPageContent() {
                 )}
                 <div className="mt-5 flex flex-wrap gap-3">
                   <button type="button" onClick={guardarAvanceOffline} className="rounded-xl bg-[#163A5F] px-4 py-2 text-sm font-semibold text-white">Guardar avance local</button>
-                  <button type="button" onClick={() => alert('Esta acción requiere conexión.')} className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700">Cerrar / firmar / PDF oficial</button>
+                  <button type="button" onClick={abrirDetalleOficial} className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700">{isOffline ? 'Cerrar / firmar / PDF oficial (requiere conexión)' : 'Abrir OT principal / firma / PDF'}</button>
                 </div>
               </section>
             </div>
