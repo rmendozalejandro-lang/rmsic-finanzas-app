@@ -24,6 +24,7 @@ import {
   prepareHarasPartosRegistry,
   upsertTerrainModule,
   readTerrainRegistry,
+  readCurrentTerrainRegistry,
   type TerrainRegistry,
 } from '../../lib/offline/terrain-registry'
 import { isOTOfflineOperative, isOTPendingPayload, mergeOTOfflineCache, OT_PENDING_ACTION, readOTOfflineCache, readOTOfflinePreparationStatus, writeOTOfflinePreparationStatus, type OTOfflinePendingPayload } from '../../lib/offline/ot'
@@ -295,6 +296,31 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
   useEffect(() => {
     const checkSessionAndLoadEmpresas = async () => {
       try {
+        // En terreno no se deben ejecutar consultas ni redirigir a login
+        // cuando ya existe un contexto OT preparado para esta empresa.
+        // Esto NO otorga permisos de servidor: solo habilita la vista local.
+        const isTerrainOtRoute = pathname === OT_ROUTE || /^\\/ot\\/[^/]+$/.test(pathname)
+        if (typeof navigator !== 'undefined' && !navigator.onLine && isTerrainOtRoute) {
+          const registry = readCurrentTerrainRegistry()
+          const savedCompanyId = window.localStorage.getItem(STORAGE_ID_KEY)
+          const prepared = registry &&
+            registry.empresaId === savedCompanyId &&
+            registry.modules.some((module) => module.module === OT_MODULE) &&
+            readOTOfflineCache(registry.empresaId, registry.userId)?.detalles.length
+
+          if (registry && prepared) {
+            setEmpresaActivaId(registry.empresaId)
+            setEmpresaActivaNombreLocal(window.localStorage.getItem(STORAGE_NAME_KEY) || '')
+            setUsuarioId(registry.userId)
+            setUsuarioRol('tecnico_ot')
+            setIsSuperAdmin(false)
+            setTerrainRegistry(registry)
+            setRolResuelto(true)
+          }
+          setCheckingSession(false)
+          return
+        }
+
         const { data } = await supabase.auth.getSession()
 
         if (!data.session) {
@@ -406,7 +432,7 @@ if (empresaGuardadaValida) {
     }
 
     void checkSessionAndLoadEmpresas()
-  }, [router])
+  }, [router, pathname])
 
   const preparePartosForTerrain = useCallback(async () => {
     if (!isOnline || !empresaActivaId || !usuarioId || !rolResuelto ||
