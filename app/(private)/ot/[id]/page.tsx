@@ -3172,7 +3172,7 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
     : ''
 
 
-  if (loading) {
+  if (loading && !isOffline) {
     return (
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         Cargando detalle de la OT...
@@ -3191,8 +3191,8 @@ if (tipoSeleccionado?.codigo === 'preventiva_general') {
             Para trabajar una OT sin conexión usa el listado preparado en /ot, donde se muestra la vista operativa dinámica en la misma pantalla.
           </p>
         </div>
-        <Link href="/ot" className="inline-flex rounded-xl bg-[#163A5F] px-4 py-2 text-sm font-semibold text-white no-underline">
-          Volver a OT
+        <Link href={`/ot?offline_ot=${encodeURIComponent(otId)}`} className="inline-flex rounded-xl bg-[#163A5F] px-4 py-2 text-sm font-semibold text-white no-underline">
+          Abrir esta OT en modo terreno
         </Link>
       </div>
     )
