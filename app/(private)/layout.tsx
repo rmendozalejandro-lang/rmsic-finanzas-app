@@ -299,7 +299,7 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
         // En terreno no se deben ejecutar consultas ni redirigir a login
         // cuando ya existe un contexto OT preparado para esta empresa.
         // Esto NO otorga permisos de servidor: solo habilita la vista local.
-        const isTerrainOtRoute = pathname === OT_ROUTE || /^\\/ot\\/[^/]+$/.test(pathname)
+        const isTerrainOtRoute = pathname === OT_ROUTE || (pathname.startsWith('/ot/') && pathname.split('/').length === 3)
         if (typeof navigator !== 'undefined' && !navigator.onLine && isTerrainOtRoute) {
           const registry = readCurrentTerrainRegistry()
           const savedCompanyId = window.localStorage.getItem(STORAGE_ID_KEY)
