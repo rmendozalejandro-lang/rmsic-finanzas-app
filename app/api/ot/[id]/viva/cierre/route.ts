@@ -366,6 +366,19 @@ export async function POST(
       if (decision.evento_id) decisionesVigentes.set(decision.evento_id, decision)
     }
 
+    const hipotesisConfirmadasVigentes = (eventosResp.data || []).filter(
+      (evento) =>
+        evento.tipo_evento === 'hipotesis' &&
+        decisionesVigentes.get(evento.id)?.decision === 'confirmada'
+    )
+    const resumenDecisiones = (eventosResp.data || [])
+      .filter((evento) => evento.tipo_evento === 'hipotesis')
+      .map((evento) => {
+        const vigente = decisionesVigentes.get(evento.id)
+        return `Hipótesis ID ${evento.id}: ${evento.texto_original} | Estado vigente: ${vigente?.decision || 'sin decisión humana'}`
+      })
+      .join('\n')
+
     // Los ensayos de conectividad de la aplicación no son evidencia de mantenimiento
     // industrial y no deben aparecer en informes entregables al cliente.
     const esEventoOperativoDeLaApp = (texto: string) =>
@@ -396,6 +409,8 @@ Reglas obligatorias:
 - No inventes trabajos, resultados, causas, repuestos, mediciones ni pruebas.
 - La IA propone el borrador; el técnico lo revisará y aprobará antes de aplicarlo.
 - Las decisiones humanas estructuradas son la fuente de verdad para hipótesis confirmadas o descartadas.
+- Nunca atribuyas a una hipótesis la decisión humana asociada a otra hipótesis diferente. Solo el listado de estados vigentes autoriza afirmaciones de confirmación o descarte.
+- Si ninguna hipótesis conserva una decisión vigente de confirmación, el campo causa_probable debe estar vacío; describe hipótesis abiertas en pendientes.
 - No presentes como diagnóstico una hipótesis descartada.
 - Si no existe causa confirmada por evidencia o decisión humana, deja causa_probable vacía.
 - Conserva pendientes, restricciones y labores que no pudieron realizarse.
@@ -429,6 +444,9 @@ OT: ${ot.folio || ot.id}
 Título: ${ot.titulo || 'No informado'}
 Solicitud original: ${ot.descripcion_solicitud || 'No informada'}
 Caso OT Viva: ${casoResp.data.titulo || 'Sin título'}
+
+Estados vigentes por hipótesis (no mezclar las decisiones de una hipótesis con otra):
+${resumenDecisiones || 'No hay hipótesis registradas.'}
 
 Eventos relevantes de la intervención:
 ${eventos || 'No hay eventos relevantes registrados.'}
@@ -531,7 +549,7 @@ ${(evidenciasResp.data || [])
 
     const borrador: CierreDraft = {
       diagnostico: textoSeguro(parsed.diagnostico),
-      causa_probable: textoSeguro(parsed.causa_probable),
+      causa_probable: hipotesisConfirmadasVigentes.length > 0 ? textoSeguro(parsed.causa_probable) : '',
       trabajo_realizado: textoSeguro(parsed.trabajo_realizado),
       hallazgos: textoSeguro(parsed.hallazgos),
       resultado_servicio: textoSeguro(parsed.resultado_servicio),
