@@ -940,9 +940,17 @@ function OTVivaContent() {
       if (!response.ok) throw new Error(data?.error || 'No fue posible aplicar el cierre a la OT principal.')
 
       setCierreAplicado(true)
+      const fallidas = Array.isArray(data?.evidenciasNoCopiadas)
+        ? data.evidenciasNoCopiadas.length
+        : 0
       setSuccess(
-        `Borrador aplicado a la OT principal${data?.evidenciasCopiadas ? ` y ${data.evidenciasCopiadas} evidencia(s) seleccionada(s)` : ''}. Revísala antes de solicitar la firma.`
+        `Borrador aplicado a la OT principal. ${evidenciasCierre.length > 0
+          ? `${data?.evidenciasCopiadas || 0} evidencia(s) copiada(s).`
+          : 'No seleccionaste evidencias para el informe.'} Revísala antes de solicitar la firma.`
       )
+      if (fallidas > 0) {
+        setError(`${fallidas} evidencia(s) no se copiaron a la OT principal. Permanecen guardadas en OT Viva: revisa las seleccionadas y vuelve a intentar su transferencia.`)
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No fue posible aplicar el cierre a la OT principal.')
     } finally {
