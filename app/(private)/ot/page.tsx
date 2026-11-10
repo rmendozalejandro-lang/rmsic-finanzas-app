@@ -1239,19 +1239,19 @@ function OTPageContent() {
         </div>
       </div>
 
-      {loading ? (
+      {loading && !(selectedOfflineOtId && selectedOfflineDetail) ? (
         <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
           Cargando órdenes de trabajo...
         </div>
-      ) : error ? (
+      ) : error && !(selectedOfflineOtId && selectedOfflineDetail) ? (
         <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-sm text-red-700 shadow-sm">
           {error}
         </div>
-      ) : otsFiltradas.length === 0 ? (
+      ) : otsFiltradas.length === 0 && !(selectedOfflineOtId && selectedOfflineDetail) ? (
         <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-600 shadow-sm">
           No se encontraron OT con los filtros seleccionados.
         </div>
-      ) : isOffline ? (
+      ) : (isOffline || Boolean(selectedOfflineOtId)) ? (
           selectedOfflineOt && selectedOfflineDetail ? (
             <div className="space-y-5">
               <button
@@ -1267,7 +1267,9 @@ function OTPageContent() {
                 <h2 className="mt-2 text-2xl font-bold text-amber-950">
                   {String(selectedOfflineDetail.folio ?? selectedOfflineOt.folio ?? 'OT preparada')}
                 </h2>
-                <p className="mt-1 text-sm">Trabajo local en borrador. Cierre, firmas y PDF oficial requieren conexión.</p>
+                <p className="mt-1 text-sm">{isOffline
+                  ? 'Trabajo local en borrador. Cierre, firmas y PDF oficial requieren conexión.'
+                  : 'Conexión recuperada. Se mantiene esta OT abierta para revisar la sincronización antes de volver al listado.'}</p>
                 {otsConPendiente.has(selectedOfflineOt.id) ? (
                   <p className="mt-3 rounded-xl bg-white px-3 py-2 text-sm font-semibold">Esta OT tiene cambios pendientes locales.</p>
                 ) : null}
