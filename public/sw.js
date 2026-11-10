@@ -1,4 +1,4 @@
-const CACHE_VERSION = "tralixia-offline-v3";
+const CACHE_VERSION = "tralixia-offline-v4";
 const TERRAIN_CACHE = "tralixia-terrain-v1";
 const OFFLINE_URL = "/offline.html";
 const APP_SHELL = [
@@ -59,6 +59,19 @@ self.addEventListener("fetch", (event) => {
             ignoreSearch: true,
           });
           if (preparedRoute) return preparedRoute;
+
+          // Los detalles individuales no contienen el editor offline. Redirigir
+          // al listado preparado y conservar la OT solicitada para seleccionarla.
+          if (/^\\/ot\\/[^/]+$/.test(url.pathname)) {
+            const preparedOtRoute = await terrainCache.match("/ot");
+            if (preparedOtRoute) {
+              const otId = url.pathname.split("/")[2];
+              return Response.redirect(
+                new URL(`/ot?offline_ot=${encodeURIComponent(otId)}`, self.location.origin),
+                302,
+              );
+            }
+          }
 
           // /ot funciona como contenedor del detalle preparado cuando la ruta
           // dinámica no está disponible en la caché de navegación.
