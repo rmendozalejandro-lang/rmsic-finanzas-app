@@ -783,6 +783,18 @@ function OTPageContent() {
 
   }
 
+  useEffect(() => {
+    if (!isOffline || !empresaActivaId || !currentUserId) return
+
+    // Si la navegación llegó desde un detalle sin señal, recuperar directamente
+    // el editor local de esa OT y conservar sus avances pendientes.
+    const otId = new URL(window.location.href).searchParams.get('offline_ot')
+    if (!otId) return
+
+    selectOfflineOt(otId)
+    window.history.replaceState(window.history.state, '', '/ot')
+  }, [isOffline, empresaActivaId, currentUserId])
+
   const volverAlListadoOffline = () => {
     setSelectedOfflineOtId('')
     setOfflineDraftSuccess('')
