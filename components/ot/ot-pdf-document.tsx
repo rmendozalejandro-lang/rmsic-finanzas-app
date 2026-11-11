@@ -774,18 +774,15 @@ function TextBlock({
 }) {
   if (!value || !value.trim()) return null
 
-  // Keep the heading with the beginning of its content, while allowing long
-  // reports to flow naturally across pages without clipping the body text.
-  const trimmed = value.trim()
-  const firstBreak = trimmed.indexOf('\\n')
-  const firstSentence = trimmed.search(/[.!?](?:\\s|$)/)
-  const splitAt = firstBreak > 0 && (firstSentence < 0 || firstBreak < firstSentence)
-    ? firstBreak
-    : firstSentence >= 0
-      ? firstSentence + 1
-      : Math.min(trimmed.length, 180)
-  const lead = trimmed.slice(0, splitAt).trim()
-  const remainder = trimmed.slice(splitAt).trim()
+  // Maintain the technician's paragraph boundaries in the client-facing PDF.
+  // Keep the heading with the first sentence without preventing long paragraphs
+  // from flowing naturally across pages.
+  const paragraphs = value.trim().split(/\n\s*\n/).map((item) => item.trim()).filter(Boolean)
+  const first = paragraphs[0]
+  const firstSentence = first.search(/[.!?](?:\s|$)/)
+  const splitAt = firstSentence >= 0 ? firstSentence + 1 : Math.min(first.length, 180)
+  const lead = first.slice(0, splitAt).trim()
+  const remainder = first.slice(splitAt).trim()
 
   return (
     <View style={styles.textBlock}>
@@ -796,6 +793,11 @@ function TextBlock({
         <Text style={styles.textBlockBody}>{lead}</Text>
       </View>
       {remainder ? <Text style={styles.textBlockBody}>{remainder}</Text> : null}
+      {paragraphs.slice(1).map((paragraph, index) => (
+        <Text key={index} style={[styles.textBlockBody, { marginTop: 8 }]}>
+          {paragraph}
+        </Text>
+      ))}
     </View>
   )
 }
@@ -908,7 +910,7 @@ function formatClientFacingWork(raw: string | null | undefined): string | null {
     let currentLabel = ''
     const values: string[] = []
     const flush = () => {
-      const value = values.join(' ').trim()
+      const value = values.join('\n').trim()
       if (value && (currentLabel === 'Labores realizadas' || currentLabel === 'Observación terreno')) {
         if (!clientWork.includes(value)) clientWork.push(value)
       }
