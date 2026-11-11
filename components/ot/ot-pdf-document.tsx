@@ -924,7 +924,9 @@ function formatClientFacingWork(raw: string | null | undefined): string | null {
         currentLabel = match[0].split(':')[0].trim()
         if (currentLabel.toLowerCase() === 'observacion terreno') currentLabel = 'Observación terreno'
         values.push(trimmed.slice(match[0].length))
-      } else if (trimmed && currentLabel) {
+      } else if (currentLabel) {
+        // Preserve blank lines inside field values: they separate distinct
+        // work activities captured in one offline draft.
         values.push(trimmed)
       }
     }
