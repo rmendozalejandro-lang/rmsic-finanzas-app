@@ -1205,11 +1205,33 @@ if (empresaGuardadaValida) {
   const isInformesTecnicosRoute =
     pathname === '/informes' || pathname.startsWith('/informes/')
 
+  // Al recuperar una OT preparada sin internet, la lista de modulos de empresa
+  // no puede consultarse. Autorizar SOLO la ruta OT respaldada por el cache
+  // local del mismo usuario/empresa; los permisos de servidor siguen intactos.
+  const isPreparedOfflineOTAccess = useMemo(() => {
+    if (!isOffline || !rolResuelto || !empresaActivaId || !usuarioId) return false
+    const registry = readCurrentTerrainRegistry()
+    if (
+      !registry ||
+      registry.empresaId !== empresaActivaId ||
+      registry.userId !== usuarioId ||
+      !registry.modules.some((module) => module.module === OT_MODULE && module.route === OT_ROUTE)
+    ) return false
+    const cache = readOTOfflineCache(empresaActivaId, usuarioId)
+    if (!cache?.ots.length || !cache.detalles.length) return false
+    const preparedIds = new Set(cache.detalles.map((detail) => detail.id))
+    if (!cache.ots.some((ot) => preparedIds.has(ot.id))) return false
+    if (pathname === OT_ROUTE) return true
+    const match = /^\\/ot\\/([^/]+)$/.exec(pathname)
+    return Boolean(match?.[1] && preparedIds.has(match[1]))
+  }, [isOffline, rolResuelto, empresaActivaId, usuarioId, pathname])
+
   const isRouteAccessDenied =
     rolResuelto &&
     (
       (
         Boolean(currentRouteItem) &&
+        !(currentRouteItem?.moduleKey === 'ot' && isPreparedOfflineOTAccess) &&
         !canAccessModuleByRoleAndCompany(
           usuarioRol,
           currentRouteItem!.moduleKey,
