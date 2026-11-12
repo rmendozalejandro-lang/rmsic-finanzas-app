@@ -1679,7 +1679,7 @@ function OTPageContent() {
                     })}
                     {pendingTechnicalEvents.some((item) => item.status === 'error') && navigator.onLine ? <button type="button" onClick={reintentarEventos} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold">Reintentar sincronización de eventos</button> : null}
                     <p className="text-xs text-slate-600">Para sincronizar necesitas tener OT Viva habilitada en esta OT. Si aún no la activaste, puedes abrirla sin eliminar los eventos locales.</p>
-                    {navigator.onLine ? <a href={`/ot/${encodeURIComponent(selectedOfflineOtId)}/viva`} className="inline-block rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-800">Abrir OT Viva / habilitar caso técnico</a> : null>
+                    {navigator.onLine ? <a href={`/ot/${encodeURIComponent(selectedOfflineOtId)}/viva`} className="inline-block rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-800">Abrir OT Viva / habilitar caso técnico</a> : null}
                   </div>
                 ) : null}
               </section>
