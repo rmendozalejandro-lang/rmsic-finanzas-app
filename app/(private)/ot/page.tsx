@@ -6,7 +6,8 @@ import ProtectedModuleRoute from '../../../components/ProtectedModuleRoute'
 import { OTDataTable } from '../../../components/ot/ot-data-table'
 import { supabase } from '../../../lib/supabase/client'
 import type { OTResumen } from '../../../lib/ot/types'
-import { addOTOfflineDraft, findCachedOTDetail, readOTOfflineCache, readOTOfflinePreparationStatus, OT_PREPARATION_CHANGED_EVENT, otHasPendingLocalChanges, type OTOfflineDetail, type OTOfflineDraft, type OTOfflinePreparationStatus } from '../../../lib/offline/ot'
+import { addOTOfflineDraft, addOTOfflineEvent, OT_EVENT_PENDING_ACTION, isOTOfflineEvent, findCachedOTDetail, readOTOfflineCache, readOTOfflinePreparationStatus, OT_PREPARATION_CHANGED_EVENT, otHasPendingLocalChanges, type OTOfflineDetail, type OTOfflineDraft, type OTOfflinePreparationStatus } from '../../../lib/offline/ot'
+import { listOfflineQueue, updateOfflineQueueItem, OFFLINE_QUEUE_CHANGED_EVENT } from '../../../lib/offline/offline-queue'
 import { buildAssistanceOfflineUpdate, toOfflineTimeInput } from '../../../lib/offline/ot-assistance'
 import { buildUrgencyOfflineUpdate } from '../../../lib/offline/ot-urgency'
 import { buildGeneralMaintenanceOfflineUpdate } from '../../../lib/offline/ot-general-maintenance'
@@ -410,6 +411,9 @@ function OTPageContent() {
   const [offlineChecklistModo, setOfflineChecklistModo] = useState<ChecklistOfflineModo>('horas')
   const [offlineChecklistHoras, setOfflineChecklistHoras] = useState(175)
   const [offlineDraftSuccess, setOfflineDraftSuccess] = useState('')
+  const [eventType, setEventType] = useState<'accion' | 'hallazgo' | 'medicion' | 'prueba' | 'resultado' | 'hipotesis'>('accion')
+  const [eventText, setEventText] = useState('')
+  const [eventNotice, setEventNotice] = useState('')
   const [offlinePendingRefresh, setOfflinePendingRefresh] = useState(0)
   const [offlineSelectionNotice, setOfflineSelectionNotice] = useState('')
   const [preparationStatus, setPreparationStatus] = useState<OTOfflinePreparationStatus | null>(null)
@@ -497,6 +501,8 @@ function OTPageContent() {
     setOtIdsSeleccionadas(new Set())
     setSelectedOfflineOtId('')
     setOfflineDraftSuccess('')
+    setEventNotice('')
+    setEventText('')
     setOfflineSelectionNotice('')
   }, [empresaActivaId])
 
@@ -764,6 +770,8 @@ function OTPageContent() {
   const selectOfflineOt = (otId: string) => {
     const detail = findCachedOTDetail(empresaActivaId, currentUserId, otId)
     setOfflineDraftSuccess('')
+    setEventText('')
+    setEventNotice('')
 
     if (!detail) {
       setSelectedOfflineOtId('')
@@ -809,10 +817,57 @@ function OTPageContent() {
     setOfflineDraftSuccess('')
   }
 
+  const pendingTechnicalEvents = selectedOfflineOtId && empresaActivaId && currentUserId
+    ? listOfflineQueue().filter((item) => item.module === 'ot' && item.action === OT_EVENT_PENDING_ACTION &&
+        isOTOfflineEvent(item.payload) && item.payload.ot_id === selectedOfflineOtId &&
+        item.payload.empresa_id === empresaActivaId && item.payload.user_id === currentUserId)
+    : []
+
+  useEffect(() => {
+    const refresh = () => setOfflinePendingRefresh((value) => value + 1)
+    window.addEventListener(OFFLINE_QUEUE_CHANGED_EVENT, refresh)
+    return () => window.removeEventListener(OFFLINE_QUEUE_CHANGED_EVENT, refresh)
+  }, [])
+
+  const registrarEventoOffline = () => {
+    if (!selectedOfflineDetail || !currentUserId) return
+    const texto = eventText.trim()
+    if (!texto) {
+      setEventNotice('Escribe una descripción antes de registrar el evento.')
+      return
+    }
+    try {
+      addOTOfflineEvent({
+        empresa_id: selectedOfflineDetail.empresa_id,
+        ot_id: selectedOfflineDetail.id,
+        user_id: currentUserId,
+        tipo_evento: eventType,
+        texto_original: texto,
+      })
+      setEventText('')
+      setEventNotice('Evento individual guardado en el teléfono. Se sincronizará al recuperar internet si OT Viva está habilitada.')
+      setOfflinePendingRefresh((value) => value + 1)
+    } catch (error) {
+      setEventNotice(error instanceof Error ? error.message : 'No fue posible guardar el evento local.')
+    }
+  }
+
+  const reintentarEventos = () => {
+    for (const item of pendingTechnicalEvents) {
+      if (item.status === 'error') updateOfflineQueueItem(item.id, { status: 'pendiente', error: undefined })
+    }
+    setEventNotice('Se solicitó reintentar los eventos pendientes. Comprueba su estado con internet conectado.')
+    setOfflinePendingRefresh((value) => value + 1)
+  }
+
   const abrirDetalleOficial = () => {
     if (!selectedOfflineOtId || !empresaActivaId || !currentUserId) return
     if (!navigator.onLine) {
       alert('Sin conexión. El cierre, la firma y el PDF oficial requieren internet.')
+      return
+    }
+    if (pendingTechnicalEvents.length > 0) {
+      alert('Esta OT mantiene eventos técnicos pendientes de sincronización. Consérvala abierta en modo terreno y revisa el estado de los eventos.')
       return
     }
     if (otHasPendingLocalChanges(empresaActivaId, currentUserId, selectedOfflineOtId)) {
@@ -1597,6 +1652,36 @@ function OTPageContent() {
 
                 </div>
               </details>
+
+              <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                <h3 className="text-xl font-semibold text-slate-900">Registro individual de eventos técnicos</h3>
+                <p className="mt-2 text-sm text-slate-600">Cada registro se conserva por separado con su fecha y hora. No modifica el borrador ni reemplaza eventos anteriores.</p>
+                <label className="mt-4 block text-sm font-medium text-slate-700">Tipo de evento
+                  <select className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2" value={eventType} onChange={(e) => setEventType(e.target.value as typeof eventType)}>
+                    <option value="accion">Actividad realizada</option><option value="hallazgo">Hallazgo observado</option><option value="medicion">Medición</option><option value="prueba">Prueba técnica</option><option value="resultado">Resultado registrado</option><option value="hipotesis">Hipótesis (sin confirmar)</option>
+                  </select>
+                </label>
+                <label className="mt-3 block text-sm font-medium text-slate-700">Descripción del evento
+                  <textarea rows={3} value={eventText} onChange={(e) => { setEventText(e.target.value); setEventNotice('') }} placeholder="Describe la actividad o hallazgo observado..." className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2" />
+                </label>
+                <button type="button" onClick={registrarEventoOffline} className="mt-3 rounded-xl bg-[#163A5F] px-4 py-2 text-sm font-semibold text-white">Registrar evento técnico</button>
+                {eventNotice ? <p role="status" className="mt-3 rounded-lg bg-slate-100 p-3 text-sm text-slate-800">{eventNotice}</p> : null}
+                {pendingTechnicalEvents.length > 0 ? (
+                  <div className="mt-4 space-y-2">
+                    <p className="text-sm font-semibold text-amber-800">Eventos locales pendientes: {pendingTechnicalEvents.length}</p>
+                    {pendingTechnicalEvents.map((item) => {
+                      const payload = item.payload as import('../../../lib/offline/ot').OTOfflineEventPayload
+                      return <div key={item.id} className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-slate-800">
+                        <p className="font-medium">{payload.tipo_evento} · {new Date(payload.ocurrido_at).toLocaleString('es-CL')}</p>
+                        <p className="mt-1 whitespace-pre-wrap">{payload.texto_original}</p>
+                        <p className="mt-1 text-xs text-amber-900">{item.status === 'error' ? `Error de sincronización: ${item.error || 'pendiente de revisión'}` : item.status === 'sincronizando' ? 'Sincronizando...' : 'Pendiente de sincronizar'}</p>
+                      </div>
+                    })}
+                    {pendingTechnicalEvents.some((item) => item.status === 'error') && navigator.onLine ? <button type="button" onClick={reintentarEventos} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold">Reintentar sincronización de eventos</button> : null}
+                    <p className="text-xs text-slate-600">Para sincronizar necesitas tener OT Viva habilitada en esta OT. Si no lo está, activa OT Viva desde la OT principal y vuelve aquí para reintentar.</p>
+                  </div>
+                ) : null}
+              </section>
 
               <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
                 <h3 className="text-xl font-semibold text-slate-900">Avance local de terreno</h3>
