@@ -1222,8 +1222,8 @@ if (empresaGuardadaValida) {
     const preparedIds = new Set(cache.detalles.map((detail) => detail.id))
     if (!cache.ots.some((ot) => preparedIds.has(ot.id))) return false
     if (pathname === OT_ROUTE) return true
-    const match = /^\\/ot\\/([^/]+)$/.exec(pathname)
-    return Boolean(match?.[1] && preparedIds.has(match[1]))
+    const segments = pathname.split('/').filter(Boolean)
+    return segments.length === 2 && segments[0] === 'ot' && preparedIds.has(segments[1])
   }, [isOffline, rolResuelto, empresaActivaId, usuarioId, pathname])
 
   const isRouteAccessDenied =
