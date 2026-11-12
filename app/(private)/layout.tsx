@@ -1036,7 +1036,7 @@ if (empresaGuardadaValida) {
 
         const { error: insertError } = await supabase
           .from('asistente_eventos')
-          .upsert({
+          .insert({
             empresa_id: payload.empresa_id,
             caso_id: link.caso_id,
             sesion_id: activeSession?.id ?? null,
@@ -1053,8 +1053,21 @@ if (empresaGuardadaValida) {
             origen_externo: 'ot_terreno_evento',
             clave_externa: payload.evento_id,
             datos: { ot_id: payload.ot_id, captura_local: true },
-          }, { onConflict: 'empresa_id,origen_externo,clave_externa' })
-        if (insertError) throw insertError
+          })
+        if (insertError) {
+          // The same immutable event may already have arrived before a connection
+          // loss. Accept only an existing event with this exact external key.
+          if (insertError.code !== '23505') throw insertError
+          const { data: alreadySaved, error: verifyError } = await supabase
+            .from('asistente_eventos')
+            .select('id')
+            .eq('empresa_id', payload.empresa_id)
+            .eq('caso_id', link.caso_id)
+            .eq('origen_externo', 'ot_terreno_evento')
+            .eq('clave_externa', payload.evento_id)
+            .maybeSingle()
+          if (verifyError || !alreadySaved) throw verifyError ?? insertError
+        }
         removeOfflineQueueItem(item.id)
       } catch (error) {
         updateOfflineQueueItem(item.id, {
