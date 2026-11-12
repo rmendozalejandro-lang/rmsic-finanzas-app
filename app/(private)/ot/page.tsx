@@ -414,6 +414,7 @@ function OTPageContent() {
   const [eventType, setEventType] = useState<'accion' | 'hallazgo' | 'medicion' | 'prueba' | 'resultado' | 'hipotesis'>('accion')
   const [eventText, setEventText] = useState('')
   const [eventNotice, setEventNotice] = useState('')
+  const [lastLocalEventQueueId, setLastLocalEventQueueId] = useState('')
   const [offlinePendingRefresh, setOfflinePendingRefresh] = useState(0)
   const [offlineSelectionNotice, setOfflineSelectionNotice] = useState('')
   const [preparationStatus, setPreparationStatus] = useState<OTOfflinePreparationStatus | null>(null)
@@ -503,6 +504,7 @@ function OTPageContent() {
     setOfflineDraftSuccess('')
     setEventNotice('')
     setEventText('')
+    setLastLocalEventQueueId('')
     setOfflineSelectionNotice('')
   }, [empresaActivaId])
 
@@ -772,6 +774,7 @@ function OTPageContent() {
     setOfflineDraftSuccess('')
     setEventText('')
     setEventNotice('')
+    setLastLocalEventQueueId('')
 
     if (!detail) {
       setSelectedOfflineOtId('')
@@ -829,6 +832,17 @@ function OTPageContent() {
     return () => window.removeEventListener(OFFLINE_QUEUE_CHANGED_EVENT, refresh)
   }, [])
 
+  // The queue item is removed only after successful synchronization.
+  // Use its disappearance to update the technician's status automatically.
+  const lastEventQueueItem = lastLocalEventQueueId
+    ? listOfflineQueue().find((item) => item.id === lastLocalEventQueueId)
+    : null
+  const visibleEventNotice = lastLocalEventQueueId && !lastEventQueueItem
+    ? 'Evento sincronizado correctamente con Tralixia.'
+    : lastEventQueueItem?.status === 'error'
+      ? `Evento guardado localmente. Error de sincronización: ${lastEventQueueItem.error || 'Revisa la conexión.'}`
+      : eventNotice
+
   const registrarEventoOffline = () => {
     if (!selectedOfflineDetail || !currentUserId) return
     const texto = eventText.trim()
@@ -837,7 +851,7 @@ function OTPageContent() {
       return
     }
     try {
-      addOTOfflineEvent({
+      const queuedEvent = addOTOfflineEvent({
         empresa_id: selectedOfflineDetail.empresa_id,
         ot_id: selectedOfflineDetail.id,
         user_id: currentUserId,
@@ -845,7 +859,8 @@ function OTPageContent() {
         texto_original: texto,
       })
       setEventText('')
-      setEventNotice('Evento individual guardado en el teléfono. Se sincronizará al recuperar internet si OT Viva está habilitada.')
+      setLastLocalEventQueueId(queuedEvent.id)
+      setEventNotice('Evento guardado en el teléfono. Pendiente de sincronización.')
       setOfflinePendingRefresh((value) => value + 1)
     } catch (error) {
       setEventNotice(error instanceof Error ? error.message : 'No fue posible guardar el evento local.')
@@ -1665,7 +1680,7 @@ function OTPageContent() {
                   <textarea rows={3} value={eventText} onChange={(e) => { setEventText(e.target.value); setEventNotice('') }} placeholder="Describe la actividad o hallazgo observado..." className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2" />
                 </label>
                 <button type="button" onClick={registrarEventoOffline} className="mt-3 rounded-xl bg-[#163A5F] px-4 py-2 text-sm font-semibold text-white">Registrar evento técnico</button>
-                {eventNotice ? <p role="status" className="mt-3 rounded-lg bg-slate-100 p-3 text-sm text-slate-800">{eventNotice}</p> : null}
+                {visibleEventNotice ? <p role="status" className="mt-3 rounded-lg bg-slate-100 p-3 text-sm text-slate-800">{visibleEventNotice}</p> : null}
                 {pendingTechnicalEvents.length > 0 ? (
                   <div className="mt-4 space-y-2">
                     <p className="text-sm font-semibold text-amber-800">Eventos locales pendientes: {pendingTechnicalEvents.length}</p>
