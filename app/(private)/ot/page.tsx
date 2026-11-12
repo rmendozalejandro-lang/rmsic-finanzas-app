@@ -8,6 +8,7 @@ import { supabase } from '../../../lib/supabase/client'
 import type { OTResumen } from '../../../lib/ot/types'
 import { addOTOfflineDraft, addOTOfflineEvent, OT_EVENT_PENDING_ACTION, isOTOfflineEvent, findCachedOTDetail, readOTOfflineCache, readOTOfflinePreparationStatus, OT_PREPARATION_CHANGED_EVENT, otHasPendingLocalChanges, type OTOfflineDetail, type OTOfflineDraft, type OTOfflinePreparationStatus } from '../../../lib/offline/ot'
 import { listOfflineQueue, updateOfflineQueueItem, OFFLINE_QUEUE_CHANGED_EVENT } from '../../../lib/offline/offline-queue'
+import { readOTEventDraft, saveOTEventDraft, clearOTEventDraft, type OTEventDraftType } from '../../../lib/offline/ot-event-draft'
 import { buildAssistanceOfflineUpdate, toOfflineTimeInput } from '../../../lib/offline/ot-assistance'
 import { buildUrgencyOfflineUpdate } from '../../../lib/offline/ot-urgency'
 import { buildGeneralMaintenanceOfflineUpdate } from '../../../lib/offline/ot-general-maintenance'
@@ -413,6 +414,7 @@ function OTPageContent() {
   const [offlineDraftSuccess, setOfflineDraftSuccess] = useState('')
   const [eventType, setEventType] = useState<'accion' | 'hallazgo' | 'medicion' | 'prueba' | 'resultado' | 'hipotesis'>('accion')
   const [eventText, setEventText] = useState('')
+  const [eventDraftRecovered, setEventDraftRecovered] = useState(false)
   const [eventNotice, setEventNotice] = useState('')
   const [lastLocalEventQueueId, setLastLocalEventQueueId] = useState('')
   const [offlinePendingRefresh, setOfflinePendingRefresh] = useState(0)
@@ -504,6 +506,7 @@ function OTPageContent() {
     setOfflineDraftSuccess('')
     setEventNotice('')
     setEventText('')
+    setEventDraftRecovered(false)
     setLastLocalEventQueueId('')
     setOfflineSelectionNotice('')
   }, [empresaActivaId])
@@ -773,6 +776,7 @@ function OTPageContent() {
     const detail = findCachedOTDetail(empresaActivaId, currentUserId, otId)
     setOfflineDraftSuccess('')
     setEventText('')
+    setEventDraftRecovered(false)
     setEventNotice('')
     setLastLocalEventQueueId('')
 
@@ -783,6 +787,14 @@ function OTPageContent() {
     }
 
     setSelectedOfflineOtId(otId)
+    const eventDraftSaved = readOTEventDraft(empresaActivaId, currentUserId, otId)
+    if (eventDraftSaved) {
+      setEventType(eventDraftSaved.tipo_evento)
+      setEventText(eventDraftSaved.texto_original)
+      setEventDraftRecovered(true)
+    } else {
+      setEventType('accion')
+    }
     window.sessionStorage.setItem(`tralixia_terrain_selected_ot_${empresaActivaId}_${currentUserId}`, otId)
     setOfflineSelectionNotice('')
 
@@ -843,6 +855,20 @@ function OTPageContent() {
       ? `Evento guardado localmente. Error de sincronización: ${lastEventQueueItem.error || 'Revisa la conexión.'}`
       : eventNotice
 
+  const updateEventDraft = (texto: string, tipo: OTEventDraftType) => {
+    setEventText(texto)
+    setEventType(tipo)
+    setEventDraftRecovered(false)
+    setEventNotice('')
+    if (!selectedOfflineOtId || !empresaActivaId || !currentUserId) return
+    try {
+      // Persist every recognized text change immediately; no debounce window.
+      saveOTEventDraft(empresaActivaId, currentUserId, selectedOfflineOtId, { texto_original: texto, tipo_evento: tipo })
+    } catch {
+      setEventNotice('No se pudo guardar el borrador en este dispositivo. Verifica el espacio disponible antes de salir.')
+    }
+  }
+
   const registrarEventoOffline = () => {
     if (!selectedOfflineDetail || !currentUserId) return
     const texto = eventText.trim()
@@ -858,7 +884,9 @@ function OTPageContent() {
         tipo_evento: eventType,
         texto_original: texto,
       })
+      clearOTEventDraft(selectedOfflineDetail.empresa_id, currentUserId, selectedOfflineDetail.id)
       setEventText('')
+      setEventDraftRecovered(false)
       setLastLocalEventQueueId(queuedEvent.id)
       setEventNotice('Evento guardado en el teléfono. Pendiente de sincronización.')
       setOfflinePendingRefresh((value) => value + 1)
@@ -1672,13 +1700,15 @@ function OTPageContent() {
                 <h3 className="text-xl font-semibold text-slate-900">Registro individual de eventos técnicos</h3>
                 <p className="mt-2 text-sm text-slate-600">Cada registro se conserva por separado con su fecha y hora. No modifica el borrador ni reemplaza eventos anteriores.</p>
                 <label className="mt-4 block text-sm font-medium text-slate-700">Tipo de evento
-                  <select className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2" value={eventType} onChange={(e) => setEventType(e.target.value as typeof eventType)}>
+                  <select className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2" value={eventType} onChange={(e) => updateEventDraft(eventText, e.target.value as OTEventDraftType)}>
                     <option value="accion">Actividad realizada</option><option value="hallazgo">Hallazgo observado</option><option value="medicion">Medición</option><option value="prueba">Prueba técnica</option><option value="resultado">Resultado registrado</option><option value="hipotesis">Hipótesis (sin confirmar)</option>
                   </select>
                 </label>
                 <label className="mt-3 block text-sm font-medium text-slate-700">Descripción del evento
-                  <textarea rows={3} value={eventText} onChange={(e) => { setEventText(e.target.value); setEventNotice('') }} placeholder="Describe la actividad o hallazgo observado..." className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2" />
+                  <textarea rows={3} value={eventText} onChange={(e) => updateEventDraft(e.target.value, eventType)} placeholder="Describe la actividad o hallazgo observado..." className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2" />
                 </label>
+                {eventDraftRecovered ? <p role="status" className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm font-medium text-emerald-900">Borrador recuperado automáticamente. Puedes continuar escribiendo; aún no es un evento confirmado.</p> : null}
+                {eventText.trim() ? <p className="mt-2 text-xs text-slate-600">Borrador local: se guarda en este teléfono con cada modificación. Se confirma solo al registrar el evento.</p> : null}
                 <button type="button" onClick={registrarEventoOffline} className="mt-3 rounded-xl bg-[#163A5F] px-4 py-2 text-sm font-semibold text-white">Registrar evento técnico</button>
                 {visibleEventNotice ? <p role="status" className="mt-3 rounded-lg bg-slate-100 p-3 text-sm text-slate-800">{visibleEventNotice}</p> : null}
                 {pendingTechnicalEvents.length > 0 ? (
