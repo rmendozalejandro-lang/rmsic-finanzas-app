@@ -24,9 +24,10 @@ import {
   prepareHarasPartosRegistry,
   upsertTerrainModule,
   readTerrainRegistry,
+  readCurrentTerrainRegistry,
   type TerrainRegistry,
 } from '../../lib/offline/terrain-registry'
-import { isOTOfflineOperative, isOTPendingPayload, mergeOTOfflineCache, OT_PENDING_ACTION, readOTOfflineCache, readOTOfflinePreparationStatus, writeOTOfflinePreparationStatus, type OTOfflinePendingPayload } from '../../lib/offline/ot'
+import { isOTOfflineOperative, isOTPendingPayload, isOTOfflineEvent, OT_EVENT_PENDING_ACTION, type OTOfflineEventPayload, mergeOTOfflineCache, OT_PENDING_ACTION, readOTOfflineCache, readOTOfflinePreparationStatus, writeOTOfflinePreparationStatus, type OTOfflinePendingPayload } from '../../lib/offline/ot'
 import { buildOTPreparationFailureState, filterOTOperativeQuery, isActiveOTPreparationContext, OTPreparationContextLock, OT_TERRAIN_PREPARATION_LIMIT } from '../../lib/offline/ot-preparation'
 
 type PrivateLayoutProps = {
@@ -295,6 +296,31 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
   useEffect(() => {
     const checkSessionAndLoadEmpresas = async () => {
       try {
+        // En terreno no se deben ejecutar consultas ni redirigir a login
+        // cuando ya existe un contexto OT preparado para esta empresa.
+        // Esto NO otorga permisos de servidor: solo habilita la vista local.
+        const isTerrainOtRoute = pathname === OT_ROUTE || (pathname.startsWith('/ot/') && pathname.split('/').length === 3)
+        if (typeof navigator !== 'undefined' && !navigator.onLine && isTerrainOtRoute) {
+          const registry = readCurrentTerrainRegistry()
+          const savedCompanyId = window.localStorage.getItem(STORAGE_ID_KEY)
+          const prepared = registry &&
+            registry.empresaId === savedCompanyId &&
+            registry.modules.some((module) => module.module === OT_MODULE) &&
+            readOTOfflineCache(registry.empresaId, registry.userId)?.detalles.length
+
+          if (registry && prepared) {
+            setEmpresaActivaId(registry.empresaId)
+            setEmpresaActivaNombreLocal(window.localStorage.getItem(STORAGE_NAME_KEY) || '')
+            setUsuarioId(registry.userId)
+            setUsuarioRol('tecnico_ot')
+            setIsSuperAdmin(false)
+            setTerrainRegistry(registry)
+            setRolResuelto(true)
+          }
+          setCheckingSession(false)
+          return
+        }
+
         const { data } = await supabase.auth.getSession()
 
         if (!data.session) {
@@ -406,7 +432,7 @@ if (empresaGuardadaValida) {
     }
 
     void checkSessionAndLoadEmpresas()
-  }, [router])
+  }, [router, pathname])
 
   const preparePartosForTerrain = useCallback(async () => {
     if (!isOnline || !empresaActivaId || !usuarioId || !rolResuelto ||
@@ -964,6 +990,98 @@ if (empresaGuardadaValida) {
     }
   }, [empresaActivaId, isOnline, offlineQueueItems, usuarioId])
 
+  // Sync individual terrain events independently from mutable OT drafts.
+  // A stable external key prevents duplicates if the network drops after insert.
+  const syncOTEventsForTerrain = useCallback(async () => {
+    if (!isOnline || !empresaActivaId || !usuarioId) return
+    const pendingEvents = offlineQueueItems.filter((item) =>
+      item.module === OT_MODULE && item.action === OT_EVENT_PENDING_ACTION &&
+      item.status === 'pendiente' && isOTOfflineEvent(item.payload) &&
+      item.payload.empresa_id === empresaActivaId && item.payload.user_id === usuarioId
+    )
+    if (!pendingEvents.length) return
+    const { updateOfflineQueueItem, removeOfflineQueueItem } = await import('../../lib/offline/offline-queue')
+
+    for (const item of pendingEvents) {
+      const payload = item.payload as OTOfflineEventPayload
+      updateOfflineQueueItem(item.id, { status: 'sincronizando', error: undefined })
+      try {
+        const { data: link, error: linkError } = await supabase
+          .from('asistente_caso_ots')
+          .select('caso_id')
+          .eq('empresa_id', payload.empresa_id)
+          .eq('ot_id', payload.ot_id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        if (linkError) throw linkError
+        if (!link?.caso_id) {
+          throw new Error('La OT no tiene OT Viva habilitada. Actívala desde la OT principal y luego reintenta.')
+        }
+
+        const { data: activeSession, error: sessionError } = await supabase
+          .from('asistente_sesiones')
+          .select('id')
+          .eq('empresa_id', payload.empresa_id)
+          .eq('caso_id', link.caso_id)
+          .eq('estado', 'en_curso')
+          .order('iniciado_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        if (sessionError) throw sessionError
+
+        const nivelCerteza = payload.tipo_evento === 'hipotesis'
+          ? 'hipotesis'
+          : payload.tipo_evento === 'medicion' ? 'medido' : 'observado'
+
+        const { error: insertError } = await supabase
+          .from('asistente_eventos')
+          .insert({
+            empresa_id: payload.empresa_id,
+            caso_id: link.caso_id,
+            sesion_id: activeSession?.id ?? null,
+            tipo_evento: payload.tipo_evento,
+            nivel_certeza: nivelCerteza,
+            autor_tipo: 'persona',
+            origen_captura: 'offline_sync',
+            usuario_id: payload.user_id,
+            texto_original: payload.texto_original,
+            ocurrido_at: payload.ocurrido_at,
+            visible_externo: false,
+            incluir_resumen: true,
+            estado_validacion: 'no_requiere',
+            origen_externo: 'ot_terreno_evento',
+            clave_externa: payload.evento_id,
+            datos: { ot_id: payload.ot_id, captura_local: true },
+          })
+        if (insertError) {
+          // The same immutable event may already have arrived before a connection
+          // loss. Accept only an existing event with this exact external key.
+          if (insertError.code !== '23505') throw insertError
+          const { data: alreadySaved, error: verifyError } = await supabase
+            .from('asistente_eventos')
+            .select('id')
+            .eq('empresa_id', payload.empresa_id)
+            .eq('caso_id', link.caso_id)
+            .eq('origen_externo', 'ot_terreno_evento')
+            .eq('clave_externa', payload.evento_id)
+            .maybeSingle()
+          if (verifyError || !alreadySaved) throw verifyError ?? insertError
+        }
+        removeOfflineQueueItem(item.id)
+      } catch (error) {
+        updateOfflineQueueItem(item.id, {
+          status: 'error',
+          error: error instanceof Error ? error.message : 'No se pudo sincronizar el evento técnico.',
+        })
+      }
+    }
+  }, [empresaActivaId, isOnline, offlineQueueItems, usuarioId])
+
+  useEffect(() => {
+    void syncOTEventsForTerrain()
+  }, [syncOTEventsForTerrain])
+
   useEffect(() => {
     const timer = window.setTimeout(() => void prepareOTForTerrain(), 1800)
     return () => window.clearTimeout(timer)
@@ -1087,11 +1205,33 @@ if (empresaGuardadaValida) {
   const isInformesTecnicosRoute =
     pathname === '/informes' || pathname.startsWith('/informes/')
 
+  // Al recuperar una OT preparada sin internet, la lista de modulos de empresa
+  // no puede consultarse. Autorizar SOLO la ruta OT respaldada por el cache
+  // local del mismo usuario/empresa; los permisos de servidor siguen intactos.
+  const isPreparedOfflineOTAccess = useMemo(() => {
+    if (!isOffline || !rolResuelto || !empresaActivaId || !usuarioId) return false
+    const registry = readCurrentTerrainRegistry()
+    if (
+      !registry ||
+      registry.empresaId !== empresaActivaId ||
+      registry.userId !== usuarioId ||
+      !registry.modules.some((module) => module.module === OT_MODULE && module.route === OT_ROUTE)
+    ) return false
+    const cache = readOTOfflineCache(empresaActivaId, usuarioId)
+    if (!cache?.ots.length || !cache.detalles.length) return false
+    const preparedIds = new Set(cache.detalles.map((detail) => detail.id))
+    if (!cache.ots.some((ot) => preparedIds.has(ot.id))) return false
+    if (pathname === OT_ROUTE) return true
+    const segments = pathname.split('/').filter(Boolean)
+    return segments.length === 2 && segments[0] === 'ot' && preparedIds.has(segments[1])
+  }, [isOffline, rolResuelto, empresaActivaId, usuarioId, pathname])
+
   const isRouteAccessDenied =
     rolResuelto &&
     (
       (
         Boolean(currentRouteItem) &&
+        !(currentRouteItem?.moduleKey === 'ot' && isPreparedOfflineOTAccess) &&
         !canAccessModuleByRoleAndCompany(
           usuarioRol,
           currentRouteItem!.moduleKey,
