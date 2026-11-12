@@ -27,7 +27,7 @@ import {
   readCurrentTerrainRegistry,
   type TerrainRegistry,
 } from '../../lib/offline/terrain-registry'
-import { isOTOfflineOperative, isOTPendingPayload, mergeOTOfflineCache, OT_PENDING_ACTION, readOTOfflineCache, readOTOfflinePreparationStatus, writeOTOfflinePreparationStatus, type OTOfflinePendingPayload } from '../../lib/offline/ot'
+import { isOTOfflineOperative, isOTPendingPayload, isOTOfflineEvent, OT_EVENT_PENDING_ACTION, type OTOfflineEventPayload, mergeOTOfflineCache, OT_PENDING_ACTION, readOTOfflineCache, readOTOfflinePreparationStatus, writeOTOfflinePreparationStatus, type OTOfflinePendingPayload } from '../../lib/offline/ot'
 import { buildOTPreparationFailureState, filterOTOperativeQuery, isActiveOTPreparationContext, OTPreparationContextLock, OT_TERRAIN_PREPARATION_LIMIT } from '../../lib/offline/ot-preparation'
 
 type PrivateLayoutProps = {
@@ -989,6 +989,85 @@ if (empresaGuardadaValida) {
       }
     }
   }, [empresaActivaId, isOnline, offlineQueueItems, usuarioId])
+
+  // Sync individual terrain events independently from mutable OT drafts.
+  // A stable external key prevents duplicates if the network drops after insert.
+  const syncOTEventsForTerrain = useCallback(async () => {
+    if (!isOnline || !empresaActivaId || !usuarioId) return
+    const pendingEvents = offlineQueueItems.filter((item) =>
+      item.module === OT_MODULE && item.action === OT_EVENT_PENDING_ACTION &&
+      item.status === 'pendiente' && isOTOfflineEvent(item.payload) &&
+      item.payload.empresa_id === empresaActivaId && item.payload.user_id === usuarioId
+    )
+    if (!pendingEvents.length) return
+    const { updateOfflineQueueItem, removeOfflineQueueItem } = await import('../../lib/offline/offline-queue')
+
+    for (const item of pendingEvents) {
+      const payload = item.payload as OTOfflineEventPayload
+      updateOfflineQueueItem(item.id, { status: 'sincronizando', error: undefined })
+      try {
+        const { data: link, error: linkError } = await supabase
+          .from('asistente_caso_ots')
+          .select('caso_id')
+          .eq('empresa_id', payload.empresa_id)
+          .eq('ot_id', payload.ot_id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        if (linkError) throw linkError
+        if (!link?.caso_id) {
+          throw new Error('La OT no tiene OT Viva habilitada. Actívala desde la OT principal y luego reintenta.')
+        }
+
+        const { data: activeSession, error: sessionError } = await supabase
+          .from('asistente_sesiones')
+          .select('id')
+          .eq('empresa_id', payload.empresa_id)
+          .eq('caso_id', link.caso_id)
+          .eq('estado', 'en_curso')
+          .order('iniciado_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        if (sessionError) throw sessionError
+
+        const nivelCerteza = payload.tipo_evento === 'hipotesis'
+          ? 'hipotesis'
+          : payload.tipo_evento === 'medicion' ? 'medido' : 'observado'
+
+        const { error: insertError } = await supabase
+          .from('asistente_eventos')
+          .upsert({
+            empresa_id: payload.empresa_id,
+            caso_id: link.caso_id,
+            sesion_id: activeSession?.id ?? null,
+            tipo_evento: payload.tipo_evento,
+            nivel_certeza: nivelCerteza,
+            autor_tipo: 'persona',
+            origen_captura: 'offline_sync',
+            usuario_id: payload.user_id,
+            texto_original: payload.texto_original,
+            ocurrido_at: payload.ocurrido_at,
+            visible_externo: false,
+            incluir_resumen: true,
+            estado_validacion: 'no_requiere',
+            origen_externo: 'ot_terreno_evento',
+            clave_externa: payload.evento_id,
+            datos: { ot_id: payload.ot_id, captura_local: true },
+          }, { onConflict: 'empresa_id,origen_externo,clave_externa' })
+        if (insertError) throw insertError
+        removeOfflineQueueItem(item.id)
+      } catch (error) {
+        updateOfflineQueueItem(item.id, {
+          status: 'error',
+          error: error instanceof Error ? error.message : 'No se pudo sincronizar el evento técnico.',
+        })
+      }
+    }
+  }, [empresaActivaId, isOnline, offlineQueueItems, usuarioId])
+
+  useEffect(() => {
+    void syncOTEventsForTerrain()
+  }, [syncOTEventsForTerrain])
 
   useEffect(() => {
     const timer = window.setTimeout(() => void prepareOTForTerrain(), 1800)
