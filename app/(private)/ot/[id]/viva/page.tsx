@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation'
 import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ProtectedModuleRoute from '../../../../../components/ProtectedModuleRoute'
 import { supabase } from '../../../../../lib/supabase/client'
+import { readOTEventDraft, saveOTEventDraft, clearOTEventDraft, type OTEventDraftType } from '../../../../../lib/offline/ot-event-draft'
 
 type OtRow = {
   id: string
@@ -207,6 +208,8 @@ function OTVivaContent() {
 
   const [tipoEvento, setTipoEvento] = useState('hallazgo')
   const [textoEvento, setTextoEvento] = useState('')
+  const textoEventoRef = useRef('')
+  const [borradorVivaRecuperado, setBorradorVivaRecuperado] = useState(false)
   const [eventoSeleccionado, setEventoSeleccionado] = useState('')
   const [tipoUso, setTipoUso] = useState('evidencia')
   const [descripcionEvidencia, setDescripcionEvidencia] = useState('')
@@ -416,6 +419,34 @@ function OTVivaContent() {
   useEffect(() => {
     void loadAll()
   }, [loadAll])
+
+  // Reutiliza el mismo borrador local del modo terreno: ambas pantallas
+  // protegen un único texto pendiente de confirmación para esta OT.
+  useEffect(() => {
+    if (!ot?.empresa_id || !userId || ot.id !== otId) return
+    const saved = readOTEventDraft(ot.empresa_id, userId, ot.id)
+    const text = saved?.texto_original ?? ''
+    textoEventoRef.current = text
+    setTextoEvento(text)
+    setTipoEvento(saved?.tipo_evento ?? 'hallazgo')
+    setBorradorVivaRecuperado(Boolean(saved))
+  }, [ot?.id, ot?.empresa_id, userId, otId])
+
+  function actualizarBorradorViva(text: string, type: OTEventDraftType) {
+    textoEventoRef.current = text
+    setTextoEvento(text)
+    setTipoEvento(type)
+    setBorradorVivaRecuperado(false)
+    if (!ot || !userId) return
+    try {
+      saveOTEventDraft(ot.empresa_id, userId, ot.id, {
+        tipo_evento: type,
+        texto_original: text,
+      })
+    } catch {
+      setError('El borrador no pudo guardarse en este dispositivo. Verifica el almacenamiento disponible.')
+    }
+  }
 
   useEffect(() => {
     // La instancia de la página puede reutilizarse al navegar entre OT.
@@ -766,8 +797,9 @@ function OTVivaContent() {
       if (!texto) throw new Error('No se detectó contenido de voz.')
 
       if (destino === 'evento') {
-        setTextoEvento((actual) => [actual.trim(), texto].filter(Boolean).join(' '))
-        setSuccess('Voz transcrita. Revisa el texto y guarda el evento cuando esté correcto.')
+        const consolidado = [textoEventoRef.current.trim(), texto].filter(Boolean).join(' ')
+        actualizarBorradorViva(consolidado, tipoEvento as OTEventDraftType)
+        setSuccess('Voz transcrita y borrador local actualizado. Revisa el texto antes de registrar el evento.')
       } else {
         setPreguntaIA((actual) => [actual.trim(), texto].filter(Boolean).join(' '))
         setSuccess('Voz transcrita. Revisa la consulta antes de enviarla a Tralixia.')
@@ -1138,7 +1170,11 @@ function OTVivaContent() {
 
       if (eventError || !inserted) throw new Error(eventError?.message || 'No se pudo guardar el evento.')
 
+      // Quitar el borrador solo después de confirmar la inserción remota.
+      clearOTEventDraft(ot.empresa_id, userId, ot.id)
+      textoEventoRef.current = ''
       setTextoEvento('')
+      setBorradorVivaRecuperado(false)
       setEventoSeleccionado(inserted.id)
       setSuccess('Evento registrado en la sesión.')
       await loadAll()
@@ -1445,7 +1481,7 @@ function OTVivaContent() {
             <p className="mt-1 text-sm text-slate-600">Registra primero el hecho técnico; después puedes adjuntar evidencia a ese evento.</p>
 
             <div className="mt-4 grid gap-3 md:grid-cols-[180px_1fr]">
-              <select value={tipoEvento} onChange={(e) => setTipoEvento(e.target.value)} disabled={!sesionActiva || busy} className="rounded-xl border border-slate-300 bg-white px-3 py-3 text-sm">
+              <select value={tipoEvento} onChange={(e) => actualizarBorradorViva(textoEventoRef.current, e.target.value as OTEventDraftType)} disabled={!sesionActiva || busy} className="rounded-xl border border-slate-300 bg-white px-3 py-3 text-sm">
                 <option value="hallazgo">Hallazgo</option>
                 <option value="prueba">Prueba / verificación</option>
                 <option value="hipotesis">Hipótesis</option>
@@ -1453,8 +1489,11 @@ function OTVivaContent() {
                 <option value="resultado">Resultado</option>
                 <option value="medicion">Medición</option>
               </select>
-              <textarea value={textoEvento} onChange={(e) => setTextoEvento(e.target.value)} disabled={!sesionActiva || busy || transcribiendoVoz} rows={3} placeholder="Ej.: Se detecta ruido anormal en el rodamiento lado transmisión..." className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm" />
+              <textarea value={textoEvento} onChange={(e) => actualizarBorradorViva(e.target.value, tipoEvento as OTEventDraftType)} disabled={!sesionActiva || busy || transcribiendoVoz} rows={3} placeholder="Ej.: Se detecta ruido anormal en el rodamiento lado transmisión..." className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm" />
             </div>
+
+            {borradorVivaRecuperado ? <p role="status" className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">Borrador recuperado automáticamente. Puedes continuar la narración; todavía no se ha registrado un evento.</p> : null}
+            {textoEvento.trim() ? <p className="mt-2 text-xs text-slate-600">Texto conservado en este dispositivo con cada modificación o transcripción completada. El audio en curso no se guarda automáticamente.</p> : null}
 
             <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
               <button
