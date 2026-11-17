@@ -201,6 +201,11 @@ function OTVivaContent() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const mediaStreamRef = useRef<MediaStream | null>(null)
   const audioChunksRef = useRef<Blob[]>([])
+  const [cierreAutomaticoVoz, setCierreAutomaticoVoz] = useState(false)
+  const audioContextVozRef = useRef<AudioContext | null>(null)
+  const audioMonitorVozRef = useRef<number | null>(null)
+  const audioTimeoutVozRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const vozDetectadaRef = useRef(false)
   const [preparandoCierre, setPreparandoCierre] = useState(false)
   const [aplicandoCierre, setAplicandoCierre] = useState(false)
   const [cierreAplicado, setCierreAplicado] = useState(false)
@@ -764,9 +769,77 @@ function OTVivaContent() {
     }
   }
 
+  function limpiarMonitorVoz() {
+    if (audioMonitorVozRef.current !== null) cancelAnimationFrame(audioMonitorVozRef.current)
+    audioMonitorVozRef.current = null
+    if (audioTimeoutVozRef.current !== null) clearTimeout(audioTimeoutVozRef.current)
+    audioTimeoutVozRef.current = null
+    const context = audioContextVozRef.current
+    audioContextVozRef.current = null
+    if (context) void context.close().catch(() => {})
+  }
+
   function detenerGrabacionVoz() {
+    limpiarMonitorVoz()
     const recorder = mediaRecorderRef.current
     if (recorder && recorder.state !== 'inactive') recorder.stop()
+  }
+
+  // Este detector solo segmenta audio. Jamás confirma un evento por silencio.
+  function vigilarPausaVoz(stream: MediaStream, recorder: MediaRecorder) {
+    const AudioContextClass = window.AudioContext
+    if (!AudioContextClass) {
+      setError('Este navegador no admite detección de pausas. Puedes detener manualmente.')
+      return
+    }
+    try {
+      const context = new AudioContextClass()
+      audioContextVozRef.current = context
+      const input = context.createMediaStreamSource(stream)
+      const analyser = context.createAnalyser()
+      analyser.fftSize = 1024
+      input.connect(analyser)
+      const buffer = new Uint8Array(analyser.fftSize)
+      const started = performance.now()
+      let voiceStartedAt = 0
+      let lastVoiceAt = 0
+      vozDetectadaRef.current = false
+
+      const sample = () => {
+        if (recorder.state !== 'recording') return
+        analyser.getByteTimeDomainData(buffer)
+        let power = 0
+        for (const value of buffer) {
+          const centered = (value - 128) / 128
+          power += centered * centered
+        }
+        const rms = Math.sqrt(power / buffer.length)
+        const now = performance.now()
+        // Umbral orientativo para el piloto: evitar interpretar un ruido corto como discurso.
+        if (rms > 0.018) {
+          if (!voiceStartedAt) voiceStartedAt = now
+          if (now - voiceStartedAt > 240) vozDetectadaRef.current = true
+          lastVoiceAt = now
+        } else {
+          voiceStartedAt = 0
+        }
+        if (vozDetectadaRef.current && lastVoiceAt && now - lastVoiceAt > 3200) {
+          detenerGrabacionVoz()
+          return
+        }
+        // Límite de seguridad: ninguna grabación de este modo debe ser indefinida.
+        if (now - started > 45000) {
+          detenerGrabacionVoz()
+          return
+        }
+        audioMonitorVozRef.current = requestAnimationFrame(sample)
+      }
+      audioMonitorVozRef.current = requestAnimationFrame(sample)
+      audioTimeoutVozRef.current = setTimeout(() => detenerGrabacionVoz(), 47000)
+    } catch {
+      limpiarMonitorVoz()
+      setError('No se pudo activar el detector de pausas. La grabación manual sigue disponible.')
+    }
   }
 
   async function transcribirAudio(blob: Blob, destino: 'evento' | 'ia') {
@@ -870,6 +943,7 @@ function OTVivaContent() {
       }
 
       recorder.onstop = () => {
+        limpiarMonitorVoz()
         const chunks = audioChunksRef.current
         const type = recorder.mimeType || chunks[0]?.type || 'audio/webm'
         const blob = new Blob(chunks, { type })
@@ -880,8 +954,8 @@ function OTVivaContent() {
         audioChunksRef.current = []
         setGrabandoVoz(null)
 
-        if (blob.size < 1000) {
-          setError('La grabación fue demasiado corta. Intenta nuevamente.')
+        if (blob.size < 1000 || (destino === 'evento' && cierreAutomaticoVoz && !vozDetectadaRef.current)) {
+          setError('No se detectó una narración suficiente. El borrador anterior permanece guardado.')
           return
         }
 
@@ -889,9 +963,14 @@ function OTVivaContent() {
       }
 
       recorder.start()
+      vozDetectadaRef.current = false
+      if (destino === 'evento' && cierreAutomaticoVoz) vigilarPausaVoz(stream, recorder)
       setGrabandoVoz(destino)
-      setSuccess('Escuchando... habla normalmente y presiona Detener cuando termines.')
+      setSuccess(destino === 'evento' && cierreAutomaticoVoz
+        ? 'Escuchando... tras una pausa de aproximadamente 3 segundos se transcribirá el fragmento. No se registrará ningún evento sin una orden explícita.'
+        : 'Escuchando... habla normalmente y presiona Detener cuando termines.')
     } catch (err) {
+      limpiarMonitorVoz()
       mediaStreamRef.current?.getTracks().forEach((track) => track.stop())
       mediaStreamRef.current = null
       mediaRecorderRef.current = null
@@ -1509,6 +1588,12 @@ function OTVivaContent() {
 
             {borradorVivaRecuperado ? <p role="status" className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">Borrador recuperado automáticamente. Puedes continuar la narración; todavía no se ha registrado un evento.</p> : null}
             {textoEvento.trim() ? <p className="mt-2 text-xs text-slate-600">Texto conservado en este dispositivo con cada modificación o transcripción completada. El audio en curso no se guarda automáticamente.</p> : null}
+
+            <label className="mt-3 flex items-center gap-2 text-sm text-slate-700">
+              <input type="checkbox" checked={cierreAutomaticoVoz} onChange={(e) => setCierreAutomaticoVoz(e.target.checked)} disabled={Boolean(grabandoVoz) || transcribiendoVoz} className="h-4 w-4" />
+              Modo prueba: detener grabación tras una pausa de voz (aprox. 3 segundos)
+            </label>
+            <p className="mt-1 text-xs text-slate-500">Debe haber voz detectable antes del cierre automático. En ambientes ruidosos podría detenerse antes o no detectar la pausa; conserva el botón Detener grabación. La escucha solo funciona con esta pestaña activa y micrófono permitido.</p>
 
             <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
               <button
