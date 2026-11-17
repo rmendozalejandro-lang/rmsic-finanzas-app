@@ -5,7 +5,8 @@ export type VoiceEventCommand = { text: string; register: boolean }
 
 export function parseVivaVoiceEventCommand(transcript: string): VoiceEventCommand {
   const original = transcript.trim()
-  const command = /(?:^|[.!?;,]\s*|\s+)tralixia\s*[,.:]?\s*(?:registra|registrar|guarda|guardar)\s+(?:este|el)\s+evento\s*[.!?]*\s*$/iu
+  // Variantes ASR observadas en pruebas reales; no se aceptan nombres arbitrarios.
+  const command = /(?:^|[.!?;,]\s*|\s+)(?:tralixia|tralicia|aclicia)\s*[,.:]?\s*(?:registra|registrar|guarda|guardar)\s+(?:este|el)\s+evento\s*[.!?]*\s*$/iu
   const match = command.exec(original)
   if (!match) return { text: original, register: false }
 
