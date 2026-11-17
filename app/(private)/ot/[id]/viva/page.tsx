@@ -202,6 +202,10 @@ function OTVivaContent() {
   const mediaStreamRef = useRef<MediaStream | null>(null)
   const audioChunksRef = useRef<Blob[]>([])
   const [cierreAutomaticoVoz, setCierreAutomaticoVoz] = useState(false)
+  const [escuchaContinuaHabilitada, setEscuchaContinuaHabilitada] = useState(false)
+  const [escuchaContinuaActiva, setEscuchaContinuaActiva] = useState(false)
+  const escuchaContinuaRef = useRef(false)
+  const escuchaVivaMountedRef = useRef(true)
   const audioContextVozRef = useRef<AudioContext | null>(null)
   const audioMonitorVozRef = useRef<number | null>(null)
   const audioTimeoutVozRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -474,6 +478,37 @@ function OTVivaContent() {
       audioFragmentosCacheRef.current.clear()
     }
   }, [otId])
+
+  useEffect(() => {
+    escuchaVivaMountedRef.current = true
+    return () => {
+      escuchaVivaMountedRef.current = false
+      escuchaContinuaRef.current = false
+      const recorder = mediaRecorderRef.current
+      if (recorder) {
+        recorder.onstop = null
+        recorder.ondataavailable = null
+        if (recorder.state !== 'inactive') recorder.stop()
+      }
+      mediaStreamRef.current?.getTracks().forEach((track) => track.stop())
+      if (audioMonitorVozRef.current !== null) cancelAnimationFrame(audioMonitorVozRef.current)
+      if (audioTimeoutVozRef.current !== null) clearTimeout(audioTimeoutVozRef.current)
+      const context = audioContextVozRef.current
+      if (context) void context.close().catch(() => {})
+    }
+  }, [otId])
+
+  useEffect(() => {
+    const onHidden = () => {
+      if (document.visibilityState === 'hidden' && escuchaContinuaRef.current) {
+        escuchaContinuaRef.current = false
+        setEscuchaContinuaActiva(false)
+        detenerGrabacionVoz()
+      }
+    }
+    document.addEventListener('visibilitychange', onHidden)
+    return () => document.removeEventListener('visibilitychange', onHidden)
+  })
 
   function detenerRespuestaHablada() {
     audioAbortRef.current?.abort()
@@ -779,6 +814,12 @@ function OTVivaContent() {
     if (context) void context.close().catch(() => {})
   }
 
+  function detenerEscuchaContinua() {
+    escuchaContinuaRef.current = false
+    setEscuchaContinuaActiva(false)
+    detenerGrabacionVoz()
+  }
+
   function detenerGrabacionVoz() {
     limpiarMonitorVoz()
     const recorder = mediaRecorderRef.current
@@ -842,8 +883,8 @@ function OTVivaContent() {
     }
   }
 
-  async function transcribirAudio(blob: Blob, destino: 'evento' | 'ia') {
-    if (!ot) return
+  async function transcribirAudio(blob: Blob, destino: 'evento' | 'ia'): Promise<boolean> {
+    if (!ot || !escuchaVivaMountedRef.current) return false
 
     setTranscribiendoVoz(true)
     setError('')
@@ -882,6 +923,10 @@ function OTVivaContent() {
           } else {
             // Orden verbal explícita: registrar el texto consolidado, nunca
             // cerrar automáticamente por silencio o interrupciones.
+            // Un comando de registro termina la escucha continua para evitar
+            // que un fragmento nuevo se mezcle con el evento confirmado.
+            escuchaContinuaRef.current = false
+            setEscuchaContinuaActiva(false)
             await crearEvento(consolidado)
           }
         } else {
@@ -891,17 +936,26 @@ function OTVivaContent() {
         setPreguntaIA((actual) => [actual.trim(), texto].filter(Boolean).join(' '))
         setSuccess('Voz transcrita. Revisa la consulta antes de enviarla a Tralixia.')
       }
+      return destino === 'evento' && !parseVivaVoiceEventCommand(texto).register
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'No fue posible transcribir el audio.')
+      escuchaContinuaRef.current = false
+      setEscuchaContinuaActiva(false)
+      setError(err instanceof Error ? err.message : 'No fue posible transcribir el audio. La escucha continua se detuvo; el borrador anterior sigue guardado.')
+      return false
     } finally {
       setTranscribiendoVoz(false)
     }
   }
 
-  async function alternarGrabacionVoz(destino: 'evento' | 'ia') {
-    if (grabandoVoz) {
-      detenerGrabacionVoz()
+  async function alternarGrabacionVoz(destino: 'evento' | 'ia', reanudacion = false) {
+    if (!reanudacion && grabandoVoz) {
+      detenerEscuchaContinua()
       return
+    }
+    if (reanudacion && (!escuchaContinuaRef.current || !escuchaVivaMountedRef.current)) return
+    if (!reanudacion) {
+      escuchaContinuaRef.current = destino === 'evento' && escuchaContinuaHabilitada
+      setEscuchaContinuaActiva(escuchaContinuaRef.current)
     }
 
     setError('')
@@ -939,6 +993,8 @@ function OTVivaContent() {
       }
 
       recorder.onerror = () => {
+        escuchaContinuaRef.current = false
+        setEscuchaContinuaActiva(false)
         setError('Se produjo un problema durante la grabación de voz.')
       }
 
@@ -954,22 +1010,34 @@ function OTVivaContent() {
         audioChunksRef.current = []
         setGrabandoVoz(null)
 
+        if (!escuchaVivaMountedRef.current) return
         if (blob.size < 1000 || (destino === 'evento' && cierreAutomaticoVoz && !vozDetectadaRef.current)) {
-          setError('No se detectó una narración suficiente. El borrador anterior permanece guardado.')
+          escuchaContinuaRef.current = false
+          setEscuchaContinuaActiva(false)
+          setError('No se detectó una narración suficiente. La escucha continua se detuvo y el borrador anterior permanece guardado.')
           return
         }
 
-        void transcribirAudio(blob, destino)
+        void (async () => {
+          const continuar = await transcribirAudio(blob, destino)
+          if (continuar && escuchaContinuaRef.current && escuchaVivaMountedRef.current) {
+            // Nuevo segmento: se solicita acceso al micrófono solo después de
+            // transcribir y guardar localmente el fragmento anterior.
+            await alternarGrabacionVoz('evento', true)
+          }
+        })()
       }
 
       recorder.start()
       vozDetectadaRef.current = false
-      if (destino === 'evento' && cierreAutomaticoVoz) vigilarPausaVoz(stream, recorder)
+      if (destino === 'evento' && (cierreAutomaticoVoz || escuchaContinuaRef.current)) vigilarPausaVoz(stream, recorder)
       setGrabandoVoz(destino)
-      setSuccess(destino === 'evento' && cierreAutomaticoVoz
+      setSuccess(destino === 'evento' && (cierreAutomaticoVoz || escuchaContinuaRef.current)
         ? 'Escuchando... tras una pausa de aproximadamente 3 segundos se transcribirá el fragmento. No se registrará ningún evento sin una orden explícita.'
         : 'Escuchando... habla normalmente y presiona Detener cuando termines.')
     } catch (err) {
+      escuchaContinuaRef.current = false
+      setEscuchaContinuaActiva(false)
       limpiarMonitorVoz()
       mediaStreamRef.current?.getTracks().forEach((track) => track.stop())
       mediaStreamRef.current = null
@@ -1593,13 +1661,20 @@ function OTVivaContent() {
               <input type="checkbox" checked={cierreAutomaticoVoz} onChange={(e) => setCierreAutomaticoVoz(e.target.checked)} disabled={Boolean(grabandoVoz) || transcribiendoVoz} className="h-4 w-4" />
               Modo prueba: detener grabación tras una pausa de voz (aprox. 3 segundos)
             </label>
-            <p className="mt-1 text-xs text-slate-500">Debe haber voz detectable antes del cierre automático. En ambientes ruidosos podría detenerse antes o no detectar la pausa; conserva el botón Detener grabación. La escucha solo funciona con esta pestaña activa y micrófono permitido.</p>
+            <label className="mt-2 flex items-center gap-2 text-sm text-slate-700">
+              <input type="checkbox" checked={escuchaContinuaHabilitada} onChange={(e) => setEscuchaContinuaHabilitada(e.target.checked)} disabled={escuchaContinuaActiva || Boolean(grabandoVoz) || transcribiendoVoz} className="h-4 w-4" />
+              Prueba 23: escuchar nuevamente después de cada transcripción
+            </label>
+            <p className="mt-1 text-xs text-slate-500">Activación voluntaria. Una pausa transcribe el fragmento y, si continúa habilitado, reinicia el micrófono. Se detiene al registrar un evento, al pulsar «Detener escucha continua» o si falla el micrófono. No funciona con la pestaña cerrada ni garantiza operación con llamadas o pantalla bloqueada.</p>
+            {escuchaContinuaActiva ? <p role="status" className="mt-2 text-sm font-semibold text-cyan-800">Escucha continua activa: grabando o transcribiendo fragmentos.</p> : null}
+            {escuchaContinuaActiva ? <button type="button" onClick={detenerEscuchaContinua} className="mt-2 rounded-xl bg-rose-700 px-5 py-3 text-sm font-semibold text-white">Detener escucha continua</button> : null}
+            <p className="mt-1 text-xs text-slate-500">El silencio no crea eventos. Cada fragmento se conserva como borrador local. En ambientes ruidosos, usa el control manual.</p>
 
             <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
               <button
                 type="button"
                 onClick={() => void alternarGrabacionVoz('evento')}
-                disabled={!sesionActiva || busy || transcribiendoVoz || Boolean(grabandoVoz && grabandoVoz !== 'evento')}
+                disabled={!sesionActiva || busy || transcribiendoVoz || escuchaContinuaActiva || Boolean(grabandoVoz && grabandoVoz !== 'evento')}
                 className={`rounded-xl px-5 py-3 text-sm font-semibold text-white disabled:opacity-50 ${
                   grabandoVoz === 'evento' ? 'bg-rose-700' : 'bg-cyan-800'
                 }`}
