@@ -6,6 +6,7 @@ import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from '
 import ProtectedModuleRoute from '../../../../../components/ProtectedModuleRoute'
 import { supabase } from '../../../../../lib/supabase/client'
 import { readOTEventDraft, saveOTEventDraft, clearOTEventDraft, type OTEventDraftType } from '../../../../../lib/offline/ot-event-draft'
+import { parseVivaVoiceEventCommand } from '../../../../../lib/ot/viva-voice-command'
 
 type OtRow = {
   id: string
@@ -797,9 +798,22 @@ function OTVivaContent() {
       if (!texto) throw new Error('No se detectó contenido de voz.')
 
       if (destino === 'evento') {
-        const consolidado = [textoEventoRef.current.trim(), texto].filter(Boolean).join(' ')
+        const parsed = parseVivaVoiceEventCommand(texto)
+        const consolidado = [textoEventoRef.current.trim(), parsed.text].filter(Boolean).join(' ')
         actualizarBorradorViva(consolidado, tipoEvento as OTEventDraftType)
-        setSuccess('Voz transcrita y borrador local actualizado. Revisa el texto antes de registrar el evento.')
+        if (parsed.register) {
+          if (!consolidado) {
+            setError('No existe una narración para registrar. Describe primero el evento técnico.')
+          } else if (!sesionActiva) {
+            setError('La sesión Viva no está activa. Se conservó el borrador, pero no se registró el evento.')
+          } else {
+            // Orden verbal explícita: registrar el texto consolidado, nunca
+            // cerrar automáticamente por silencio o interrupciones.
+            await crearEvento(consolidado)
+          }
+        } else {
+          setSuccess('Voz transcrita y borrador local actualizado. Puedes continuar el relato.')
+        }
       } else {
         setPreguntaIA((actual) => [actual.trim(), texto].filter(Boolean).join(' '))
         setSuccess('Voz transcrita. Revisa la consulta antes de enviarla a Tralixia.')
@@ -1137,8 +1151,9 @@ function OTVivaContent() {
     }
   }
 
-  async function crearEvento() {
-    if (!ot || !caso || !sesionActiva || !userId || !textoEvento.trim()) return
+  async function crearEvento(textoConfirmado?: string) {
+    const textoFinal = (textoConfirmado ?? textoEventoRef.current).trim()
+    if (!ot || !caso || !sesionActiva || !userId || !textoFinal || busy) return
     setBusy(true)
     setError('')
     setSuccess('')
@@ -1156,7 +1171,7 @@ function OTVivaContent() {
           autor_tipo: 'persona',
           origen_captura: 'movil',
           usuario_id: userId,
-          texto_original: textoEvento.trim(),
+          texto_original: textoFinal,
           visible_externo: false,
           incluir_resumen: true,
           estado: 'activo',
@@ -1511,7 +1526,7 @@ function OTVivaContent() {
                     : 'Hablar evento'}
               </button>
               <p className="text-xs text-slate-500">
-                Habla en lenguaje natural. Tralixia transcribe y tú revisas antes de guardar.
+                Puedes continuar la narración en varias grabaciones. Para registrar sin tocar Guardar evento, di al final: «Tralixia, registra este evento». El silencio y las interrupciones nunca registran automáticamente.
               </p>
             </div>
 
