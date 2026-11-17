@@ -5,7 +5,7 @@ export type VoiceEventCommand = { text: string; register: boolean }
 
 export function parseVivaVoiceEventCommand(transcript: string): VoiceEventCommand {
   const original = transcript.trim()
-  const command = /(?:^|[.!?;]\s*|\n+)tralixia\s*[,,:]?\s*(?:registra|registrar|guarda|guardar)\s+(?:este|el)\s+evento\s*[.!?]*\s*$/iu
+  const command = /(?:^|[.!?;,]\s*|\s+)tralixia\s*[,.:]?\s*(?:registra|registrar|guarda|guardar)\s+(?:este|el)\s+evento\s*[.!?]*\s*$/iu
   const match = command.exec(original)
   if (!match) return { text: original, register: false }
 
