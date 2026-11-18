@@ -1420,12 +1420,21 @@ function OTPageContent() {
                 >
                   Volver al listado OT
                 </button>
-                <a
-                  href={`/ot/${encodeURIComponent(selectedOfflineOtId)}/viva`}
-                  className="rounded-xl border border-cyan-300 bg-cyan-50 px-4 py-2 text-sm font-semibold text-cyan-900 hover:bg-cyan-100"
-                >
-                  Abrir OT Viva
-                </a>
+                {isOffline ? (
+                  <a
+                    href="#ot-viva-registro-local"
+                    className="rounded-xl border border-cyan-300 bg-cyan-50 px-4 py-2 text-sm font-semibold text-cyan-900 hover:bg-cyan-100"
+                  >
+                    Abrir OT Viva · registro local
+                  </a>
+                ) : (
+                  <Link
+                    href={`/ot/${encodeURIComponent(selectedOfflineOtId)}/viva`}
+                    className="rounded-xl border border-cyan-300 bg-cyan-50 px-4 py-2 text-sm font-semibold text-cyan-900 hover:bg-cyan-100"
+                  >
+                    Abrir OT Viva
+                  </Link>
+                )}
                 {!isOffline ? (
                   <Link
                     href={`/ot/${encodeURIComponent(selectedOfflineOtId)}`}
@@ -1734,8 +1743,9 @@ function OTPageContent() {
                 </div>
               </details>
 
-              <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-                <h3 className="text-xl font-semibold text-slate-900">Registro individual de eventos técnicos</h3>
+              <section id="ot-viva-registro-local" className="scroll-mt-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                <h3 className="text-xl font-semibold text-slate-900">OT Viva · Registro individual de eventos técnicos</h3>
+                {isOffline ? <p className="mt-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Modo local de OT Viva: registra observaciones de esta OT sin cambiar de pantalla. Los borradores quedan en este dispositivo; el asistente IA y el historial remoto necesitan conexión.</p> : null}
                 <p className="mt-2 text-sm text-slate-600">Cada registro se conserva por separado con su fecha y hora. No modifica el borrador ni reemplaza eventos anteriores.</p>
                 <label className="mt-4 block text-sm font-medium text-slate-700">Tipo de evento
                   <select className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2" value={eventType} onChange={(e) => updateEventDraft(eventText, e.target.value as OTEventDraftType)}>
