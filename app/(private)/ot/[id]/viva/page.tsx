@@ -225,6 +225,7 @@ function OTVivaContent() {
   const [textoEvento, setTextoEvento] = useState('')
   const textoEventoRef = useRef('')
   const [audiosPendientes, setAudiosPendientes] = useState<PendingVivaAudio[]>([])
+  const [historialTranscripciones, setHistorialTranscripciones] = useState<{ audioId: string; fecha: string; texto: string }[]>([])
   const [procesandoAudioPendiente, setProcesandoAudioPendiente] = useState('')
   const [borradorVivaRecuperado, setBorradorVivaRecuperado] = useState(false)
   const [eventoSeleccionado, setEventoSeleccionado] = useState('')
@@ -464,6 +465,28 @@ function OTVivaContent() {
     setTipoEvento(saved?.tipo_evento ?? 'hallazgo')
     setBorradorVivaRecuperado(Boolean(saved))
   }, [ot?.id, ot?.empresa_id, userId, otId])
+
+  const historialTranscripcionesKey = ot?.empresa_id && userId
+    ? `tralixia_viva_transcripciones_${ot.empresa_id}_${userId}_${ot.id}`
+    : ''
+
+  useEffect(() => {
+    if (!historialTranscripcionesKey) {
+      setHistorialTranscripciones([])
+      return
+    }
+    try {
+      const raw = window.localStorage.getItem(historialTranscripcionesKey)
+      const parsed: unknown = raw ? JSON.parse(raw) : []
+      setHistorialTranscripciones(Array.isArray(parsed)
+        ? parsed.filter((entry): entry is { audioId: string; fecha: string; texto: string } =>
+          Boolean(entry && typeof entry.audioId === 'string' && typeof entry.texto === 'string' && typeof entry.fecha === 'string'))
+        : [])
+    } catch {
+      setHistorialTranscripciones([])
+      setError('No se pudo recuperar el historial local de transcripciones.')
+    }
+  }, [historialTranscripcionesKey])
 
   const refrescarAudiosPendientes = useCallback(async () => {
     if (!ot?.empresa_id || !userId) return
@@ -920,7 +943,7 @@ function OTVivaContent() {
     }
   }
 
-  async function transcribirAudio(blob: Blob, destino: 'evento' | 'ia', desdePendiente = false, onTranscribed?: () => Promise<void>): Promise<boolean> {
+  async function transcribirAudio(blob: Blob, destino: 'evento' | 'ia', desdePendiente = false, onTranscribed?: (texto: string) => Promise<void>): Promise<boolean> {
     if (!ot || !escuchaVivaMountedRef.current) return false
 
     setTranscribiendoVoz(true)
@@ -973,7 +996,7 @@ function OTVivaContent() {
         setPreguntaIA((actual) => [actual.trim(), texto].filter(Boolean).join(' '))
         setSuccess('Voz transcrita. Revisa la consulta antes de enviarla a Tralixia.')
       }
-      if (onTranscribed) await onTranscribed()
+      if (onTranscribed) await onTranscribed(texto)
       if (desdePendiente) return true
       return destino === 'evento' && !parseVivaVoiceEventCommand(texto).register
     } catch (err) {
@@ -999,10 +1022,26 @@ function OTVivaContent() {
     try {
       // Replaying a recording never executes a spoken "register" command.
       // The technician must review the transcription and explicitly save the event.
-      const ok = await transcribirAudio(item.blob, item.destino, true)
+      const ok = await transcribirAudio(item.blob, item.destino, true, async (texto) => {
+        if (!historialTranscripcionesKey) throw new Error('No se encontró la OT para guardar la transcripción.')
+        const saved: { audioId: string; fecha: string; texto: string }[] = (() => {
+          try {
+            const parsed: unknown = JSON.parse(window.localStorage.getItem(historialTranscripcionesKey) || '[]')
+            return Array.isArray(parsed) ? parsed : []
+          } catch {
+            return []
+          }
+        })()
+        if (!saved.some((entry) => entry.audioId === item.id)) {
+          const next = [...saved, { audioId: item.id, fecha: item.createdAt, texto }]
+          // Guardar la transcripción individual antes de quitar el audio.
+          window.localStorage.setItem(historialTranscripcionesKey, JSON.stringify(next))
+          setHistorialTranscripciones(next)
+        }
+      })
       if (ok) {
         await deletePendingVivaAudio(item.id)
-        setSuccess('Audio pendiente transcrito. Revisa el texto antes de registrar el evento.')
+        setSuccess('Transcripción conservada en el historial local. Revisa cada tramo antes de registrar el evento.')
       }
     } finally {
       setProcesandoAudioPendiente('')
@@ -1800,6 +1839,20 @@ function OTVivaContent() {
                     </div>
                   ))}
                 </div>
+              </div>
+            ) : null}
+            {historialTranscripciones.length > 0 ? (
+              <div className="mt-3 rounded-xl border border-sky-200 bg-sky-50 p-3">
+                <h3 className="text-sm font-bold text-sky-950">Transcripciones individuales conservadas en este dispositivo</h3>
+                <p className="mt-1 text-xs text-sky-900">Cada audio transcrito desde esta versión se muestra por separado. Este historial no sustituye la revisión humana ni crea eventos. Los audios transcritos anteriormente no se pueden reconstruir desde aquí.</p>
+                <ol className="mt-2 space-y-2">
+                  {historialTranscripciones.map((entry, index) => (
+                    <li key={entry.audioId} className="rounded-lg border border-sky-100 bg-white p-3">
+                      <p className="text-xs font-semibold text-sky-900">Tramo {index + 1} · {formatDateTime(entry.fecha)}</p>
+                      <p className="mt-1 whitespace-pre-wrap text-sm text-slate-800">{entry.texto}</p>
+                    </li>
+                  ))}
+                </ol>
               </div>
             ) : null}
             {borradorVivaRecuperado ? <p role="status" className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">Borrador recuperado automáticamente. Puedes continuar la narración; todavía no se ha registrado un evento.</p> : null}
