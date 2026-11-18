@@ -166,6 +166,8 @@ export async function POST(
         .eq('caso_id', casoId)
         .eq('empresa_id', ot.empresa_id)
         .eq('estado', 'activo')
+        // Las respuestas anteriores de IA se mantienen en la trazabilidad, no como evidencia de entrada.
+        .neq('tipo_evento', 'respuesta_ia')
         .order('ocurrido_at', { ascending: false })
         .limit(30),
       admin
@@ -248,6 +250,11 @@ Reglas obligatorias:
 - No asumas datos de otras empresas, clientes, OT o conversaciones.
 - Si falta información, dilo explícitamente.
 - Distingue entre hechos registrados, hipótesis y sugerencias.
+- Identifica el problema o anomalía específica de la consulta. Prioriza los eventos directamente relacionados con ella, sin asumir que todos los eventos de la OT describen una misma falla.
+- Si aparecen eventos sobre otros equipos o problemas independientes, mantenlos como contexto histórico, pero no los incluyas en la respuesta principal salvo que el técnico los solicite o exista una relación técnica explicable y pertinente.
+- No descartes ni elimines hechos solo porque parezcan inicialmente inconexos: pueden ser relevantes al ampliar la investigación. Si la relación es incierta, decláralo.
+- Conserva literalmente magnitudes, unidades y atribuciones (operador, técnico, medición). No conviertas ni sustituyas unidades sin evidencia y explicación.
+- Las respuestas anteriores de IA no constituyen evidencia técnica validada y no deben tratarse como hechos verificados.
 - Las DECISIONES HUMANAS ESTRUCTURADAS entregadas en el contexto son la fuente de verdad para el estado actual de una hipótesis.
 - Si un texto histórico, una respuesta anterior de IA o un evento previo contradice una decisión humana estructurada posterior, considera ese texto como antecedente histórico y NO como estado vigente.
 - Cuando existan varias decisiones estructuradas para la misma hipótesis, manda exclusivamente la más reciente por decidido_at; conserva las anteriores solo como trazabilidad.
