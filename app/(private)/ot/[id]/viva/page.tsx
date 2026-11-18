@@ -7,6 +7,8 @@ import ProtectedModuleRoute from '../../../../../components/ProtectedModuleRoute
 import OTVivaConnectivityAlerts from '../../../../../components/ot/OTVivaConnectivityAlerts'
 import { savePendingVivaAudio, listPendingVivaAudio, deletePendingVivaAudio, type PendingVivaAudio } from '../../../../../lib/offline/ot-viva-audio'
 import { supabase } from '../../../../../lib/supabase/client'
+import { readCurrentTerrainRegistry } from '../../../../../lib/offline/terrain-registry'
+import { findCachedOTDetail } from '../../../../../lib/offline/ot'
 import { readOTEventDraft, saveOTEventDraft, clearOTEventDraft, type OTEventDraftType } from '../../../../../lib/offline/ot-event-draft'
 import { parseVivaVoiceEventCommand } from '../../../../../lib/ot/viva-voice-command'
 
@@ -167,6 +169,7 @@ function OTVivaContent() {
   const otId = String(params?.id || '')
 
   const [loading, setLoading] = useState(true)
+  const [offlineOnly, setOfflineOnly] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
@@ -271,6 +274,22 @@ function OTVivaContent() {
     setLoading(true)
     setError('')
 
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      const registry = readCurrentTerrainRegistry()
+      const prepared = registry ? findCachedOTDetail(registry.empresaId, registry.userId, otId) : null
+      if (registry && prepared) {
+        setUserId(registry.userId)
+        setOt(prepared as unknown as OtRow)
+        setOfflineOnly(true)
+        setLoading(false)
+        return
+      }
+      setError('Esta OT no está preparada localmente. Ábrela con Internet antes de utilizar OT Viva en terreno.')
+      setLoading(false)
+      return
+    }
+
+    setOfflineOnly(false)
     try {
       const { data: authData, error: authError } = await supabase.auth.getUser()
       if (authError || !authData.user) throw new Error('No se pudo validar la sesión.')
@@ -1641,6 +1660,41 @@ function OTVivaContent() {
       <div className="space-y-4">
         <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-sm text-red-700">{error || 'No se encontró la OT.'}</div>
         <Link href="/ot" className="inline-flex rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700">Volver a OT</Link>
+      </div>
+    )
+  }
+
+  if (offlineOnly) {
+    return (
+      <div className="space-y-5 pb-12">
+        <OTVivaConnectivityAlerts audioOcupado={Boolean(grabandoVoz) || transcribiendoVoz} />
+        <section className="rounded-2xl border border-amber-200 bg-amber-50 p-5">
+          <h1 className="text-xl font-bold text-amber-950">{ot.folio || 'OT'} · OT Viva sin conexión</h1>
+          <p className="mt-2 text-sm text-amber-900">Trabajo local preparado para esta orden. El historial remoto, la IA y el registro oficial necesitan Internet.</p>
+        </section>
+        <section className="rounded-2xl border border-slate-200 bg-white p-5">
+          <h2 className="text-lg font-semibold">Registrar observación local</h2>
+          <p className="mt-1 text-sm text-slate-600">El texto se conserva como borrador en este dispositivo. Se registrará en la línea técnica solo cuando confirmes su envío con conexión.</p>
+          <select value={tipoEvento} onChange={(e) => actualizarBorradorViva(textoEventoRef.current, e.target.value as OTEventDraftType)} className="mt-3 w-full rounded-xl border border-slate-300 px-3 py-3">
+            <option value="hallazgo">Hallazgo</option>
+            <option value="prueba">Prueba / verificación</option>
+            <option value="hipotesis">Hipótesis</option>
+            <option value="accion">Acción realizada</option>
+            <option value="resultado">Resultado</option>
+            <option value="medicion">Medición</option>
+          </select>
+          <textarea value={textoEvento} onChange={(e) => actualizarBorradorViva(e.target.value, tipoEvento as OTEventDraftType)} rows={4} className="mt-3 w-full rounded-xl border border-slate-300 px-4 py-3" placeholder="Describe la observación técnica..." />
+          {textoEvento.trim() ? <p role="status" className="mt-2 text-sm text-emerald-800">Borrador local disponible en este dispositivo. No se ha enviado al servidor.</p> : null}
+          <button type="button" onClick={() => void alternarGrabacionVoz('evento')} disabled={Boolean(grabandoVoz) || transcribiendoVoz} className="mt-3 rounded-xl bg-cyan-800 px-5 py-3 text-sm font-semibold text-white disabled:opacity-50">
+            Grabar observación offline
+          </button>
+          {grabandoVoz === 'evento' ? <button type="button" onClick={detenerGrabacionVoz} className="mt-3 ml-2 rounded-xl bg-rose-700 px-5 py-3 text-sm font-semibold text-white">Detener y guardar audio</button> : null}
+          <p className="mt-2 text-xs text-slate-500">No cierres la pestaña durante la grabación. El audio solo queda protegido cuando termina el guardado local.</p>
+          {audiosPendientes.length > 0 ? <p role="status" className="mt-3 text-sm font-semibold text-amber-900">{audiosPendientes.length} grabación(es) guardada(s) en el dispositivo, pendientes de transcripción.</p> : null}
+        </section>
+        {error ? <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</p> : null}
+        {success ? <p role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{success}</p> : null}
+        <Link href="/ot" className="inline-block rounded-xl border border-slate-300 px-4 py-3 text-sm font-semibold">Volver a OT</Link>
       </div>
     )
   }
