@@ -1,9 +1,10 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import ProtectedModuleRoute from '../../../components/ProtectedModuleRoute'
 import OTVivaConnectivityAlerts from '../../../components/ot/OTVivaConnectivityAlerts'
+import { savePendingVivaAudio, listPendingVivaAudio } from '../../../lib/offline/ot-viva-audio'
 import { OTDataTable } from '../../../components/ot/ot-data-table'
 import { supabase } from '../../../lib/supabase/client'
 import type { OTResumen } from '../../../lib/ot/types'
@@ -415,6 +416,11 @@ function OTPageContent() {
   const [offlineDraftSuccess, setOfflineDraftSuccess] = useState('')
   const [eventType, setEventType] = useState<'accion' | 'hallazgo' | 'medicion' | 'prueba' | 'resultado' | 'hipotesis'>('accion')
   const [eventText, setEventText] = useState('')
+  const [grabandoAudioLocal, setGrabandoAudioLocal] = useState(false)
+  const [cantidadAudiosLocales, setCantidadAudiosLocales] = useState(0)
+  const [estadoAudioLocal, setEstadoAudioLocal] = useState('')
+  const grabadorLocalRef = useRef<MediaRecorder | null>(null)
+  const microfonoLocalRef = useRef<MediaStream | null>(null)
   const [eventDraftRecovered, setEventDraftRecovered] = useState(false)
   const [eventNotice, setEventNotice] = useState('')
   const [lastLocalEventQueueId, setLastLocalEventQueueId] = useState('')
@@ -846,6 +852,75 @@ function OTPageContent() {
     })()
     return () => controller.abort()
   }, [isOffline, selectedOfflineOtId, selectedOfflineDetail])
+
+  useEffect(() => {
+    if (!selectedOfflineOtId || !empresaActivaId || !currentUserId) {
+      setCantidadAudiosLocales(0)
+      return
+    }
+    let active = true
+    void listPendingVivaAudio(empresaActivaId, currentUserId, selectedOfflineOtId)
+      .then((audios) => { if (active) setCantidadAudiosLocales(audios.length) })
+      .catch(() => { if (active) setEstadoAudioLocal('No fue posible consultar los audios locales guardados.') })
+    return () => { active = false }
+  }, [selectedOfflineOtId, empresaActivaId, currentUserId])
+
+  async function alternarAudioLocal() {
+    if (grabadorLocalRef.current?.state === 'recording') {
+      grabadorLocalRef.current.stop()
+      return
+    }
+    if (!selectedOfflineOtId || !empresaActivaId || !currentUserId) {
+      setEstadoAudioLocal('Selecciona una OT preparada antes de grabar.')
+      return
+    }
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+      setEstadoAudioLocal('Este navegador no permite la grabación local de audio.')
+      return
+    }
+    const empresaId = empresaActivaId
+    const tecnicoId = currentUserId
+    const otId = selectedOfflineOtId
+    try {
+      setEstadoAudioLocal('')
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      microfonoLocalRef.current = stream
+      const mime = ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm'].find((value) => MediaRecorder.isTypeSupported(value))
+      const recorder = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream)
+      const partes: Blob[] = []
+      grabadorLocalRef.current = recorder
+      recorder.ondataavailable = (event) => { if (event.data.size > 0) partes.push(event.data) }
+      recorder.onerror = () => {
+        setEstadoAudioLocal('Falló la grabación. No se puede asegurar que el audio se haya conservado.')
+      }
+      recorder.onstop = () => {
+        setGrabandoAudioLocal(false)
+        grabadorLocalRef.current = null
+        stream.getTracks().forEach((track) => track.stop())
+        microfonoLocalRef.current = null
+        const blob = new Blob(partes, { type: recorder.mimeType || partes[0]?.type || 'audio/mp4' })
+        if (blob.size < 1000) {
+          setEstadoAudioLocal('La grabación está vacía o incompleta y no pudo guardarse.')
+          return
+        }
+        void savePendingVivaAudio({ empresaId, userId: tecnicoId, otId, destino: 'evento', blob })
+          .then(async () => {
+            const audios = await listPendingVivaAudio(empresaId, tecnicoId, otId)
+            setCantidadAudiosLocales(audios.length)
+            setEstadoAudioLocal('Audio conservado en este dispositivo. Transcríbelo en OT Viva al recuperar Internet.')
+          })
+          .catch((error: unknown) => setEstadoAudioLocal(error instanceof Error ? `No fue posible guardar el audio: ${error.message}` : 'No fue posible guardar el audio.'))
+      }
+      recorder.start()
+      setGrabandoAudioLocal(true)
+      setEstadoAudioLocal('Grabando... pulsa Detener y guardar audio para conservar la observación.')
+    } catch (error) {
+      microfonoLocalRef.current?.getTracks().forEach((track) => track.stop())
+      microfonoLocalRef.current = null
+      setGrabandoAudioLocal(false)
+      setEstadoAudioLocal(error instanceof Error ? error.message : 'No se pudo iniciar el micrófono.')
+    }
+  }
 
   const volverAlListadoOffline = () => {
     window.sessionStorage.removeItem(`tralixia_terrain_selected_ot_${empresaActivaId}_${currentUserId}`)
@@ -1411,7 +1486,7 @@ function OTPageContent() {
       ) : (isOffline || Boolean(selectedOfflineOtId)) ? (
           selectedOfflineOt && selectedOfflineDetail ? (
             <div className="space-y-5">
-              <OTVivaConnectivityAlerts audioOcupado={false} />
+              <OTVivaConnectivityAlerts audioOcupado={grabandoAudioLocal} />
               <div className="flex flex-wrap items-center gap-3">
                 <button
                   type="button"
@@ -1745,7 +1820,16 @@ function OTPageContent() {
 
               <section id="ot-viva-registro-local" className="scroll-mt-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
                 <h3 className="text-xl font-semibold text-slate-900">OT Viva · Registro individual de eventos técnicos</h3>
-                {isOffline ? <p className="mt-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Modo local de OT Viva: registra observaciones de esta OT sin cambiar de pantalla. Los borradores quedan en este dispositivo; el asistente IA y el historial remoto necesitan conexión.</p> : null}
+                {isOffline ? <p className="mt-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Modo local de OT Viva: registra observaciones de esta OT sin cambiar de pantalla. Los borradores y audios terminados quedan en este dispositivo; el asistente IA y el historial remoto necesitan conexión.</p> : null}
+                <div className="mt-3 rounded-xl border border-cyan-200 bg-cyan-50 p-3">
+                  <p className="text-sm font-semibold text-cyan-950">Grabación local para OT Viva</p>
+                  <p className="mt-1 text-xs text-cyan-900">La grabación se almacena al detenerla. No cierres la aplicación durante la captura; el guardado no está garantizado si Safari interrumpe el micrófono.</p>
+                  <button type="button" onClick={() => void alternarAudioLocal()} className={`mt-2 rounded-xl px-4 py-2 text-sm font-semibold text-white ${grabandoAudioLocal ? 'bg-rose-700' : 'bg-cyan-800'}`}>
+                    {grabandoAudioLocal ? 'Detener y guardar audio' : 'Grabar observación'}
+                  </button>
+                  <p className="mt-2 text-xs text-cyan-950">Audios pendientes en este dispositivo: {cantidadAudiosLocales}</p>
+                  {estadoAudioLocal ? <p role="status" className="mt-2 text-sm text-cyan-950">{estadoAudioLocal}</p> : null}
+                </div>
                 <p className="mt-2 text-sm text-slate-600">Cada registro se conserva por separado con su fecha y hora. No modifica el borrador ni reemplaza eventos anteriores.</p>
                 <label className="mt-4 block text-sm font-medium text-slate-700">Tipo de evento
                   <select className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2" value={eventType} onChange={(e) => updateEventDraft(eventText, e.target.value as OTEventDraftType)}>
