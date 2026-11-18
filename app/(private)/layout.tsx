@@ -1300,10 +1300,21 @@ if (empresaGuardadaValida) {
     return Boolean(cache?.detalles.some((detalle) => detalle.id === match[1]))
   }, [empresaActivaId, pathname, usuarioId])
 
+  // OT Viva shares the prepared OT identity. Keep its already-mounted view
+  // available without network; server-only actions remain unavailable offline.
+  const isCachedOtVivaRoute = useMemo(() => {
+    if (!empresaActivaId || !usuarioId) return false
+    const match = pathname.match(/^\\/ot\\/([^/]+)\\/viva$/)
+    if (!match?.[1]) return false
+    const cache = readOTOfflineCache(empresaActivaId, usuarioId)
+    return Boolean(cache?.detalles.some((detalle) => detalle.id === match[1]))
+  }, [empresaActivaId, pathname, usuarioId])
+
   const isOfflineSafeRoute = pathname === HARAS_PARTOS_ROUTE ||
     pathname.startsWith(`${HARAS_PARTOS_ROUTE}/`) ||
     pathname === OT_ROUTE ||
-    isCachedOtDetailRoute
+    isCachedOtDetailRoute ||
+    isCachedOtVivaRoute
   const showOfflineRouteBlocked = isOffline && !isOfflineSafeRoute
   const showOtOfflineRouteBlocked = showOfflineRouteBlocked && pathname.startsWith(`${OT_ROUTE}/`)
 
