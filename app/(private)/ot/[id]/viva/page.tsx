@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ProtectedModuleRoute from '../../../../../components/ProtectedModuleRoute'
+import OTVivaConnectivityAlerts from '../../../../../components/ot/OTVivaConnectivityAlerts'
 import { supabase } from '../../../../../lib/supabase/client'
 import { readOTEventDraft, saveOTEventDraft, clearOTEventDraft, type OTEventDraftType } from '../../../../../lib/offline/ot-event-draft'
 import { parseVivaVoiceEventCommand } from '../../../../../lib/ot/viva-voice-command'
@@ -1578,6 +1579,7 @@ function OTVivaContent() {
 
   return (
     <div className="space-y-5 pb-12">
+      <OTVivaConnectivityAlerts audioOcupado={Boolean(grabandoVoz) || transcribiendoVoz || reproduciendoRespuesta || preparandoAudioRespuesta} />
       <header className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
