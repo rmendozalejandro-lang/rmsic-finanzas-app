@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation'
 import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ProtectedModuleRoute from '../../../../../components/ProtectedModuleRoute'
 import OTVivaConnectivityAlerts from '../../../../../components/ot/OTVivaConnectivityAlerts'
+import { savePendingVivaAudio, listPendingVivaAudio, deletePendingVivaAudio, type PendingVivaAudio } from '../../../../../lib/offline/ot-viva-audio'
 import { supabase } from '../../../../../lib/supabase/client'
 import { readOTEventDraft, saveOTEventDraft, clearOTEventDraft, type OTEventDraftType } from '../../../../../lib/offline/ot-event-draft'
 import { parseVivaVoiceEventCommand } from '../../../../../lib/ot/viva-voice-command'
@@ -220,6 +221,8 @@ function OTVivaContent() {
   const [tipoEvento, setTipoEvento] = useState('hallazgo')
   const [textoEvento, setTextoEvento] = useState('')
   const textoEventoRef = useRef('')
+  const [audiosPendientes, setAudiosPendientes] = useState<PendingVivaAudio[]>([])
+  const [procesandoAudioPendiente, setProcesandoAudioPendiente] = useState('')
   const [borradorVivaRecuperado, setBorradorVivaRecuperado] = useState(false)
   const [eventoSeleccionado, setEventoSeleccionado] = useState('')
   const [tipoUso, setTipoUso] = useState('evidencia')
@@ -442,6 +445,20 @@ function OTVivaContent() {
     setTipoEvento(saved?.tipo_evento ?? 'hallazgo')
     setBorradorVivaRecuperado(Boolean(saved))
   }, [ot?.id, ot?.empresa_id, userId, otId])
+
+  const refrescarAudiosPendientes = useCallback(async () => {
+    if (!ot?.empresa_id || !userId) return
+    try {
+      const items = await listPendingVivaAudio(ot.empresa_id, userId, ot.id)
+      setAudiosPendientes(items)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudo leer la bandeja local de audios.')
+    }
+  }, [ot?.empresa_id, ot?.id, userId])
+
+  useEffect(() => {
+    void refrescarAudiosPendientes()
+  }, [refrescarAudiosPendientes])
 
   function actualizarBorradorViva(text: string, type: OTEventDraftType) {
     textoEventoRef.current = text
@@ -884,7 +901,7 @@ function OTVivaContent() {
     }
   }
 
-  async function transcribirAudio(blob: Blob, destino: 'evento' | 'ia'): Promise<boolean> {
+  async function transcribirAudio(blob: Blob, destino: 'evento' | 'ia', desdePendiente = false, onTranscribed?: () => Promise<void>): Promise<boolean> {
     if (!ot || !escuchaVivaMountedRef.current) return false
 
     setTranscribiendoVoz(true)
@@ -916,7 +933,7 @@ function OTVivaContent() {
         const parsed = parseVivaVoiceEventCommand(texto)
         const consolidado = [textoEventoRef.current.trim(), parsed.text].filter(Boolean).join(' ')
         actualizarBorradorViva(consolidado, tipoEvento as OTEventDraftType)
-        if (parsed.register) {
+        if (parsed.register && !desdePendiente) {
           if (!consolidado) {
             setError('No existe una narración para registrar. Describe primero el evento técnico.')
           } else if (!sesionActiva) {
@@ -937,6 +954,8 @@ function OTVivaContent() {
         setPreguntaIA((actual) => [actual.trim(), texto].filter(Boolean).join(' '))
         setSuccess('Voz transcrita. Revisa la consulta antes de enviarla a Tralixia.')
       }
+      if (onTranscribed) await onTranscribed()
+      if (desdePendiente) return true
       return destino === 'evento' && !parseVivaVoiceEventCommand(texto).register
     } catch (err) {
       escuchaContinuaRef.current = false
@@ -945,6 +964,30 @@ function OTVivaContent() {
       return false
     } finally {
       setTranscribiendoVoz(false)
+    }
+  }
+
+  async function procesarAudioPendiente(item: PendingVivaAudio) {
+    if (!navigator.onLine || procesandoAudioPendiente || transcribiendoVoz || grabandoVoz) {
+      setError('Necesitas conexión y ninguna grabación activa para transcribir el audio pendiente.')
+      return
+    }
+    if (!ot || item.otId !== ot.id || item.empresaId !== ot.empresa_id || item.userId !== userId) {
+      setError('El audio pendiente no corresponde a esta OT y usuario.')
+      return
+    }
+    setProcesandoAudioPendiente(item.id)
+    try {
+      // Replaying a recording never executes a spoken "register" command.
+      // The technician must review the transcription and explicitly save the event.
+      const ok = await transcribirAudio(item.blob, item.destino, true)
+      if (ok) {
+        await deletePendingVivaAudio(item.id)
+        setSuccess('Audio pendiente transcrito. Revisa el texto antes de registrar el evento.')
+      }
+    } finally {
+      setProcesandoAudioPendiente('')
+      await refrescarAudiosPendientes()
     }
   }
 
@@ -1020,7 +1063,32 @@ function OTVivaContent() {
         }
 
         void (async () => {
-          const continuar = await transcribirAudio(blob, destino)
+          if (!ot || !userId) {
+            setError('No hay una OT y usuario validados para conservar el audio.')
+            return
+          }
+          let stored: PendingVivaAudio
+          try {
+            stored = await savePendingVivaAudio({
+              empresaId: ot.empresa_id, userId, otId: ot.id, destino, blob,
+            })
+            await refrescarAudiosPendientes()
+          } catch (saveError) {
+            escuchaContinuaRef.current = false
+            setEscuchaContinuaActiva(false)
+            setError(saveError instanceof Error ? `No fue posible proteger el audio localmente: ${saveError.message}` : 'No fue posible proteger el audio localmente.')
+            return
+          }
+          if (!navigator.onLine) {
+            escuchaContinuaRef.current = false
+            setEscuchaContinuaActiva(false)
+            setSuccess('Audio guardado localmente. Cuando vuelva Internet podrás transcribirlo desde la bandeja.')
+            return
+          }
+          const continuar = await transcribirAudio(blob, destino, false, async () => {
+            await deletePendingVivaAudio(stored.id)
+            await refrescarAudiosPendientes()
+          })
           if (continuar && escuchaContinuaRef.current && escuchaVivaMountedRef.current) {
             // Nuevo segmento: se solicita acceso al micrófono solo después de
             // transcribir y guardar localmente el fragmento anterior.
@@ -1664,6 +1732,22 @@ function OTVivaContent() {
               <textarea value={textoEvento} onChange={(e) => actualizarBorradorViva(e.target.value, tipoEvento as OTEventDraftType)} disabled={!sesionActiva || busy || transcribiendoVoz} rows={3} placeholder="Ej.: Se detecta ruido anormal en el rodamiento lado transmisión..." className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm" />
             </div>
 
+            {audiosPendientes.length > 0 ? (
+              <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3">
+                <p className="text-sm font-semibold text-amber-950">{audiosPendientes.length} audio(s) guardado(s) localmente, pendientes de transcripción</p>
+                <p className="mt-1 text-xs text-amber-900">Se conservan en este dispositivo, asociados a esta OT. No se envían ni registran automáticamente. Revisa cada transcripción antes de guardarla.</p>
+                <div className="mt-2 flex flex-col gap-2">
+                  {audiosPendientes.map((item) => (
+                    <div key={item.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-white p-2 text-xs">
+                      <span>{formatDateTime(item.createdAt)} · {item.destino === 'evento' ? 'Evento' : 'Consulta IA'} · {(item.size / 1024).toFixed(0)} KB</span>
+                      <button type="button" disabled={Boolean(procesandoAudioPendiente) || transcribiendoVoz || Boolean(grabandoVoz) || !navigator.onLine} onClick={() => void procesarAudioPendiente(item)} className="rounded-lg bg-cyan-800 px-3 py-2 font-semibold text-white disabled:opacity-50">
+                        {procesandoAudioPendiente === item.id ? 'Transcribiendo...' : 'Transcribir pendiente'}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
             {borradorVivaRecuperado ? <p role="status" className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">Borrador recuperado automáticamente. Puedes continuar la narración; todavía no se ha registrado un evento.</p> : null}
             {textoEvento.trim() ? <p className="mt-2 text-xs text-slate-600">Texto conservado en este dispositivo con cada modificación o transcripción completada. El audio en curso no se guarda automáticamente.</p> : null}
 
