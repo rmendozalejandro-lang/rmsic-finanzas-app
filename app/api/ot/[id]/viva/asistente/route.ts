@@ -213,8 +213,13 @@ export async function POST(
     // que podría omitir anomalías independientes de la misma OT.
     const preguntaNormalizada = pregunta.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
     const consultaGlobal =
-      /\b(todos?|todas?|completo|completa|general|global|integral)\b/.test(preguntaNormalizada) &&
-      /\b(problemas?|anomalias?|hallazgos?|eventos?|antecedentes?|intervenciones?|orden(?:es)? de trabajo|ot)\b/.test(preguntaNormalizada)
+      (
+        /\b(todos?|todas?|completo|completa|general|global|integral)\b/.test(preguntaNormalizada) &&
+        /\b(problemas?|anomalias?|hallazgos?|eventos?|antecedentes?|intervenciones?|orden(?:es)? de trabajo|ot)\b/.test(preguntaNormalizada)
+      ) ||
+      // Preguntas naturales sobre el conjunto de problemas registrados en esta OT.
+      /\b(que|cuales|cuantos|enumer(a|ame)|lista|resume|resumen)\b.{0,100}\b(problemas|anomalias|hallazgos|eventos|incidencias)\b/.test(preguntaNormalizada) &&
+      /\b(ot|orden de trabajo|intervencion|registrad[oa]s?|independientes)\b/.test(preguntaNormalizada)
 
     let eventosParaConsulta = eventos
     if (eventos.length > 1 && !consultaGlobal) {
@@ -369,7 +374,7 @@ Reglas obligatorias:
 - Si la consulta pide todos los problemas o un resumen global de la OT, enumera cada problema independiente incluido en los eventos, sin omitir ninguno y sin mezclar hipótesis.
 - No uses categorías, etiquetas de estado o clasificaciones (por ejemplo, "estado D") que no estén definidas explícitamente en los datos recibidos o solicitadas por el técnico.
 - Identifica el problema o anomalía específica de la consulta. Prioriza los eventos directamente relacionados con ella, sin asumir que todos los eventos de la OT describen una misma falla.
-- Si aparecen eventos sobre otros equipos o problemas independientes, mantenlos como contexto histórico, pero no los incluyas en la respuesta principal salvo que el técnico los solicite o exista una relación técnica explicable y pertinente.
+- Si la pregunta es sobre una anomalía específica, no incluyas otros problemas independientes salvo que el técnico los solicite o exista una relación técnica justificada. Si pide identificar los problemas registrados en la OT, incluye todos los problemas independientes suministrados, incluso si son de equipos diferentes.
 - No descartes ni elimines hechos solo porque parezcan inicialmente inconexos: pueden ser relevantes al ampliar la investigación. Si la relación es incierta, decláralo.
 - Conserva literalmente magnitudes, unidades y atribuciones (operador, técnico, medición). No conviertas ni sustituyas unidades sin evidencia y explicación.
 - Las respuestas anteriores de IA no constituyen evidencia técnica validada y no deben tratarse como hechos verificados.
