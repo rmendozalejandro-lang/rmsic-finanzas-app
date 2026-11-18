@@ -166,6 +166,8 @@ export async function POST(
         .eq('caso_id', casoId)
         .eq('empresa_id', ot.empresa_id)
         .eq('estado', 'activo')
+        // Las respuestas anteriores de IA se mantienen en la trazabilidad, no como evidencia de entrada.
+        .neq('tipo_evento', 'respuesta_ia')
         .order('ocurrido_at', { ascending: false })
         .limit(30),
       admin
@@ -205,7 +207,107 @@ export async function POST(
       decisionesVigentesPorEvento.set(decision.evento_id, decision)
     }
 
-    const contextoEventos = eventos
+    // Primera etapa: seleccionar evidencia pertinente antes de generar la respuesta.
+    // No se altera ni elimina ningún registro; la selección solo aplica a esta consulta.
+    let eventosParaConsulta = eventos
+    if (eventos.length > 1) {
+      const seleccionResp = await fetch('https://api.openai.com/v1/responses', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${openAiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: openAiModel,
+          store: false,
+          max_output_tokens: 500,
+          text: {
+            format: {
+              type: 'json_schema',
+              name: 'seleccion_contexto_ot',
+              strict: true,
+              schema: {
+                type: 'object',
+                additionalProperties: false,
+                required: ['eventos_pertinentes'],
+                properties: {
+                  eventos_pertinentes: {
+                    type: 'array',
+                    items: { type: 'string' },
+                  },
+                },
+              },
+            },
+          },
+          input: [
+            {
+              role: 'developer',
+              content: [
+                'Selecciona únicamente IDs de eventos pertinentes a la consulta técnica.',
+                'Incluye eventos directamente relacionados y los potencialmente relacionados por una hipótesis técnica razonable.',
+                'No incluyas eventos independientes solo para explicar que no tienen relación.',
+                'Si la consulta pide toda la OT o varios problemas, incluye todos los eventos aplicables.',
+                'Las decisiones humanas no se modifican. Nunca inventes IDs ni añadas información.',
+                'Devuelve solo el objeto JSON solicitado.',
+              ].join(' '),
+            },
+            {
+              role: 'user',
+              content: JSON.stringify({
+                consulta: pregunta,
+                eventos: eventos.map((evento) => ({
+                  id: evento.id,
+                  tipo: evento.tipo_evento,
+                  autor: evento.autor_tipo,
+                  texto: evento.texto_original,
+                })),
+                relaciones: relaciones.map((relacion) => ({
+                  origen: relacion.evento_origen_id,
+                  destino: relacion.evento_destino_id,
+                  tipo: relacion.tipo_relacion,
+                })),
+              }),
+            },
+          ],
+        }),
+      })
+
+      if (!seleccionResp.ok) {
+        console.error('Error al seleccionar contexto OT Viva:', seleccionResp.status)
+        return jsonError('No fue posible seleccionar de forma segura los antecedentes pertinentes.', 503)
+      }
+
+      const seleccionData = await seleccionResp.json()
+      let idsElegidos: unknown
+      try {
+        idsElegidos = JSON.parse(extraerTextoRespuesta(seleccionData)).eventos_pertinentes
+      } catch {
+        return jsonError('La selección de antecedentes devolvió un formato no válido.', 502)
+      }
+
+      if (!Array.isArray(idsElegidos) || !idsElegidos.every((id) => typeof id === 'string')) {
+        return jsonError('La selección de antecedentes no pudo validarse.', 502)
+      }
+
+      const idsPermitidos = new Set(eventos.map((evento) => evento.id))
+      if (idsElegidos.some((id) => !idsPermitidos.has(id))) {
+        return jsonError('La selección incluyó identificadores no autorizados.', 502)
+      }
+
+      const idsSeleccionados = new Set(idsElegidos)
+      eventosParaConsulta = eventos.filter((evento) => idsSeleccionados.has(evento.id))
+    }
+
+    const idsContexto = new Set(eventosParaConsulta.map((evento) => evento.id))
+    const decisionesParaConsulta = Array.from(decisionesVigentesPorEvento.values())
+      .filter((decision) => !!decision.evento_id && idsContexto.has(decision.evento_id))
+    const relacionesParaConsulta = relaciones.filter(
+      (relacion) =>
+        idsContexto.has(relacion.evento_origen_id) &&
+        idsContexto.has(relacion.evento_destino_id)
+    )
+
+    const contextoEventos = eventosParaConsulta
       .map((item, index) => {
         const decisionVigente = decisionesVigentesPorEvento.get(item.id)
         const sufijoDecision = decisionVigente
@@ -216,8 +318,8 @@ export async function POST(
       })
       .join('\n')
 
-    const contextoDecisiones = decisiones.length
-      ? Array.from(decisionesVigentesPorEvento.values())
+    const contextoDecisiones = decisionesParaConsulta.length
+      ? decisionesParaConsulta
           .sort(
             (a, b) =>
               new Date(b.decidido_at).getTime() -
@@ -230,8 +332,8 @@ export async function POST(
           .join('\n')
       : 'No hay decisiones humanas estructuradas registradas.'
 
-    const contextoRelaciones = relaciones.length
-      ? relaciones
+    const contextoRelaciones = relacionesParaConsulta.length
+      ? relacionesParaConsulta
           .map(
             (item, index) =>
               `${index + 1}. Evento ${item.evento_origen_id} ${item.tipo_relacion} evento ${item.evento_destino_id}${item.observacion ? `: ${item.observacion}` : ''}`
@@ -247,7 +349,13 @@ Reglas obligatorias:
 - No inventes información que no aparezca en el contexto.
 - No asumas datos de otras empresas, clientes, OT o conversaciones.
 - Si falta información, dilo explícitamente.
-- Distingue entre hechos registrados, hipótesis y sugerencias.
+- Distingue entre antecedentes informados por terceros, hallazgos verificados por técnicos, decisiones humanas y sugerencias de IA. Nunca llames confirmación técnica a un mero reporte del operador.
+- Responde solo con los antecedentes pertinentes recibidos; no menciones ni especules sobre eventos omitidos durante la selección de contexto.
+- Identifica el problema o anomalía específica de la consulta. Prioriza los eventos directamente relacionados con ella, sin asumir que todos los eventos de la OT describen una misma falla.
+- Si aparecen eventos sobre otros equipos o problemas independientes, mantenlos como contexto histórico, pero no los incluyas en la respuesta principal salvo que el técnico los solicite o exista una relación técnica explicable y pertinente.
+- No descartes ni elimines hechos solo porque parezcan inicialmente inconexos: pueden ser relevantes al ampliar la investigación. Si la relación es incierta, decláralo.
+- Conserva literalmente magnitudes, unidades y atribuciones (operador, técnico, medición). No conviertas ni sustituyas unidades sin evidencia y explicación.
+- Las respuestas anteriores de IA no constituyen evidencia técnica validada y no deben tratarse como hechos verificados.
 - Las DECISIONES HUMANAS ESTRUCTURADAS entregadas en el contexto son la fuente de verdad para el estado actual de una hipótesis.
 - Si un texto histórico, una respuesta anterior de IA o un evento previo contradice una decisión humana estructurada posterior, considera ese texto como antecedente histórico y NO como estado vigente.
 - Cuando existan varias decisiones estructuradas para la misma hipótesis, manda exclusivamente la más reciente por decidido_at; conserva las anteriores solo como trazabilidad.
@@ -271,7 +379,7 @@ Solicitud: ${ot.descripcion_solicitud || 'No informada'}
 Caso OT Viva: ${casoResp.data.titulo || 'Sin título'}
 Estado caso: ${casoResp.data.estado}
 
-Eventos registrados en este caso:
+Eventos pertinentes a la consulta (seleccionados del caso actual):
 ${contextoEventos || 'No hay eventos registrados.'}
 
 Decisiones humanas vigentes (fuente de verdad):
