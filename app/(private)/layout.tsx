@@ -1304,10 +1304,10 @@ if (empresaGuardadaValida) {
   // available without network; server-only actions remain unavailable offline.
   const isCachedOtVivaRoute = useMemo(() => {
     if (!empresaActivaId || !usuarioId) return false
-    const match = pathname.match(/^\\/ot\\/([^/]+)\\/viva$/)
-    if (!match?.[1]) return false
+    const segments = pathname.split('/').filter(Boolean)
+    if (segments.length !== 3 || segments[0] !== 'ot' || segments[2] !== 'viva') return false
     const cache = readOTOfflineCache(empresaActivaId, usuarioId)
-    return Boolean(cache?.detalles.some((detalle) => detalle.id === match[1]))
+    return Boolean(cache?.detalles.some((detalle) => detalle.id === segments[1]))
   }, [empresaActivaId, pathname, usuarioId])
 
   const isOfflineSafeRoute = pathname === HARAS_PARTOS_ROUTE ||
