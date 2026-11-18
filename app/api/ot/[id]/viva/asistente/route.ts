@@ -209,8 +209,15 @@ export async function POST(
 
     // Primera etapa: seleccionar evidencia pertinente antes de generar la respuesta.
     // No se altera ni elimina ningún registro; la selección solo aplica a esta consulta.
+    // Consultas globales: preservar todos los hallazgos sin pasar por un selector
+    // que podría omitir anomalías independientes de la misma OT.
+    const preguntaNormalizada = pregunta.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+    const consultaGlobal =
+      /\b(todos?|todas?|completo|completa|general|global|integral)\b/.test(preguntaNormalizada) &&
+      /\b(problemas?|anomalias?|hallazgos?|eventos?|antecedentes?|intervenciones?|orden(?:es)? de trabajo|ot)\b/.test(preguntaNormalizada)
+
     let eventosParaConsulta = eventos
-    if (eventos.length > 1) {
+    if (eventos.length > 1 && !consultaGlobal) {
       const seleccionResp = await fetch('https://api.openai.com/v1/responses', {
         method: 'POST',
         headers: {
@@ -359,6 +366,8 @@ Reglas obligatorias:
 - Si falta información, dilo explícitamente.
 - Distingue entre antecedentes informados por terceros, hallazgos verificados por técnicos, decisiones humanas y sugerencias de IA. Nunca llames confirmación técnica a un mero reporte del operador.
 - Responde solo con los antecedentes pertinentes recibidos; no menciones ni especules sobre eventos omitidos durante la selección de contexto.
+- Si la consulta pide todos los problemas o un resumen global de la OT, enumera cada problema independiente incluido en los eventos, sin omitir ninguno y sin mezclar hipótesis.
+- No uses categorías, etiquetas de estado o clasificaciones (por ejemplo, "estado D") que no estén definidas explícitamente en los datos recibidos o solicitadas por el técnico.
 - Identifica el problema o anomalía específica de la consulta. Prioriza los eventos directamente relacionados con ella, sin asumir que todos los eventos de la OT describen una misma falla.
 - Si aparecen eventos sobre otros equipos o problemas independientes, mantenlos como contexto histórico, pero no los incluyas en la respuesta principal salvo que el técnico los solicite o exista una relación técnica explicable y pertinente.
 - No descartes ni elimines hechos solo porque parezcan inicialmente inconexos: pueden ser relevantes al ampliar la investigación. Si la relación es incierta, decláralo.
