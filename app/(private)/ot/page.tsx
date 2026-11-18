@@ -827,6 +827,26 @@ function OTPageContent() {
     if (requested) window.history.replaceState(window.history.state, '', '/ot')
   }, [empresaActivaId, currentUserId])
 
+  // Prepare the OT Viva navigation shell when this terrain OT is selected
+  // online. A cached route supports re-entry after connectivity is lost.
+  // The user must already have a prepared OT; technical data is not cached here.
+  useEffect(() => {
+    if (isOffline || !selectedOfflineOtId || !selectedOfflineDetail || !('caches' in window)) return
+    const controller = new AbortController()
+    const route = `/ot/${encodeURIComponent(selectedOfflineOtId)}/viva`
+    void (async () => {
+      try {
+        const response = await fetch(route, { credentials: 'same-origin', signal: controller.signal })
+        if (!response.ok || controller.signal.aborted) return
+        const cache = await window.caches.open('tralixia-terrain-v1')
+        if (!controller.signal.aborted) await cache.put(route, response.clone())
+      } catch {
+        // Offline entry remains a best-effort prepared feature.
+      }
+    })()
+    return () => controller.abort()
+  }, [isOffline, selectedOfflineOtId, selectedOfflineDetail])
+
   const volverAlListadoOffline = () => {
     window.sessionStorage.removeItem(`tralixia_terrain_selected_ot_${empresaActivaId}_${currentUserId}`)
     setSelectedOfflineOtId('')
