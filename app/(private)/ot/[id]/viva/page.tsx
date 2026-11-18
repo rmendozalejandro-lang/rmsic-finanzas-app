@@ -1740,7 +1740,7 @@ function OTVivaContent() {
                   {audiosPendientes.map((item) => (
                     <div key={item.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-white p-2 text-xs">
                       <span>{formatDateTime(item.createdAt)} · {item.destino === 'evento' ? 'Evento' : 'Consulta IA'} · {(item.size / 1024).toFixed(0)} KB</span>
-                      <button type="button" disabled={Boolean(procesandoAudioPendiente) || transcribiendoVoz || Boolean(grabandoVoz) || !navigator.onLine} onClick={() => void procesarAudioPendiente(item)} className="rounded-lg bg-cyan-800 px-3 py-2 font-semibold text-white disabled:opacity-50">
+                      <button type="button" disabled={Boolean(procesandoAudioPendiente) || transcribiendoVoz || Boolean(grabandoVoz) || typeof navigator === 'undefined' || !navigator.onLine} onClick={() => void procesarAudioPendiente(item)} className="rounded-lg bg-cyan-800 px-3 py-2 font-semibold text-white disabled:opacity-50">
                         {procesandoAudioPendiente === item.id ? 'Transcribiendo...' : 'Transcribir pendiente'}
                       </button>
                     </div>
