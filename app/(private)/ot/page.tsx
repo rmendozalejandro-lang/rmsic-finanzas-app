@@ -1390,13 +1390,29 @@ function OTPageContent() {
       ) : (isOffline || Boolean(selectedOfflineOtId)) ? (
           selectedOfflineOt && selectedOfflineDetail ? (
             <div className="space-y-5">
-              <button
-                type="button"
-                onClick={volverAlListadoOffline}
-                className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-              >
-                Volver al listado OT
-              </button>
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={volverAlListadoOffline}
+                  className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  Volver al listado OT
+                </button>
+                <Link
+                  href={`/ot/${encodeURIComponent(selectedOfflineOtId)}/viva`}
+                  className="rounded-xl border border-cyan-300 bg-cyan-50 px-4 py-2 text-sm font-semibold text-cyan-900 hover:bg-cyan-100"
+                >
+                  Abrir OT Viva
+                </Link>
+                {!isOffline ? (
+                  <Link
+                    href={`/ot/${encodeURIComponent(selectedOfflineOtId)}`}
+                    className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-900 hover:bg-emerald-100"
+                  >
+                    Abrir OT principal
+                  </Link>
+                ) : null}
+              </div>
 
               <section className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-amber-900 shadow-sm">
                 <p className="text-sm font-semibold uppercase tracking-wide">Modo terreno OT</p>
