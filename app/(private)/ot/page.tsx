@@ -1400,12 +1400,12 @@ function OTPageContent() {
                 >
                   Volver al listado OT
                 </button>
-                <Link
+                <a
                   href={`/ot/${encodeURIComponent(selectedOfflineOtId)}/viva`}
                   className="rounded-xl border border-cyan-300 bg-cyan-50 px-4 py-2 text-sm font-semibold text-cyan-900 hover:bg-cyan-100"
                 >
                   Abrir OT Viva
-                </Link>
+                </a>
                 {!isOffline ? (
                   <Link
                     href={`/ot/${encodeURIComponent(selectedOfflineOtId)}`}
