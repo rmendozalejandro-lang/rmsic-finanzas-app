@@ -421,6 +421,11 @@ function OTPageContent() {
   const [estadoAudioLocal, setEstadoAudioLocal] = useState('')
   const grabadorLocalRef = useRef<MediaRecorder | null>(null)
   const microfonoLocalRef = useRef<MediaStream | null>(null)
+  const timerAudioLocalRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const terminarAudioLocalRef = useRef(false)
+  const capturaAudioLocalRef = useRef(false)
+  const segmentoAudioLocalRef = useRef(0)
+  const SESSION_SEGMENT_MS = 10000
   const [eventDraftRecovered, setEventDraftRecovered] = useState(false)
   const [eventNotice, setEventNotice] = useState('')
   const [lastLocalEventQueueId, setLastLocalEventQueueId] = useState('')
@@ -865,9 +870,20 @@ function OTPageContent() {
     return () => { active = false }
   }, [selectedOfflineOtId, empresaActivaId, currentUserId])
 
+  // Cada segmento es un archivo independiente y decodificable; no se
+  // concatenan fragmentos arbitrarios de MP4 (Safari) o WebM.
+  // Al terminar cada tramo se guarda en IndexedDB antes de continuar.
   async function alternarAudioLocal() {
-    if (grabadorLocalRef.current?.state === 'recording') {
-      grabadorLocalRef.current.stop()
+    if (capturaAudioLocalRef.current) {
+      terminarAudioLocalRef.current = true
+      if (timerAudioLocalRef.current !== null) clearTimeout(timerAudioLocalRef.current)
+      timerAudioLocalRef.current = null
+      const recorder = grabadorLocalRef.current
+      if (recorder?.state === 'recording') recorder.stop()
+      else if (!recorder) {
+        capturaAudioLocalRef.current = false
+        setGrabandoAudioLocal(false)
+      }
       return
     }
     if (!selectedOfflineOtId || !empresaActivaId || !currentUserId) {
@@ -878,46 +894,120 @@ function OTPageContent() {
       setEstadoAudioLocal('Este navegador no permite la grabación local de audio.')
       return
     }
+
     const empresaId = empresaActivaId
     const tecnicoId = currentUserId
     const otId = selectedOfflineOtId
-    try {
-      setEstadoAudioLocal('')
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      microfonoLocalRef.current = stream
-      const mime = ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm'].find((value) => MediaRecorder.isTypeSupported(value))
-      const recorder = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream)
+    let stream: MediaStream | null = null
+    let savedSegments = 0
+    terminarAudioLocalRef.current = false
+    segmentoAudioLocalRef.current = 0
+    capturaAudioLocalRef.current = true
+
+    const finish = () => {
+      if (timerAudioLocalRef.current !== null) clearTimeout(timerAudioLocalRef.current)
+      timerAudioLocalRef.current = null
+      grabadorLocalRef.current = null
+      stream?.getTracks().forEach((track) => track.stop())
+      microfonoLocalRef.current = null
+      capturaAudioLocalRef.current = false
+      setGrabandoAudioLocal(false)
+    }
+
+    const startSegment = () => {
+      if (!stream || terminarAudioLocalRef.current) {
+        finish()
+        return
+      }
+      const mime = ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm']
+        .find((value) => MediaRecorder.isTypeSupported(value))
+      let recorder: MediaRecorder
+      try {
+        recorder = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream)
+      } catch {
+        finish()
+        setEstadoAudioLocal('No fue posible continuar grabando. Los tramos anteriores siguen guardados.')
+        return
+      }
       const partes: Blob[] = []
+      const segmentIndex = ++segmentoAudioLocalRef.current
       grabadorLocalRef.current = recorder
-      recorder.ondataavailable = (event) => { if (event.data.size > 0) partes.push(event.data) }
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) partes.push(event.data)
+      }
       recorder.onerror = () => {
-        setEstadoAudioLocal('Falló la grabación. No se puede asegurar que el audio se haya conservado.')
+        terminarAudioLocalRef.current = true
+        setEstadoAudioLocal('Se interrumpió el micrófono. Se conservan los segmentos ya confirmados.')
       }
       recorder.onstop = () => {
-        setGrabandoAudioLocal(false)
-        grabadorLocalRef.current = null
-        stream.getTracks().forEach((track) => track.stop())
-        microfonoLocalRef.current = null
+        if (timerAudioLocalRef.current !== null) clearTimeout(timerAudioLocalRef.current)
+        timerAudioLocalRef.current = null
         const blob = new Blob(partes, { type: recorder.mimeType || partes[0]?.type || 'audio/mp4' })
         if (blob.size < 1000) {
-          setEstadoAudioLocal('La grabación está vacía o incompleta y no pudo guardarse.')
+          if (terminarAudioLocalRef.current) {
+            finish()
+          } else {
+            startSegment()
+          }
           return
         }
-        void savePendingVivaAudio({ empresaId, userId: tecnicoId, otId, destino: 'evento', blob })
-          .then(async () => {
+        void (async () => {
+          try {
+            await savePendingVivaAudio({
+              empresaId, userId: tecnicoId, otId, destino: 'evento', blob,
+            })
+            savedSegments += 1
             const audios = await listPendingVivaAudio(empresaId, tecnicoId, otId)
             setCantidadAudiosLocales(audios.length)
-            setEstadoAudioLocal('Audio conservado en este dispositivo. Transcríbelo en OT Viva al recuperar Internet.')
-          })
-          .catch((error: unknown) => setEstadoAudioLocal(error instanceof Error ? `No fue posible guardar el audio: ${error.message}` : 'No fue posible guardar el audio.'))
+            setEstadoAudioLocal(
+              terminarAudioLocalRef.current
+                ? `Grabación terminada. ${savedSegments} tramo(s) conservado(s) en este dispositivo para transcribir en OT Viva.`
+                : `Grabando... tramo ${segmentIndex} protegido. ${savedSegments} tramo(s) guardado(s).`
+            )
+            if (terminarAudioLocalRef.current) finish()
+            else startSegment()
+          } catch (error) {
+            terminarAudioLocalRef.current = true
+            finish()
+            setEstadoAudioLocal(error instanceof Error
+              ? `No se pudo guardar el tramo ${segmentIndex}: ${error.message}. No sigas grabando hasta liberar espacio.`
+              : 'No fue posible guardar el tramo de voz; se detuvo la grabación.')
+          }
+        })()
       }
-      recorder.start()
-      setGrabandoAudioLocal(true)
-      setEstadoAudioLocal('Grabando... pulsa Detener y guardar audio para conservar la observación.')
+      try {
+        recorder.start()
+        timerAudioLocalRef.current = setTimeout(() => {
+          if (recorder.state === 'recording') recorder.stop()
+        }, SESSION_SEGMENT_MS)
+        setGrabandoAudioLocal(true)
+      } catch {
+        terminarAudioLocalRef.current = true
+        finish()
+        setEstadoAudioLocal('No se pudo iniciar el siguiente tramo; revisa los audios ya protegidos.')
+      }
+    }
+
+    try {
+      setEstadoAudioLocal('')
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      if (terminarAudioLocalRef.current) {
+        stream.getTracks().forEach((track) => track.stop())
+        finish()
+        return
+      }
+      microfonoLocalRef.current = stream
+      for (const track of stream.getAudioTracks()) {
+        track.addEventListener('ended', () => {
+          terminarAudioLocalRef.current = true
+          if (grabadorLocalRef.current?.state === 'recording') grabadorLocalRef.current.stop()
+          else finish()
+        }, { once: true })
+      }
+      startSegment()
+      setEstadoAudioLocal('Grabando. Cada tramo de aproximadamente 10 segundos se guarda por separado; detener finaliza el tramo en curso.')
     } catch (error) {
-      microfonoLocalRef.current?.getTracks().forEach((track) => track.stop())
-      microfonoLocalRef.current = null
-      setGrabandoAudioLocal(false)
+      finish()
       setEstadoAudioLocal(error instanceof Error ? error.message : 'No se pudo iniciar el micrófono.')
     }
   }
@@ -1823,9 +1913,9 @@ function OTPageContent() {
                 {isOffline ? <p className="mt-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Modo local de OT Viva: registra observaciones de esta OT sin cambiar de pantalla. Los borradores y audios terminados quedan en este dispositivo; el asistente IA y el historial remoto necesitan conexión.</p> : null}
                 <div className="mt-3 rounded-xl border border-cyan-200 bg-cyan-50 p-3">
                   <p className="text-sm font-semibold text-cyan-950">Grabación local para OT Viva</p>
-                  <p className="mt-1 text-xs text-cyan-900">La grabación se almacena al detenerla. No cierres la aplicación durante la captura; el guardado no está garantizado si Safari interrumpe el micrófono.</p>
+                  <p className="mt-1 text-xs text-cyan-900">El audio se guarda en tramos de aproximadamente 10 segundos. Si Safari interrumpe el micrófono, solo estarán protegidos los tramos ya confirmados. Cada tramo se transcribe por separado.</p>
                   <button type="button" onClick={() => void alternarAudioLocal()} className={`mt-2 rounded-xl px-4 py-2 text-sm font-semibold text-white ${grabandoAudioLocal ? 'bg-rose-700' : 'bg-cyan-800'}`}>
-                    {grabandoAudioLocal ? 'Detener y guardar audio' : 'Grabar observación'}
+                    {grabandoAudioLocal ? 'Detener y guardar último tramo' : 'Grabar observación'}
                   </button>
                   <p className="mt-2 text-xs text-cyan-950">Audios pendientes en este dispositivo: {cantidadAudiosLocales}</p>
                   {estadoAudioLocal ? <p role="status" className="mt-2 text-sm text-cyan-950">{estadoAudioLocal}</p> : null}
