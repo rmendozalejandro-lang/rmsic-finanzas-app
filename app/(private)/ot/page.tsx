@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import ProtectedModuleRoute from '../../../components/ProtectedModuleRoute'
+import OTVivaConnectivityAlerts from '../../../components/ot/OTVivaConnectivityAlerts'
 import { OTDataTable } from '../../../components/ot/ot-data-table'
 import { supabase } from '../../../lib/supabase/client'
 import type { OTResumen } from '../../../lib/ot/types'
@@ -1390,6 +1391,7 @@ function OTPageContent() {
       ) : (isOffline || Boolean(selectedOfflineOtId)) ? (
           selectedOfflineOt && selectedOfflineDetail ? (
             <div className="space-y-5">
+              <OTVivaConnectivityAlerts audioOcupado={false} />
               <div className="flex flex-wrap items-center gap-3">
                 <button
                   type="button"
