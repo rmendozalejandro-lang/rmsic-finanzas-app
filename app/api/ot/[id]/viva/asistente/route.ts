@@ -220,7 +220,8 @@ export async function POST(
         body: JSON.stringify({
           model: openAiModel,
           store: false,
-          max_output_tokens: 500,
+          max_output_tokens: 1600,
+          reasoning: { effort: 'low' },
           text: {
             format: {
               type: 'json_schema',
@@ -282,7 +283,14 @@ export async function POST(
       try {
         idsElegidos = JSON.parse(extraerTextoRespuesta(seleccionData)).eventos_pertinentes
       } catch {
-        return jsonError('La selección de antecedentes devolvió un formato no válido.', 502)
+        console.error('Selección de contexto sin JSON utilizable:', {
+          status: seleccionData?.status,
+          incompleteReason: seleccionData?.incomplete_details?.reason || null,
+          outputTypes: Array.isArray(seleccionData?.output)
+            ? seleccionData.output.map((item: { type?: string; status?: string }) => ({ type: item.type, status: item.status }))
+            : [],
+        })
+        return jsonError('La selección de antecedentes no produjo una respuesta válida. Intenta nuevamente.', 502)
       }
 
       if (!Array.isArray(idsElegidos) || !idsElegidos.every((id) => typeof id === 'string')) {
