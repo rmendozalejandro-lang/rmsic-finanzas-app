@@ -111,10 +111,9 @@ export async function POST(
     openAiForm.append('file', audio, audio.name || 'voz.webm')
     openAiForm.append('model', 'gpt-4o-mini-transcribe')
     openAiForm.append('language', 'es')
-    openAiForm.append(
-      'prompt',
-      'Transcribe español de Chile. Contexto: mantenimiento industrial, OT, máquinas, PLC, HMI, sensores, variadores, rodamientos, bujes, ejes, neumática y diagnóstico técnico. Conserva nombres técnicos, números, unidades y referencias.'
-    )
+    // No proporcionar listas de términos como prompt: en fragmentos cortos
+    // o silenciosos el modelo puede devolver ese contexto como si fuera voz.
+    // Priorizar literalidad y conservar una transcripción sin sugerencias.
 
     const openAiResponse = await fetch('https://api.openai.com/v1/audio/transcriptions', {
       method: 'POST',

@@ -774,18 +774,15 @@ function TextBlock({
 }) {
   if (!value || !value.trim()) return null
 
-  // Keep the heading with the beginning of its content, while allowing long
-  // reports to flow naturally across pages without clipping the body text.
-  const trimmed = value.trim()
-  const firstBreak = trimmed.indexOf('\\n')
-  const firstSentence = trimmed.search(/[.!?](?:\\s|$)/)
-  const splitAt = firstBreak > 0 && (firstSentence < 0 || firstBreak < firstSentence)
-    ? firstBreak
-    : firstSentence >= 0
-      ? firstSentence + 1
-      : Math.min(trimmed.length, 180)
-  const lead = trimmed.slice(0, splitAt).trim()
-  const remainder = trimmed.slice(splitAt).trim()
+  // Maintain the technician's paragraph boundaries in the client-facing PDF.
+  // Keep the heading with the first sentence without preventing long paragraphs
+  // from flowing naturally across pages.
+  const paragraphs = value.trim().split(/\n\s*\n/).map((item) => item.trim()).filter(Boolean)
+  const first = paragraphs[0]
+  const firstSentence = first.search(/[.!?](?:\s|$)/)
+  const splitAt = firstSentence >= 0 ? firstSentence + 1 : Math.min(first.length, 180)
+  const lead = first.slice(0, splitAt).trim()
+  const remainder = first.slice(splitAt).trim()
 
   return (
     <View style={styles.textBlock}>
@@ -796,6 +793,11 @@ function TextBlock({
         <Text style={styles.textBlockBody}>{lead}</Text>
       </View>
       {remainder ? <Text style={styles.textBlockBody}>{remainder}</Text> : null}
+      {paragraphs.slice(1).map((paragraph, index) => (
+        <Text key={index} style={[styles.textBlockBody, { marginTop: 8 }]}>
+          {paragraph}
+        </Text>
+      ))}
     </View>
   )
 }
@@ -887,6 +889,50 @@ function PhotoGroup({
       ))}
     </View>
   )
+}
+
+/**
+ * Los avances offline antiguos se guardaron como bloques de auditoría en
+ * trabajo_realizado. No modificar el registro: aquí solo se compone el texto
+ * técnico visible para el cliente en el informe PDF.
+ */
+function formatClientFacingWork(raw: string | null | undefined): string | null {
+  if (!raw?.trim()) return null
+  const marker = '--- Avance registrado offline ---'
+  if (!raw.includes(marker)) return raw
+
+  const segments = raw.split(marker)
+  const previousWork = segments.shift()?.trim() || ''
+  const clientWork: string[] = previousWork ? [previousWork] : []
+  const fieldStart = /^(?:Fecha sincronizaci[oó]n|Solicitud del cliente|Problema reportado|Diagn[oó]stico|Causa probable|Labores realizadas|Recomendaciones|Resultado servicio|Hallazgos|Conclusiones t[eé]cnicas|Observaciones de cierre \(borrador\)|Pendientes|Checklist local|Avance local por equipos|[AÁ]rea de trabajo|Observaci[oó]n seguridad|Herramientas\/materiales|Recomendaciones seguridad|Observaci[oó]n terreno|Estado local|Notas internas):\s*/i
+
+  for (const segment of segments) {
+    let currentLabel = ''
+    const values: string[] = []
+    const flush = () => {
+      const value = values.join('\n').trim()
+      if (value && (currentLabel === 'Labores realizadas' || currentLabel === 'Observación terreno')) {
+        if (!clientWork.includes(value)) clientWork.push(value)
+      }
+      values.length = 0
+    }
+    for (const line of segment.split(/\r?\n/)) {
+      const trimmed = line.trim()
+      const match = trimmed.match(fieldStart)
+      if (match) {
+        flush()
+        currentLabel = match[0].split(':')[0].trim()
+        if (currentLabel.toLowerCase() === 'observacion terreno') currentLabel = 'Observación terreno'
+        values.push(trimmed.slice(match[0].length))
+      } else if (currentLabel) {
+        // Preserve blank lines inside field values: they separate distinct
+        // work activities captured in one offline draft.
+        values.push(trimmed)
+      }
+    }
+    flush()
+  }
+  return clientWork.join('\n\n') || null
 }
 
 export function OTPdfDocument({
@@ -1082,7 +1128,7 @@ export function OTPdfDocument({
             />
             <TextBlock
               title="Actividades ejecutadas"
-              value={detalle.trabajo_realizado}
+              value={formatClientFacingWork(detalle.trabajo_realizado)}
             />
             <TextBlock title="Hallazgos detectados" value={detalle.hallazgos} />
             <TextBlock
@@ -1115,7 +1161,7 @@ export function OTPdfDocument({
             <TextBlock title="Causa detectada" value={detalle.causa_probable} />
             <TextBlock
               title="Solución aplicada"
-              value={detalle.trabajo_realizado}
+              value={formatClientFacingWork(detalle.trabajo_realizado)}
             />
             <TextBlock
               title="Resultado del servicio"
@@ -1152,7 +1198,7 @@ export function OTPdfDocument({
               />
               <TextBlock title="Diagnóstico técnico" value={detalle.diagnostico} />
               <TextBlock title="Causa" value={detalle.causa_probable} />
-              <TextBlock title="Solución" value={detalle.trabajo_realizado} />
+              <TextBlock title="Solución" value={formatClientFacingWork(detalle.trabajo_realizado)} />
               <TextBlock title="Hallazgos y mediciones" value={detalle.hallazgos} />
               <TextBlock title="Resultado del servicio" value={detalle.resultado_servicio} />
               <TextBlock title="Conclusiones técnicas" value={detalle.conclusiones_tecnicas} />
@@ -1191,7 +1237,7 @@ export function OTPdfDocument({
             <Text style={styles.sectionTitle}>DESARROLLO DE MANTENIMIENTO GENERAL</Text>
             <TextBlock
               title="Trabajo realizado"
-              value={detalle.trabajo_realizado}
+              value={formatClientFacingWork(detalle.trabajo_realizado)}
             />
             <TextBlock title="Hallazgos detectados" value={detalle.hallazgos} />
             <TextBlock
@@ -1238,7 +1284,7 @@ export function OTPdfDocument({
             <TextBlock title="Diagnóstico" value={detalle.diagnostico} />
             <TextBlock
               title="Solución implementada"
-              value={detalle.trabajo_realizado}
+              value={formatClientFacingWork(detalle.trabajo_realizado)}
             />
             <TextBlock
               title="Resultado del servicio"

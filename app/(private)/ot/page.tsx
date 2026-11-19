@@ -1,12 +1,16 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import ProtectedModuleRoute from '../../../components/ProtectedModuleRoute'
+import OTVivaConnectivityAlerts from '../../../components/ot/OTVivaConnectivityAlerts'
+import { savePendingVivaAudio, listPendingVivaAudio } from '../../../lib/offline/ot-viva-audio'
 import { OTDataTable } from '../../../components/ot/ot-data-table'
 import { supabase } from '../../../lib/supabase/client'
 import type { OTResumen } from '../../../lib/ot/types'
-import { addOTOfflineDraft, findCachedOTDetail, readOTOfflineCache, readOTOfflinePreparationStatus, OT_PREPARATION_CHANGED_EVENT, otHasPendingLocalChanges, type OTOfflineDetail, type OTOfflineDraft, type OTOfflinePreparationStatus } from '../../../lib/offline/ot'
+import { addOTOfflineDraft, addOTOfflineEvent, OT_EVENT_PENDING_ACTION, isOTOfflineEvent, findCachedOTDetail, readOTOfflineCache, readOTOfflinePreparationStatus, OT_PREPARATION_CHANGED_EVENT, otHasPendingLocalChanges, type OTOfflineDetail, type OTOfflineDraft, type OTOfflinePreparationStatus } from '../../../lib/offline/ot'
+import { listOfflineQueue, updateOfflineQueueItem, OFFLINE_QUEUE_CHANGED_EVENT } from '../../../lib/offline/offline-queue'
+import { readOTEventDraft, saveOTEventDraft, clearOTEventDraft, type OTEventDraftType } from '../../../lib/offline/ot-event-draft'
 import { buildAssistanceOfflineUpdate, toOfflineTimeInput } from '../../../lib/offline/ot-assistance'
 import { buildUrgencyOfflineUpdate } from '../../../lib/offline/ot-urgency'
 import { buildGeneralMaintenanceOfflineUpdate } from '../../../lib/offline/ot-general-maintenance'
@@ -410,6 +414,21 @@ function OTPageContent() {
   const [offlineChecklistModo, setOfflineChecklistModo] = useState<ChecklistOfflineModo>('horas')
   const [offlineChecklistHoras, setOfflineChecklistHoras] = useState(175)
   const [offlineDraftSuccess, setOfflineDraftSuccess] = useState('')
+  const [eventType, setEventType] = useState<'accion' | 'hallazgo' | 'medicion' | 'prueba' | 'resultado' | 'hipotesis'>('accion')
+  const [eventText, setEventText] = useState('')
+  const [grabandoAudioLocal, setGrabandoAudioLocal] = useState(false)
+  const [cantidadAudiosLocales, setCantidadAudiosLocales] = useState(0)
+  const [estadoAudioLocal, setEstadoAudioLocal] = useState('')
+  const grabadorLocalRef = useRef<MediaRecorder | null>(null)
+  const microfonoLocalRef = useRef<MediaStream | null>(null)
+  const timerAudioLocalRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const terminarAudioLocalRef = useRef(false)
+  const capturaAudioLocalRef = useRef(false)
+  const segmentoAudioLocalRef = useRef(0)
+  const SESSION_SEGMENT_MS = 10000
+  const [eventDraftRecovered, setEventDraftRecovered] = useState(false)
+  const [eventNotice, setEventNotice] = useState('')
+  const [lastLocalEventQueueId, setLastLocalEventQueueId] = useState('')
   const [offlinePendingRefresh, setOfflinePendingRefresh] = useState(0)
   const [offlineSelectionNotice, setOfflineSelectionNotice] = useState('')
   const [preparationStatus, setPreparationStatus] = useState<OTOfflinePreparationStatus | null>(null)
@@ -497,6 +516,10 @@ function OTPageContent() {
     setOtIdsSeleccionadas(new Set())
     setSelectedOfflineOtId('')
     setOfflineDraftSuccess('')
+    setEventNotice('')
+    setEventText('')
+    setEventDraftRecovered(false)
+    setLastLocalEventQueueId('')
     setOfflineSelectionNotice('')
   }, [empresaActivaId])
 
@@ -764,6 +787,10 @@ function OTPageContent() {
   const selectOfflineOt = (otId: string) => {
     const detail = findCachedOTDetail(empresaActivaId, currentUserId, otId)
     setOfflineDraftSuccess('')
+    setEventText('')
+    setEventDraftRecovered(false)
+    setEventNotice('')
+    setLastLocalEventQueueId('')
 
     if (!detail) {
       setSelectedOfflineOtId('')
@@ -772,6 +799,15 @@ function OTPageContent() {
     }
 
     setSelectedOfflineOtId(otId)
+    const eventDraftSaved = readOTEventDraft(empresaActivaId, currentUserId, otId)
+    if (eventDraftSaved) {
+      setEventType(eventDraftSaved.tipo_evento)
+      setEventText(eventDraftSaved.texto_original)
+      setEventDraftRecovered(true)
+    } else {
+      setEventType('accion')
+    }
+    window.sessionStorage.setItem(`tralixia_terrain_selected_ot_${empresaActivaId}_${currentUserId}`, otId)
     setOfflineSelectionNotice('')
 
     try {
@@ -783,9 +819,307 @@ function OTPageContent() {
 
   }
 
+  useEffect(() => {
+    if (!empresaActivaId || !currentUserId) return
+
+    // Conservar la OT seleccionada aunque el navegador recargue la pantalla
+    // al volver internet. Solo se usa una OT ya preparada para este contexto.
+    const key = `tralixia_terrain_selected_ot_${empresaActivaId}_${currentUserId}`
+    const requested = new URL(window.location.href).searchParams.get('offline_ot')
+    const otId = requested || window.sessionStorage.getItem(key)
+    if (!otId) return
+
+    const detail = findCachedOTDetail(empresaActivaId, currentUserId, otId)
+    if (detail) {
+      selectOfflineOt(otId)
+    } else {
+      window.sessionStorage.removeItem(key)
+    }
+    if (requested) window.history.replaceState(window.history.state, '', '/ot')
+  }, [empresaActivaId, currentUserId])
+
+  // Prepare the OT Viva navigation shell when this terrain OT is selected
+  // online. A cached route supports re-entry after connectivity is lost.
+  // The user must already have a prepared OT; technical data is not cached here.
+  useEffect(() => {
+    if (isOffline || !selectedOfflineOtId || !selectedOfflineDetail || !('caches' in window)) return
+    const controller = new AbortController()
+    const route = `/ot/${encodeURIComponent(selectedOfflineOtId)}/viva`
+    void (async () => {
+      try {
+        const response = await fetch(route, { credentials: 'same-origin', signal: controller.signal })
+        if (!response.ok || controller.signal.aborted) return
+        const cache = await window.caches.open('tralixia-terrain-v1')
+        if (!controller.signal.aborted) await cache.put(route, response.clone())
+      } catch {
+        // Offline entry remains a best-effort prepared feature.
+      }
+    })()
+    return () => controller.abort()
+  }, [isOffline, selectedOfflineOtId, selectedOfflineDetail])
+
+  useEffect(() => {
+    if (!selectedOfflineOtId || !empresaActivaId || !currentUserId) {
+      setCantidadAudiosLocales(0)
+      return
+    }
+    let active = true
+    void listPendingVivaAudio(empresaActivaId, currentUserId, selectedOfflineOtId)
+      .then((audios) => { if (active) setCantidadAudiosLocales(audios.length) })
+      .catch(() => { if (active) setEstadoAudioLocal('No fue posible consultar los audios locales guardados.') })
+    return () => { active = false }
+  }, [selectedOfflineOtId, empresaActivaId, currentUserId])
+
+  // Cada segmento es un archivo independiente y decodificable; no se
+  // concatenan fragmentos arbitrarios de MP4 (Safari) o WebM.
+  // Al terminar cada tramo se guarda en IndexedDB antes de continuar.
+  async function alternarAudioLocal() {
+    if (capturaAudioLocalRef.current) {
+      terminarAudioLocalRef.current = true
+      if (timerAudioLocalRef.current !== null) clearTimeout(timerAudioLocalRef.current)
+      timerAudioLocalRef.current = null
+      const recorder = grabadorLocalRef.current
+      if (recorder?.state === 'recording') recorder.stop()
+      else if (!recorder) {
+        capturaAudioLocalRef.current = false
+        setGrabandoAudioLocal(false)
+      }
+      return
+    }
+    if (!selectedOfflineOtId || !empresaActivaId || !currentUserId) {
+      setEstadoAudioLocal('Selecciona una OT preparada antes de grabar.')
+      return
+    }
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+      setEstadoAudioLocal('Este navegador no permite la grabación local de audio.')
+      return
+    }
+
+    const empresaId = empresaActivaId
+    const tecnicoId = currentUserId
+    const otId = selectedOfflineOtId
+    let stream: MediaStream | null = null
+    let savedSegments = 0
+    terminarAudioLocalRef.current = false
+    segmentoAudioLocalRef.current = 0
+    capturaAudioLocalRef.current = true
+
+    const finish = () => {
+      if (timerAudioLocalRef.current !== null) clearTimeout(timerAudioLocalRef.current)
+      timerAudioLocalRef.current = null
+      grabadorLocalRef.current = null
+      stream?.getTracks().forEach((track) => track.stop())
+      microfonoLocalRef.current = null
+      capturaAudioLocalRef.current = false
+      setGrabandoAudioLocal(false)
+    }
+
+    const startSegment = () => {
+      if (!stream || terminarAudioLocalRef.current) {
+        finish()
+        return
+      }
+      const mime = ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm']
+        .find((value) => MediaRecorder.isTypeSupported(value))
+      let recorder: MediaRecorder
+      try {
+        recorder = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream)
+      } catch {
+        finish()
+        setEstadoAudioLocal('No fue posible continuar grabando. Los tramos anteriores siguen guardados.')
+        return
+      }
+      const partes: Blob[] = []
+      const segmentIndex = ++segmentoAudioLocalRef.current
+      grabadorLocalRef.current = recorder
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) partes.push(event.data)
+      }
+      recorder.onerror = () => {
+        terminarAudioLocalRef.current = true
+        setEstadoAudioLocal('Se interrumpió el micrófono. Se conservan los segmentos ya confirmados.')
+      }
+      recorder.onstop = () => {
+        if (timerAudioLocalRef.current !== null) clearTimeout(timerAudioLocalRef.current)
+        timerAudioLocalRef.current = null
+        const blob = new Blob(partes, { type: recorder.mimeType || partes[0]?.type || 'audio/mp4' })
+        if (blob.size < 1000) {
+          if (terminarAudioLocalRef.current) {
+            finish()
+          } else {
+            startSegment()
+          }
+          return
+        }
+        void (async () => {
+          try {
+            await savePendingVivaAudio({
+              empresaId, userId: tecnicoId, otId, destino: 'evento', blob,
+            })
+            savedSegments += 1
+            const audios = await listPendingVivaAudio(empresaId, tecnicoId, otId)
+            setCantidadAudiosLocales(audios.length)
+            setEstadoAudioLocal(
+              terminarAudioLocalRef.current
+                ? `Grabación terminada. ${savedSegments} tramo(s) conservado(s) en este dispositivo para transcribir en OT Viva.`
+                : `Grabando... tramo ${segmentIndex} protegido. ${savedSegments} tramo(s) guardado(s).`
+            )
+            if (terminarAudioLocalRef.current) finish()
+            else startSegment()
+          } catch (error) {
+            terminarAudioLocalRef.current = true
+            finish()
+            setEstadoAudioLocal(error instanceof Error
+              ? `No se pudo guardar el tramo ${segmentIndex}: ${error.message}. No sigas grabando hasta liberar espacio.`
+              : 'No fue posible guardar el tramo de voz; se detuvo la grabación.')
+          }
+        })()
+      }
+      try {
+        recorder.start()
+        timerAudioLocalRef.current = setTimeout(() => {
+          if (recorder.state === 'recording') recorder.stop()
+        }, SESSION_SEGMENT_MS)
+        setGrabandoAudioLocal(true)
+      } catch {
+        terminarAudioLocalRef.current = true
+        finish()
+        setEstadoAudioLocal('No se pudo iniciar el siguiente tramo; revisa los audios ya protegidos.')
+      }
+    }
+
+    try {
+      setEstadoAudioLocal('')
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      if (terminarAudioLocalRef.current) {
+        stream.getTracks().forEach((track) => track.stop())
+        finish()
+        return
+      }
+      microfonoLocalRef.current = stream
+      for (const track of stream.getAudioTracks()) {
+        track.addEventListener('ended', () => {
+          terminarAudioLocalRef.current = true
+          if (grabadorLocalRef.current?.state === 'recording') grabadorLocalRef.current.stop()
+          else finish()
+        }, { once: true })
+      }
+      startSegment()
+      setEstadoAudioLocal('Grabando. Cada tramo de aproximadamente 10 segundos se guarda por separado; detener finaliza el tramo en curso.')
+    } catch (error) {
+      finish()
+      setEstadoAudioLocal(error instanceof Error ? error.message : 'No se pudo iniciar el micrófono.')
+    }
+  }
+
   const volverAlListadoOffline = () => {
+    window.sessionStorage.removeItem(`tralixia_terrain_selected_ot_${empresaActivaId}_${currentUserId}`)
     setSelectedOfflineOtId('')
     setOfflineDraftSuccess('')
+  }
+
+  const pendingTechnicalEvents = selectedOfflineOtId && empresaActivaId && currentUserId
+    ? listOfflineQueue().filter((item) => item.module === 'ot' && item.action === OT_EVENT_PENDING_ACTION &&
+        isOTOfflineEvent(item.payload) && item.payload.ot_id === selectedOfflineOtId &&
+        item.payload.empresa_id === empresaActivaId && item.payload.user_id === currentUserId)
+    : []
+
+  useEffect(() => {
+    const refresh = () => setOfflinePendingRefresh((value) => value + 1)
+    window.addEventListener(OFFLINE_QUEUE_CHANGED_EVENT, refresh)
+    return () => window.removeEventListener(OFFLINE_QUEUE_CHANGED_EVENT, refresh)
+  }, [])
+
+  // The queue item is removed only after successful synchronization.
+  // Use its disappearance to update the technician's status automatically.
+  const lastEventQueueItem = lastLocalEventQueueId
+    ? listOfflineQueue().find((item) => item.id === lastLocalEventQueueId)
+    : null
+  const visibleEventNotice = lastLocalEventQueueId && !lastEventQueueItem
+    ? 'Evento sincronizado correctamente con Tralixia.'
+    : lastEventQueueItem?.status === 'error'
+      ? `Evento guardado localmente. Error de sincronización: ${lastEventQueueItem.error || 'Revisa la conexión.'}`
+      : eventNotice
+
+  const updateEventDraft = (texto: string, tipo: OTEventDraftType) => {
+    setEventText(texto)
+    setEventType(tipo)
+    setEventDraftRecovered(false)
+    setEventNotice('')
+    if (!selectedOfflineOtId || !empresaActivaId || !currentUserId) return
+    try {
+      // Persist every recognized text change immediately; no debounce window.
+      saveOTEventDraft(empresaActivaId, currentUserId, selectedOfflineOtId, { texto_original: texto, tipo_evento: tipo })
+    } catch {
+      setEventNotice('No se pudo guardar el borrador en este dispositivo. Verifica el espacio disponible antes de salir.')
+    }
+  }
+
+  const registrarEventoOffline = () => {
+    if (!selectedOfflineDetail || !currentUserId) return
+    const texto = eventText.trim()
+    if (!texto) {
+      setEventNotice('Escribe una descripción antes de registrar el evento.')
+      return
+    }
+    try {
+      const queuedEvent = addOTOfflineEvent({
+        empresa_id: selectedOfflineDetail.empresa_id,
+        ot_id: selectedOfflineDetail.id,
+        user_id: currentUserId,
+        tipo_evento: eventType,
+        texto_original: texto,
+      })
+      clearOTEventDraft(selectedOfflineDetail.empresa_id, currentUserId, selectedOfflineDetail.id)
+      setEventText('')
+      setEventDraftRecovered(false)
+      setLastLocalEventQueueId(queuedEvent.id)
+      setEventNotice('Evento guardado en el teléfono. Pendiente de sincronización.')
+      setOfflinePendingRefresh((value) => value + 1)
+    } catch (error) {
+      setEventNotice(error instanceof Error ? error.message : 'No fue posible guardar el evento local.')
+    }
+  }
+
+  const reintentarEventos = () => {
+    for (const item of pendingTechnicalEvents) {
+      if (item.status === 'error') updateOfflineQueueItem(item.id, { status: 'pendiente', error: undefined })
+    }
+    setEventNotice('Se solicitó reintentar los eventos pendientes. Comprueba su estado con internet conectado.')
+    setOfflinePendingRefresh((value) => value + 1)
+  }
+
+  const abrirDetalleOficial = () => {
+    if (!selectedOfflineOtId || !empresaActivaId || !currentUserId) return
+    if (!navigator.onLine) {
+      alert('Sin conexión. El cierre, la firma y el PDF oficial requieren internet.')
+      return
+    }
+    if (pendingTechnicalEvents.length > 0) {
+      alert('Esta OT mantiene eventos técnicos pendientes de sincronización. Consérvala abierta en modo terreno y revisa el estado de los eventos.')
+      return
+    }
+    if (otHasPendingLocalChanges(empresaActivaId, currentUserId, selectedOfflineOtId)) {
+      alert('Esta OT todavía tiene avances locales pendientes de sincronizar. No se abrirá el cierre oficial hasta confirmar su envío.')
+      setOfflinePendingRefresh((current) => current + 1)
+      return
+    }
+    // No descartar ediciones que el técnico aún no ha guardado.
+    const saved = window.localStorage.getItem(`tralixia_ot_draft_${empresaActivaId}_${currentUserId}_${selectedOfflineOtId}`)
+    if (saved) {
+      try {
+        const savedDraft = JSON.parse(saved) as OTOfflineDraft
+        if (JSON.stringify(savedDraft) !== JSON.stringify(offlineDraft)) {
+          alert('Hay cambios en el formulario local que todavía no se han guardado. Guarda el avance antes de abrir la OT oficial.')
+          return
+        }
+      } catch {
+        alert('No se pudo comprobar el último borrador local. Revísalo antes de abrir la OT oficial.')
+        return
+      }
+    }
+    window.sessionStorage.removeItem(`tralixia_terrain_selected_ot_${empresaActivaId}_${currentUserId}`)
+    window.location.assign(`/ot/${encodeURIComponent(selectedOfflineOtId)}`)
   }
 
   const guardarAvanceOffline = () => {
@@ -1227,35 +1561,63 @@ function OTPageContent() {
         </div>
       </div>
 
-      {loading ? (
+      {loading && !(selectedOfflineOtId && selectedOfflineDetail) ? (
         <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
           Cargando órdenes de trabajo...
         </div>
-      ) : error ? (
+      ) : error && !(selectedOfflineOtId && selectedOfflineDetail) ? (
         <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-sm text-red-700 shadow-sm">
           {error}
         </div>
-      ) : otsFiltradas.length === 0 ? (
+      ) : otsFiltradas.length === 0 && !(selectedOfflineOtId && selectedOfflineDetail) ? (
         <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-600 shadow-sm">
           No se encontraron OT con los filtros seleccionados.
         </div>
-      ) : isOffline ? (
+      ) : (isOffline || Boolean(selectedOfflineOtId)) ? (
           selectedOfflineOt && selectedOfflineDetail ? (
             <div className="space-y-5">
-              <button
-                type="button"
-                onClick={volverAlListadoOffline}
-                className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-              >
-                Volver al listado OT
-              </button>
+              <OTVivaConnectivityAlerts audioOcupado={grabandoAudioLocal} />
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={volverAlListadoOffline}
+                  className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  Volver al listado OT
+                </button>
+                {isOffline ? (
+                  <a
+                    href="#ot-viva-registro-local"
+                    className="rounded-xl border border-cyan-300 bg-cyan-50 px-4 py-2 text-sm font-semibold text-cyan-900 hover:bg-cyan-100"
+                  >
+                    Abrir OT Viva · registro local
+                  </a>
+                ) : (
+                  <Link
+                    href={`/ot/${encodeURIComponent(selectedOfflineOtId)}/viva`}
+                    className="rounded-xl border border-cyan-300 bg-cyan-50 px-4 py-2 text-sm font-semibold text-cyan-900 hover:bg-cyan-100"
+                  >
+                    Abrir OT Viva
+                  </Link>
+                )}
+                {!isOffline ? (
+                  <Link
+                    href={`/ot/${encodeURIComponent(selectedOfflineOtId)}`}
+                    className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-900 hover:bg-emerald-100"
+                  >
+                    Abrir OT principal
+                  </Link>
+                ) : null}
+              </div>
 
               <section className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-amber-900 shadow-sm">
                 <p className="text-sm font-semibold uppercase tracking-wide">Modo terreno OT</p>
                 <h2 className="mt-2 text-2xl font-bold text-amber-950">
                   {String(selectedOfflineDetail.folio ?? selectedOfflineOt.folio ?? 'OT preparada')}
                 </h2>
-                <p className="mt-1 text-sm">Trabajo local en borrador. Cierre, firmas y PDF oficial requieren conexión.</p>
+                <p className="mt-1 text-sm">{isOffline
+                  ? 'Trabajo local en borrador. Cierre, firmas y PDF oficial requieren conexión.'
+                  : 'Conexión recuperada. Se mantiene esta OT abierta para revisar la sincronización antes de volver al listado.'}</p>
                 {otsConPendiente.has(selectedOfflineOt.id) ? (
                   <p className="mt-3 rounded-xl bg-white px-3 py-2 text-sm font-semibold">Esta OT tiene cambios pendientes locales.</p>
                 ) : null}
@@ -1546,6 +1908,49 @@ function OTPageContent() {
                 </div>
               </details>
 
+              <section id="ot-viva-registro-local" className="scroll-mt-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                <h3 className="text-xl font-semibold text-slate-900">OT Viva · Registro individual de eventos técnicos</h3>
+                {isOffline ? <p className="mt-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Modo local de OT Viva: registra observaciones de esta OT sin cambiar de pantalla. Los borradores y audios terminados quedan en este dispositivo; el asistente IA y el historial remoto necesitan conexión.</p> : null}
+                <div className="mt-3 rounded-xl border border-cyan-200 bg-cyan-50 p-3">
+                  <p className="text-sm font-semibold text-cyan-950">Grabación local para OT Viva</p>
+                  <p className="mt-1 text-xs text-cyan-900">El audio se guarda en tramos de aproximadamente 10 segundos. Si Safari interrumpe el micrófono, solo estarán protegidos los tramos ya confirmados. Cada tramo se transcribe por separado.</p>
+                  <button type="button" onClick={() => void alternarAudioLocal()} className={`mt-2 rounded-xl px-4 py-2 text-sm font-semibold text-white ${grabandoAudioLocal ? 'bg-rose-700' : 'bg-cyan-800'}`}>
+                    {grabandoAudioLocal ? 'Detener y guardar último tramo' : 'Grabar observación'}
+                  </button>
+                  <p className="mt-2 text-xs text-cyan-950">Audios pendientes en este dispositivo: {cantidadAudiosLocales}</p>
+                  {estadoAudioLocal ? <p role="status" className="mt-2 text-sm text-cyan-950">{estadoAudioLocal}</p> : null}
+                </div>
+                <p className="mt-2 text-sm text-slate-600">Cada registro se conserva por separado con su fecha y hora. No modifica el borrador ni reemplaza eventos anteriores.</p>
+                <label className="mt-4 block text-sm font-medium text-slate-700">Tipo de evento
+                  <select className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2" value={eventType} onChange={(e) => updateEventDraft(eventText, e.target.value as OTEventDraftType)}>
+                    <option value="accion">Actividad realizada</option><option value="hallazgo">Hallazgo observado</option><option value="medicion">Medición</option><option value="prueba">Prueba técnica</option><option value="resultado">Resultado registrado</option><option value="hipotesis">Hipótesis (sin confirmar)</option>
+                  </select>
+                </label>
+                <label className="mt-3 block text-sm font-medium text-slate-700">Descripción del evento
+                  <textarea rows={3} value={eventText} onChange={(e) => updateEventDraft(e.target.value, eventType)} placeholder="Describe la actividad o hallazgo observado..." className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2" />
+                </label>
+                {eventDraftRecovered ? <p role="status" className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm font-medium text-emerald-900">Borrador recuperado automáticamente. Puedes continuar escribiendo; aún no es un evento confirmado.</p> : null}
+                {eventText.trim() ? <p className="mt-2 text-xs text-slate-600">Borrador local: se guarda en este teléfono con cada modificación. Se confirma solo al registrar el evento.</p> : null}
+                <button type="button" onClick={registrarEventoOffline} className="mt-3 rounded-xl bg-[#163A5F] px-4 py-2 text-sm font-semibold text-white">Registrar evento técnico</button>
+                {visibleEventNotice ? <p role="status" className="mt-3 rounded-lg bg-slate-100 p-3 text-sm text-slate-800">{visibleEventNotice}</p> : null}
+                {pendingTechnicalEvents.length > 0 ? (
+                  <div className="mt-4 space-y-2">
+                    <p className="text-sm font-semibold text-amber-800">Eventos locales pendientes: {pendingTechnicalEvents.length}</p>
+                    {pendingTechnicalEvents.map((item) => {
+                      const payload = item.payload as import('../../../lib/offline/ot').OTOfflineEventPayload
+                      return <div key={item.id} className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-slate-800">
+                        <p className="font-medium">{payload.tipo_evento} · {new Date(payload.ocurrido_at).toLocaleString('es-CL')}</p>
+                        <p className="mt-1 whitespace-pre-wrap">{payload.texto_original}</p>
+                        <p className="mt-1 text-xs text-amber-900">{item.status === 'error' ? `Error de sincronización: ${item.error || 'pendiente de revisión'}` : item.status === 'sincronizando' ? 'Sincronizando...' : 'Pendiente de sincronizar'}</p>
+                      </div>
+                    })}
+                    {pendingTechnicalEvents.some((item) => item.status === 'error') && navigator.onLine ? <button type="button" onClick={reintentarEventos} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold">Reintentar sincronización de eventos</button> : null}
+                    <p className="text-xs text-slate-600">Para sincronizar necesitas tener OT Viva habilitada en esta OT. Si aún no la activaste, puedes abrirla sin eliminar los eventos locales.</p>
+                    {navigator.onLine ? <a href={`/ot/${encodeURIComponent(selectedOfflineOtId)}/viva`} className="inline-block rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-800">Abrir OT Viva / habilitar caso técnico</a> : null}
+                  </div>
+                ) : null}
+              </section>
+
               <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
                 <h3 className="text-xl font-semibold text-slate-900">Avance local de terreno</h3>
                 {offlineDraftSuccess ? (
@@ -1561,7 +1966,7 @@ function OTPageContent() {
                 )}
                 <div className="mt-5 flex flex-wrap gap-3">
                   <button type="button" onClick={guardarAvanceOffline} className="rounded-xl bg-[#163A5F] px-4 py-2 text-sm font-semibold text-white">Guardar avance local</button>
-                  <button type="button" onClick={() => alert('Esta acción requiere conexión.')} className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700">Cerrar / firmar / PDF oficial</button>
+                  <button type="button" onClick={abrirDetalleOficial} className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700">{isOffline ? 'Cerrar / firmar / PDF oficial (requiere conexión)' : 'Abrir OT principal / firma / PDF'}</button>
                 </div>
               </section>
             </div>

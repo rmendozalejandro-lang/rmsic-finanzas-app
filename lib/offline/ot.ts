@@ -4,6 +4,7 @@ import { addOfflineQueueItem, listOfflineQueue, updateOfflineQueueItem } from '.
 export const OT_MODULE = 'ot'
 export const OT_ROUTE = '/ot'
 export const OT_PENDING_ACTION = 'guardar_avance_ot'
+export const OT_EVENT_PENDING_ACTION = 'registrar_evento_ot'
 export const OT_CACHE_SCHEMA_VERSION = 2
 export const OT_CACHE_PREFIX = 'tralixia_ot_offline_cache_v2'
 export const OT_PREPARATION_PREFIX = 'tralixia_ot_offline_preparation_v1'
@@ -54,6 +55,35 @@ export type OTOfflinePendingPayload = OTOfflineDraft & {
   ot_id: string
   base_updated_at: string | null
   created_at: string
+}
+
+export type OTOfflineEventPayload = {
+  evento_id: string
+  empresa_id: string
+  user_id: string
+  ot_id: string
+  tipo_evento: 'accion' | 'hallazgo' | 'medicion' | 'prueba' | 'resultado' | 'hipotesis'
+  texto_original: string
+  ocurrido_at: string
+}
+
+export function addOTOfflineEvent(input: Omit<OTOfflineEventPayload, 'evento_id' | 'ocurrido_at'>) {
+  const payload: OTOfflineEventPayload = {
+    ...input,
+    evento_id: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`,
+    ocurrido_at: new Date().toISOString(),
+  }
+  return addOfflineQueueItem({ module: OT_MODULE, action: OT_EVENT_PENDING_ACTION, payload })
+}
+
+export function isOTOfflineEvent(value: unknown): value is OTOfflineEventPayload {
+  if (!value || typeof value !== 'object') return false
+  const item = value as Partial<OTOfflineEventPayload>
+  return Boolean(
+    item.evento_id && item.empresa_id && item.user_id && item.ot_id &&
+    item.ocurrido_at && typeof item.texto_original === 'string' &&
+    item.texto_original.trim() && ['accion', 'hallazgo', 'medicion', 'prueba', 'resultado', 'hipotesis'].includes(item.tipo_evento ?? ''),
+  )
 }
 
 export type OTOfflineDetail = Record<string, unknown> & {

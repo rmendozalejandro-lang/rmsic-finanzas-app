@@ -184,6 +184,7 @@ export async function POST(
 
       const seleccionadas = Array.from(new Set(body.evidenciasSeleccionadas || []))
       let evidenciasCopiadas = 0
+      const evidenciasNoCopiadas: string[] = []
 
       if (seleccionadas.length > 0) {
         const evidenciasResp = await admin
@@ -213,28 +214,22 @@ export async function POST(
 
         const existentesResp = await admin
           .from('ot_evidencias')
-          .select('archivo_nombre,descripcion')
+          .select('archivo_url')
           .eq('ot_id', ot.id)
 
         if (existentesResp.error) return jsonError(existentesResp.error.message, 500)
 
+        // La identidad de la evidencia es su ID original en OT Viva, no el
+        // nombre o la descripción: dos fotos distintas pueden compartir ambos.
         const existentes = new Set(
-          (existentesResp.data || []).map(
-            (item) => `${item.archivo_nombre || ''}|${item.descripcion || ''}`
-          )
+          (existentesResp.data || []).map((item) => item.archivo_url || '')
         )
 
         for (const evidencia of evidenciasResp.data || []) {
-          if (!evidencia.storage_bucket || !evidencia.storage_path) continue
-
-          const dedupeKey = `${evidencia.archivo_nombre || ''}|${evidencia.descripcion || ''}`
-          if (existentes.has(dedupeKey)) continue
-
-          const download = await admin.storage
-            .from(evidencia.storage_bucket)
-            .download(evidencia.storage_path)
-
-          if (download.error || !download.data) continue
+          if (!evidencia.storage_bucket || !evidencia.storage_path) {
+            evidenciasNoCopiadas.push(evidencia.id)
+            continue
+          }
 
           const originalName = evidencia.archivo_nombre || `evidencia-${evidencia.id}`
           const safeName = originalName
@@ -243,8 +238,22 @@ export async function POST(
             .replace(/[^a-zA-Z0-9._-]+/g, '-')
             .replace(/-+/g, '-')
             .toLowerCase()
-
           const targetPath = `${ot.empresa_id}/${ot.id}/viva-${evidencia.id}-${safeName}`
+          const { data: publicData } = admin.storage
+            .from('ot-evidencias')
+            .getPublicUrl(targetPath)
+
+          if (existentes.has(publicData.publicUrl)) continue
+
+          const download = await admin.storage
+            .from(evidencia.storage_bucket)
+            .download(evidencia.storage_path)
+
+          if (download.error || !download.data) {
+            evidenciasNoCopiadas.push(evidencia.id)
+            continue
+          }
+
           const upload = await admin.storage
             .from('ot-evidencias')
             .upload(targetPath, download.data, {
@@ -252,11 +261,10 @@ export async function POST(
               upsert: false,
             })
 
-          if (upload.error) continue
-
-          const { data: publicData } = admin.storage
-            .from('ot-evidencias')
-            .getPublicUrl(targetPath)
+          if (upload.error && !/already exists|duplicate/i.test(upload.error.message || '')) {
+            evidenciasNoCopiadas.push(evidencia.id)
+            continue
+          }
 
           const tipo = tipoOtEvidencia(usoPorEvidencia.get(evidencia.id))
           const ordenResp = await admin
@@ -280,9 +288,11 @@ export async function POST(
             subido_por: user.id,
           })
 
-          if (!insert.error) {
+          if (insert.error) {
+            evidenciasNoCopiadas.push(evidencia.id)
+          } else {
             evidenciasCopiadas += 1
-            existentes.add(dedupeKey)
+            existentes.add(publicData.publicUrl)
           }
         }
       }
@@ -290,6 +300,7 @@ export async function POST(
       return jsonResponse({
         ok: true,
         evidenciasCopiadas,
+        evidenciasNoCopiadas,
         mensaje: 'Borrador aplicado a la OT principal. Ya puede revisarse y pasar a firma del cliente.',
       })
     }
@@ -353,8 +364,30 @@ export async function POST(
       if (decision.evento_id) decisionesVigentes.set(decision.evento_id, decision)
     }
 
+    const hipotesisConfirmadasVigentes = (eventosResp.data || []).filter(
+      (evento) =>
+        evento.tipo_evento === 'hipotesis' &&
+        decisionesVigentes.get(evento.id)?.decision === 'confirmada'
+    )
+    const resumenDecisiones = (eventosResp.data || [])
+      .filter((evento) => evento.tipo_evento === 'hipotesis')
+      .map((evento) => {
+        const vigente = decisionesVigentes.get(evento.id)
+        return `Hipótesis ID ${evento.id}: ${evento.texto_original} | Estado vigente: ${vigente?.decision || 'sin decisión humana'}`
+      })
+      .join('\n')
+
+    // Los ensayos de conectividad de la aplicación no son evidencia de mantenimiento
+    // industrial y no deben aparecer en informes entregables al cliente.
+    const esEventoOperativoDeLaApp = (texto: string) =>
+      /(?:prueba|reintento|pendiente|error|fallo|cola|registro).*?(?:offline|sincronizaci[oó]n|navegaci[oó]n de OT Viva)|(?:prueba offline|modo offline|navegaci[oó]n offline|memoria local pendiente|pendiente de sincronizaci[oó]n|prueba controlada de coexistencia entre memoria local)/i.test(texto)
+
     const eventos = (eventosResp.data || [])
-      .filter((evento) => evento.incluir_resumen !== false && evento.tipo_evento !== 'respuesta_ia')
+      .filter((evento) =>
+        evento.incluir_resumen !== false &&
+        evento.tipo_evento !== 'respuesta_ia' &&
+        !esEventoOperativoDeLaApp(evento.texto_original || '')
+      )
       .map((evento, index) => {
         const decision = decisionesVigentes.get(evento.id)
         const estado = decision
@@ -369,9 +402,13 @@ Eres Tralixia preparando el borrador de cierre de una orden de trabajo técnica 
 
 Reglas obligatorias:
 - Usa únicamente el contexto entregado de esta OT.
+- Ignora los eventos de pruebas de la aplicación (offline, sincronización, cola local, navegación o depuración); no pertenecen a la intervención industrial del cliente.
+- Mantén separadas una decisión humana confirmada de otra decisión posterior que la haya descartado; ante registros contradictorios, describe la incertidumbre y no declares una causa vigente sin respaldo actual.
 - No inventes trabajos, resultados, causas, repuestos, mediciones ni pruebas.
 - La IA propone el borrador; el técnico lo revisará y aprobará antes de aplicarlo.
 - Las decisiones humanas estructuradas son la fuente de verdad para hipótesis confirmadas o descartadas.
+- Nunca atribuyas a una hipótesis la decisión humana asociada a otra hipótesis diferente. Solo el listado de estados vigentes autoriza afirmaciones de confirmación o descarte.
+- Si ninguna hipótesis conserva una decisión vigente de confirmación, el campo causa_probable debe estar vacío; describe hipótesis abiertas en pendientes.
 - No presentes como diagnóstico una hipótesis descartada.
 - Si no existe causa confirmada por evidencia o decisión humana, deja causa_probable vacía.
 - Conserva pendientes, restricciones y labores que no pudieron realizarse.
@@ -406,6 +443,9 @@ Título: ${ot.titulo || 'No informado'}
 Solicitud original: ${ot.descripcion_solicitud || 'No informada'}
 Caso OT Viva: ${casoResp.data.titulo || 'Sin título'}
 
+Estados vigentes por hipótesis (no mezclar las decisiones de una hipótesis con otra):
+${resumenDecisiones || 'No hay hipótesis registradas.'}
+
 Eventos relevantes de la intervención:
 ${eventos || 'No hay eventos relevantes registrados.'}
 
@@ -438,7 +478,40 @@ ${(evidenciasResp.data || [])
       body: JSON.stringify({
         model: openAiModel,
         store: false,
-        max_output_tokens: 1800,
+        max_output_tokens: 4000,
+        text: {
+          format: {
+            type: 'json_schema',
+            name: 'ot_viva_cierre',
+            strict: true,
+            schema: {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                diagnostico: { type: 'string' },
+                causa_probable: { type: 'string' },
+                trabajo_realizado: { type: 'string' },
+                hallazgos: { type: 'string' },
+                resultado_servicio: { type: 'string' },
+                conclusiones_tecnicas: { type: 'string' },
+                recomendaciones: { type: 'string' },
+                observaciones_cierre: { type: 'string' },
+                pendientes: { type: 'string' },
+              },
+              required: [
+                'diagnostico',
+                'causa_probable',
+                'trabajo_realizado',
+                'hallazgos',
+                'resultado_servicio',
+                'conclusiones_tecnicas',
+                'recomendaciones',
+                'observaciones_cierre',
+                'pendientes',
+              ],
+            },
+          },
+        },
         input: [
           { role: 'developer', content: developerInstructions },
           { role: 'user', content: userInput },
@@ -455,19 +528,26 @@ ${(evidenciasResp.data || [])
       )
     }
 
+    if (aiData?.status === 'incomplete') {
+      return jsonError('El borrador superó el límite de generación. Los registros originales siguen guardados. Intenta nuevamente.', 502)
+    }
+
     const texto = extraerTextoRespuesta(aiData)
-    if (!texto) return jsonError('Tralixia no devolvió un borrador utilizable.', 500)
+    if (!texto) return jsonError('Tralixia no devolvió un borrador utilizable. Los registros siguen guardados.', 502)
 
     let parsed: Partial<CierreDraft>
     try {
-      parsed = JSON.parse(limpiarJson(texto))
+      parsed = JSON.parse(limpiarJson(texto)) as Partial<CierreDraft>
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        throw new Error('Estructura no válida')
+      }
     } catch {
-      return jsonError('El borrador generado no pudo estructurarse. Intenta nuevamente.', 502)
+      return jsonError('El borrador no pudo estructurarse. Los eventos permanecen guardados; intenta nuevamente.', 502)
     }
 
     const borrador: CierreDraft = {
       diagnostico: textoSeguro(parsed.diagnostico),
-      causa_probable: textoSeguro(parsed.causa_probable),
+      causa_probable: hipotesisConfirmadasVigentes.length > 0 ? textoSeguro(parsed.causa_probable) : '',
       trabajo_realizado: textoSeguro(parsed.trabajo_realizado),
       hallazgos: textoSeguro(parsed.hallazgos),
       resultado_servicio: textoSeguro(parsed.resultado_servicio),
